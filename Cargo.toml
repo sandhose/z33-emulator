@@ -1,0 +1,6 @@
+[workspace]
+
+members = [
+  "emulator",
+  "instruction-derive",
+]
