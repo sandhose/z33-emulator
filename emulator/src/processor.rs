@@ -24,6 +24,9 @@ enum Exception {
 
     #[error("invalid memory access")]
     Segfault,
+
+    #[error("computer reset")]
+    Reset,
 }
 
 type Result<T> = std::result::Result<T, Exception>;
@@ -43,10 +46,15 @@ bitflags! {
     }
 }
 
-trait Encodable: Sized + PartialEq + Clone + std::fmt::Debug {
+trait Encodable {
     fn encode(self) -> Vec<u8>;
-    fn decode<T: Read>(reader: &mut T) -> Option<Self>;
+}
 
+trait Decodable: Sized {
+    fn decode<T: Read>(reader: &mut T) -> Option<Self>;
+}
+
+trait Mmapped: Encodable + Decodable + Sized + PartialEq + Clone + std::fmt::Debug {
     #[cfg(test)]
     fn assert_stable(self) {
         let binval = self.clone().encode();
@@ -60,10 +68,15 @@ trait Encodable: Sized + PartialEq + Clone + std::fmt::Debug {
     }
 }
 
+impl<T> Mmapped for T where T: Encodable + Decodable + Sized + PartialEq + Clone + std::fmt::Debug {}
+
 impl Encodable for u16 {
     fn encode(self) -> Vec<u8> {
         u16::to_le_bytes(self).into()
     }
+}
+
+impl Decodable for u16 {
     fn decode<T: Read>(reader: &mut T) -> Option<Self> {
         let mut buf = [0u8; 2];
         reader.read_exact(&mut buf).ok()?;
@@ -75,6 +88,9 @@ impl Encodable for i16 {
     fn encode(self) -> Vec<u8> {
         i16::to_le_bytes(self).into()
     }
+}
+
+impl Decodable for i16 {
     fn decode<T: Read>(reader: &mut T) -> Option<Self> {
         let mut buf = [0u8; 2];
         reader.read_exact(&mut buf).ok()?;
@@ -86,10 +102,22 @@ impl Encodable for u32 {
     fn encode(self) -> Vec<u8> {
         u32::to_le_bytes(self).into()
     }
+}
+
+impl Decodable for u32 {
     fn decode<T: Read>(reader: &mut T) -> Option<Self> {
         let mut buf = [0u8; 4];
         reader.read_exact(&mut buf).ok()?;
         Some(u32::from_le_bytes(buf))
+    }
+}
+
+impl<T> Encodable for Vec<T>
+where
+    T: Encodable,
+{
+    fn encode(self) -> Vec<u8> {
+        self.into_iter().flat_map(|v| v.encode()).collect()
     }
 }
 
@@ -118,7 +146,7 @@ impl Computer {
         }
     }
 
-    fn offset_read<T: Encodable>(&self, address: Address) -> Result<(u16, T)> {
+    fn offset_read<T: Decodable>(&self, address: Address) -> Result<(u16, T)> {
         let address = self.resolve_address(address) as u64;
         let mut cursor = Cursor::new(self.memory.as_ref());
         cursor.set_position(address);
@@ -128,7 +156,7 @@ impl Computer {
         Ok((offset, el))
     }
 
-    fn read<T: Encodable>(&self, address: Address) -> Result<T> {
+    fn read<T: Decodable>(&self, address: Address) -> Result<T> {
         let address = self.resolve_address(address) as u64;
         let mut cursor = Cursor::new(self.memory.as_ref());
         cursor.set_position(address);
@@ -148,19 +176,53 @@ impl Computer {
     fn arg(&self, arg: Arg) -> Result<u16> {
         match arg {
             Arg::Address(addr) => self.read(addr),
-            Arg::Value(Value::Imm(val)) => Ok(val),
-            Arg::Value(Value::Reg(reg)) => Ok(self.registers.get(reg)),
+            Arg::Value(val) => Ok(self.value(val)),
         }
     }
 
+    fn value(&self, value: Value) -> u16 {
+        match value {
+            Value::Imm(imm) => imm,
+            Value::Reg(reg) => self.registers.get(reg),
+        }
+    }
+
+    fn jump(&mut self, address: Address) -> Result<()> {
+        let address = self.resolve_address(address);
+        self.registers.pc = address;
+        Ok(())
+    }
+
+    fn decode_instruction(&mut self) -> Result<Instruction> {
+        let (addr, inst) = self.offset_read(Address::Ind(Reg::PC))?;
+        self.registers.pc += addr;
+        Ok(inst)
+    }
+
+    fn step(&mut self) -> Result<()> {
+        let inst = self.decode_instruction()?;
+        inst.execute(self)?;
+        Ok(())
+    }
+
     fn push<T: Encodable>(&mut self, value: T) -> Result<()> {
+        // First encode the value and move the stack
+        let bytes = value.encode();
+        self.registers.sp -= bytes.len() as u16;
+
+        // And write it on memeory
         let address = self.registers.sp;
         let mut cursor = Cursor::new(self.memory.as_mut());
         cursor.set_position(address as u64);
-
-        let bytes = value.encode();
-        self.registers.sp += bytes.len() as u16;
         cursor.write_all(&bytes).map_err(|_| Exception::Segfault)
+    }
+
+    fn pop<T: Decodable>(&mut self) -> Result<T> {
+        // First read the value
+        let (offset, val) = self.offset_read(Address::Ind(Reg::SP))?;
+        // Then move the SP
+        self.registers.sp += offset;
+        Ok(val)
     }
 }
 
@@ -231,7 +293,9 @@ impl Encodable for Reg {
     fn encode(self) -> Vec<u8> {
         vec![self.to_byte()]
     }
+}
 
+impl Decodable for Reg {
     fn decode<T: Read>(reader: &mut T) -> Option<Self> {
         let mut buf = [0];
         reader.read_exact(&mut buf).ok()?;
@@ -246,17 +310,25 @@ enum Address {
     Idx(Reg, i16),
 }
 
+impl From<u16> for Address {
+    fn from(val: u16) -> Self {
+        Self::Dir(val)
+    }
+}
+
 impl Encodable for Address {
+    fn encode(self) -> Vec<u8> {
+        Arg::Address(self).encode()
+    }
+}
+
+impl Decodable for Address {
     fn decode<T: Read>(reader: &mut T) -> Option<Self> {
         if let Some(Arg::Address(addr)) = Arg::decode(reader) {
             Some(addr)
         } else {
             None
         }
-    }
-
-    fn encode(self) -> Vec<u8> {
-        Arg::Address(self).encode()
     }
 }
 
@@ -267,16 +339,18 @@ enum Value {
 }
 
 impl Encodable for Value {
+    fn encode(self) -> Vec<u8> {
+        Arg::Value(self).encode()
+    }
+}
+
+impl Decodable for Value {
     fn decode<T: Read>(reader: &mut T) -> Option<Self> {
         if let Some(Arg::Value(val)) = Arg::decode(reader) {
             Some(val)
         } else {
             None
         }
-    }
-
-    fn encode(self) -> Vec<u8> {
-        Arg::Value(self).encode()
     }
 }
 
@@ -317,7 +391,9 @@ impl Encodable for Arg {
             }
         }
     }
+}
 
+impl Decodable for Arg {
     fn decode<T: Read>(reader: &mut T) -> Option<Self> {
         let mut buf = [0];
         reader.read_exact(&mut buf).ok()?;
@@ -384,45 +460,55 @@ enum Instruction {
     In(Address, Reg),
     #[instruction(0x07)]
     Jmp(Arg),
-    // #[instruction(0x01)]
-    // CondJmp(Arg, Cond),
     #[instruction(0x08)]
-    Ld(Arg, Reg),
+    Jeq(Arg),
     #[instruction(0x09)]
-    Mul(Arg, Reg),
+    Jne(Arg),
     #[instruction(0x0A)]
-    Neg(Reg),
+    Jle(Arg),
     #[instruction(0x0B)]
-    Nop,
+    Jlt(Arg),
     #[instruction(0x0C)]
-    Not(Reg),
+    Jge(Arg),
     #[instruction(0x0D)]
-    Or(Arg, Reg),
+    Jgt(Arg),
     #[instruction(0x0E)]
-    Out(Value, Address),
+    Ld(Arg, Reg),
     #[instruction(0x0F)]
-    Pop(Reg),
+    Mul(Arg, Reg),
     #[instruction(0x10)]
-    Push(Value),
+    Neg(Reg),
     #[instruction(0x11)]
-    Reset,
+    Nop,
     #[instruction(0x12)]
-    Rti,
+    Not(Reg),
     #[instruction(0x13)]
-    Rtn,
+    Or(Arg, Reg),
     #[instruction(0x14)]
-    Shl(Arg, Reg),
+    Out(Value, Address),
     #[instruction(0x15)]
-    Shr(Arg, Reg),
+    Pop(Reg),
     #[instruction(0x16)]
-    St(Address, Reg), // note: this one is inverted
+    Push(Value),
     #[instruction(0x17)]
-    Sub(Arg, Reg),
-    // #[instruction(0x18)]
-    // Swap(ArgSwap, Reg),
+    Reset,
+    #[instruction(0x18)]
+    Rti,
     #[instruction(0x19)]
-    Trap,
+    Rtn,
     #[instruction(0x1A)]
+    Shl(Arg, Reg),
+    #[instruction(0x1B)]
+    Shr(Arg, Reg),
+    #[instruction(0x1C)]
+    St(Reg, Address),
+    #[instruction(0x1D)]
+    Sub(Arg, Reg),
+    // #[instruction(0x1E)]
+    // Swap(ArgSwap, Reg),
+    #[instruction(0x1F)]
+    Trap,
+    #[instruction(0x20)]
     Xor(Arg, Reg),
 }
 
@@ -431,27 +517,41 @@ impl Instruction {
         match self {
             Instruction::Add(arg, reg) => {
                 let val = computer.arg(arg)?;
-                *computer.registers.get_mut(reg) += val;
+                let reg = computer.registers.get_mut(reg);
+                let (res, overflow) = reg.overflowing_add(val);
+                *reg = res;
+
+                computer
+                    .registers
+                    .sr
+                    .set(StatusRegister::OVERFLOW, overflow);
             }
             Instruction::And(arg, reg) => {
                 let val = computer.arg(arg)?;
                 *computer.registers.get_mut(reg) &= val;
             }
-            Instruction::Call(_) => todo!(),
+            Instruction::Call(arg) => {
+                // Push PC
+                let pc = computer.registers.get(Reg::PC);
+                computer.push(pc)?;
+
+                // Jump
+                let addr = computer.arg(arg)?;
+                computer.jump(Address::Dir(addr))?;
+            }
             Instruction::Cmp(arg, reg) => {
                 let val1 = computer.arg(arg)?;
                 let val2 = computer.registers.get(reg);
-                if val1 == val2 {
-                    computer.registers.sr |= StatusRegister::ZERO;
-                } else {
-                    computer.registers.sr -= StatusRegister::ZERO;
-                }
 
-                if val1 < val2 {
-                    computer.registers.sr |= StatusRegister::NEGATIVE;
-                } else {
-                    computer.registers.sr -= StatusRegister::NEGATIVE;
-                }
+                computer
+                    .registers
+                    .sr
+                    .set(StatusRegister::ZERO, val1 == val2);
+
+                computer
+                    .registers
+                    .sr
+                    .set(StatusRegister::NEGATIVE, val1 < val2);
             }
             Instruction::Div(arg, reg) => {
                 let val = computer.arg(arg)?;
@@ -466,27 +566,128 @@ impl Instruction {
             Instruction::In(_, _) => todo!(),
             Instruction::Jmp(arg) => {
                 let val = computer.arg(arg)?;
-                let reg = computer.registers.get_mut(Reg::PC);
+                computer.registers.pc = val;
+            }
+            Instruction::Jeq(arg) => {
+                if computer.registers.sr.contains(StatusRegister::ZERO) {
+                    let val = computer.arg(arg)?;
+                    computer.registers.pc = val;
+                }
+            }
+            Instruction::Jne(arg) => {
+                if !computer.registers.sr.contains(StatusRegister::ZERO) {
+                    let val = computer.arg(arg)?;
+                    computer.registers.pc = val;
+                }
+            }
+            Instruction::Jle(arg) => {
+                if computer.registers.sr.contains(StatusRegister::ZERO)
+                    || computer.registers.sr.contains(StatusRegister::NEGATIVE)
+                {
+                    let val = computer.arg(arg)?;
+                    computer.registers.pc = val;
+                }
+            }
+            Instruction::Jlt(arg) => {
+                if !computer.registers.sr.contains(StatusRegister::ZERO)
+                    && computer.registers.sr.contains(StatusRegister::NEGATIVE)
+                {
+                    let val = computer.arg(arg)?;
+                    computer.registers.pc = val;
+                }
+            }
+            Instruction::Jge(arg) => {
+                if computer.registers.sr.contains(StatusRegister::ZERO)
+                    || !computer.registers.sr.contains(StatusRegister::NEGATIVE)
+                {
+                    let val = computer.arg(arg)?;
+                    computer.registers.pc = val;
+                }
+            }
+            Instruction::Jgt(arg) => {
+                if !computer.registers.sr.contains(StatusRegister::ZERO)
+                    && !computer.registers.sr.contains(StatusRegister::NEGATIVE)
+                {
+                    let val = computer.arg(arg)?;
+                    computer.registers.pc = val;
+                }
+            }
+            Instruction::Ld(arg, reg) => {
+                let val = computer.arg(arg)?;
+                let reg = computer.registers.get_mut(reg);
                 *reg = val;
             }
-            Instruction::Ld(_, _) => todo!(),
-            Instruction::Mul(_, _) => todo!(),
-            Instruction::Neg(_) => todo!(),
+            Instruction::Mul(arg, reg) => {
+                let val = computer.arg(arg)?;
+                let reg = computer.registers.get_mut(reg);
+                let (res, overflow) = reg.overflowing_mul(val);
+                *reg = res;
+
+                computer
+                    .registers
+                    .sr
+                    .set(StatusRegister::OVERFLOW, overflow);
+            }
+            Instruction::Neg(_reg) => todo!(),
             Instruction::Nop => {}
-            Instruction::Not(_) => todo!(),
-            Instruction::Or(_, _) => todo!(),
+            Instruction::Not(reg) => {
+                let reg = computer.registers.get_mut(reg);
+                *reg = !*reg;
+            }
+            Instruction::Or(arg, reg) => {
+                let val = computer.arg(arg)?;
+                *computer.registers.get_mut(reg) |= val;
+            }
             Instruction::Out(_, _) => todo!(),
-            Instruction::Pop(_) => todo!(),
-            Instruction::Push(_) => todo!(),
-            Instruction::Reset => todo!(),
+            Instruction::Pop(reg) => {
+                let val = computer.pop()?;
+                *computer.registers.get_mut(reg) = val;
+            }
+            Instruction::Push(val) => {
+                let val = computer.value(val);
+                computer.push(val)?;
+            }
+            Instruction::Reset => return Err(Exception::Reset),
             Instruction::Rti => todo!(),
-            Instruction::Rtn => todo!(),
-            Instruction::Shl(_, _) => todo!(),
-            Instruction::Shr(_, _) => todo!(),
-            Instruction::St(_, _) => todo!(),
-            Instruction::Sub(_, _) => todo!(),
+            Instruction::Rtn => {
+                let ret = computer.pop()?; // Pop the return address
+                computer.jump(Address::Dir(ret))?; // and jump to it
+            }
+            Instruction::Shl(arg, reg) => {
+                let val = computer.arg(arg)?;
+                let reg = computer.registers.get_mut(reg);
+                *reg = reg
+                    .checked_shl(val as u32)
+                    .ok_or(Exception::InvalidInstruction)?;
+            }
+            Instruction::Shr(arg, reg) => {
+                let val = computer.arg(arg)?;
+                let reg = computer.registers.get_mut(reg);
+                *reg = reg
+                    .checked_shr(val as u32)
+                    .ok_or(Exception::InvalidInstruction)?;
+            }
+            Instruction::St(reg, address) => {
+                let val = computer.registers.get(reg);
+                computer.write(address, val)?;
+            }
+            Instruction::Sub(arg, reg) => {
+                let val = computer.arg(arg)?;
+                let reg = computer.registers.get_mut(reg);
+                let (res, overflow) = reg.overflowing_sub(val);
+                *reg = res;
+
+                computer
+                    .registers
+                    .sr
+                    .set(StatusRegister::OVERFLOW, overflow);
+            }
             Instruction::Trap => todo!(),
-            Instruction::Xor(_, _) => todo!(),
+            Instruction::Xor(arg, reg) => {
+                let val = computer.arg(arg)?;
+                let reg = computer.registers.get_mut(reg);
+                *reg ^= val;
+            }
         };
 
         Ok(())
@@ -532,5 +733,137 @@ mod tests {
         let instruction = Instruction::Add(Arg::Address(Address::Idx(Reg::B, 0x10)), Reg::A);
         instruction.execute(&mut computer).unwrap();
         assert_eq!(computer.registers.get(Reg::A), 105);
+    }
+
+    #[test]
+    fn step_test() {
+        let mut computer = Computer::default();
+        let start = 0x100;
+        let program = vec![
+            Instruction::Ld(Arg::Value(Value::Imm(0x42)), Reg::A),
+            Instruction::Ld(Arg::Value(Value::Imm(0x24)), Reg::B),
+            Instruction::Add(Arg::Value(Value::Reg(Reg::A)), Reg::B),
+        ];
+
+        computer.write(start.into(), program).unwrap();
+        computer.jump(start.into()).unwrap();
+
+        assert_eq!(computer.registers.a, 0x00);
+        assert_eq!(computer.registers.b, 0x00);
+        assert_eq!(computer.registers.pc, start);
+        computer.step().unwrap();
+
+        assert_eq!(computer.registers.a, 0x42);
+        assert_eq!(computer.registers.b, 0x00);
+        assert_eq!(computer.registers.pc, start + 5);
+        computer.step().unwrap();
+
+        assert_eq!(computer.registers.a, 0x42);
+        assert_eq!(computer.registers.b, 0x24);
+        assert_eq!(computer.registers.pc, start + 10);
+        computer.step().unwrap();
+
+        assert_eq!(computer.registers.a, 0x42);
+        assert_eq!(computer.registers.b, 0x66);
+        assert_eq!(computer.registers.pc, start + 13);
+    }
+
+    #[test]
+    fn call_test() {
+        let mut computer = Computer::default();
+        let start = 0x100;
+        let subroutine = 0x200;
+        let stack = 0xF000;
+        computer.registers.sp = stack; // Set the stack pointer somewhere
+
+        // program:
+        //  start:
+        //      call subroutine
+        //      add %a, %b
+        //      (halt)
+        //
+        //  subroutine:
+        //      ld 0x42, %a
+        //      ld 0x24, %b
+        //      rtn
+
+        computer
+            .write(
+                start.into(),
+                vec![
+                    Instruction::Call(Arg::Value(Value::Imm(subroutine))),
+                    Instruction::Add(Arg::Value(Value::Reg(Reg::A)), Reg::B),
+                ],
+            )
+            .unwrap();
+
+        computer
+            .write(
+                subroutine.into(),
+                vec![
+                    Instruction::Ld(Arg::Value(Value::Imm(0x42)), Reg::A),
+                    Instruction::Ld(Arg::Value(Value::Imm(0x24)), Reg::B),
+                    Instruction::Rtn,
+                ],
+            )
+            .unwrap();
+
+        computer.jump(start.into()).unwrap();
+
+        assert_eq!(computer.registers.a, 0x00);
+        assert_eq!(computer.registers.b, 0x00);
+        assert_eq!(computer.registers.pc, start);
+        assert_eq!(computer.registers.sp, stack);
+        // call subroutine
+        computer.step().unwrap();
+
+        assert_eq!(computer.registers.a, 0x00);
+        assert_eq!(computer.registers.b, 0x00);
+        assert_eq!(computer.registers.pc, subroutine);
+        assert_eq!(computer.registers.sp, stack - 2);
+        // ld 0x42, %a
+        computer.step().unwrap();
+
+        assert_eq!(computer.registers.a, 0x42);
+        assert_eq!(computer.registers.b, 0x00);
+        assert_eq!(computer.registers.pc, subroutine + 5);
+        assert_eq!(computer.registers.sp, stack - 2);
+        // ld 0x24, %b
+        computer.step().unwrap();
+
+        assert_eq!(computer.registers.a, 0x42);
+        assert_eq!(computer.registers.b, 0x24);
+        assert_eq!(computer.registers.pc, subroutine + 10);
+        assert_eq!(computer.registers.sp, stack - 2);
+        // rtn
+        computer.step().unwrap();
+
+        assert_eq!(computer.registers.a, 0x42);
+        assert_eq!(computer.registers.b, 0x24);
+        assert_eq!(computer.registers.pc, start + 4);
+        assert_eq!(computer.registers.sp, stack);
+        // add %a, %b
+        computer.step().unwrap();
+
+        assert_eq!(computer.registers.a, 0x42);
+        assert_eq!(computer.registers.b, 0x66);
+        assert_eq!(computer.registers.pc, start + 7);
+        assert_eq!(computer.registers.sp, stack);
+    }
+
+    #[test]
+    fn overflow_test() {
+        let mut computer = Computer::default();
+        computer.registers.a = 0xFFFF;
+
+        let instruction = Instruction::Add(Arg::Value(Value::Imm(1)), Reg::A);
+        instruction.execute(&mut computer).unwrap();
+        assert_eq!(computer.registers.a, 0);
+        assert!(computer.registers.sr.contains(StatusRegister::OVERFLOW));
+
+        let instruction = Instruction::Add(Arg::Value(Value::Imm(1)), Reg::A);
+        instruction.execute(&mut computer).unwrap();
+        assert_eq!(computer.registers.a, 1);
+        assert!(!computer.registers.sr.contains(StatusRegister::OVERFLOW));
     }
 }

@@ -149,7 +149,9 @@ fn impl_instruction(ast: &DeriveInput) -> syn::parse::Result<TokenStream> {
                     #match_encode
                 }
             }
+        }
 
+        impl Decodable for #t {
             fn decode<T: ::std::io::Read>(reader: &mut T) -> Option<Self> {
                 let mut buf = [0];
                 reader.read_exact(&mut buf).ok()?;
