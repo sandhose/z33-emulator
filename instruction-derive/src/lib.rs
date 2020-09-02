@@ -8,7 +8,7 @@ use syn::{Data, DeriveInput, Type};
 
 // TODO: use appropriate span in quotes
 
-#[proc_macro_derive(Instruction, attributes(instruction))]
+#[proc_macro_derive(Instruction, attributes(instruction, labelable))]
 #[proc_macro_error]
 pub fn derive_instruction(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     // Parse the string representation
@@ -26,6 +26,7 @@ struct Instruction {
     ident: Ident,
     opcode: Literal,
     args: Vec<Type>,
+    labelable: Option<usize>,
 }
 
 fn impl_instruction(ast: &DeriveInput) -> syn::parse::Result<TokenStream> {
@@ -51,20 +52,31 @@ fn impl_instruction(ast: &DeriveInput) -> syn::parse::Result<TokenStream> {
             let opcode = opcode.unwrap();
 
             // Let's parse the fields
-            let args = match variant.fields {
+            let (args, labelable) = match variant.fields {
                 syn::Fields::Named(_) => {
                     abort!(variant.fields.span(), "Named fields are not supported");
                 }
                 syn::Fields::Unnamed(ref fields) => {
-                    fields.unnamed.iter().map(|f| f.ty.clone()).collect()
+                    let args = fields.unnamed.iter().map(|f| f.ty.clone()).collect();
+                    // TODO: warn if multiple labelable are set
+                    let labelable = fields.unnamed.iter().position(|f| {
+                        f.attrs.iter().any(|attr| {
+                            attr.path
+                                .get_ident()
+                                .filter(|ident| ident.to_string() == "labelable")
+                                .is_some()
+                        })
+                    });
+                    (args, labelable)
                 }
-                syn::Fields::Unit => Vec::new(),
+                syn::Fields::Unit => (Vec::new(), None),
             };
 
             instructions.push(Instruction {
                 ident: variant.ident.clone(),
                 opcode,
                 args,
+                labelable,
             });
         }
     } else {
@@ -142,6 +154,42 @@ fn impl_instruction(ast: &DeriveInput) -> syn::parse::Result<TokenStream> {
         }
     });
 
+    let match_label = instructions.iter().fold(quote!(), |acc, instruction| {
+        let t = instruction.ident.clone();
+        let arm = if instruction.args.is_empty() {
+            quote! {
+                Self::#t => None
+            }
+        } else if let Some(labelable) = instruction.labelable {
+            let pat = instruction
+                .args
+                .iter()
+                .enumerate()
+                .fold(quote! {}, |pat, (i, arg)| {
+                    let id = Ident::new(format!("arg{}", i).as_str(), arg.span());
+                    quote! { #pat #id, }
+                });
+
+            let labelable = Ident::new(format!("arg{}", labelable).as_str(), t.span());
+
+            quote! {
+                Self::#t(#pat) => {
+                    let #labelable = #labelable.resolve_label(address)?;
+                    Some(Self::#t(#pat))
+                }
+            }
+        } else {
+            quote! {
+                Self::#t(..) => None
+            }
+        };
+
+        quote! {
+            #arm,
+            #acc
+        }
+    });
+
     let im = quote! {
         impl Encodable for #t {
             fn encode(self) -> Vec<u8> {
@@ -161,6 +209,14 @@ fn impl_instruction(ast: &DeriveInput) -> syn::parse::Result<TokenStream> {
                     _ => return None,
                 };
                 Some(inst)
+            }
+        }
+
+        impl Labelable for #t {
+            fn resolve_label(self, address: u16) -> Option<Self> {
+                match self {
+                    #match_label
+                }
             }
         }
     };

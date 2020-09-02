@@ -6,7 +6,7 @@ use thiserror::Error;
 use z33_instruction_derive::Instruction;
 
 #[derive(Error, Debug)]
-enum Exception {
+pub enum Exception {
     #[error("hardware interrupt")]
     HardwareInterrupt,
 
@@ -46,12 +46,16 @@ bitflags! {
     }
 }
 
-trait Encodable {
+pub trait Encodable {
     fn encode(self) -> Vec<u8>;
 }
 
-trait Decodable: Sized {
+pub trait Decodable: Sized {
     fn decode<T: Read>(reader: &mut T) -> Option<Self>;
+}
+
+pub trait Labelable: Sized {
+    fn resolve_label(self, address: u16) -> Option<Self>;
 }
 
 trait Mmapped: Encodable + Decodable + Sized + PartialEq + Clone + std::fmt::Debug {
@@ -121,9 +125,9 @@ where
     }
 }
 
-struct Computer {
-    registers: Registers,
-    memory: Memory,
+pub struct Computer {
+    pub registers: Registers,
+    pub memory: Memory,
 }
 
 impl Default for Computer {
@@ -164,13 +168,20 @@ impl Computer {
         T::decode(&mut cursor).ok_or(Exception::Segfault) // TODO: better error
     }
 
-    fn write<T: Encodable>(&mut self, address: Address, value: T) -> Result<()> {
+    pub fn write<T: Encodable>(&mut self, address: Address, value: T) -> Result<u16> {
         let address = self.resolve_address(address) as u64;
         let mut cursor = Cursor::new(self.memory.as_mut());
         cursor.set_position(address);
 
         let bytes = value.encode();
-        cursor.write_all(&bytes).map_err(|_| Exception::Segfault)
+        cursor.write_all(&bytes).map_err(|_| Exception::Segfault)?;
+        let offset = (cursor.position() - address) as u16;
+        Ok(offset)
+    }
+
+    pub fn set_register(&mut self, reg: Reg, val: u16) {
+        let reg = self.registers.get_mut(reg);
+        *reg = val;
     }
 
     fn arg(&self, arg: Arg) -> Result<u16> {
@@ -205,6 +216,16 @@ impl Computer {
         Ok(())
     }
 
+    pub fn run(&mut self) -> Result<()> {
+        loop {
+            match self.step() {
+                Ok(_) => {}
+                Err(Exception::Reset) => return Ok(()),
+                Err(v) => return Err(v),
+            }
+        }
+    }
+
     fn push<T: Encodable>(&mut self, value: T) -> Result<()> {
         // First encode the value and move the stack
         let bytes = value.encode();
@@ -227,7 +248,7 @@ impl Computer {
 }
 
 #[derive(Debug, Default, Clone, PartialEq)]
-struct Registers {
+pub struct Registers {
     a: Word,
     b: Word,
     pc: Word,
@@ -236,7 +257,7 @@ struct Registers {
 }
 
 impl Registers {
-    fn get(&self, reg: Reg) -> Word {
+    pub fn get(&self, reg: Reg) -> Word {
         match reg {
             Reg::A => self.a,
             Reg::B => self.b,
@@ -258,7 +279,7 @@ impl Registers {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-enum Reg {
+pub enum Reg {
     A,
     B,
     PC,
@@ -304,7 +325,7 @@ impl Decodable for Reg {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-enum Address {
+pub enum Address {
     Dir(u16),
     Ind(Reg),
     Idx(Reg, i16),
@@ -332,10 +353,29 @@ impl Decodable for Address {
     }
 }
 
+impl Labelable for Address {
+    fn resolve_label(self, address: u16) -> Option<Self> {
+        match self {
+            Self::Dir(_) => Some(Self::Dir(address)),
+            Self::Ind(_) => None,
+            Self::Idx(_, _) => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
-enum Value {
+pub enum Value {
     Imm(u16),
     Reg(Reg),
+}
+
+impl Labelable for Value {
+    fn resolve_label(self, address: u16) -> Option<Self> {
+        match self {
+            Self::Imm(_) => Some(Self::Imm(address)),
+            Self::Reg(_) => None,
+        }
+    }
 }
 
 impl Encodable for Value {
@@ -355,9 +395,24 @@ impl Decodable for Value {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-enum Arg {
+pub enum Arg {
     Address(Address),
     Value(Value),
+}
+
+impl Arg {
+    pub fn label() -> Self {
+        Arg::Value(Value::Imm(0))
+    }
+}
+
+impl Labelable for Arg {
+    fn resolve_label(self, address: u16) -> Option<Self> {
+        match self {
+            Self::Address(a) => a.resolve_label(address).map(Self::Address),
+            Self::Value(v) => v.resolve_label(address).map(Self::Value),
+        }
+    }
 }
 
 impl Encodable for Arg {
@@ -443,73 +498,104 @@ enum Cond {
 }
 
 #[derive(Debug, Clone, PartialEq, Instruction)]
-enum Instruction {
+pub enum Instruction {
     #[instruction(0x00)]
-    Add(Arg, Reg),
+    Add(#[labelable] Arg, Reg),
+
     #[instruction(0x01)]
-    And(Arg, Reg),
+    And(#[labelable] Arg, Reg),
+
     #[instruction(0x02)]
-    Call(Arg),
+    Call(#[labelable] Arg),
+
     #[instruction(0x03)]
-    Cmp(Arg, Reg),
+    Cmp(#[labelable] Arg, Reg),
+
     #[instruction(0x04)]
-    Div(Arg, Reg),
+    Div(#[labelable] Arg, Reg),
+
     #[instruction(0x05)]
     Fas(Address, Reg),
+
     #[instruction(0x06)]
     In(Address, Reg),
+
     #[instruction(0x07)]
-    Jmp(Arg),
+    Jmp(#[labelable] Arg),
+
     #[instruction(0x08)]
-    Jeq(Arg),
+    Jeq(#[labelable] Arg),
+
     #[instruction(0x09)]
-    Jne(Arg),
+    Jne(#[labelable] Arg),
+
     #[instruction(0x0A)]
-    Jle(Arg),
+    Jle(#[labelable] Arg),
+
     #[instruction(0x0B)]
-    Jlt(Arg),
+    Jlt(#[labelable] Arg),
+
     #[instruction(0x0C)]
-    Jge(Arg),
+    Jge(#[labelable] Arg),
+
     #[instruction(0x0D)]
-    Jgt(Arg),
+    Jgt(#[labelable] Arg),
+
     #[instruction(0x0E)]
-    Ld(Arg, Reg),
+    Ld(#[labelable] Arg, Reg),
+
     #[instruction(0x0F)]
-    Mul(Arg, Reg),
+    Mul(#[labelable] Arg, Reg),
+
     #[instruction(0x10)]
     Neg(Reg),
+
     #[instruction(0x11)]
     Nop,
+
     #[instruction(0x12)]
     Not(Reg),
+
     #[instruction(0x13)]
-    Or(Arg, Reg),
+    Or(#[labelable] Arg, Reg),
+
     #[instruction(0x14)]
     Out(Value, Address),
+
     #[instruction(0x15)]
     Pop(Reg),
+
     #[instruction(0x16)]
     Push(Value),
+
     #[instruction(0x17)]
     Reset,
+
     #[instruction(0x18)]
     Rti,
+
     #[instruction(0x19)]
     Rtn,
+
     #[instruction(0x1A)]
-    Shl(Arg, Reg),
+    Shl(#[labelable] Arg, Reg),
+
     #[instruction(0x1B)]
-    Shr(Arg, Reg),
+    Shr(#[labelable] Arg, Reg),
+
     #[instruction(0x1C)]
     St(Reg, Address),
+
     #[instruction(0x1D)]
-    Sub(Arg, Reg),
+    Sub(#[labelable] Arg, Reg),
+
     // #[instruction(0x1E)]
     // Swap(ArgSwap, Reg),
     #[instruction(0x1F)]
     Trap,
+
     #[instruction(0x20)]
-    Xor(Arg, Reg),
+    Xor(#[labelable] Arg, Reg),
 }
 
 impl Instruction {
