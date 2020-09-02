@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 use bitflags::bitflags;
+use std::io::{Cursor, Read, Write};
 use thiserror::Error;
 use z33_instruction_derive::Instruction;
 
@@ -27,11 +28,12 @@ enum Exception {
 
 type Result<T> = std::result::Result<T, Exception>;
 
-type Register = u16;
+type Word = u16;
+type Memory = [u8; u16::MAX as usize];
 
 bitflags! {
     #[derive(Default)]
-    struct StatusRegister: Register {
+    struct StatusRegister: Word {
         const CARRY            = 0b00000000_00000001;
         const ZERO             = 0b00000000_00000010;
         const NEGATIVE         = 0b00000000_00000100;
@@ -41,19 +43,16 @@ bitflags! {
     }
 }
 
-trait Mmaped: Sized + PartialEq + Clone + std::fmt::Debug {
-    fn encode(self) -> u32;
-    fn decode(val: u32) -> Option<Self>;
-    fn bitsize() -> u8;
+trait Encodable: Sized + PartialEq + Clone + std::fmt::Debug {
+    fn encode(self) -> Vec<u8>;
+    fn decode<T: Read>(reader: &mut T) -> Option<Self>;
 
     #[cfg(test)]
     fn assert_stable(self) {
         let binval = self.clone().encode();
-        if Self::bitsize() < 32 {
-            assert_eq!(binval >> Self::bitsize(), 0);
-        }
 
-        let decoded = Self::decode(binval);
+        let mut cursor = Cursor::new(binval.clone());
+        let decoded = Self::decode(&mut cursor);
         assert_eq!(Some(self), decoded);
 
         let binval2 = decoded.unwrap().encode();
@@ -61,21 +60,42 @@ trait Mmaped: Sized + PartialEq + Clone + std::fmt::Debug {
     }
 }
 
-impl Mmaped for u32 {
-    fn encode(self) -> u32 {
-        self
+impl Encodable for u16 {
+    fn encode(self) -> Vec<u8> {
+        u16::to_le_bytes(self).into()
     }
-    fn decode(val: u32) -> Option<Self> {
-        Some(val)
+    fn decode<T: Read>(reader: &mut T) -> Option<Self> {
+        let mut buf = [0u8; 2];
+        reader.read_exact(&mut buf).ok()?;
+        Some(u16::from_le_bytes(buf))
     }
-    fn bitsize() -> u8 {
-        32
+}
+
+impl Encodable for i16 {
+    fn encode(self) -> Vec<u8> {
+        i16::to_le_bytes(self).into()
+    }
+    fn decode<T: Read>(reader: &mut T) -> Option<Self> {
+        let mut buf = [0u8; 2];
+        reader.read_exact(&mut buf).ok()?;
+        Some(i16::from_le_bytes(buf))
+    }
+}
+
+impl Encodable for u32 {
+    fn encode(self) -> Vec<u8> {
+        u32::to_le_bytes(self).into()
+    }
+    fn decode<T: Read>(reader: &mut T) -> Option<Self> {
+        let mut buf = [0u8; 4];
+        reader.read_exact(&mut buf).ok()?;
+        Some(u32::from_le_bytes(buf))
     }
 }
 
 struct Computer {
     registers: Registers,
-    memory: [u8; u16::MAX as usize],
+    memory: Memory,
 }
 
 impl Default for Computer {
@@ -98,58 +118,64 @@ impl Computer {
         }
     }
 
-    fn read_memory(&self, address: Address) -> Result<u16> {
-        let address = self.resolve_address(address) as usize;
+    fn offset_read<T: Encodable>(&self, address: Address) -> Result<(u16, T)> {
+        let address = self.resolve_address(address) as u64;
+        let mut cursor = Cursor::new(self.memory.as_ref());
+        cursor.set_position(address);
 
-        let sl: [u8; 2] = [
-            *self.memory.get(address).ok_or(Exception::Segfault)?,
-            *self.memory.get(address + 1).ok_or(Exception::Segfault)?,
-        ];
-        Ok(u16::from_le_bytes(sl))
+        let el = T::decode(&mut cursor).ok_or(Exception::Segfault)?; // TODO: better error
+        let offset = (cursor.position() - address) as u16;
+        Ok((offset, el))
     }
 
-    fn write_memory(&mut self, address: Address, value: u16) -> Result<()> {
-        let [b1, b2] = value.to_le_bytes();
-        let address = self.resolve_address(address) as usize;
-        let a1 = self
-            .memory
-            .get_mut(address + 0)
-            .ok_or(Exception::Segfault)?;
-        *a1 = b1;
+    fn read<T: Encodable>(&self, address: Address) -> Result<T> {
+        let address = self.resolve_address(address) as u64;
+        let mut cursor = Cursor::new(self.memory.as_ref());
+        cursor.set_position(address);
 
-        let a2 = self
-            .memory
-            .get_mut(address + 1)
-            .ok_or(Exception::Segfault)?;
-        *a2 = b2;
-        Ok(())
+        T::decode(&mut cursor).ok_or(Exception::Segfault) // TODO: better error
+    }
+
+    fn write<T: Encodable>(&mut self, address: Address, value: T) -> Result<()> {
+        let address = self.resolve_address(address) as u64;
+        let mut cursor = Cursor::new(self.memory.as_mut());
+        cursor.set_position(address);
+
+        let bytes = value.encode();
+        cursor.write_all(&bytes).map_err(|_| Exception::Segfault)
     }
 
     fn arg(&self, arg: Arg) -> Result<u16> {
         match arg {
-            Arg::Address(addr) => self.read_memory(addr),
+            Arg::Address(addr) => self.read(addr),
             Arg::Value(Value::Imm(val)) => Ok(val),
             Arg::Value(Value::Reg(reg)) => Ok(self.registers.get(reg)),
         }
     }
 
-    fn push(&mut self, _value: u8) -> Result<()> {
-        todo!()
+    fn push<T: Encodable>(&mut self, value: T) -> Result<()> {
+        let address = self.registers.sp;
+        let mut cursor = Cursor::new(self.memory.as_mut());
+        cursor.set_position(address as u64);
+
+        let bytes = value.encode();
+        self.registers.sp += bytes.len() as u16;
+        cursor.write_all(&bytes).map_err(|_| Exception::Segfault)
     }
 }
 
 #[derive(Debug, Default, Clone, PartialEq)]
 struct Registers {
-    a: Register,
-    b: Register,
-    pc: Register,
-    sp: Register,
+    a: Word,
+    b: Word,
+    pc: Word,
+    sp: Word,
     sr: StatusRegister,
 }
 
 impl Registers {
-    fn get(&self, register: Reg) -> Register {
-        match register {
+    fn get(&self, reg: Reg) -> Word {
+        match reg {
             Reg::A => self.a,
             Reg::B => self.b,
             Reg::PC => self.pc,
@@ -158,8 +184,8 @@ impl Registers {
         }
     }
 
-    fn get_mut(&mut self, register: Reg) -> &mut Register {
-        match register {
+    fn get_mut(&mut self, reg: Reg) -> &mut Word {
+        match reg {
             Reg::A => &mut self.a,
             Reg::B => &mut self.b,
             Reg::PC => &mut self.pc,
@@ -179,23 +205,7 @@ enum Reg {
 }
 
 impl Reg {
-    const fn bitsize() -> u8 {
-        3
-    }
-}
-
-impl Mmaped for Reg {
-    fn encode(self) -> u32 {
-        match self {
-            Self::A => 0x0,
-            Self::B => 0x1,
-            Self::PC => 0x2,
-            Self::SP => 0x3,
-            Self::SR => 0x4,
-        }
-    }
-
-    fn decode(val: u32) -> Option<Self> {
+    fn from_byte(val: u8) -> Option<Self> {
         match val & 0x7 {
             0x0 => Some(Self::A),
             0x1 => Some(Self::B),
@@ -206,8 +216,26 @@ impl Mmaped for Reg {
         }
     }
 
-    fn bitsize() -> u8 {
-        3
+    fn to_byte(self) -> u8 {
+        match self {
+            Self::A => 0x0,
+            Self::B => 0x1,
+            Self::PC => 0x2,
+            Self::SP => 0x3,
+            Self::SR => 0x4,
+        }
+    }
+}
+
+impl Encodable for Reg {
+    fn encode(self) -> Vec<u8> {
+        vec![self.to_byte()]
+    }
+
+    fn decode<T: Read>(reader: &mut T) -> Option<Self> {
+        let mut buf = [0];
+        reader.read_exact(&mut buf).ok()?;
+        Self::from_byte(buf[0])
     }
 }
 
@@ -218,21 +246,17 @@ enum Address {
     Idx(Reg, i16),
 }
 
-impl Mmaped for Address {
-    fn decode(val: u32) -> Option<Self> {
-        if let Some(Arg::Address(addr)) = Arg::decode(val) {
+impl Encodable for Address {
+    fn decode<T: Read>(reader: &mut T) -> Option<Self> {
+        if let Some(Arg::Address(addr)) = Arg::decode(reader) {
             Some(addr)
         } else {
             None
         }
     }
 
-    fn encode(self) -> u32 {
+    fn encode(self) -> Vec<u8> {
         Arg::Address(self).encode()
-    }
-
-    fn bitsize() -> u8 {
-        Arg::bitsize()
     }
 }
 
@@ -242,21 +266,17 @@ enum Value {
     Reg(Reg),
 }
 
-impl Mmaped for Value {
-    fn decode(val: u32) -> Option<Self> {
-        if let Some(Arg::Value(val)) = Arg::decode(val) {
+impl Encodable for Value {
+    fn decode<T: Read>(reader: &mut T) -> Option<Self> {
+        if let Some(Arg::Value(val)) = Arg::decode(reader) {
             Some(val)
         } else {
             None
         }
     }
 
-    fn encode(self) -> u32 {
+    fn encode(self) -> Vec<u8> {
         Arg::Value(self).encode()
-    }
-
-    fn bitsize() -> u8 {
-        Arg::bitsize()
     }
 }
 
@@ -266,45 +286,67 @@ enum Arg {
     Value(Value),
 }
 
-impl Arg {
-    const fn bitsize() -> u8 {
-        3 + Reg::bitsize() + 16
-    }
-}
-
-impl Mmaped for Arg {
-    // Memory layout (3+3+16 = 22 bit wide)
-    //  | id| reg | value (u/i16)  |
-    // 0b000 00000 0000000000000000
-
-    fn encode(self) -> u32 {
+impl Encodable for Arg {
+    fn encode(self) -> Vec<u8> {
         match self {
-            Arg::Address(Address::Dir(dir)) => (0x0 << (3 + 16)) + dir as u32,
-            Arg::Address(Address::Ind(reg)) => (0x1 << (3 + 16)) + (reg.encode() << 16),
-            Arg::Address(Address::Idx(reg, off)) => {
-                (0x2 << 3 + 16) + (reg.encode() << 16) + (off as u16 as u32)
+            Arg::Address(Address::Dir(dir)) => {
+                let v = 0x00 << 4;
+                let mut f = vec![v];
+                f.extend(dir.encode());
+                f
             }
-            Arg::Value(Value::Imm(imm)) => (0x3 << 3 + 16) + imm as u32,
-            Arg::Value(Value::Reg(reg)) => (0x4 << 3 + 16) + (reg.encode() << 16),
+            Arg::Address(Address::Ind(reg)) => {
+                let v = (0x01 << 4) | (reg.to_byte() & 0x0F);
+                vec![v]
+            }
+            Arg::Address(Address::Idx(reg, off)) => {
+                let v = (0x02 << 4) | (reg.to_byte() & 0x0F);
+                let mut f = vec![v];
+                f.extend(off.encode());
+                f
+            }
+            Arg::Value(Value::Imm(imm)) => {
+                let v = 0x03 << 4;
+                let mut f = vec![v];
+                f.extend(imm.encode());
+                f
+            }
+            Arg::Value(Value::Reg(reg)) => {
+                let v = (0x04 << 4) | (reg.to_byte() & 0x0F);
+                vec![v]
+            }
         }
     }
 
-    fn decode(val: u32) -> Option<Self> {
-        let inst = (val >> (3 + 16)) & 0x7;
-        let reg = (val >> 16) & 0x7;
-        let val = (val & 0xFFFF) as u16;
+    fn decode<T: Read>(reader: &mut T) -> Option<Self> {
+        let mut buf = [0];
+        reader.read_exact(&mut buf).ok()?;
+        let inst = buf[0] >> 4 & 0xF;
+        let rest = buf[0] & 0xF;
         match inst {
-            0x0 => Some(Arg::Address(Address::Dir(val))),
-            0x1 => Some(Arg::Address(Address::Ind(Reg::decode(reg)?))),
-            0x2 => Some(Arg::Address(Address::Idx(Reg::decode(reg)?, val as i16))),
-            0x3 => Some(Arg::Value(Value::Imm(val))),
-            0x4 => Some(Arg::Value(Value::Reg(Reg::decode(reg)?))),
+            0x0 => {
+                let val = u16::decode(reader)?;
+                Some(Arg::Address(Address::Dir(val)))
+            }
+            0x1 => {
+                let reg = Reg::from_byte(rest)?;
+                Some(Arg::Address(Address::Ind(reg)))
+            }
+            0x2 => {
+                let reg = Reg::from_byte(rest)?;
+                let val = i16::decode(reader)?;
+                Some(Arg::Address(Address::Idx(reg, val)))
+            }
+            0x3 => {
+                let val = u16::decode(reader)?;
+                Some(Arg::Value(Value::Imm(val)))
+            }
+            0x4 => {
+                let reg = Reg::from_byte(rest)?;
+                Some(Arg::Value(Value::Reg(reg)))
+            }
             _ => None,
         }
-    }
-
-    fn bitsize() -> u8 {
-        3 + 3 + 16
     }
 }
 
@@ -417,12 +459,16 @@ impl Instruction {
                 *reg = reg.checked_div(val).ok_or(Exception::DivByZero)?;
             }
             Instruction::Fas(addr, reg) => {
-                let val = computer.read_memory(addr.clone())?;
+                let val = computer.read(addr.clone())?;
                 *computer.registers.get_mut(reg) = val;
-                computer.write_memory(addr, 1)?;
+                computer.write(addr, 1 as Word)?;
             }
             Instruction::In(_, _) => todo!(),
-            Instruction::Jmp(_) => todo!(),
+            Instruction::Jmp(arg) => {
+                let val = computer.arg(arg)?;
+                let reg = computer.registers.get_mut(Reg::PC);
+                *reg = val;
+            }
             Instruction::Ld(_, _) => todo!(),
             Instruction::Mul(_, _) => todo!(),
             Instruction::Neg(_) => todo!(),
@@ -481,7 +527,7 @@ mod tests {
         assert_eq!(computer.registers.get(Reg::A), 5);
 
         // Write some memory (with indirect access)
-        computer.write_memory(Address::Dir(0x42), 100).unwrap();
+        computer.write(Address::Dir(0x42), 100 as Word).unwrap();
         *computer.registers.get_mut(Reg::B) = 0x32;
         let instruction = Instruction::Add(Arg::Address(Address::Idx(Reg::B, 0x10)), Reg::A);
         instruction.execute(&mut computer).unwrap();
