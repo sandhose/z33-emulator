@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+use crate::parser::Parsable;
 use bitflags::bitflags;
 use std::io::{Cursor, Read, Write};
 use thiserror::Error;
@@ -56,6 +57,7 @@ pub trait Decodable: Sized {
 
 pub trait Labelable: Sized {
     fn resolve_label(self, address: u16) -> Option<Self>;
+    fn label() -> Self;
 }
 
 trait Mmapped: Encodable + Decodable + Sized + PartialEq + Clone + std::fmt::Debug {
@@ -361,6 +363,10 @@ impl Labelable for Address {
             Self::Idx(_, _) => None,
         }
     }
+
+    fn label() -> Self {
+        Self::Dir(0)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -375,6 +381,10 @@ impl Labelable for Value {
             Self::Imm(_) => Some(Self::Imm(address)),
             Self::Reg(_) => None,
         }
+    }
+
+    fn label() -> Self {
+        Self::Imm(0)
     }
 }
 
@@ -412,6 +422,10 @@ impl Labelable for Arg {
             Self::Address(a) => a.resolve_label(address).map(Self::Address),
             Self::Value(v) => v.resolve_label(address).map(Self::Value),
         }
+    }
+
+    fn label() -> Self {
+        Self::Value(Value::label())
     }
 }
 

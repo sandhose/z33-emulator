@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use thiserror::Error;
 
-use crate::processor::{Arg, Computer, Encodable, Instruction, Labelable, Reg, Value};
+use crate::processor::{Computer, Encodable, Instruction, Labelable, Reg};
 
 #[derive(Error, Debug)]
 pub enum CompilerError {
@@ -27,15 +27,28 @@ struct PendingLabel {
     address: u16,
 }
 
+trait Compiler {
+    type Error;
+    fn ingest_label(&mut self, label: String);
+    fn ingest_labeled_instruction(
+        &mut self,
+        instruction: Instruction,
+        label: String,
+    ) -> std::result::Result<(), Self::Error>;
+    fn ingest<T: Encodable>(&mut self, val: T) -> std::result::Result<(), Self::Error>;
+}
+
 #[derive(Default)]
-struct Compiler {
+struct CompilerState {
     computer: Computer,
     labels: Labels,
     pending_labels: Vec<PendingLabel>,
     memory_position: u16,
 }
 
-impl Compiler {
+impl Compiler for CompilerState {
+    type Error = CompilerError;
+
     fn ingest_label(&mut self, label: String) {
         self.labels.insert(label, self.memory_position);
     }
@@ -62,7 +75,9 @@ impl Compiler {
         self.memory_position += offset;
         Ok(())
     }
+}
 
+impl CompilerState {
     fn build(self, start: String) -> Result<Computer> {
         let pending_labels = self.pending_labels;
         let labels = self.labels;
@@ -107,10 +122,11 @@ impl Compiler {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::processor::{Arg, Value};
 
     #[test]
     fn build_and_run_test() {
-        let mut compiler = Compiler::default();
+        let mut compiler = CompilerState::default();
 
         // Let's compile and run:
         //  start:

@@ -1,8 +1,8 @@
 extern crate proc_macro;
 
-use proc_macro2::{Ident, Literal, TokenStream};
+use proc_macro2::{Ident, Literal, Span, TokenStream};
 use proc_macro_error::{abort, proc_macro_error};
-use quote::quote;
+use quote::{quote, quote_spanned};
 use syn::spanned::Spanned;
 use syn::{Data, DeriveInput, Type};
 
@@ -87,7 +87,7 @@ fn impl_instruction(ast: &DeriveInput) -> syn::parse::Result<TokenStream> {
         let t = instruction.ident.clone();
         let opcode = instruction.opcode.clone();
         let arm = if instruction.args.is_empty() {
-            quote! {
+            quote_spanned! { Span::call_site() =>
                 Self::#t => { vec![#opcode] }
             }
         } else {
@@ -104,7 +104,7 @@ fn impl_instruction(ast: &DeriveInput) -> syn::parse::Result<TokenStream> {
                 },
             );
 
-            quote! {
+            quote_spanned! { Span::call_site() =>
                 Self::#t(#pat) => {
                     let mut v = vec![#opcode];
                     #body
@@ -113,7 +113,7 @@ fn impl_instruction(ast: &DeriveInput) -> syn::parse::Result<TokenStream> {
             }
         };
 
-        quote! {
+        quote_spanned! { Span::call_site() =>
             #arm,
             #acc
         }
@@ -123,7 +123,7 @@ fn impl_instruction(ast: &DeriveInput) -> syn::parse::Result<TokenStream> {
         let t = instruction.ident.clone();
         let opcode = instruction.opcode.clone();
         let arm = if instruction.args.is_empty() {
-            quote! {
+            quote_spanned! { Span::call_site() =>
                 #opcode => { Self::#t }
             }
         } else {
@@ -140,7 +140,7 @@ fn impl_instruction(ast: &DeriveInput) -> syn::parse::Result<TokenStream> {
                 },
             );
 
-            quote! {
+            quote_spanned! { Span::call_site() =>
                 #opcode => {
                     #body
                     Self::#t(#pat)
@@ -148,7 +148,7 @@ fn impl_instruction(ast: &DeriveInput) -> syn::parse::Result<TokenStream> {
             }
         };
 
-        quote! {
+        quote_spanned! { Span::call_site() =>
             #arm,
             #acc
         }
@@ -157,7 +157,7 @@ fn impl_instruction(ast: &DeriveInput) -> syn::parse::Result<TokenStream> {
     let match_label = instructions.iter().fold(quote!(), |acc, instruction| {
         let t = instruction.ident.clone();
         let arm = if instruction.args.is_empty() {
-            quote! {
+            quote_spanned! { Span::call_site() =>
                 Self::#t => None
             }
         } else if let Some(labelable) = instruction.labelable {
@@ -172,22 +172,98 @@ fn impl_instruction(ast: &DeriveInput) -> syn::parse::Result<TokenStream> {
 
             let labelable = Ident::new(format!("arg{}", labelable).as_str(), t.span());
 
-            quote! {
+            quote_spanned! { Span::call_site() =>
                 Self::#t(#pat) => {
                     let #labelable = #labelable.resolve_label(address)?;
                     Some(Self::#t(#pat))
                 }
             }
         } else {
-            quote! {
+            quote_spanned! { Span::call_site() =>
                 Self::#t(..) => None
             }
         };
 
-        quote! {
+        quote_spanned! { Span::call_site() =>
             #arm,
             #acc
         }
+    });
+
+    let (parser_alt, parser_funcs) = instructions.iter().enumerate().fold((quote!(), quote!()), |(alt, funcs), (i, instruction)| {
+        let t = instruction.ident.clone();
+        let inst = t.to_string().to_lowercase();
+        let func_name = Ident::new(format!("parse_instruction_{}", inst).as_str(), t.span());
+        let inst = Literal::string(&inst);
+
+        let parser = if instruction.args.is_empty() {
+            quote_spanned! { Span::call_site() =>
+                fn #func_name(input: &str) -> ::nom::IResult<&str, (Option<&str>, Self)> {
+                    let (input, _) = ::nom::bytes::complete::tag_no_case(#inst)(input)?;
+                    Ok((input, (None, Self::#t)))
+                }
+            }
+        } else {
+            let (body, pat) = instruction.args.iter().enumerate().fold(
+                (quote!(), quote!()),
+                |(body, pat), (i, arg)| {
+                    let id = Ident::new(format!("arg{}", i).as_str(), arg.span());
+
+                    let body = if i > 0 {
+                        quote_spanned! { Span::call_site() =>
+                            #body
+                            let (input, _) = ::nom::character::complete::char(',')(input)?;
+                            let (input, _) = ::nom::character::complete::space0(input)?;
+                        }
+                    } else {
+                        body
+                    };
+
+                    let body = if Some(i) == instruction.labelable {
+                        quote_spanned! { Span::call_site() =>
+                            #body
+                            let (input, (label, #id)) = crate::processor::Parsable::parse_labelable(input)?;
+                            let (input, _) = ::nom::character::complete::space0(input)?;
+                        }
+                    } else {
+                        quote_spanned! { Span::call_site() =>
+                            #body
+                            let (input, #id) = crate::processor::Parsable::parse(input)?;
+                            let (input, _) = ::nom::character::complete::space0(input)?;
+                        }
+                    };
+                    let pat = quote! { #pat #id, };
+                    (body, pat)
+                },
+            );
+
+            quote_spanned! { Span::call_site() =>
+                fn #func_name(input: &str) -> ::nom::IResult<&str, (Option<&str>, Self)> {
+                    let (input, _) = ::nom::bytes::complete::tag_no_case(#inst)(input)?;
+                    let (input, _) = ::nom::character::complete::space1(input)?;
+                    let label: Option<&str> = None;
+                    #body
+                    Ok((input, (label, Self::#t(#pat))))
+                }
+            }
+        };
+
+        let alt = if i == 0 {
+            quote_spanned! { Span::call_site() =>
+                Self::#func_name(input)
+            }
+        } else {
+            quote_spanned! { Span::call_site() =>
+                #alt.or_else(|_| Self::#func_name(input))
+            }
+        };
+
+        let funcs = quote! {
+            #parser
+            #funcs
+        };
+
+        (alt, funcs)
     });
 
     let im = quote! {
@@ -218,6 +294,18 @@ fn impl_instruction(ast: &DeriveInput) -> syn::parse::Result<TokenStream> {
                     #match_label
                 }
             }
+
+            fn label() -> Self {
+                unimplemented!()
+            }
+        }
+
+        impl #t {
+            pub fn parse(input: &str) -> ::nom::IResult<&str, (Option<&str>, Self)> {
+                #parser_alt
+            }
+
+            #parser_funcs
         }
     };
 
