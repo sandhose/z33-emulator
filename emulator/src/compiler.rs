@@ -13,6 +13,9 @@ pub enum CompilerError {
     #[error("invalid label {0}")]
     InvalidLabel(String),
 
+    #[error("duplicate label {0}")]
+    DuplicateLabel(String),
+
     #[error("can't resolve label")]
     ResolveError,
 }
@@ -21,25 +24,29 @@ type Result<T> = std::result::Result<T, CompilerError>;
 
 type Labels = HashMap<String, u16>;
 
+#[derive(Debug)]
 struct PendingLabel {
     label: String,
     instruction: Instruction,
     address: u16,
 }
 
-trait Compiler {
+pub trait Compiler {
     type Error;
-    fn ingest_label(&mut self, label: String);
+    fn ingest_label(&mut self, label: String) -> std::result::Result<(), Self::Error>;
     fn ingest_labeled_instruction(
         &mut self,
         instruction: Instruction,
         label: String,
     ) -> std::result::Result<(), Self::Error>;
-    fn ingest<T: Encodable>(&mut self, val: T) -> std::result::Result<(), Self::Error>;
+    fn ingest<T: Encodable + std::fmt::Debug>(
+        &mut self,
+        val: T,
+    ) -> std::result::Result<(), Self::Error>;
 }
 
-#[derive(Default)]
-struct CompilerState {
+#[derive(Default, Debug)]
+pub struct CompilerState {
     computer: Computer,
     labels: Labels,
     pending_labels: Vec<PendingLabel>,
@@ -49,10 +56,17 @@ struct CompilerState {
 impl Compiler for CompilerState {
     type Error = CompilerError;
 
-    fn ingest_label(&mut self, label: String) {
+    #[tracing::instrument]
+    fn ingest_label(&mut self, label: String) -> Result<()> {
+        if self.labels.get(&label).is_some() {
+            return Err(CompilerError::DuplicateLabel(label));
+        }
+
         self.labels.insert(label, self.memory_position);
+        Ok(())
     }
 
+    #[tracing::instrument]
     fn ingest_labeled_instruction(
         &mut self,
         instruction: Instruction,
@@ -67,7 +81,8 @@ impl Compiler for CompilerState {
         Ok(())
     }
 
-    fn ingest<T: Encodable>(&mut self, val: T) -> Result<()> {
+    #[tracing::instrument]
+    fn ingest<T: Encodable + std::fmt::Debug>(&mut self, val: T) -> Result<()> {
         let offset = self
             .computer
             .write(self.memory_position.into(), val)
@@ -78,7 +93,8 @@ impl Compiler for CompilerState {
 }
 
 impl CompilerState {
-    fn build(self, start: String) -> Result<Computer> {
+    #[tracing::instrument]
+    pub fn build(self, start: String) -> Result<Computer> {
         let pending_labels = self.pending_labels;
         let labels = self.labels;
         let mut computer = self.computer;
@@ -136,13 +152,13 @@ mod tests {
         //      ld 0x42, %a
         //      rtn
 
-        compiler.ingest_label("start".into());
+        compiler.ingest_label("start".into()).unwrap();
         compiler
             .ingest_labeled_instruction(Instruction::Call(Arg::label()), "subroutine".into())
             .unwrap();
         compiler.ingest(Instruction::Reset).unwrap();
 
-        compiler.ingest_label("subroutine".into());
+        compiler.ingest_label("subroutine".into()).unwrap();
         compiler
             .ingest(Instruction::Ld(Arg::Value(Value::Imm(0x42)), Reg::A))
             .unwrap();

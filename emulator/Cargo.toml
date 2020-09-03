@@ -11,3 +11,6 @@ bitflags = "1.2.1"
 z33_instruction_derive = { path = "../instruction-derive" }
 thiserror = "1.0.20"
 nom = "5.1.2"
+structopt = "0.3.17"
+tracing = "0.1.19"
+tracing-subscriber = "0.2.11"

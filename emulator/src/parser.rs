@@ -145,7 +145,7 @@ impl Parsable for Value {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-enum ProgramLine {
+pub enum ProgramLine {
     Instruction(Instruction),
     LabeledInstruction(String, Instruction),
     Label(String),
@@ -157,7 +157,7 @@ fn is_not_lf(c: char) -> bool {
 }
 
 fn parse_comment(input: &str) -> IResult<&str, &str> {
-    let (input, _) = tag("//")(input)?;
+    let (input, _) = char('#')(input)?;
     let (input, _) = space0(input)?; // Trim leading space in comment
     take_while(is_not_lf)(input)
 }
@@ -190,14 +190,14 @@ fn parse_program_line(input: &str) -> IResult<&str, ProgramLine> {
     Ok((input, line))
 }
 
-struct Parser<'a> {
+pub struct Parser<'a> {
     program: &'a str,
     first: bool,
     errored: bool,
 }
 
 impl<'a> Parser<'a> {
-    fn new(program: &'a str) -> Self {
+    pub fn new(program: &'a str) -> Self {
         Parser {
             program,
             first: true,
@@ -364,27 +364,27 @@ mod tests {
 
     #[test]
     fn parse_comment_test() {
-        assert_eq!(parse_comment("// foo"), Ok(("", "foo")));
+        assert_eq!(parse_comment("# foo"), Ok(("", "foo")));
     }
 
     #[test]
     fn parse_program_line_test() {
         let program = r#"
-            // calcul de n!
+            # calcul de n!
             factorielle:
                 ld   [%sp+1],%a
                 cmp  1,%a
                 jge  casparticulier
 
-                // cas général
-                sub  1,%a         // a ← n-1
+                # cas général
+                sub  1,%a         # a ← n-1
                 push %a
-                call factorielle  // a ← (n-1) !
-                add  1,%sp        // dépile l’argument n-1
-                push %b           // sauvegarder b
-                ld   [%sp+1],%b   // b ← n (argument original)
-                mul  %b,%a        // a ← n * (n-1)!
-                pop  %b           // restaurer b
+                call factorielle  # a ← (n-1) !
+                add  1,%sp        # dépile l’argument n-1
+                push %b           # sauvegarder b
+                ld   [%sp+1],%b   # b ← n (argument original)
+                mul  %b,%a        # a ← n * (n-1)!
+                pop  %b           # restaurer b
                 rtn
             casparticulier:
                 ld  1, %a
@@ -436,21 +436,21 @@ mod tests {
     #[test]
     fn parser_iterator_test() {
         let program = r#"
-            // calcul de n!
+            # calcul de n!
             factorielle:
                 ld   [%sp+1],%a
                 cmp  1,%a
                 jge  casparticulier
 
-                // cas général
-                sub  1,%a         // a ← n-1
+                # cas général
+                sub  1,%a         # a ← n-1
                 push %a
-                call factorielle  // a ← (n-1) !
-                add  1,%sp        // dépile l’argument n-1
-                push %b           // sauvegarder b
-                ld   [%sp+1],%b   // b ← n (argument original)
-                mul  %b,%a        // a ← n * (n-1)!
-                pop  %b           // restaurer b
+                call factorielle  # a ← (n-1) !
+                add  1,%sp        # dépile l’argument n-1
+                push %b           # sauvegarder b
+                ld   [%sp+1],%b   # b ← n (argument original)
+                mul  %b,%a        # a ← n * (n-1)!
+                pop  %b           # restaurer b
                 rtn
             casparticulier:
                 ld  1, %a

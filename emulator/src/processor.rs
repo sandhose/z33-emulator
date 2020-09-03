@@ -2,8 +2,12 @@
 
 use crate::parser::Parsable;
 use bitflags::bitflags;
-use std::io::{Cursor, Read, Write};
+use std::{
+    fmt::Debug,
+    io::{Cursor, Read, Write},
+};
 use thiserror::Error;
+use tracing::debug;
 use z33_instruction_derive::Instruction;
 
 #[derive(Error, Debug)]
@@ -33,11 +37,11 @@ pub enum Exception {
 type Result<T> = std::result::Result<T, Exception>;
 
 type Word = u16;
-type Memory = [u8; u16::MAX as usize];
+pub type Memory = [u8; u16::MAX as usize];
 
 bitflags! {
     #[derive(Default)]
-    struct StatusRegister: Word {
+    pub struct StatusRegister: Word {
         const CARRY            = 0b00000000_00000001;
         const ZERO             = 0b00000000_00000010;
         const NEGATIVE         = 0b00000000_00000100;
@@ -132,6 +136,16 @@ pub struct Computer {
     pub memory: Memory,
 }
 
+impl std::fmt::Debug for Computer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Computer {{ registers: {:?}, memory: [...] }}",
+            self.registers
+        )
+    }
+}
+
 impl Default for Computer {
     fn default() -> Self {
         Self {
@@ -142,6 +156,7 @@ impl Default for Computer {
 }
 
 impl Computer {
+    #[tracing::instrument(skip(self))]
     fn resolve_address(&self, address: Address) -> u16 {
         match address {
             Address::Dir(addr) => addr,
@@ -152,6 +167,7 @@ impl Computer {
         }
     }
 
+    #[tracing::instrument(skip(self), err)]
     fn offset_read<T: Decodable>(&self, address: Address) -> Result<(u16, T)> {
         let address = self.resolve_address(address) as u64;
         let mut cursor = Cursor::new(self.memory.as_ref());
@@ -162,30 +178,36 @@ impl Computer {
         Ok((offset, el))
     }
 
+    #[tracing::instrument(skip(self), err)]
     fn read<T: Decodable>(&self, address: Address) -> Result<T> {
         let address = self.resolve_address(address) as u64;
         let mut cursor = Cursor::new(self.memory.as_ref());
         cursor.set_position(address);
+        debug!("Reading a {} at {:#x}", std::any::type_name::<T>(), address);
 
         T::decode(&mut cursor).ok_or(Exception::Segfault) // TODO: better error
     }
 
-    pub fn write<T: Encodable>(&mut self, address: Address, value: T) -> Result<u16> {
+    #[tracing::instrument(skip(self), err)]
+    pub fn write<T: Encodable + Debug>(&mut self, address: Address, value: T) -> Result<u16> {
         let address = self.resolve_address(address) as u64;
         let mut cursor = Cursor::new(self.memory.as_mut());
         cursor.set_position(address);
 
         let bytes = value.encode();
+        debug!("Writing bytes {:?} at {:#x}", bytes, address);
         cursor.write_all(&bytes).map_err(|_| Exception::Segfault)?;
         let offset = (cursor.position() - address) as u16;
         Ok(offset)
     }
 
+    #[tracing::instrument(skip(self))]
     pub fn set_register(&mut self, reg: Reg, val: u16) {
         let reg = self.registers.get_mut(reg);
         *reg = val;
     }
 
+    #[tracing::instrument(skip(self))]
     fn arg(&self, arg: Arg) -> Result<u16> {
         match arg {
             Arg::Address(addr) => self.read(addr),
@@ -193,6 +215,7 @@ impl Computer {
         }
     }
 
+    #[tracing::instrument(skip(self))]
     fn value(&self, value: Value) -> u16 {
         match value {
             Value::Imm(imm) => imm,
@@ -200,24 +223,31 @@ impl Computer {
         }
     }
 
+    #[tracing::instrument(skip(self), err)]
     fn jump(&mut self, address: Address) -> Result<()> {
         let address = self.resolve_address(address);
+        debug!("Jumping to address {:#x}", address);
         self.registers.pc = address;
         Ok(())
     }
 
+    #[tracing::instrument(skip(self), err)]
     fn decode_instruction(&mut self) -> Result<Instruction> {
         let (addr, inst) = self.offset_read(Address::Ind(Reg::PC))?;
         self.registers.pc += addr;
         Ok(inst)
     }
 
+    #[tracing::instrument(skip(self))]
     fn step(&mut self) -> Result<()> {
         let inst = self.decode_instruction()?;
+        debug!("Executing instruction {:?}", inst);
         inst.execute(self)?;
+        debug!("Register state {:?}", self.registers);
         Ok(())
     }
 
+    #[tracing::instrument(skip(self))]
     pub fn run(&mut self) -> Result<()> {
         loop {
             match self.step() {
@@ -228,10 +258,13 @@ impl Computer {
         }
     }
 
-    fn push<T: Encodable>(&mut self, value: T) -> Result<()> {
+    #[tracing::instrument(skip(self))]
+    fn push<T: Encodable + Debug>(&mut self, value: T) -> Result<()> {
         // First encode the value and move the stack
         let bytes = value.encode();
         self.registers.sp -= bytes.len() as u16;
+
+        debug!("Pushing bytes: {:?}", bytes);
 
         // And write it on memeory
         let address = self.registers.sp;
@@ -240,22 +273,24 @@ impl Computer {
         cursor.write_all(&bytes).map_err(|_| Exception::Segfault)
     }
 
-    fn pop<T: Decodable>(&mut self) -> Result<T> {
+    #[tracing::instrument(skip(self))]
+    fn pop<T: Decodable + Debug>(&mut self) -> Result<T> {
         // First read the value
         let (offset, val) = self.offset_read(Address::Ind(Reg::SP))?;
         // Then move the SP
         self.registers.sp += offset;
+        debug!("Poping value: {:?}", val);
         Ok(val)
     }
 }
 
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct Registers {
-    a: Word,
-    b: Word,
-    pc: Word,
-    sp: Word,
-    sr: StatusRegister,
+    pub a: Word,
+    pub b: Word,
+    pub pc: Word,
+    pub sp: Word,
+    pub sr: StatusRegister,
 }
 
 impl Registers {
@@ -513,106 +548,107 @@ enum Cond {
 
 #[derive(Debug, Clone, PartialEq, Instruction)]
 pub enum Instruction {
-    #[instruction(0x00)]
+    #[instruction(0x01)]
     Add(#[labelable] Arg, Reg),
 
-    #[instruction(0x01)]
+    #[instruction(0x02)]
     And(#[labelable] Arg, Reg),
 
-    #[instruction(0x02)]
+    #[instruction(0x03)]
     Call(#[labelable] Arg),
 
-    #[instruction(0x03)]
+    #[instruction(0x04)]
     Cmp(#[labelable] Arg, Reg),
 
-    #[instruction(0x04)]
+    #[instruction(0x05)]
     Div(#[labelable] Arg, Reg),
 
-    #[instruction(0x05)]
+    #[instruction(0x06)]
     Fas(Address, Reg),
 
-    #[instruction(0x06)]
+    #[instruction(0x07)]
     In(Address, Reg),
 
-    #[instruction(0x07)]
+    #[instruction(0x08)]
     Jmp(#[labelable] Arg),
 
-    #[instruction(0x08)]
+    #[instruction(0x09)]
     Jeq(#[labelable] Arg),
 
-    #[instruction(0x09)]
+    #[instruction(0x0A)]
     Jne(#[labelable] Arg),
 
-    #[instruction(0x0A)]
+    #[instruction(0x0B)]
     Jle(#[labelable] Arg),
 
-    #[instruction(0x0B)]
+    #[instruction(0x0C)]
     Jlt(#[labelable] Arg),
 
-    #[instruction(0x0C)]
+    #[instruction(0x0D)]
     Jge(#[labelable] Arg),
 
-    #[instruction(0x0D)]
+    #[instruction(0x0E)]
     Jgt(#[labelable] Arg),
 
-    #[instruction(0x0E)]
+    #[instruction(0x0F)]
     Ld(#[labelable] Arg, Reg),
 
-    #[instruction(0x0F)]
+    #[instruction(0x10)]
     Mul(#[labelable] Arg, Reg),
 
-    #[instruction(0x10)]
+    #[instruction(0x11)]
     Neg(Reg),
 
-    #[instruction(0x11)]
+    #[instruction(0x12)]
     Nop,
 
-    #[instruction(0x12)]
+    #[instruction(0x13)]
     Not(Reg),
 
-    #[instruction(0x13)]
+    #[instruction(0x14)]
     Or(#[labelable] Arg, Reg),
 
-    #[instruction(0x14)]
+    #[instruction(0x15)]
     Out(Value, Address),
 
-    #[instruction(0x15)]
+    #[instruction(0x16)]
     Pop(Reg),
 
-    #[instruction(0x16)]
+    #[instruction(0x17)]
     Push(Value),
 
-    #[instruction(0x17)]
+    #[instruction(0x18)]
     Reset,
 
-    #[instruction(0x18)]
+    #[instruction(0x19)]
     Rti,
 
-    #[instruction(0x19)]
+    #[instruction(0x1A)]
     Rtn,
 
-    #[instruction(0x1A)]
+    #[instruction(0x1B)]
     Shl(#[labelable] Arg, Reg),
 
-    #[instruction(0x1B)]
+    #[instruction(0x1C)]
     Shr(#[labelable] Arg, Reg),
 
-    #[instruction(0x1C)]
+    #[instruction(0x1D)]
     St(Reg, Address),
 
-    #[instruction(0x1D)]
+    #[instruction(0x1E)]
     Sub(#[labelable] Arg, Reg),
 
-    // #[instruction(0x1E)]
+    // #[instruction(0x1F)]
     // Swap(ArgSwap, Reg),
-    #[instruction(0x1F)]
+    #[instruction(0x20)]
     Trap,
 
-    #[instruction(0x20)]
+    #[instruction(0x21)]
     Xor(#[labelable] Arg, Reg),
 }
 
 impl Instruction {
+    #[tracing::instrument]
     fn execute(self, computer: &mut Computer) -> Result<()> {
         match self {
             Instruction::Add(arg, reg) => {
