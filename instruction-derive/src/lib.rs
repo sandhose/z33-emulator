@@ -190,6 +190,41 @@ fn impl_instruction(ast: &DeriveInput) -> syn::parse::Result<TokenStream> {
         }
     });
 
+    let match_display = instructions.iter().fold(quote!(), |acc, instruction| {
+        let t = instruction.ident.clone();
+        let inst = t.to_string().to_lowercase();
+        let arm = if instruction.args.is_empty() {
+            let inst = Literal::string(&inst);
+            quote_spanned! { Span::call_site() =>
+                Self::#t => write!(f, #inst)
+            }
+        } else {
+            let pat = instruction
+                .args
+                .iter()
+                .enumerate()
+                .fold(quote! {}, |pat, (i, arg)| {
+                    let id = Ident::new(format!("arg{}", i).as_str(), arg.span());
+                    quote! { #pat #id, }
+                });
+
+            let parts: Vec<_> = std::iter::repeat("{}")
+                .take(instruction.args.len())
+                .collect();
+            let literal = format!("{} {}", inst, parts.join(", "));
+            let literal = Literal::string(&literal);
+
+            quote_spanned! { Span::call_site() =>
+                Self::#t(#pat) => write!(f, #literal, #pat)
+            }
+        };
+
+        quote_spanned! { Span::call_site() =>
+            #arm,
+            #acc
+        }
+    });
+
     let (parser_alt, parser_funcs) = instructions.iter().enumerate().fold((quote!(), quote!()), |(alt, funcs), (i, instruction)| {
         let t = instruction.ident.clone();
         let inst = t.to_string().to_lowercase();
@@ -297,6 +332,14 @@ fn impl_instruction(ast: &DeriveInput) -> syn::parse::Result<TokenStream> {
 
             fn label() -> Self {
                 unimplemented!()
+            }
+        }
+
+        impl ::std::fmt::Display for #t {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                match self {
+                    #match_display
+                }
             }
         }
 

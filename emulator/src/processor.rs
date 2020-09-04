@@ -7,7 +7,7 @@ use std::{
     io::{Cursor, Read, Write},
 };
 use thiserror::Error;
-use tracing::debug;
+use tracing::{debug, info};
 use z33_instruction_derive::Instruction;
 
 #[derive(Error, Debug)]
@@ -241,7 +241,7 @@ impl Computer {
     #[tracing::instrument(skip(self))]
     fn step(&mut self) -> Result<()> {
         let inst = self.decode_instruction()?;
-        debug!("Executing instruction {:?}", inst);
+        info!("Executing instruction \"{}\"", inst);
         inst.execute(self)?;
         debug!("Register state {:?}", self.registers);
         Ok(())
@@ -347,6 +347,18 @@ impl Reg {
     }
 }
 
+impl std::fmt::Display for Reg {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::A => write!(f, "%a"),
+            Self::B => write!(f, "%a"),
+            Self::PC => write!(f, "%pc"),
+            Self::SP => write!(f, "%sp"),
+            Self::SR => write!(f, "%sr"),
+        }
+    }
+}
+
 impl Encodable for Reg {
     fn encode(self) -> Vec<u8> {
         vec![self.to_byte()]
@@ -366,6 +378,16 @@ pub enum Address {
     Dir(u16),
     Ind(Reg),
     Idx(Reg, i16),
+}
+
+impl std::fmt::Display for Address {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Dir(x) => write!(f, "[{:#04x}]", x),
+            Self::Ind(reg) => write!(f, "[{}]", reg),
+            Self::Idx(reg, off) => write!(f, "[{}{:+}]", reg, off),
+        }
+    }
 }
 
 impl From<u16> for Address {
@@ -410,6 +432,15 @@ pub enum Value {
     Reg(Reg),
 }
 
+impl std::fmt::Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Imm(x) => write!(f, "{:#04x}", x),
+            Self::Reg(reg) => write!(f, "{}", reg),
+        }
+    }
+}
+
 impl Labelable for Value {
     fn resolve_label(self, address: u16) -> Option<Self> {
         match self {
@@ -448,6 +479,15 @@ pub enum Arg {
 impl Arg {
     pub fn label() -> Self {
         Arg::Value(Value::Imm(0))
+    }
+}
+
+impl std::fmt::Display for Arg {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Address(a) => write!(f, "{}", a),
+            Self::Value(v) => write!(f, "{}", v),
+        }
     }
 }
 

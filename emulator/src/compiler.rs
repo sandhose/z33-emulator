@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 use thiserror::Error;
+use tracing::{debug, span, Level};
 
 use crate::processor::{Computer, Encodable, Instruction, Labelable, Reg};
 
@@ -93,14 +94,24 @@ impl Compiler for CompilerState {
 }
 
 impl CompilerState {
-    #[tracing::instrument]
+    #[tracing::instrument(err)]
     pub fn build(self, start: String) -> Result<Computer> {
         let pending_labels = self.pending_labels;
         let labels = self.labels;
         let mut computer = self.computer;
 
+        debug!("Resolving labels {:?}", labels);
+
         // Resolve all labels
         for p in pending_labels.into_iter() {
+            let span = span!(
+                Level::TRACE,
+                "resolving_label",
+                address = p.address,
+                label = p.label.as_str()
+            );
+            let _enter = span.enter();
+
             let resolved = labels
                 .get(&p.label)
                 .ok_or(CompilerError::InvalidLabel(p.label.clone()))?
