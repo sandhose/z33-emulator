@@ -19,6 +19,9 @@ pub enum CompilerError {
 
     #[error("can't resolve label")]
     ResolveError,
+
+    #[error("invalid address")]
+    InvalidAddress,
 }
 
 type Result<T> = std::result::Result<T, CompilerError>;
@@ -44,6 +47,8 @@ pub trait Compiler {
         &mut self,
         val: T,
     ) -> std::result::Result<(), Self::Error>;
+    fn change_address(&mut self, addr: u16) -> std::result::Result<(), Self::Error>;
+    fn memory_skip(&mut self, offset: u16) -> std::result::Result<(), Self::Error>;
 }
 
 #[derive(Default, Debug)]
@@ -89,6 +94,21 @@ impl Compiler for CompilerState {
             .write(self.memory_position.into(), val)
             .map_err(|_| CompilerError::EncodeError)?;
         self.memory_position += offset;
+        Ok(())
+    }
+
+    #[tracing::instrument]
+    fn change_address(&mut self, addr: u16) -> Result<()> {
+        self.memory_position = addr;
+        Ok(())
+    }
+
+    #[tracing::instrument]
+    fn memory_skip(&mut self, offset: u16) -> Result<()> {
+        self.memory_position = self
+            .memory_position
+            .checked_add(offset)
+            .ok_or(CompilerError::InvalidAddress)?;
         Ok(())
     }
 }

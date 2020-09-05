@@ -131,6 +131,12 @@ where
     }
 }
 
+impl Encodable for String {
+    fn encode(self) -> Vec<u8> {
+        self.into_bytes()
+    }
+}
+
 pub struct Computer {
     pub registers: Registers,
     pub memory: Memory,

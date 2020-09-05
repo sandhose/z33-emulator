@@ -1,16 +1,22 @@
 #![allow(dead_code)]
 
-use std::str::FromStr;
-
 use nom::{
     branch::alt,
-    bytes::complete::{tag, tag_no_case, take_while},
+    bytes::complete::{tag, tag_no_case, take_while, take_while1},
     character::complete::{char, newline, one_of, space0},
-    combinator::{map, map_res, value},
+    combinator::{map, value, verify},
     IResult,
 };
 
 use crate::processor::{Address, Arg, Instruction, Labelable, Reg, Value};
+
+mod directive;
+mod expression;
+mod literal;
+
+pub use directive::Directive;
+use directive::{parse_directive};
+use expression::parse_const_expression;
 
 fn parse_reg(input: &str) -> IResult<&str, Reg> {
     let (input, _) = tag("%")(input)?;
@@ -23,39 +29,26 @@ fn parse_reg(input: &str) -> IResult<&str, Reg> {
     ))(input)
 }
 
-fn from_decimal(input: &str) -> Result<u16, std::num::ParseIntError> {
-    u16::from_str(input)
-}
-
-fn is_digit(c: char) -> bool {
-    c.is_digit(10)
-}
-
-fn parse_literal(input: &str) -> IResult<&str, u16> {
-    map_res(take_while(is_digit), from_decimal)(input)
-}
-
 fn parse_value(input: &str) -> IResult<&str, Value> {
-    alt((map(parse_reg, Value::Reg), map(parse_literal, Value::Imm)))(input)
+    alt((
+        map(parse_reg, Value::Reg),
+        map(parse_const_expression, Value::Imm),
+    ))(input)
 }
 
 fn parse_indexed(input: &str) -> IResult<&str, (Reg, i16)> {
     let (input, reg) = parse_reg(input)?;
     let (input, sign) = one_of("+-")(input)?;
-    let (input, val) = parse_literal(input)?;
+    let (input, val): (_, i16) = parse_const_expression(input)?;
 
-    let value = if sign == '-' {
-        -(val as i16)
-    } else {
-        val as i16
-    };
+    let value = if sign == '-' { -val } else { val };
 
     Ok((input, (reg, value)))
 }
 
 fn parse_inner_address(input: &str) -> IResult<&str, Address> {
     alt((
-        map(parse_literal, Address::Dir),
+        map(parse_const_expression, Address::Dir),
         map(parse_indexed, |(reg, off)| Address::Idx(reg, off)),
         map(parse_reg, Address::Ind),
     ))(input)
@@ -76,18 +69,20 @@ fn parse_arg(input: &str) -> IResult<&str, Arg> {
 }
 
 fn is_identifier_char(c: char) -> bool {
-    c == '_' || ('0'..'9').contains(&c) || ('a'..'z').contains(&c) || ('A'..'Z').contains(&c)
+    is_start_identifier_char(c) || ('0'..'9').contains(&c)
 }
 
-fn parse_label(input: &str) -> IResult<&str, &str> {
-    take_while(is_identifier_char)(input)
+fn is_start_identifier_char(c: char) -> bool {
+    c == '_' || ('a'..'z').contains(&c) || ('A'..'Z').contains(&c)
 }
 
-fn parse_label_def(input: &str) -> IResult<&str, &str> {
-    let (input, label) = parse_label(input)?;
-    let (input, _) = space0(input)?;
-    let (input, _) = char(':')(input)?;
-    Ok((input, label))
+pub(crate) fn parse_label(input: &str) -> IResult<&str, &str> {
+    verify(take_while1(is_identifier_char), |f: &str| {
+        f.chars()
+            .next()
+            .filter(|&c| is_start_identifier_char(c))
+            .is_some()
+    })(input)
 }
 
 pub trait Parsable: Sized {
@@ -148,18 +143,17 @@ impl Parsable for Value {
 pub enum ProgramLine {
     Instruction(Instruction),
     LabeledInstruction(String, Instruction),
-    Label(String),
+    Directive(Directive),
     Empty,
 }
 
-fn is_not_lf(c: char) -> bool {
-    c != '\n'
-}
-
+/// Parse a comment
+///
+/// Comments start with `#` and eat anything until the end of the line.
 fn parse_comment(input: &str) -> IResult<&str, &str> {
     let (input, _) = char('#')(input)?;
     let (input, _) = space0(input)?; // Trim leading space in comment
-    take_while(is_not_lf)(input)
+    take_while(|c| c != '\n')(input)
 }
 
 fn parse_newline(input: &str) -> IResult<&str, char> {
@@ -169,7 +163,7 @@ fn parse_newline(input: &str) -> IResult<&str, char> {
 fn parse_program_line(input: &str) -> IResult<&str, ProgramLine> {
     let (input, _) = space0(input)?; // Remove leading spaces
     let (input, line) = alt((
-        map(parse_label_def, |label| ProgramLine::Label(label.into())),
+        map(parse_directive, ProgramLine::Directive),
         map(Instruction::parse, |(label, instruction)| {
             if let Some(label) = label {
                 ProgramLine::LabeledInstruction(label.into(), instruction)
@@ -256,13 +250,6 @@ mod tests {
         assert_eq!(parse_reg("%sp"), Ok(("", Reg::SP)));
         assert_eq!(parse_reg("%sr"), Ok(("", Reg::SR)));
         assert!(parse_reg("%c").is_err());
-    }
-
-    #[test]
-    fn parse_literal_test() {
-        assert_eq!(parse_literal("100"), Ok(("", 100)));
-        assert_eq!(parse_literal("42"), Ok(("", 42)));
-        assert!(parse_literal("65536").is_err()); // Value too big
     }
 
     #[test]
@@ -393,7 +380,7 @@ mod tests {
 
         let expected = vec![
             ProgramLine::Empty,
-            ProgramLine::Label("factorielle".into()),
+            ProgramLine::Directive(Directive::LabelDefinition("factorielle".into())),
             ProgramLine::Instruction(Instruction::Ld(
                 Arg::Address(Address::Idx(Reg::SP, 1)),
                 Reg::A,
@@ -417,7 +404,7 @@ mod tests {
             ProgramLine::Instruction(Instruction::Mul(Arg::Value(Value::Reg(Reg::B)), Reg::A)),
             ProgramLine::Instruction(Instruction::Pop(Reg::B)),
             ProgramLine::Instruction(Instruction::Rtn),
-            ProgramLine::Label("casparticulier".into()),
+            ProgramLine::Directive(Directive::LabelDefinition("casparticulier".into())),
             ProgramLine::Instruction(Instruction::Ld(Arg::Value(Value::Imm(1)), Reg::A)),
             ProgramLine::Instruction(Instruction::Rtn),
             ProgramLine::Empty,
@@ -460,7 +447,7 @@ mod tests {
         let expected = vec![
             ProgramLine::Empty,
             ProgramLine::Empty,
-            ProgramLine::Label("factorielle".into()),
+            ProgramLine::Directive(Directive::LabelDefinition("factorielle".into())),
             ProgramLine::Instruction(Instruction::Ld(
                 Arg::Address(Address::Idx(Reg::SP, 1)),
                 Reg::A,
@@ -484,7 +471,7 @@ mod tests {
             ProgramLine::Instruction(Instruction::Mul(Arg::Value(Value::Reg(Reg::B)), Reg::A)),
             ProgramLine::Instruction(Instruction::Pop(Reg::B)),
             ProgramLine::Instruction(Instruction::Rtn),
-            ProgramLine::Label("casparticulier".into()),
+            ProgramLine::Directive(Directive::LabelDefinition("casparticulier".into())),
             ProgramLine::Instruction(Instruction::Ld(Arg::Value(Value::Imm(1)), Reg::A)),
             ProgramLine::Instruction(Instruction::Rtn),
             ProgramLine::Empty,

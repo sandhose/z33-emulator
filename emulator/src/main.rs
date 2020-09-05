@@ -10,7 +10,7 @@ mod processor;
 mod util;
 
 use crate::compiler::{Compiler, CompilerState};
-use crate::parser::{Parser, ProgramLine};
+use crate::parser::{Directive, Parser, ProgramLine};
 
 #[derive(StructOpt)]
 struct Opt {
@@ -48,8 +48,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ProgramLine::LabeledInstruction(label, inst) => {
                 compiler.ingest_labeled_instruction(inst, label)?;
             }
-            ProgramLine::Label(label) => {
+            ProgramLine::Directive(Directive::LabelDefinition(label)) => {
                 compiler.ingest_label(label)?;
+            }
+            ProgramLine::Directive(Directive::AddressChange(addr)) => {
+                compiler.change_address(addr)?;
+            }
+            ProgramLine::Directive(Directive::Space(offset)) => {
+                compiler.memory_skip(offset)?;
+            }
+            ProgramLine::Directive(Directive::Word(word)) => {
+                compiler.ingest(word)?;
+            }
+            ProgramLine::Directive(Directive::StringLiteral(literal)) => {
+                compiler.ingest(literal)?;
             }
             ProgramLine::Empty => {}
         }
