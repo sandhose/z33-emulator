@@ -1,39 +1,48 @@
-use std::fs::File;
-use std::io::Read;
 use std::path::PathBuf;
 use structopt::StructOpt;
 use tracing::info;
 
 mod compiler;
 mod parser;
+mod preprocessor;
 mod processor;
 mod util;
 
 use crate::compiler::{Compiler, CompilerState};
 use crate::parser::{Directive, Parser, ProgramLine};
+use crate::preprocessor::preprocess;
 
 #[derive(StructOpt)]
-struct Opt {
-    /// Input file
-    #[structopt(parse(from_os_str))]
-    input: PathBuf,
+enum Opt {
+    /// Preprocess, compile and run a program
+    Run {
+        /// Input file
+        #[structopt(parse(from_os_str))]
+        input: PathBuf,
 
-    /// Start label
-    entrypoint: String,
+        /// Start label
+        entrypoint: String,
+    },
+    /// Run the preprocessor
+    Preprocess {
+        /// Input file
+        #[structopt(parse(from_os_str))]
+        input: PathBuf,
+    },
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .compact()
-        .init();
+impl Opt {
+    fn exec(self) -> Result<(), Box<dyn std::error::Error>> {
+        match self {
+            Opt::Run { input, entrypoint } => run(input, entrypoint),
+            Opt::Preprocess { input } => run_preprocessor(input),
+        }
+    }
+}
 
-    let opt = Opt::from_args();
-    info!("Reading program from file {:?}", opt.input);
-
-    let mut file = File::open(opt.input)?;
-    let mut source = String::new();
-    file.read_to_string(&mut source)?;
+fn run(input: PathBuf, entrypoint: String) -> Result<(), Box<dyn std::error::Error>> {
+    info!("Reading program from file {:?}", input);
+    let source = preprocess(input)?;
 
     info!("Parsing program");
     let parser = Parser::new(source.as_str());
@@ -67,8 +76,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    info!("Buiding computer (entrypoint: {})", opt.entrypoint);
-    let mut computer = compiler.build(opt.entrypoint)?;
+    info!("Buiding computer (entrypoint: {})", entrypoint);
+    let mut computer = compiler.build(entrypoint)?;
     info!("Running program");
     computer.run()?;
 
@@ -77,6 +86,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("-------");
     println!("Memory:");
     util::display_memory(computer.memory);
-
     Ok(())
+}
+
+fn run_preprocessor(input: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+    info!("Reading program from file {:?}", input);
+    let source = preprocess(input)?;
+    println!("{}", source);
+    Ok(())
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .compact()
+        .init();
+
+    let opt = Opt::from_args();
+    opt.exec()
 }

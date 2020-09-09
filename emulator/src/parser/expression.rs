@@ -1,12 +1,12 @@
 //! Parse simple const expressions and calculate them on the fly.
 //!
-//! The grammar of expression is defined as such:
+//! The grammar of expressions is defined as such:
 //!
 //! ```text
 //! ConstExpr := Or
 //!
 //! Literal := Number literal (decimal, hex, octal or binary)
-//! Or      := Or ('|' Or)*
+//! Or      := And ('|' And)*
 //! And     := Shift ('&' Shift)*
 //! Shift   := Sum ('<<' Sum | '>>' Sum)?
 //! Sum     := Mul ('+' Mul | '-' Mul)*
@@ -33,7 +33,7 @@ use nom::{
 use super::literal::parse_literal;
 
 /// The type of value used throughout the calculation
-type Value = i64;
+pub type Value = i64;
 
 #[doc(hidden)]
 fn parse_or_rec(input: &str) -> IResult<&str, Value> {
@@ -156,8 +156,7 @@ fn parse_mul(input: &str) -> IResult<&str, Value> {
 
 /// Parse unary operations (negation and bit inversion)
 fn parse_unary(input: &str) -> IResult<&str, Value> {
-    // Leading space is already eaten by parse_atom
-    //
+    let (input, _) = space0(input)?;
     // TODO: bit inversion is tricky because we're not supposed to know the word length here. It's
     // a bit opiniated, but for now it tries casting down to u16 before negating.
     alt((

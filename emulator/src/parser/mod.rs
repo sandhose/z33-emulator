@@ -10,13 +10,16 @@ use nom::{
 
 use crate::processor::{Address, Arg, Instruction, Labelable, Reg, Value};
 
+mod condition;
 mod directive;
 mod expression;
 mod literal;
 
+pub use condition::parse_condition;
+use directive::parse_directive;
 pub use directive::Directive;
-use directive::{parse_directive};
 use expression::parse_const_expression;
+pub use literal::parse_string_literal;
 
 fn parse_reg(input: &str) -> IResult<&str, Reg> {
     let (input, _) = tag("%")(input)?;
@@ -76,7 +79,7 @@ fn is_start_identifier_char(c: char) -> bool {
     c == '_' || ('a'..'z').contains(&c) || ('A'..'Z').contains(&c)
 }
 
-pub(crate) fn parse_label(input: &str) -> IResult<&str, &str> {
+pub(crate) fn parse_identifier(input: &str) -> IResult<&str, &str> {
     verify(take_while1(is_identifier_char), |f: &str| {
         f.chars()
             .next()
@@ -93,7 +96,7 @@ pub trait Parsable: Sized {
     {
         alt((
             map(Self::parse, |v| (None, v)),
-            map(parse_label, |label| (Some(label), Self::label())),
+            map(parse_identifier, |label| (Some(label), Self::label())),
         ))(input)
     }
 }
@@ -112,7 +115,7 @@ impl Parsable for Arg {
     fn parse_labelable(input: &str) -> IResult<&str, (Option<&str>, Self)> {
         alt((
             map(parse_arg, |v| (None, v)),
-            map(parse_label, |label| (Some(label), Self::label())),
+            map(parse_identifier, |label| (Some(label), Self::label())),
         ))(input)
     }
 }
@@ -126,7 +129,7 @@ impl Parsable for Address {
         let (input, _) = char('[')(input)?;
         let (input, ret) = alt((
             map(parse_inner_address, |v| (None, v)),
-            map(parse_label, |label| (Some(label), Self::label())),
+            map(parse_identifier, |label| (Some(label), Self::label())),
         ))(input)?;
         let (input, _) = char(']')(input)?;
         Ok((input, ret))

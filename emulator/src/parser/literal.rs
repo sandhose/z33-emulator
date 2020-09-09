@@ -1,4 +1,4 @@
-//! Parse number literals.
+//! Parse number and string literals.
 //!
 //! It parses base 10, base 16 (prefixed by `0x`), base 8 (prefixed by `0o`) and base 2 (prefixed
 //! by `01`) number literals.
@@ -7,10 +7,25 @@ use std::str::FromStr;
 
 use nom::{
     branch::alt,
-    bytes::complete::{tag_no_case, take_while1},
-    combinator::map_res,
+    bytes::complete::{escaped_transform, tag_no_case, take_while1},
+    character::complete::{char, none_of},
+    combinator::{map_res, value},
     IResult,
 };
+
+/// Parse a string literal
+pub fn parse_string_literal(input: &str) -> IResult<&str, String> {
+    let (input, _) = char('"')(input)?;
+    let (input, string) = escaped_transform(none_of("\"\\"), '\\', |input: &str| {
+        alt((
+            value("\\", char('\\')),
+            value("\"", char('"')),
+            value("\n", char('n')),
+        ))(input)
+    })(input)?;
+    let (input, _) = char('"')(input)?;
+    Ok((input, string))
+}
 
 /// Parse a decimal number
 fn from_decimal(input: &str) -> Result<u16, std::num::ParseIntError> {

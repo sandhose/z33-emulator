@@ -4,14 +4,15 @@
 
 use nom::{
     branch::alt,
-    bytes::complete::{escaped_transform, tag_no_case},
-    character::complete::{char, none_of, space0, space1},
-    combinator::{map, value},
+    bytes::complete::tag_no_case,
+    character::complete::{char, space0, space1},
+    combinator::map,
     IResult,
 };
 
 use super::expression::parse_const_expression;
-use super::parse_label;
+use super::literal::parse_string_literal;
+use super::parse_identifier;
 
 /// Type used for memory addresses
 ///
@@ -63,15 +64,15 @@ pub enum Directive {
 }
 
 /// Parse a label definition directive
-fn parse_label_def(input: &str) -> IResult<&str, &str> {
-    let (input, label) = parse_label(input)?;
+fn parse_label_def_directive(input: &str) -> IResult<&str, &str> {
+    let (input, label) = parse_identifier(input)?;
     let (input, _) = space0(input)?;
     let (input, _) = char(':')(input)?;
     Ok((input, label))
 }
 
 /// Parse a `.addr` (address change) directive
-fn parse_address_change(input: &str) -> IResult<&str, Address> {
+fn parse_address_change_directive(input: &str) -> IResult<&str, Address> {
     let (input, _) = tag_no_case(".addr")(input)?;
     let (input, _) = space1(input)?;
     let (input, addr) = parse_const_expression(input)?;
@@ -79,7 +80,7 @@ fn parse_address_change(input: &str) -> IResult<&str, Address> {
 }
 
 /// Parse a `.space` directive
-fn parse_space(input: &str) -> IResult<&str, Address> {
+fn parse_space_directive(input: &str) -> IResult<&str, Address> {
     let (input, _) = tag_no_case(".space")(input)?;
     let (input, _) = space1(input)?;
     let (input, addr) = parse_const_expression(input)?;
@@ -87,7 +88,7 @@ fn parse_space(input: &str) -> IResult<&str, Address> {
 }
 
 /// Parse a `.word` directive
-fn parse_word(input: &str) -> IResult<&str, Word> {
+fn parse_word_directive(input: &str) -> IResult<&str, Word> {
     let (input, _) = tag_no_case(".word")(input)?;
     let (input, _) = space1(input)?;
     let (input, word) = parse_const_expression(input)?;
@@ -95,29 +96,23 @@ fn parse_word(input: &str) -> IResult<&str, Word> {
 }
 
 /// Parse a `.string` directive
-fn parse_string_literal(input: &str) -> IResult<&str, String> {
+fn parse_string_literal_directive(input: &str) -> IResult<&str, String> {
     let (input, _) = tag_no_case(".string")(input)?;
     let (input, _) = space1(input)?;
-    let (input, _) = char('"')(input)?;
-    let (input, string) = escaped_transform(none_of("\"\\"), '\\', |input: &str| {
-        alt((
-            value("\\", char('\\')),
-            value("\"", char('"')),
-            value("\n", char('n')),
-        ))(input)
-    })(input)?;
-    let (input, _) = char('"')(input)?;
+    let (input, string) = parse_string_literal(input)?;
     Ok((input, string))
 }
 
 /// Parse a directive
 pub fn parse_directive(input: &str) -> IResult<&str, Directive> {
     alt((
-        map(parse_label_def, |l| Directive::LabelDefinition(l.into())),
-        map(parse_address_change, Directive::AddressChange),
-        map(parse_space, Directive::Space),
-        map(parse_word, Directive::Word),
-        map(parse_string_literal, Directive::StringLiteral),
+        map(parse_label_def_directive, |l| {
+            Directive::LabelDefinition(l.into())
+        }),
+        map(parse_address_change_directive, Directive::AddressChange),
+        map(parse_space_directive, Directive::Space),
+        map(parse_word_directive, Directive::Word),
+        map(parse_string_literal_directive, Directive::StringLiteral),
     ))(input)
 }
 
@@ -127,28 +122,31 @@ mod tests {
 
     #[test]
     fn parse_label_def_test() {
-        assert_eq!(parse_label_def("foo:"), Ok(("", "foo")));
+        assert_eq!(parse_label_def_directive("foo:"), Ok(("", "foo")));
     }
 
     #[test]
     fn parse_address_change_test() {
-        assert_eq!(parse_address_change(".addr 0xF00"), Ok(("", 0xF00)));
+        assert_eq!(
+            parse_address_change_directive(".addr 0xF00"),
+            Ok(("", 0xF00))
+        );
     }
 
     #[test]
     fn parse_space_test() {
-        assert_eq!(parse_space(".space 0xF00"), Ok(("", 0xF00)));
+        assert_eq!(parse_space_directive(".space 0xF00"), Ok(("", 0xF00)));
     }
 
     #[test]
     fn parse_word_test() {
-        assert_eq!(parse_word(".word 0xF00"), Ok(("", 0xF00)));
+        assert_eq!(parse_word_directive(".word 0xF00"), Ok(("", 0xF00)));
     }
 
     #[test]
     fn parse_string_literal_test() {
         assert_eq!(
-            parse_string_literal(r#".string "baz""#),
+            parse_string_literal_directive(r#".string "baz""#),
             Ok(("", "baz".into()))
         );
     }
