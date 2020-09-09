@@ -12,6 +12,7 @@ use nom::{
 };
 use regex::{Captures, Regex};
 use thiserror::Error;
+use tracing::debug;
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::parser::{parse_condition, parse_identifier, parse_string_literal};
@@ -96,6 +97,7 @@ fn is_keyword(key: &str) -> bool {
 }
 
 impl PreprocessorState {
+    #[tracing::instrument]
     fn define(&mut self, key: String, value: String) -> Result<()> {
         if is_keyword(key.as_str()) {
             return Err(PreprocessorError::Keyword(key));
@@ -108,18 +110,22 @@ impl PreprocessorState {
         Ok(())
     }
 
+    #[tracing::instrument]
     fn is_skipping(&self) -> bool {
         self.condition_stack.last().cloned().unwrap_or(false)
     }
 
+    #[tracing::instrument]
     fn push_condition(&mut self, value: bool) {
         self.condition_stack.push(value);
     }
 
+    #[tracing::instrument]
     fn pop_condition(&mut self) -> Option<bool> {
         self.condition_stack.pop()
     }
 
+    #[tracing::instrument]
     fn replace_definitions(&self, source: String) -> String {
         let words: Vec<_> = source
             .split_word_bounds()
@@ -129,6 +135,7 @@ impl PreprocessorState {
     }
 
     /// Replace `defined(CONST)` expressions
+    #[tracing::instrument]
     fn replace_defined(&self, source: &str) -> String {
         let re = Regex::new(r"defined\([[:space:]]*([[:word:]]+)[[:space:]]*\)").unwrap();
         re.replace(source, |caps: &Captures| {
@@ -142,6 +149,7 @@ impl PreprocessorState {
         .to_string()
     }
 
+    #[tracing::instrument]
     fn evaluate_condition(&self, input: &str) -> Result<bool> {
         let input = self.replace_defined(input);
         let input = self.replace_definitions(input);
@@ -151,6 +159,7 @@ impl PreprocessorState {
         Ok(value)
     }
 
+    #[tracing::instrument]
     fn apply_directive(&mut self, directive: DirectiveToken, args: &str) -> Result<Option<String>> {
         let args = args.trim();
 
@@ -215,10 +224,12 @@ impl PreprocessorState {
         }
     }
 
+    #[tracing::instrument]
     fn resolve_path(&self, path: String) -> Result<PathBuf> {
-        Ok(self.path_stack.last().unwrap().join(path))
+        Ok(self.path_stack.last().unwrap().parent().unwrap().join(path))
     }
 
+    #[tracing::instrument]
     fn transform(&mut self, source: String) -> Result<String> {
         let mut lines = Vec::new();
         for line in source.lines() {
@@ -241,7 +252,9 @@ impl PreprocessorState {
         Ok(processed)
     }
 
+    #[tracing::instrument]
     fn read_file(&mut self, path: PathBuf) -> Result<String> {
+        debug!("Reading file {:?}", path);
         self.path_stack.push(path.clone());
         let mut file = File::open(path)?;
         let mut source = String::new();
@@ -255,6 +268,7 @@ impl PreprocessorState {
     }
 }
 
+#[tracing::instrument]
 pub fn preprocess(path: PathBuf) -> Result<String> {
     let mut state = PreprocessorState::default();
 
