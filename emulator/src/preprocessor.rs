@@ -34,6 +34,12 @@ pub enum PreprocessorError {
         args: String,
     },
 
+    #[error("invalid preprocessor state")]
+    InvalidState,
+
+    #[error("file not in a clean state {0:?}")]
+    FileNotClean(SourceFileState),
+
     #[error("parse error")]
     ParseError,
 }
@@ -81,15 +87,81 @@ fn take_directive(input: &str) -> IResult<&str, DirectiveToken> {
 
 // TODO: filesystem abstraction to support virtual fs (like in the browser)
 
+#[derive(Debug, Clone, Copy)]
+enum ConditionState {
+    /// The current condition evaluated to "true"
+    Active,
+    /// The current condition block already had a condition evaluated to "true"
+    Passed,
+    /// The current condition evaluated to "false" and no other condition evaluated to true yet
+    Missed,
+    /// This is in the `else` branch and is active
+    ElseActive,
+    /// This is in the `else` branch but inactive
+    Else,
+}
+
+impl Default for ConditionState {
+    fn default() -> Self {
+        Self::Missed
+    }
+}
+
+impl ConditionState {
+    fn new(value: bool) -> Self {
+        Self::default().transition(value).unwrap()
+    }
+
+    #[inline]
+    fn transition(self, value: bool) -> Option<Self> {
+        match (self, value) {
+            (Self::Active, _) | (Self::Passed, _) => Some(Self::Passed),
+            (Self::Missed, true) => Some(Self::Active),
+            (Self::Missed, false) => Some(Self::Missed),
+            (Self::ElseActive, _) | (Self::Else, _) => None, // Invalid transition
+        }
+    }
+
+    fn transition_else(self) -> Option<Self> {
+        match self {
+            Self::Active | Self::Passed => Some(Self::Else),
+            Self::Missed => Some(Self::ElseActive),
+            Self::ElseActive | Self::Else => None, // Invalid transition
+        }
+    }
+
+    fn is_active(&self) -> bool {
+        match self {
+            ConditionState::Active | ConditionState::ElseActive => true,
+            _ => false,
+        }
+    }
+}
+
+#[derive(Default, Debug)]
+pub struct SourceFileState {
+    condition_stack: Vec<ConditionState>,
+    path: PathBuf,
+}
+
+impl SourceFileState {
+    fn new(path: PathBuf) -> Self {
+        Self {
+            path,
+            ..Default::default()
+        }
+    }
+
+    /// Check if the file is in a clean state, e.g. all conditions ended
+    fn is_clean(&self) -> bool {
+        self.condition_stack.is_empty()
+    }
+}
+
 #[derive(Default, Debug)]
 struct PreprocessorState {
     definitions: HashMap<String, String>,
-
-    // TODO: this is naive and does not work for multiple reasons.
-    // Condition stacks should be file-scoped, and checked whenever we exit a file.
-    // Also, this solution does not support more than two branches on a condition block (elif).
-    condition_stack: Vec<bool>,
-    path_stack: Vec<PathBuf>,
+    file_stack: Vec<SourceFileState>,
 }
 
 fn is_keyword(key: &str) -> bool {
@@ -103,26 +175,43 @@ impl PreprocessorState {
             return Err(PreprocessorError::Keyword(key));
         }
 
-        if !self.is_skipping() {
-            self.definitions.insert(key, value);
-        }
+        self.definitions.insert(key, value);
 
         Ok(())
     }
 
     #[tracing::instrument]
-    fn is_skipping(&self) -> bool {
-        self.condition_stack.last().cloned().unwrap_or(false)
+    fn is_active(&self) -> bool {
+        self.file_stack
+            .last()
+            .and_then(|file| file.condition_stack.last().map(ConditionState::is_active))
+            .unwrap_or(true)
     }
 
     #[tracing::instrument]
     fn push_condition(&mut self, value: bool) {
-        self.condition_stack.push(value);
+        // TODO: handle error
+        let f = self.file_stack.last_mut().unwrap();
+        f.condition_stack.push(ConditionState::new(value));
     }
 
     #[tracing::instrument]
-    fn pop_condition(&mut self) -> Option<bool> {
-        self.condition_stack.pop()
+    fn pop_condition(&mut self) -> Option<ConditionState> {
+        // TODO: handle error
+        let f = self.file_stack.last_mut().unwrap();
+        f.condition_stack.pop()
+    }
+
+    fn current_file(&self) -> Result<&SourceFileState> {
+        self.file_stack
+            .last()
+            .ok_or(PreprocessorError::InvalidState)
+    }
+
+    #[tracing::instrument]
+    fn current_condition(&mut self) -> Option<&mut ConditionState> {
+        let f = self.file_stack.last_mut()?;
+        f.condition_stack.last_mut()
     }
 
     #[tracing::instrument]
@@ -165,7 +254,7 @@ impl PreprocessorState {
 
         match directive {
             DirectiveToken::If => {
-                if self.is_skipping() {
+                if !self.is_active() {
                     self.push_condition(false);
                 } else {
                     let cond = self.evaluate_condition(args)?;
@@ -181,17 +270,24 @@ impl PreprocessorState {
                         args: args.into(),
                     })
                 } else {
-                    let val = self
-                        .pop_condition()
+                    self.current_condition()
+                        .and_then(|cond| {
+                            *cond = cond.transition_else()?;
+                            Some(())
+                        })
                         .ok_or(PreprocessorError::InvalidDirective(DirectiveToken::Else))?;
-                    self.push_condition(!val);
                     Ok(None)
                 }
             }
             DirectiveToken::Elif => {
-                // TODO: elif is harder than I thought. We now need to know if any condition was
-                // already taken in the current condition block
-                todo!()
+                let value = self.evaluate_condition(args)?;
+                self.current_condition()
+                    .and_then(|cond| {
+                        *cond = cond.transition(value)?;
+                        Some(())
+                    })
+                    .ok_or(PreprocessorError::InvalidDirective(DirectiveToken::Elif))?;
+                Ok(None)
             }
             DirectiveToken::EndIf => {
                 self.pop_condition()
@@ -199,7 +295,7 @@ impl PreprocessorState {
                 Ok(None)
             }
             DirectiveToken::Define => {
-                if self.is_skipping() {
+                if !self.is_active() {
                     Ok(None)
                 } else {
                     let (args, identifier) = parse_identifier(args) // Parse the key
@@ -226,7 +322,8 @@ impl PreprocessorState {
 
     #[tracing::instrument]
     fn resolve_path(&self, path: String) -> Result<PathBuf> {
-        Ok(self.path_stack.last().unwrap().parent().unwrap().join(path))
+        self.current_file()
+            .map(|p| p.path.parent().unwrap().join(path))
     }
 
     #[tracing::instrument]
@@ -241,7 +338,7 @@ impl PreprocessorState {
             } else {
                 let line = self.replace_definitions(line.into());
 
-                if !self.is_skipping() {
+                if self.is_active() {
                     lines.push(line);
                 }
             }
@@ -255,14 +352,20 @@ impl PreprocessorState {
     #[tracing::instrument]
     fn read_file(&mut self, path: PathBuf) -> Result<String> {
         debug!("Reading file {:?}", path);
-        self.path_stack.push(path.clone());
+        self.file_stack.push(SourceFileState::new(path.clone()));
         let mut file = File::open(path)?;
         let mut source = String::new();
         file.read_to_string(&mut source)?;
 
         let processed = self.transform(source)?;
 
-        self.path_stack.pop();
+        let state = self
+            .file_stack
+            .pop()
+            .ok_or(PreprocessorError::InvalidState)?;
+        if !state.is_clean() {
+            return Err(PreprocessorError::FileNotClean(state));
+        }
 
         Ok(processed)
     }
