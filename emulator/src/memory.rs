@@ -5,15 +5,13 @@ use thiserror::Error;
 use super::processor::Instruction;
 
 pub type Address = u64;
-pub type UnsignedWord = u64;
-pub type SignedWord = i64;
+pub type Word = u64;
 pub type Char = char;
 
 #[derive(Debug)]
 pub enum CellType {
     Instruction,
-    UnsignedWord,
-    SignedWord,
+    Word,
     Char,
     Empty,
 }
@@ -22,18 +20,6 @@ pub enum CellType {
 pub enum CellError {
     #[error("invalid cell type {was:?} expected {expected:?}")]
     InvalidType { expected: CellType, was: CellType },
-
-    #[error("failed conversion from {from:?} to {to:?}")]
-    InvalidConversion { from: CellType, to: CellType },
-}
-
-impl CellError {
-    pub fn to_invalid_cell(self, address: Address) -> MemoryError {
-        MemoryError::InvalidCell {
-            inner: self,
-            address,
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -46,10 +32,7 @@ pub enum Cell {
     /// An unsigned word
     ///
     /// In contrast, a word is small enough to be copied.
-    UnsignedWord(UnsignedWord),
-
-    /// A signed word
-    SignedWord(SignedWord),
+    Word(Word),
 
     /// A signle char
     Char(Char),
@@ -69,38 +52,25 @@ impl Cell {
     fn cell_type(&self) -> CellType {
         match self {
             Self::Instruction(_) => CellType::Instruction,
-            Self::UnsignedWord(_) => CellType::UnsignedWord,
-            Self::SignedWord(_) => CellType::SignedWord,
+            Self::Word(_) => CellType::Word,
             Self::Char(_) => CellType::Char,
             Self::Empty => CellType::Empty,
         }
     }
 
-    fn extract_unsigned_word(&self) -> Result<UnsignedWord, CellError> {
+    pub fn extract_word(&self) -> Result<Word, CellError> {
         // TODO: convert from char
         match self {
-            Self::UnsignedWord(w) => Ok(*w),
-            Self::SignedWord(w) => (*w).try_into().map_err(|_| CellError::InvalidConversion {
-                from: CellType::SignedWord,
-                to: CellType::UnsignedWord,
-            }),
+            Self::Word(w) => Ok(*w),
+            Self::Empty => Ok(0),
+            Self::Char(c) if c.is_ascii() => {
+                let mut buf = [0; 1];
+                // TODO: check that this does not panic
+                c.encode_utf8(&mut buf);
+                Ok(buf[0] as _)
+            }
             t => Err(CellError::InvalidType {
-                expected: CellType::UnsignedWord,
-                was: t.cell_type(),
-            }),
-        }
-    }
-
-    fn extract_signed_word(&self) -> Result<SignedWord, CellError> {
-        // TODO: convert from char
-        match self {
-            Self::SignedWord(w) => Ok(*w),
-            Self::UnsignedWord(w) => (*w).try_into().map_err(|_| CellError::InvalidConversion {
-                from: CellType::UnsignedWord,
-                to: CellType::SignedWord,
-            }),
-            t => Err(CellError::InvalidType {
-                expected: CellType::SignedWord,
+                expected: CellType::Word,
                 was: t.cell_type(),
             }),
         }
@@ -120,6 +90,7 @@ impl Cell {
         // TODO: convert from words
         match self {
             Self::Char(c) => Ok(*c),
+            Self::Empty => Ok('\0'),
             t => Err(CellError::InvalidType {
                 expected: CellType::Char,
                 was: t.cell_type(),
@@ -144,27 +115,15 @@ impl TryFromCell for Instruction {
     }
 }
 
-impl From<UnsignedWord> for Cell {
-    fn from(word: UnsignedWord) -> Self {
-        Self::UnsignedWord(word)
+impl From<Word> for Cell {
+    fn from(word: Word) -> Self {
+        Self::Word(word)
     }
 }
 
-impl TryFromCell for UnsignedWord {
+impl TryFromCell for Word {
     fn try_from_cell(value: &Cell) -> Result<Self, CellError> {
-        value.extract_unsigned_word()
-    }
-}
-
-impl From<SignedWord> for Cell {
-    fn from(word: SignedWord) -> Self {
-        Self::SignedWord(word)
-    }
-}
-
-impl TryFromCell for SignedWord {
-    fn try_from_cell(value: &Cell) -> Result<Self, CellError> {
-        value.extract_signed_word()
+        value.extract_word()
     }
 }
 
@@ -182,9 +141,6 @@ impl TryFromCell for Char {
 
 #[derive(Debug, Error)]
 pub enum MemoryError {
-    #[error("error at address {address:#x}: {inner}")]
-    InvalidCell { inner: CellError, address: Address },
-
     #[error("invalid address {0:#x}")]
     InvalidAddress(Address),
 }
@@ -221,23 +177,5 @@ impl Memory {
         self.inner
             .get_mut(addr)
             .ok_or(MemoryError::InvalidAddress(address))
-    }
-
-    fn extract_unsigned_word(&self, address: Address) -> Result<UnsignedWord, MemoryError> {
-        let cell = self.get(address)?;
-        cell.extract_unsigned_word()
-            .map_err(|err| err.to_invalid_cell(address))
-    }
-
-    fn extract_instruction(&self, address: Address) -> Result<&Instruction, MemoryError> {
-        let cell = self.get(address)?;
-        cell.extract_instruction()
-            .map_err(|err| err.to_invalid_cell(address))
-    }
-
-    fn insert<T: Into<Cell>>(&mut self, address: Address, value: T) -> Result<(), MemoryError> {
-        let cell = self.get_mut(address)?;
-        *cell = value.into();
-        Ok(())
     }
 }

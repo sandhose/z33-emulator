@@ -5,7 +5,7 @@ use thiserror::Error;
 use tracing::{debug, span, Level};
 
 use crate::memory::Cell;
-use crate::processor::{Computer, Instruction, Labelable, Reg};
+use crate::processor::{Computer, Instruction, Labelable};
 
 #[derive(Error, Debug)]
 pub enum CompilerError {
@@ -157,10 +157,10 @@ impl CompilerState {
             .ok_or(CompilerError::InvalidLabel(start.clone()))?
             .to_owned();
 
-        computer.set_register(Reg::PC, start);
+        computer.registers.pc = start;
 
         // Initialize the SP
-        computer.set_register(Reg::SP, 0xF000);
+        computer.registers.sp = 0xF000;
 
         Ok(computer)
     }
@@ -169,7 +169,7 @@ impl CompilerState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::processor::{Arg, Value};
+    use crate::processor::{Arg, Reg, Value};
 
     #[test]
     fn build_and_run_test() {
@@ -198,6 +198,6 @@ mod tests {
         let mut computer = compiler.build("start".into()).unwrap();
         computer.run().unwrap();
 
-        assert_eq!(computer.registers.get(Reg::A), Cell::UnsignedWord(0x42));
+        assert_eq!(computer.registers.get(Reg::A), Cell::Word(0x42));
     }
 }

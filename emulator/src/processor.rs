@@ -1,11 +1,11 @@
 use bitflags::bitflags;
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
 use std::fmt::Debug;
 use thiserror::Error;
 use tracing::{debug, info};
 use z33_instruction_derive::Instruction;
 
-use super::memory::{Cell, CellError, Memory, MemoryError, TryFromCell, UnsignedWord};
+use super::memory::{Cell, CellError, Memory, MemoryError, TryFromCell, Word};
 use crate::parser::Parsable;
 
 #[derive(Error, Debug)]
@@ -16,30 +16,30 @@ pub enum Exception {
     #[error("invalid instruction")]
     InvalidInstruction,
 
-    #[error("invalid memory access")]
-    Segfault,
-
     #[error("memory error: {0}")]
     MemoryError(#[from] MemoryError),
 
     #[error("cell error: {0}")]
     CellError(#[from] CellError),
 
-    #[error("invalid value for registry {reg}: {inner}")]
-    InvalidRegistry { reg: Reg, inner: CellError },
+    #[error("invalid value for register {reg}: {inner}")]
+    InvalidRegister { reg: Reg, inner: CellError },
 
     #[error("invalid address {address}")]
     InvalidAddress { address: i64 },
 
     #[error("computer reset")]
     Reset,
+
+    #[error("TODO error handling")]
+    Todo,
 }
 
 type Result<T> = std::result::Result<T, Exception>;
 
 bitflags! {
     #[derive(Default)]
-    pub struct StatusRegister: UnsignedWord {
+    pub struct StatusRegister: Word {
         const CARRY            = 0b00000000_00000001;
         const ZERO             = 0b00000000_00000010;
         const NEGATIVE         = 0b00000000_00000100;
@@ -88,22 +88,15 @@ impl Computer {
         match address {
             Address::Dir(addr) => Ok(addr),
             Address::Ind(reg) => u64::try_from_cell(&self.registers.get(reg))
-                .map_err(|e| Exception::InvalidRegistry { reg, inner: e }),
+                .map_err(|e| Exception::InvalidRegister { reg, inner: e }),
 
             Address::Idx(reg, off) => u64::try_from_cell(&self.registers.get(reg))
-                .map_err(|e| Exception::InvalidRegistry { reg, inner: e })
+                .map_err(|e| Exception::InvalidRegister { reg, inner: e })
                 .and_then(|address| {
                     let address = address as i64 + off;
                     u64::try_from(address).map_err(|_| Exception::InvalidAddress { address })
                 }),
         }
-    }
-
-    #[tracing::instrument(skip(self), err)]
-    fn read<T: TryFromCell>(&self, address: Address) -> Result<T> {
-        let address = self.resolve_address(address)?;
-        let cell = self.memory.get(address)?;
-        T::try_from_cell(cell).map_err(|e| e.to_invalid_cell(address).into())
     }
 
     #[tracing::instrument(skip(self), err)]
@@ -116,7 +109,26 @@ impl Computer {
 
     #[tracing::instrument(skip(self))]
     pub fn set_register(&mut self, reg: Reg, val: u64) -> Result<()> {
-        self.registers.set(reg, Cell::UnsignedWord(val))
+        self.registers.set(reg, Cell::Word(val))
+    }
+
+    #[tracing::instrument(skip(self))]
+    fn word_from_reg(&self, reg: Reg) -> Result<Word> {
+        self.registers.get_word(reg)
+    }
+
+    #[tracing::instrument(skip(self))]
+    fn word_from_arg(&self, arg: Arg) -> Result<Word> {
+        match arg {
+            Arg::Address(addr) => {
+                let addr = self.resolve_address(addr)?;
+                self.memory
+                    .get(addr)
+                    .map_err(|_err| Exception::Todo)
+                    .and_then(|cell| cell.extract_word().map_err(|_err| Exception::Todo))
+            }
+            Arg::Value(val) => self.word_from_value(val),
+        }
     }
 
     #[tracing::instrument(skip(self))]
@@ -139,6 +151,14 @@ impl Computer {
         match value {
             Value::Imm(imm) => imm.into(),
             Value::Reg(reg) => self.registers.get(reg),
+        }
+    }
+
+    #[tracing::instrument(skip(self))]
+    fn word_from_value(&self, value: Value) -> Result<Word> {
+        match value {
+            Value::Imm(word) => Ok(word),
+            Value::Reg(reg) => self.registers.get_word(reg),
         }
     }
 
@@ -192,9 +212,9 @@ impl Computer {
     }
 
     #[tracing::instrument(skip(self))]
-    fn pop<T: TryFromCell + Debug>(&mut self) -> Result<T> {
+    fn pop(&mut self) -> Result<&Cell> {
         // First read the value
-        let val = self.read(Address::Ind(Reg::SP))?;
+        let val = self.memory.get(self.registers.sp)?;
         // Then move the SP
         self.registers.sp += 1;
         debug!("Poping value: {:?}", val);
@@ -206,8 +226,8 @@ impl Computer {
 pub struct Registers {
     pub a: Cell,
     pub b: Cell,
-    pub pc: UnsignedWord,
-    pub sp: UnsignedWord,
+    pub pc: Word,
+    pub sp: Word,
     pub sr: StatusRegister,
 }
 
@@ -222,13 +242,29 @@ impl Registers {
         }
     }
 
+    pub fn get_word(&self, reg: Reg) -> Result<Word> {
+        match reg {
+            Reg::A => self
+                .a
+                .extract_word()
+                .map_err(|inner| Exception::InvalidRegister { reg, inner }),
+            Reg::B => self
+                .b
+                .extract_word()
+                .map_err(|inner| Exception::InvalidRegister { reg, inner }),
+            Reg::PC => Ok(self.pc),
+            Reg::SP => Ok(self.sp),
+            Reg::SR => Ok(self.sr.bits),
+        }
+    }
+
     pub fn set(&mut self, reg: Reg, value: Cell) -> Result<()> {
         match reg {
             Reg::A => self.a = value,
             Reg::B => self.b = value,
-            Reg::PC => self.pc = UnsignedWord::try_from_cell(&value)?,
-            Reg::SP => self.sp = UnsignedWord::try_from_cell(&value)?,
-            Reg::SR => self.sr.bits = UnsignedWord::try_from_cell(&value)?,
+            Reg::PC => self.pc = Word::try_from_cell(&value)?,
+            Reg::SP => self.sp = Word::try_from_cell(&value)?,
+            Reg::SR => self.sr.bits = Word::try_from_cell(&value)?,
         };
         Ok(())
     }
@@ -354,109 +390,143 @@ impl Labelable for Arg {
     }
 }
 
+/*
 #[derive(Debug, Clone, PartialEq)]
 enum ArgSwap {
     Reg(Reg),
     Address(Address),
 }
+*/
 
 #[derive(Debug, Clone, PartialEq, Instruction)]
 pub enum Instruction {
+    /// Add a value to a register
     #[instruction(0x01)]
     Add(#[labelable] Arg, Reg),
 
+    /// Bitwise `and` with a given value
     #[instruction(0x02)]
     And(#[labelable] Arg, Reg),
 
+    /// Push `%pc` and go to the given address
     #[instruction(0x03)]
     Call(#[labelable] Arg),
 
+    /// Compare a value with a register
     #[instruction(0x04)]
     Cmp(#[labelable] Arg, Reg),
 
+    /// Divide a register by a value
     #[instruction(0x05)]
     Div(#[labelable] Arg, Reg),
 
+    /// Load a memory cell to a register and set this cell to 1
     #[instruction(0x06)]
     Fas(Address, Reg),
 
+    /// Read a value from an I/O controller
     #[instruction(0x07)]
     In(Address, Reg),
 
+    /// Unconditional jump
     #[instruction(0x08)]
     Jmp(#[labelable] Arg),
 
+    /// Jump if equal
     #[instruction(0x09)]
     Jeq(#[labelable] Arg),
 
+    /// Jump if not equal
     #[instruction(0x0A)]
     Jne(#[labelable] Arg),
 
+    /// Jump if less or equal
     #[instruction(0x0B)]
     Jle(#[labelable] Arg),
 
+    /// Jump if strictly less
     #[instruction(0x0C)]
     Jlt(#[labelable] Arg),
 
+    /// Jump if greater of equal
     #[instruction(0x0D)]
     Jge(#[labelable] Arg),
 
+    /// Jump if strictly greater
     #[instruction(0x0E)]
     Jgt(#[labelable] Arg),
 
+    /// Load a register with a value
     #[instruction(0x0F)]
     Ld(#[labelable] Arg, Reg),
 
+    /// Multiply a value to a register
     #[instruction(0x10)]
     Mul(#[labelable] Arg, Reg),
 
     #[instruction(0x11)]
     Neg(Reg),
 
+    /// No-op
     #[instruction(0x12)]
     Nop,
 
+    /// Bitwise negation of a register
     #[instruction(0x13)]
     Not(Reg),
 
+    /// Bitwise `or` with a given value
     #[instruction(0x14)]
     Or(#[labelable] Arg, Reg),
 
+    /// Write a value to an I/O controller
     #[instruction(0x15)]
     Out(Value, Address),
 
+    /// Pop a value from the stack
     #[instruction(0x16)]
     Pop(Reg),
 
+    /// Push a value into the stack
     #[instruction(0x17)]
     Push(Value),
 
+    /// Reset the computer
     #[instruction(0x18)]
     Reset,
 
+    /// Return from an interrupt or an exception
     #[instruction(0x19)]
     Rti,
 
+    /// Return from a `call`
     #[instruction(0x1A)]
     Rtn,
 
+    /// Bitshift to the left
     #[instruction(0x1B)]
     Shl(#[labelable] Arg, Reg),
 
+    /// Bitshift to the right
     #[instruction(0x1C)]
     Shr(#[labelable] Arg, Reg),
 
+    /// Store a register value in memory
     #[instruction(0x1D)]
     St(Reg, Address),
 
+    /// Substract a value from a register
     #[instruction(0x1E)]
     Sub(#[labelable] Arg, Reg),
 
+    // /// Swap a value and a register
     // #[instruction(0x1F)]
     // Swap(ArgSwap, Reg),
+    /// Start a `trap` exception
     #[instruction(0x20)]
     Trap,
 
+    /// Bitwise `xor` with a given value
     #[instruction(0x21)]
     Xor(#[labelable] Arg, Reg),
 }
@@ -464,17 +534,12 @@ pub enum Instruction {
 impl Instruction {
     #[tracing::instrument]
     fn execute(self, computer: &mut Computer) -> Result<()> {
-        todo!()
-        /*
         match self {
             Instruction::Add(arg, reg) => {
-                let val = UnsignedWord::try_from_cell(&computer.arg(arg)?)
-                    .map_err(|inner| Exception::InvalidRegistry { reg, inner })?;
-                let reg_val = UnsignedWord::try_from_cell(&computer.registers.get(reg))
-                    .map_err(|inner| Exception::InvalidRegistry { reg, inner })?;
-                let reg_val = computer.registers.get(reg);
-                let (res, overflow) = reg.overflowing_add(val);
-                *reg = res;
+                let a = computer.word_from_arg(arg)?;
+                let b = computer.word_from_reg(reg)?;
+                let (res, overflow) = a.overflowing_add(b);
+                computer.registers.set(reg, res.into())?;
 
                 computer
                     .registers
@@ -482,56 +547,54 @@ impl Instruction {
                     .set(StatusRegister::OVERFLOW, overflow);
             }
             Instruction::And(arg, reg) => {
-                let val = computer.arg(arg)?;
-                *computer.registers.get_mut(reg) &= val;
+                let a = computer.word_from_arg(arg)?;
+                let b = computer.word_from_reg(reg)?;
+                let res = a & b;
+                computer.registers.set(reg, res.into())?;
             }
             Instruction::Call(arg) => {
                 // Push PC
-                let pc = computer.registers.get(Reg::PC);
+                let pc = computer.registers.pc;
                 computer.push(pc)?;
 
                 // Jump
-                let addr = computer.arg(arg)?;
+                let addr = computer.word_from_arg(arg)?;
                 computer.jump(Address::Dir(addr))?;
             }
             Instruction::Cmp(arg, reg) => {
-                let val1 = computer.arg(arg)?;
-                let val2 = computer.registers.get(reg);
+                let a = computer.word_from_arg(arg)?;
+                let b = computer.word_from_reg(reg)?;
 
-                computer
-                    .registers
-                    .sr
-                    .set(StatusRegister::ZERO, val1 == val2);
-
-                computer
-                    .registers
-                    .sr
-                    .set(StatusRegister::NEGATIVE, val1 < val2);
+                computer.registers.sr.set(StatusRegister::ZERO, a == b);
+                computer.registers.sr.set(StatusRegister::NEGATIVE, a < b);
             }
             Instruction::Div(arg, reg) => {
-                let val = computer.arg(arg)?;
-                let reg = computer.registers.get_mut(reg);
-                *reg = reg.checked_div(val).ok_or(Exception::DivByZero)?;
+                let a = computer.word_from_arg(arg)?;
+                let b = computer.word_from_reg(reg)?;
+                let res = b.checked_div(a).ok_or(Exception::DivByZero)?;
+                computer.registers.set(reg, res.into())?;
             }
             Instruction::Fas(addr, reg) => {
-                let val = computer.read(addr.clone())?;
-                *computer.registers.get_mut(reg) = val;
-                computer.write(addr, 1 as Word)?;
+                let addr = computer.resolve_address(addr)?;
+                let cell = computer.memory.get_mut(addr)?;
+                let val = cell.clone();
+                computer.registers.set(reg, val)?;
+                *cell = Cell::Word(1);
             }
             Instruction::In(_, _) => todo!(),
             Instruction::Jmp(arg) => {
-                let val = computer.arg(arg)?;
+                let val = computer.word_from_arg(arg)?;
                 computer.registers.pc = val;
             }
             Instruction::Jeq(arg) => {
                 if computer.registers.sr.contains(StatusRegister::ZERO) {
-                    let val = computer.arg(arg)?;
+                    let val = computer.word_from_arg(arg)?;
                     computer.registers.pc = val;
                 }
             }
             Instruction::Jne(arg) => {
                 if !computer.registers.sr.contains(StatusRegister::ZERO) {
-                    let val = computer.arg(arg)?;
+                    let val = computer.word_from_arg(arg)?;
                     computer.registers.pc = val;
                 }
             }
@@ -539,7 +602,7 @@ impl Instruction {
                 if computer.registers.sr.contains(StatusRegister::ZERO)
                     || computer.registers.sr.contains(StatusRegister::NEGATIVE)
                 {
-                    let val = computer.arg(arg)?;
+                    let val = computer.word_from_arg(arg)?;
                     computer.registers.pc = val;
                 }
             }
@@ -547,7 +610,7 @@ impl Instruction {
                 if !computer.registers.sr.contains(StatusRegister::ZERO)
                     && computer.registers.sr.contains(StatusRegister::NEGATIVE)
                 {
-                    let val = computer.arg(arg)?;
+                    let val = computer.word_from_arg(arg)?;
                     computer.registers.pc = val;
                 }
             }
@@ -555,7 +618,7 @@ impl Instruction {
                 if computer.registers.sr.contains(StatusRegister::ZERO)
                     || !computer.registers.sr.contains(StatusRegister::NEGATIVE)
                 {
-                    let val = computer.arg(arg)?;
+                    let val = computer.word_from_arg(arg)?;
                     computer.registers.pc = val;
                 }
             }
@@ -563,40 +626,46 @@ impl Instruction {
                 if !computer.registers.sr.contains(StatusRegister::ZERO)
                     && !computer.registers.sr.contains(StatusRegister::NEGATIVE)
                 {
-                    let val = computer.arg(arg)?;
+                    let val = computer.word_from_arg(arg)?;
                     computer.registers.pc = val;
                 }
             }
             Instruction::Ld(arg, reg) => {
                 let val = computer.arg(arg)?;
-                let reg = computer.registers.get_mut(reg);
-                *reg = val;
+                computer.registers.set(reg, val)?;
             }
             Instruction::Mul(arg, reg) => {
-                let val = computer.arg(arg)?;
-                let reg = computer.registers.get_mut(reg);
-                let (res, overflow) = reg.overflowing_mul(val);
-                *reg = res;
+                let a = computer.word_from_arg(arg)?;
+                let b = computer.word_from_reg(reg)?;
+                let (res, overflow) = a.overflowing_mul(b);
+                computer.registers.set(reg, res.into())?;
 
                 computer
                     .registers
                     .sr
                     .set(StatusRegister::OVERFLOW, overflow);
             }
-            Instruction::Neg(_reg) => todo!(),
+            Instruction::Neg(reg) => {
+                let val = computer.word_from_reg(reg)?;
+                let val = -(val as i64);
+                let val = val as Word;
+                computer.registers.set(reg, val.into())?;
+            }
             Instruction::Nop => {}
             Instruction::Not(reg) => {
-                let reg = computer.registers.get_mut(reg);
-                *reg = !*reg;
+                let val = computer.word_from_reg(reg)?;
+                computer.registers.set(reg, (!val).into())?;
             }
             Instruction::Or(arg, reg) => {
-                let val = computer.arg(arg)?;
-                *computer.registers.get_mut(reg) |= val;
+                let a = computer.word_from_arg(arg)?;
+                let b = computer.word_from_reg(reg)?;
+                let res = a | b;
+                computer.registers.set(reg, res.into())?;
             }
             Instruction::Out(_, _) => todo!(),
             Instruction::Pop(reg) => {
-                let val = computer.pop()?;
-                *computer.registers.get_mut(reg) = val;
+                let val = computer.pop()?.clone();
+                computer.registers.set(reg, val)?;
             }
             Instruction::Push(val) => {
                 let val = computer.value(val);
@@ -606,31 +675,36 @@ impl Instruction {
             Instruction::Rti => todo!(),
             Instruction::Rtn => {
                 let ret = computer.pop()?; // Pop the return address
+                let ret = ret.extract_word()?; // Convert it to an address
                 computer.jump(Address::Dir(ret))?; // and jump to it
             }
             Instruction::Shl(arg, reg) => {
-                let val = computer.arg(arg)?;
-                let reg = computer.registers.get_mut(reg);
-                *reg = reg
-                    .checked_shl(val as u32)
-                    .ok_or(Exception::InvalidInstruction)?;
+                let a = computer.word_from_arg(arg)?;
+                let b = computer.word_from_reg(reg)?;
+
+                let b: u32 = b.try_into().map_err(|_| Exception::InvalidInstruction)?;
+                let res = a.checked_shl(b).ok_or(Exception::InvalidInstruction)?;
+
+                computer.registers.set(reg, res.into())?;
             }
             Instruction::Shr(arg, reg) => {
-                let val = computer.arg(arg)?;
-                let reg = computer.registers.get_mut(reg);
-                *reg = reg
-                    .checked_shr(val as u32)
-                    .ok_or(Exception::InvalidInstruction)?;
+                let a = computer.word_from_arg(arg)?;
+                let b = computer.word_from_reg(reg)?;
+
+                let b: u32 = b.try_into().map_err(|_| Exception::InvalidInstruction)?;
+                let res = a.checked_shr(b).ok_or(Exception::InvalidInstruction)?;
+
+                computer.registers.set(reg, res.into())?;
             }
             Instruction::St(reg, address) => {
                 let val = computer.registers.get(reg);
                 computer.write(address, val)?;
             }
             Instruction::Sub(arg, reg) => {
-                let val = computer.arg(arg)?;
-                let reg = computer.registers.get_mut(reg);
-                let (res, overflow) = reg.overflowing_sub(val);
-                *reg = res;
+                let a = computer.word_from_arg(arg)?;
+                let b = computer.word_from_reg(reg)?;
+                let (res, overflow) = a.overflowing_sub(b);
+                computer.registers.set(reg, res.into())?;
 
                 computer
                     .registers
@@ -639,14 +713,14 @@ impl Instruction {
             }
             Instruction::Trap => todo!(),
             Instruction::Xor(arg, reg) => {
-                let val = computer.arg(arg)?;
-                let reg = computer.registers.get_mut(reg);
-                *reg ^= val;
+                let a = computer.word_from_arg(arg)?;
+                let b = computer.word_from_reg(reg)?;
+                let res = a ^ b;
+                computer.registers.set(reg, res.into())?;
             }
         };
 
         Ok(())
-        */
     }
 }
 
@@ -666,17 +740,14 @@ mod tests {
 
         let instruction = Instruction::Add(Arg::Value(Value::Imm(5)), Reg::A);
         instruction.execute(&mut computer).unwrap();
-        assert_eq!(computer.registers.get(Reg::A), Cell::UnsignedWord(5));
+        assert_eq!(computer.registers.get(Reg::A), Cell::Word(5));
 
         // Write some memory (with indirect access)
         computer.write(Address::Dir(0x42), 100 as u64).unwrap();
-        computer
-            .registers
-            .set(Reg::B, Cell::UnsignedWord(0x32))
-            .unwrap();
+        computer.registers.set(Reg::B, Cell::Word(0x32)).unwrap();
         let instruction = Instruction::Add(Arg::Address(Address::Idx(Reg::B, 0x10)), Reg::A);
         instruction.execute(&mut computer).unwrap();
-        assert_eq!(computer.registers.get(Reg::A), Cell::UnsignedWord(105));
+        assert_eq!(computer.registers.get(Reg::A), Cell::Word(105));
     }
 
     #[test]
@@ -702,19 +773,19 @@ mod tests {
         assert_eq!(computer.registers.pc, start);
         computer.step().unwrap();
 
-        assert_eq!(computer.registers.a, Cell::UnsignedWord(0x42));
+        assert_eq!(computer.registers.a, Cell::Word(0x42));
         assert_eq!(computer.registers.b, Cell::Empty);
-        assert_eq!(computer.registers.pc, start + 5);
+        assert_eq!(computer.registers.pc, start + 1);
         computer.step().unwrap();
 
-        assert_eq!(computer.registers.a, Cell::UnsignedWord(0x42));
-        assert_eq!(computer.registers.b, Cell::UnsignedWord(0x24));
-        assert_eq!(computer.registers.pc, start + 10);
+        assert_eq!(computer.registers.a, Cell::Word(0x42));
+        assert_eq!(computer.registers.b, Cell::Word(0x24));
+        assert_eq!(computer.registers.pc, start + 2);
         computer.step().unwrap();
 
-        assert_eq!(computer.registers.a, Cell::UnsignedWord(0x42));
-        assert_eq!(computer.registers.b, Cell::UnsignedWord(0x66));
-        assert_eq!(computer.registers.pc, start + 13);
+        assert_eq!(computer.registers.a, Cell::Word(0x42));
+        assert_eq!(computer.registers.b, Cell::Word(0x66));
+        assert_eq!(computer.registers.pc, start + 3);
     }
 
     #[test]
@@ -745,8 +816,8 @@ mod tests {
         .map(|(offset, instruction)| (start + offset as u64, instruction));
 
         let subroutine_inst = vec![
-            Instruction::Ld(Arg::Value(Value::Imm(0x42)), Reg::A),
-            Instruction::Ld(Arg::Value(Value::Imm(0x24)), Reg::B),
+            Instruction::Ld(Arg::Value(Value::Imm(42)), Reg::A),
+            Instruction::Ld(Arg::Value(Value::Imm(24)), Reg::B),
             Instruction::Rtn,
         ]
         .into_iter()
@@ -773,29 +844,29 @@ mod tests {
         // ld 0x42, %a
         computer.step().unwrap();
 
-        assert_eq!(computer.registers.a, Cell::UnsignedWord(0x42));
+        assert_eq!(computer.registers.a, Cell::Word(42));
         assert_eq!(computer.registers.b, Cell::Empty);
         assert_eq!(computer.registers.pc, subroutine + 1);
         assert_eq!(computer.registers.sp, stack - 1);
         // ld 0x24, %b
         computer.step().unwrap();
 
-        assert_eq!(computer.registers.a, Cell::UnsignedWord(0x42));
-        assert_eq!(computer.registers.b, Cell::UnsignedWord(0x24));
+        assert_eq!(computer.registers.a, Cell::Word(42));
+        assert_eq!(computer.registers.b, Cell::Word(24));
         assert_eq!(computer.registers.pc, subroutine + 2);
-        assert_eq!(computer.registers.sp, stack - 2);
+        assert_eq!(computer.registers.sp, stack - 1);
         // rtn
         computer.step().unwrap();
 
-        assert_eq!(computer.registers.a, Cell::UnsignedWord(0x42));
-        assert_eq!(computer.registers.b, Cell::UnsignedWord(0x24));
+        assert_eq!(computer.registers.a, Cell::Word(42));
+        assert_eq!(computer.registers.b, Cell::Word(24));
         assert_eq!(computer.registers.pc, start + 1);
         assert_eq!(computer.registers.sp, stack);
         // add %a, %b
         computer.step().unwrap();
 
-        assert_eq!(computer.registers.a, Cell::UnsignedWord(0x42));
-        assert_eq!(computer.registers.b, Cell::UnsignedWord(0x66));
+        assert_eq!(computer.registers.a, Cell::Word(42));
+        assert_eq!(computer.registers.b, Cell::Word(66));
         assert_eq!(computer.registers.pc, start + 2);
         assert_eq!(computer.registers.sp, stack);
     }
