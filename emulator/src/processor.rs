@@ -166,7 +166,7 @@ impl Computer {
     fn jump(&mut self, address: Address) -> Result<()> {
         let address = self.resolve_address(address)?;
         debug!("Jumping to address {:#x}", address);
-        self.registers.set(Reg::PC, address.into())?;
+        self.registers.pc = address;
         Ok(())
     }
 
@@ -283,7 +283,7 @@ impl std::fmt::Display for Reg {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::A => write!(f, "%a"),
-            Self::B => write!(f, "%a"),
+            Self::B => write!(f, "%b"),
             Self::PC => write!(f, "%pc"),
             Self::SP => write!(f, "%sp"),
             Self::SR => write!(f, "%sr"),
@@ -539,6 +539,7 @@ impl Instruction {
                 let a = computer.word_from_arg(arg)?;
                 let b = computer.word_from_reg(reg)?;
                 let (res, overflow) = a.overflowing_add(b);
+                debug!("{} + {} = {}", a, b, res);
                 computer.registers.set(reg, res.into())?;
 
                 computer
@@ -550,6 +551,7 @@ impl Instruction {
                 let a = computer.word_from_arg(arg)?;
                 let b = computer.word_from_reg(reg)?;
                 let res = a & b;
+                debug!("{} & {} = {}", a, b, res);
                 computer.registers.set(reg, res.into())?;
             }
             Instruction::Call(arg) => {
@@ -567,11 +569,19 @@ impl Instruction {
 
                 computer.registers.sr.set(StatusRegister::ZERO, a == b);
                 computer.registers.sr.set(StatusRegister::NEGATIVE, a < b);
+
+                debug!(
+                    "cmp({}, {}) => {:?}",
+                    a,
+                    b,
+                    computer.registers.sr & (StatusRegister::ZERO | StatusRegister::NEGATIVE)
+                );
             }
             Instruction::Div(arg, reg) => {
                 let a = computer.word_from_arg(arg)?;
                 let b = computer.word_from_reg(reg)?;
                 let res = b.checked_div(a).ok_or(Exception::DivByZero)?;
+                debug!("{} / {} = {}", b, a, res);
                 computer.registers.set(reg, res.into())?;
             }
             Instruction::Fas(addr, reg) => {
@@ -584,17 +594,20 @@ impl Instruction {
             Instruction::In(_, _) => todo!(),
             Instruction::Jmp(arg) => {
                 let val = computer.word_from_arg(arg)?;
+                debug!("Jumping to address {:#x}", val);
                 computer.registers.pc = val;
             }
             Instruction::Jeq(arg) => {
                 if computer.registers.sr.contains(StatusRegister::ZERO) {
                     let val = computer.word_from_arg(arg)?;
+                    debug!("Jumping to address {:#x}", val);
                     computer.registers.pc = val;
                 }
             }
             Instruction::Jne(arg) => {
                 if !computer.registers.sr.contains(StatusRegister::ZERO) {
                     let val = computer.word_from_arg(arg)?;
+                    debug!("Jumping to address {:#x}", val);
                     computer.registers.pc = val;
                 }
             }
@@ -603,6 +616,7 @@ impl Instruction {
                     || computer.registers.sr.contains(StatusRegister::NEGATIVE)
                 {
                     let val = computer.word_from_arg(arg)?;
+                    debug!("Jumping to address {:#x}", val);
                     computer.registers.pc = val;
                 }
             }
@@ -611,6 +625,7 @@ impl Instruction {
                     && computer.registers.sr.contains(StatusRegister::NEGATIVE)
                 {
                     let val = computer.word_from_arg(arg)?;
+                    debug!("Jumping to address {:#x}", val);
                     computer.registers.pc = val;
                 }
             }
@@ -619,6 +634,7 @@ impl Instruction {
                     || !computer.registers.sr.contains(StatusRegister::NEGATIVE)
                 {
                     let val = computer.word_from_arg(arg)?;
+                    debug!("Jumping to address {:#x}", val);
                     computer.registers.pc = val;
                 }
             }
@@ -627,6 +643,7 @@ impl Instruction {
                     && !computer.registers.sr.contains(StatusRegister::NEGATIVE)
                 {
                     let val = computer.word_from_arg(arg)?;
+                    debug!("Jumping to address {:#x}", val);
                     computer.registers.pc = val;
                 }
             }
@@ -638,6 +655,7 @@ impl Instruction {
                 let a = computer.word_from_arg(arg)?;
                 let b = computer.word_from_reg(reg)?;
                 let (res, overflow) = a.overflowing_mul(b);
+                debug!("{} * {} = {}", a, b, res);
                 computer.registers.set(reg, res.into())?;
 
                 computer
@@ -647,28 +665,34 @@ impl Instruction {
             }
             Instruction::Neg(reg) => {
                 let val = computer.word_from_reg(reg)?;
-                let val = -(val as i64);
-                let val = val as Word;
-                computer.registers.set(reg, val.into())?;
+                let res = -(val as i64);
+                let res = res as Word;
+                debug!("-{} = {}", val, res);
+                computer.registers.set(reg, res.into())?;
             }
             Instruction::Nop => {}
             Instruction::Not(reg) => {
                 let val = computer.word_from_reg(reg)?;
-                computer.registers.set(reg, (!val).into())?;
+                let res = !val;
+                debug!("!{} = {}", val, res);
+                computer.registers.set(reg, res.into())?;
             }
             Instruction::Or(arg, reg) => {
                 let a = computer.word_from_arg(arg)?;
                 let b = computer.word_from_reg(reg)?;
                 let res = a | b;
+                debug!("{} | {} = {}", a, b, res);
                 computer.registers.set(reg, res.into())?;
             }
             Instruction::Out(_, _) => todo!(),
             Instruction::Pop(reg) => {
                 let val = computer.pop()?.clone();
+                debug!("pop => {:?}", val);
                 computer.registers.set(reg, val)?;
             }
             Instruction::Push(val) => {
                 let val = computer.value(val);
+                debug!("push({:?})", val);
                 computer.push(val)?;
             }
             Instruction::Reset => return Err(Exception::Reset),
@@ -676,7 +700,8 @@ impl Instruction {
             Instruction::Rtn => {
                 let ret = computer.pop()?; // Pop the return address
                 let ret = ret.extract_word()?; // Convert it to an address
-                computer.jump(Address::Dir(ret))?; // and jump to it
+                debug!("Returning to {}", ret);
+                computer.registers.pc = ret; // and jump to it
             }
             Instruction::Shl(arg, reg) => {
                 let a = computer.word_from_arg(arg)?;
@@ -685,6 +710,7 @@ impl Instruction {
                 let b: u32 = b.try_into().map_err(|_| Exception::InvalidInstruction)?;
                 let res = a.checked_shl(b).ok_or(Exception::InvalidInstruction)?;
 
+                debug!("{} << {} = {}", a, b, res);
                 computer.registers.set(reg, res.into())?;
             }
             Instruction::Shr(arg, reg) => {
@@ -694,6 +720,7 @@ impl Instruction {
                 let b: u32 = b.try_into().map_err(|_| Exception::InvalidInstruction)?;
                 let res = a.checked_shr(b).ok_or(Exception::InvalidInstruction)?;
 
+                debug!("{} >> {} = {}", a, b, res);
                 computer.registers.set(reg, res.into())?;
             }
             Instruction::St(reg, address) => {
@@ -703,8 +730,10 @@ impl Instruction {
             Instruction::Sub(arg, reg) => {
                 let a = computer.word_from_arg(arg)?;
                 let b = computer.word_from_reg(reg)?;
-                let (res, overflow) = a.overflowing_sub(b);
+                let (res, overflow) = b.overflowing_sub(a);
                 computer.registers.set(reg, res.into())?;
+
+                debug!("{} - {} = {}", b, a, res);
 
                 computer
                     .registers
@@ -716,6 +745,7 @@ impl Instruction {
                 let a = computer.word_from_arg(arg)?;
                 let b = computer.word_from_reg(reg)?;
                 let res = a ^ b;
+                debug!("{} ^ {} = {}", a, b, res);
                 computer.registers.set(reg, res.into())?;
             }
         };

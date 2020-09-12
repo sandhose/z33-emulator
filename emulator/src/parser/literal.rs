@@ -28,8 +28,8 @@ pub fn parse_string_literal(input: &str) -> IResult<&str, String> {
 }
 
 /// Parse a decimal number
-fn from_decimal(input: &str) -> Result<u16, std::num::ParseIntError> {
-    u16::from_str(input)
+fn from_decimal(input: &str) -> Result<u64, std::num::ParseIntError> {
+    u64::from_str(input)
 }
 
 /// Check if character is a decimal digit
@@ -38,8 +38,8 @@ fn is_digit(c: char) -> bool {
 }
 
 /// Parse a hexadecimal number
-fn from_hexadecimal(input: &str) -> Result<u16, std::num::ParseIntError> {
-    u16::from_str_radix(input, 16)
+fn from_hexadecimal(input: &str) -> Result<u64, std::num::ParseIntError> {
+    u64::from_str_radix(input, 16)
 }
 
 /// Check if character is a hexadecimal digit
@@ -54,8 +54,8 @@ fn take_hexadecimal_literal(input: &str) -> IResult<&str, &str> {
 }
 
 /// Parse an octal number
-fn from_octal(input: &str) -> Result<u16, std::num::ParseIntError> {
-    u16::from_str_radix(input, 8)
+fn from_octal(input: &str) -> Result<u64, std::num::ParseIntError> {
+    u64::from_str_radix(input, 8)
 }
 
 /// Check if character is an octal digit
@@ -70,8 +70,8 @@ fn take_octal_literal(input: &str) -> IResult<&str, &str> {
 }
 
 /// Parse a binary number
-fn from_binary(input: &str) -> Result<u16, std::num::ParseIntError> {
-    u16::from_str_radix(input, 2)
+fn from_binary(input: &str) -> Result<u64, std::num::ParseIntError> {
+    u64::from_str_radix(input, 2)
 }
 
 /// Check if character is a binary digit
@@ -86,7 +86,7 @@ fn take_binary_literal(input: &str) -> IResult<&str, &str> {
 }
 
 /// Parse a number literal
-pub fn parse_literal(input: &str) -> IResult<&str, u16> {
+pub fn parse_literal(input: &str) -> IResult<&str, u64> {
     alt((
         map_res(take_hexadecimal_literal, from_hexadecimal),
         map_res(take_octal_literal, from_octal),

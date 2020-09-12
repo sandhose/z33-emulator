@@ -33,7 +33,7 @@ use nom::{
 use super::literal::parse_literal;
 
 /// The type of value used throughout the calculation
-pub type Value = i64;
+pub type Value = i128;
 
 #[doc(hidden)]
 fn parse_or_rec(input: &str) -> IResult<&str, Value> {
@@ -188,7 +188,7 @@ fn parse_parenthesis(input: &str) -> IResult<&str, Value> {
 
 /// Parse a const expression, casting the value at the end
 pub fn parse_const_expression<T: TryFrom<Value>>(input: &str) -> IResult<&str, T> {
-    // At the end, we try converting the Value (i64) back to T (mostly u16 or i16)
+    // At the end, we try converting the Value (i128) back to T (mostly u64 or i64)
     map_res(parse_or, TryFrom::try_from)(input)
 }
 

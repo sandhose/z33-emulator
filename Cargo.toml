@@ -4,3 +4,6 @@ members = [
   "emulator",
   "instruction-derive",
 ]
+
+[profile.release]
+lto = true
