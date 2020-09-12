@@ -17,12 +17,12 @@ use super::parse_identifier;
 /// Type used for memory addresses
 ///
 /// This should be in sync with what is defined in the `processor` module.
-type Address = u16;
+type Address = u64;
 
 /// Type used for words in memory
 ///
 /// This should be in sync with what is defined in the `processor` module.
-type Word = u16;
+type Word = u64;
 
 /// Represents an assembly directive
 #[derive(Debug, Clone, PartialEq)]

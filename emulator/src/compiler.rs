@@ -4,7 +4,8 @@ use std::collections::HashMap;
 use thiserror::Error;
 use tracing::{debug, span, Level};
 
-use crate::processor::{Computer, Encodable, Instruction, Labelable, Reg};
+use crate::memory::Cell;
+use crate::processor::{Computer, Instruction, Labelable, Reg};
 
 #[derive(Error, Debug)]
 pub enum CompilerError {
@@ -26,13 +27,13 @@ pub enum CompilerError {
 
 type Result<T> = std::result::Result<T, CompilerError>;
 
-type Labels = HashMap<String, u16>;
+type Labels = HashMap<String, u64>;
 
 #[derive(Debug)]
 struct PendingLabel {
     label: String,
     instruction: Instruction,
-    address: u16,
+    address: u64,
 }
 
 pub trait Compiler {
@@ -43,12 +44,12 @@ pub trait Compiler {
         instruction: Instruction,
         label: String,
     ) -> std::result::Result<(), Self::Error>;
-    fn ingest<T: Encodable + std::fmt::Debug>(
+    fn ingest<T: Into<Cell> + std::fmt::Debug>(
         &mut self,
         val: T,
     ) -> std::result::Result<(), Self::Error>;
-    fn change_address(&mut self, addr: u16) -> std::result::Result<(), Self::Error>;
-    fn memory_skip(&mut self, offset: u16) -> std::result::Result<(), Self::Error>;
+    fn change_address(&mut self, addr: u64) -> std::result::Result<(), Self::Error>;
+    fn memory_skip(&mut self, offset: u64) -> std::result::Result<(), Self::Error>;
 }
 
 #[derive(Default, Debug)]
@@ -56,7 +57,7 @@ pub struct CompilerState {
     computer: Computer,
     labels: Labels,
     pending_labels: Vec<PendingLabel>,
-    memory_position: u16,
+    memory_position: u64,
 }
 
 impl Compiler for CompilerState {
@@ -88,23 +89,22 @@ impl Compiler for CompilerState {
     }
 
     #[tracing::instrument]
-    fn ingest<T: Encodable + std::fmt::Debug>(&mut self, val: T) -> Result<()> {
-        let offset = self
-            .computer
+    fn ingest<T: Into<Cell> + std::fmt::Debug>(&mut self, val: T) -> Result<()> {
+        self.computer
             .write(self.memory_position.into(), val)
             .map_err(|_| CompilerError::EncodeError)?;
-        self.memory_position += offset;
+        self.memory_position += 1;
         Ok(())
     }
 
     #[tracing::instrument]
-    fn change_address(&mut self, addr: u16) -> Result<()> {
+    fn change_address(&mut self, addr: u64) -> Result<()> {
         self.memory_position = addr;
         Ok(())
     }
 
     #[tracing::instrument]
-    fn memory_skip(&mut self, offset: u16) -> Result<()> {
+    fn memory_skip(&mut self, offset: u64) -> Result<()> {
         self.memory_position = self
             .memory_position
             .checked_add(offset)
@@ -198,6 +198,6 @@ mod tests {
         let mut computer = compiler.build("start".into()).unwrap();
         computer.run().unwrap();
 
-        assert_eq!(computer.registers.get(Reg::A), 0x42);
+        assert_eq!(computer.registers.get(Reg::A), Cell::UnsignedWord(0x42));
     }
 }

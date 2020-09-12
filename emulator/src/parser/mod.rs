@@ -39,10 +39,10 @@ fn parse_value(input: &str) -> IResult<&str, Value> {
     ))(input)
 }
 
-fn parse_indexed(input: &str) -> IResult<&str, (Reg, i16)> {
+fn parse_indexed(input: &str) -> IResult<&str, (Reg, i64)> {
     let (input, reg) = parse_reg(input)?;
     let (input, sign) = one_of("+-")(input)?;
-    let (input, val): (_, i16) = parse_const_expression(input)?;
+    let (input, val): (_, i64) = parse_const_expression(input)?;
 
     let value = if sign == '-' { -val } else { val };
 

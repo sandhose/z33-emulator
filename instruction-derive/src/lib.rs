@@ -83,77 +83,6 @@ fn impl_instruction(ast: &DeriveInput) -> syn::parse::Result<TokenStream> {
         abort!(ast.span(), "should be only called on enums")
     }
 
-    let match_encode = instructions.iter().fold(quote!(), |acc, instruction| {
-        let t = instruction.ident.clone();
-        let opcode = instruction.opcode.clone();
-        let arm = if instruction.args.is_empty() {
-            quote_spanned! { Span::call_site() =>
-                Self::#t => { vec![#opcode] }
-            }
-        } else {
-            let (pat, body) = instruction.args.iter().enumerate().fold(
-                (quote! {}, quote! {}),
-                |(pat, body), (i, arg)| {
-                    let id = Ident::new(format!("arg{}", i).as_str(), arg.span());
-                    let pat = quote! { #pat #id, };
-                    let body = quote! {
-                        #body
-                        v.extend(#id.encode());
-                    };
-                    (pat, body)
-                },
-            );
-
-            quote_spanned! { Span::call_site() =>
-                Self::#t(#pat) => {
-                    let mut v = vec![#opcode];
-                    #body
-                    v
-                }
-            }
-        };
-
-        quote_spanned! { Span::call_site() =>
-            #arm,
-            #acc
-        }
-    });
-
-    let match_decode = instructions.iter().fold(quote!(), |acc, instruction| {
-        let t = instruction.ident.clone();
-        let opcode = instruction.opcode.clone();
-        let arm = if instruction.args.is_empty() {
-            quote_spanned! { Span::call_site() =>
-                #opcode => { Self::#t }
-            }
-        } else {
-            let (pat, body) = instruction.args.iter().enumerate().fold(
-                (quote! {}, quote! {}),
-                |(pat, body), (i, arg)| {
-                    let id = Ident::new(format!("arg{}", i).as_str(), arg.span());
-                    let pat = quote! { #pat #id, };
-                    let body = quote! {
-                        #body
-                        let #id = self::#arg::decode(reader)?;
-                    };
-                    (pat, body)
-                },
-            );
-
-            quote_spanned! { Span::call_site() =>
-                #opcode => {
-                    #body
-                    Self::#t(#pat)
-                }
-            }
-        };
-
-        quote_spanned! { Span::call_site() =>
-            #arm,
-            #acc
-        }
-    });
-
     let match_label = instructions.iter().fold(quote!(), |acc, instruction| {
         let t = instruction.ident.clone();
         let arm = if instruction.args.is_empty() {
@@ -302,29 +231,8 @@ fn impl_instruction(ast: &DeriveInput) -> syn::parse::Result<TokenStream> {
     });
 
     let im = quote! {
-        impl Encodable for #t {
-            fn encode(self) -> Vec<u8> {
-                match self {
-                    #match_encode
-                }
-            }
-        }
-
-        impl Decodable for #t {
-            fn decode<T: ::std::io::Read>(reader: &mut T) -> Option<Self> {
-                let mut buf = [0];
-                reader.read_exact(&mut buf).ok()?;
-                let inst = buf[0];
-                let inst = match inst {
-                    #match_decode
-                    _ => return None,
-                };
-                Some(inst)
-            }
-        }
-
         impl Labelable for #t {
-            fn resolve_label(self, address: u16) -> Option<Self> {
+            fn resolve_label(self, address: u64) -> Option<Self> {
                 match self {
                     #match_label
                 }

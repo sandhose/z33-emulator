@@ -1,34 +1,35 @@
-#![allow(dead_code)]
-
-use crate::parser::Parsable;
 use bitflags::bitflags;
-use std::{
-    fmt::Debug,
-    io::{Cursor, Read, Write},
-};
+use std::convert::TryFrom;
+use std::fmt::Debug;
 use thiserror::Error;
 use tracing::{debug, info};
 use z33_instruction_derive::Instruction;
 
+use super::memory::{Cell, CellError, Memory, MemoryError, TryFromCell, UnsignedWord};
+use crate::parser::Parsable;
+
 #[derive(Error, Debug)]
 pub enum Exception {
-    #[error("hardware interrupt")]
-    HardwareInterrupt,
-
     #[error("division by zero")]
     DivByZero,
 
     #[error("invalid instruction")]
     InvalidInstruction,
 
-    #[error("instruction denied")]
-    Denied,
-
-    #[error("trap")]
-    Trap,
-
     #[error("invalid memory access")]
     Segfault,
+
+    #[error("memory error: {0}")]
+    MemoryError(#[from] MemoryError),
+
+    #[error("cell error: {0}")]
+    CellError(#[from] CellError),
+
+    #[error("invalid value for registry {reg}: {inner}")]
+    InvalidRegistry { reg: Reg, inner: CellError },
+
+    #[error("invalid address {address}")]
+    InvalidAddress { address: i64 },
 
     #[error("computer reset")]
     Reset,
@@ -36,12 +37,9 @@ pub enum Exception {
 
 type Result<T> = std::result::Result<T, Exception>;
 
-type Word = u16;
-pub type Memory = [u8; u16::MAX as usize];
-
 bitflags! {
     #[derive(Default)]
-    pub struct StatusRegister: Word {
+    pub struct StatusRegister: UnsignedWord {
         const CARRY            = 0b00000000_00000001;
         const ZERO             = 0b00000000_00000010;
         const NEGATIVE         = 0b00000000_00000100;
@@ -51,92 +49,24 @@ bitflags! {
     }
 }
 
-pub trait Encodable {
-    fn encode(self) -> Vec<u8>;
-}
-
-pub trait Decodable: Sized {
-    fn decode<T: Read>(reader: &mut T) -> Option<Self>;
-}
-
 pub trait Labelable: Sized {
-    fn resolve_label(self, address: u16) -> Option<Self>;
+    fn resolve_label(self, address: u64) -> Option<Self>;
     fn label() -> Self;
 }
 
-trait Mmapped: Encodable + Decodable + Sized + PartialEq + Clone + std::fmt::Debug {
+trait Mmapped: TryFromCell + Into<Cell> + Sized + PartialEq + Clone + std::fmt::Debug {
     #[cfg(test)]
     fn assert_stable(self) {
-        let binval = self.clone().encode();
-
-        let mut cursor = Cursor::new(binval.clone());
-        let decoded = Self::decode(&mut cursor);
-        assert_eq!(Some(self), decoded);
-
-        let binval2 = decoded.unwrap().encode();
-        assert_eq!(binval, binval2);
+        let cell: Cell = self.clone().into();
+        let decoded = Self::try_from_cell(&cell).map_err(|_| ()).unwrap();
+        assert_eq!(self, decoded);
     }
 }
 
-impl<T> Mmapped for T where T: Encodable + Decodable + Sized + PartialEq + Clone + std::fmt::Debug {}
+impl<T> Mmapped for T where T: TryFromCell + Into<Cell> + Sized + PartialEq + Clone + std::fmt::Debug
+{}
 
-impl Encodable for u16 {
-    fn encode(self) -> Vec<u8> {
-        u16::to_le_bytes(self).into()
-    }
-}
-
-impl Decodable for u16 {
-    fn decode<T: Read>(reader: &mut T) -> Option<Self> {
-        let mut buf = [0u8; 2];
-        reader.read_exact(&mut buf).ok()?;
-        Some(u16::from_le_bytes(buf))
-    }
-}
-
-impl Encodable for i16 {
-    fn encode(self) -> Vec<u8> {
-        i16::to_le_bytes(self).into()
-    }
-}
-
-impl Decodable for i16 {
-    fn decode<T: Read>(reader: &mut T) -> Option<Self> {
-        let mut buf = [0u8; 2];
-        reader.read_exact(&mut buf).ok()?;
-        Some(i16::from_le_bytes(buf))
-    }
-}
-
-impl Encodable for u32 {
-    fn encode(self) -> Vec<u8> {
-        u32::to_le_bytes(self).into()
-    }
-}
-
-impl Decodable for u32 {
-    fn decode<T: Read>(reader: &mut T) -> Option<Self> {
-        let mut buf = [0u8; 4];
-        reader.read_exact(&mut buf).ok()?;
-        Some(u32::from_le_bytes(buf))
-    }
-}
-
-impl<T> Encodable for Vec<T>
-where
-    T: Encodable,
-{
-    fn encode(self) -> Vec<u8> {
-        self.into_iter().flat_map(|v| v.encode()).collect()
-    }
-}
-
-impl Encodable for String {
-    fn encode(self) -> Vec<u8> {
-        self.into_bytes()
-    }
-}
-
+#[derive(Default)]
 pub struct Computer {
     pub registers: Registers,
     pub memory: Memory,
@@ -152,103 +82,89 @@ impl std::fmt::Debug for Computer {
     }
 }
 
-impl Default for Computer {
-    fn default() -> Self {
-        Self {
-            registers: Registers::default(),
-            memory: [0; u16::MAX as usize],
-        }
-    }
-}
-
 impl Computer {
     #[tracing::instrument(skip(self))]
-    fn resolve_address(&self, address: Address) -> u16 {
+    fn resolve_address(&self, address: Address) -> Result<u64> {
         match address {
-            Address::Dir(addr) => addr,
-            Address::Ind(reg) => self.registers.get(reg),
+            Address::Dir(addr) => Ok(addr),
+            Address::Ind(reg) => u64::try_from_cell(&self.registers.get(reg))
+                .map_err(|e| Exception::InvalidRegistry { reg, inner: e }),
 
-            // TODO: this seems wrong
-            Address::Idx(reg, off) => (self.registers.get(reg) as i32 + off as i32) as u16,
+            Address::Idx(reg, off) => u64::try_from_cell(&self.registers.get(reg))
+                .map_err(|e| Exception::InvalidRegistry { reg, inner: e })
+                .and_then(|address| {
+                    let address = address as i64 + off;
+                    u64::try_from(address).map_err(|_| Exception::InvalidAddress { address })
+                }),
         }
     }
 
     #[tracing::instrument(skip(self), err)]
-    fn offset_read<T: Decodable>(&self, address: Address) -> Result<(u16, T)> {
-        let address = self.resolve_address(address) as u64;
-        let mut cursor = Cursor::new(self.memory.as_ref());
-        cursor.set_position(address);
-
-        let el = T::decode(&mut cursor).ok_or(Exception::Segfault)?; // TODO: better error
-        let offset = (cursor.position() - address) as u16;
-        Ok((offset, el))
+    fn read<T: TryFromCell>(&self, address: Address) -> Result<T> {
+        let address = self.resolve_address(address)?;
+        let cell = self.memory.get(address)?;
+        T::try_from_cell(cell).map_err(|e| e.to_invalid_cell(address).into())
     }
 
     #[tracing::instrument(skip(self), err)]
-    fn read<T: Decodable>(&self, address: Address) -> Result<T> {
-        let address = self.resolve_address(address) as u64;
-        let mut cursor = Cursor::new(self.memory.as_ref());
-        cursor.set_position(address);
-        debug!("Reading a {} at {:#x}", std::any::type_name::<T>(), address);
-
-        T::decode(&mut cursor).ok_or(Exception::Segfault) // TODO: better error
-    }
-
-    #[tracing::instrument(skip(self), err)]
-    pub fn write<T: Encodable + Debug>(&mut self, address: Address, value: T) -> Result<u16> {
-        let address = self.resolve_address(address) as u64;
-        let mut cursor = Cursor::new(self.memory.as_mut());
-        cursor.set_position(address);
-
-        let bytes = value.encode();
-        debug!("Writing bytes {:?} at {:#x}", bytes, address);
-        cursor.write_all(&bytes).map_err(|_| Exception::Segfault)?;
-        let offset = (cursor.position() - address) as u16;
-        Ok(offset)
+    pub fn write<T: Into<Cell> + Debug>(&mut self, address: Address, value: T) -> Result<()> {
+        let address = self.resolve_address(address)?;
+        let cell = self.memory.get_mut(address)?;
+        *cell = value.into();
+        Ok(())
     }
 
     #[tracing::instrument(skip(self))]
-    pub fn set_register(&mut self, reg: Reg, val: u16) {
-        let reg = self.registers.get_mut(reg);
-        *reg = val;
+    pub fn set_register(&mut self, reg: Reg, val: u64) -> Result<()> {
+        self.registers.set(reg, Cell::UnsignedWord(val))
     }
 
     #[tracing::instrument(skip(self))]
-    fn arg(&self, arg: Arg) -> Result<u16> {
+    fn arg(&self, arg: Arg) -> Result<Cell> {
         match arg {
-            Arg::Address(addr) => self.read(addr),
+            Arg::Address(addr) => {
+                let addr = self.resolve_address(addr)?;
+                // TODO: better conversion
+                self.memory
+                    .get(addr)
+                    .map(|c| c.clone())
+                    .map_err(|e| e.into())
+            }
             Arg::Value(val) => Ok(self.value(val)),
         }
     }
 
     #[tracing::instrument(skip(self))]
-    fn value(&self, value: Value) -> u16 {
+    fn value(&self, value: Value) -> Cell {
         match value {
-            Value::Imm(imm) => imm,
+            Value::Imm(imm) => imm.into(),
             Value::Reg(reg) => self.registers.get(reg),
         }
     }
 
     #[tracing::instrument(skip(self), err)]
     fn jump(&mut self, address: Address) -> Result<()> {
-        let address = self.resolve_address(address);
+        let address = self.resolve_address(address)?;
         debug!("Jumping to address {:#x}", address);
-        self.registers.pc = address;
+        self.registers.set(Reg::PC, address.into())?;
         Ok(())
     }
 
     #[tracing::instrument(skip(self), err)]
-    fn decode_instruction(&mut self) -> Result<Instruction> {
-        let (addr, inst) = self.offset_read(Address::Ind(Reg::PC))?;
-        self.registers.pc += addr;
-        Ok(inst)
+    fn decode_instruction(&mut self) -> Result<&Instruction> {
+        let address = self.resolve_address(Address::Ind(Reg::PC))?;
+        let cell = self.memory.get(address)?;
+        self.registers.pc += 1;
+        cell.extract_instruction()
+            .map_err(|_| Exception::InvalidInstruction)
     }
 
     #[tracing::instrument(skip(self))]
     fn step(&mut self) -> Result<()> {
         let inst = self.decode_instruction()?;
         info!("Executing instruction \"{}\"", inst);
-        inst.execute(self)?;
+        // TODO: this could be an unnecessary clone
+        inst.clone().execute(self)?;
         debug!("Register state {:?}", self.registers);
         Ok(())
     }
@@ -265,26 +181,22 @@ impl Computer {
     }
 
     #[tracing::instrument(skip(self))]
-    fn push<T: Encodable + Debug>(&mut self, value: T) -> Result<()> {
-        // First encode the value and move the stack
-        let bytes = value.encode();
-        self.registers.sp -= bytes.len() as u16;
-
-        debug!("Pushing bytes: {:?}", bytes);
+    fn push<T: Into<Cell> + Debug>(&mut self, value: T) -> Result<()> {
+        self.registers.sp -= 1;
 
         // And write it on memeory
         let address = self.registers.sp;
-        let mut cursor = Cursor::new(self.memory.as_mut());
-        cursor.set_position(address as u64);
-        cursor.write_all(&bytes).map_err(|_| Exception::Segfault)
+        let cell = self.memory.get_mut(address)?;
+        *cell = value.into();
+        Ok(())
     }
 
     #[tracing::instrument(skip(self))]
-    fn pop<T: Decodable + Debug>(&mut self) -> Result<T> {
+    fn pop<T: TryFromCell + Debug>(&mut self) -> Result<T> {
         // First read the value
-        let (offset, val) = self.offset_read(Address::Ind(Reg::SP))?;
+        let val = self.read(Address::Ind(Reg::SP))?;
         // Then move the SP
-        self.registers.sp += offset;
+        self.registers.sp += 1;
         debug!("Poping value: {:?}", val);
         Ok(val)
     }
@@ -292,65 +204,43 @@ impl Computer {
 
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct Registers {
-    pub a: Word,
-    pub b: Word,
-    pub pc: Word,
-    pub sp: Word,
+    pub a: Cell,
+    pub b: Cell,
+    pub pc: UnsignedWord,
+    pub sp: UnsignedWord,
     pub sr: StatusRegister,
 }
 
 impl Registers {
-    pub fn get(&self, reg: Reg) -> Word {
+    pub fn get(&self, reg: Reg) -> Cell {
         match reg {
-            Reg::A => self.a,
-            Reg::B => self.b,
-            Reg::PC => self.pc,
-            Reg::SP => self.sp,
-            Reg::SR => self.sr.bits(),
+            Reg::A => self.a.clone(),
+            Reg::B => self.b.clone(),
+            Reg::PC => self.pc.into(),
+            Reg::SP => self.sp.into(),
+            Reg::SR => self.sr.bits().into(),
         }
     }
 
-    fn get_mut(&mut self, reg: Reg) -> &mut Word {
+    pub fn set(&mut self, reg: Reg, value: Cell) -> Result<()> {
         match reg {
-            Reg::A => &mut self.a,
-            Reg::B => &mut self.b,
-            Reg::PC => &mut self.pc,
-            Reg::SP => &mut self.sp,
-            Reg::SR => &mut self.sr.bits,
-        }
+            Reg::A => self.a = value,
+            Reg::B => self.b = value,
+            Reg::PC => self.pc = UnsignedWord::try_from_cell(&value)?,
+            Reg::SP => self.sp = UnsignedWord::try_from_cell(&value)?,
+            Reg::SR => self.sr.bits = UnsignedWord::try_from_cell(&value)?,
+        };
+        Ok(())
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Reg {
     A,
     B,
     PC,
     SP,
     SR,
-}
-
-impl Reg {
-    fn from_byte(val: u8) -> Option<Self> {
-        match val & 0x7 {
-            0x0 => Some(Self::A),
-            0x1 => Some(Self::B),
-            0x2 => Some(Self::PC),
-            0x3 => Some(Self::SP),
-            0x4 => Some(Self::SR),
-            _ => None,
-        }
-    }
-
-    fn to_byte(self) -> u8 {
-        match self {
-            Self::A => 0x0,
-            Self::B => 0x1,
-            Self::PC => 0x2,
-            Self::SP => 0x3,
-            Self::SR => 0x4,
-        }
-    }
 }
 
 impl std::fmt::Display for Reg {
@@ -365,25 +255,11 @@ impl std::fmt::Display for Reg {
     }
 }
 
-impl Encodable for Reg {
-    fn encode(self) -> Vec<u8> {
-        vec![self.to_byte()]
-    }
-}
-
-impl Decodable for Reg {
-    fn decode<T: Read>(reader: &mut T) -> Option<Self> {
-        let mut buf = [0];
-        reader.read_exact(&mut buf).ok()?;
-        Self::from_byte(buf[0])
-    }
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum Address {
-    Dir(u16),
+    Dir(u64),
     Ind(Reg),
-    Idx(Reg, i16),
+    Idx(Reg, i64),
 }
 
 impl std::fmt::Display for Address {
@@ -396,30 +272,14 @@ impl std::fmt::Display for Address {
     }
 }
 
-impl From<u16> for Address {
-    fn from(val: u16) -> Self {
+impl From<u64> for Address {
+    fn from(val: u64) -> Self {
         Self::Dir(val)
     }
 }
 
-impl Encodable for Address {
-    fn encode(self) -> Vec<u8> {
-        Arg::Address(self).encode()
-    }
-}
-
-impl Decodable for Address {
-    fn decode<T: Read>(reader: &mut T) -> Option<Self> {
-        if let Some(Arg::Address(addr)) = Arg::decode(reader) {
-            Some(addr)
-        } else {
-            None
-        }
-    }
-}
-
 impl Labelable for Address {
-    fn resolve_label(self, address: u16) -> Option<Self> {
+    fn resolve_label(self, address: u64) -> Option<Self> {
         match self {
             Self::Dir(_) => Some(Self::Dir(address)),
             Self::Ind(_) => None,
@@ -434,7 +294,7 @@ impl Labelable for Address {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
-    Imm(u16),
+    Imm(u64),
     Reg(Reg),
 }
 
@@ -448,7 +308,7 @@ impl std::fmt::Display for Value {
 }
 
 impl Labelable for Value {
-    fn resolve_label(self, address: u16) -> Option<Self> {
+    fn resolve_label(self, address: u64) -> Option<Self> {
         match self {
             Self::Imm(_) => Some(Self::Imm(address)),
             Self::Reg(_) => None,
@@ -457,22 +317,6 @@ impl Labelable for Value {
 
     fn label() -> Self {
         Self::Imm(0)
-    }
-}
-
-impl Encodable for Value {
-    fn encode(self) -> Vec<u8> {
-        Arg::Value(self).encode()
-    }
-}
-
-impl Decodable for Value {
-    fn decode<T: Read>(reader: &mut T) -> Option<Self> {
-        if let Some(Arg::Value(val)) = Arg::decode(reader) {
-            Some(val)
-        } else {
-            None
-        }
     }
 }
 
@@ -498,7 +342,7 @@ impl std::fmt::Display for Arg {
 }
 
 impl Labelable for Arg {
-    fn resolve_label(self, address: u16) -> Option<Self> {
+    fn resolve_label(self, address: u64) -> Option<Self> {
         match self {
             Self::Address(a) => a.resolve_label(address).map(Self::Address),
             Self::Value(v) => v.resolve_label(address).map(Self::Value),
@@ -510,86 +354,10 @@ impl Labelable for Arg {
     }
 }
 
-impl Encodable for Arg {
-    fn encode(self) -> Vec<u8> {
-        match self {
-            Arg::Address(Address::Dir(dir)) => {
-                let v = 0x00 << 4;
-                let mut f = vec![v];
-                f.extend(dir.encode());
-                f
-            }
-            Arg::Address(Address::Ind(reg)) => {
-                let v = (0x01 << 4) | (reg.to_byte() & 0x0F);
-                vec![v]
-            }
-            Arg::Address(Address::Idx(reg, off)) => {
-                let v = (0x02 << 4) | (reg.to_byte() & 0x0F);
-                let mut f = vec![v];
-                f.extend(off.encode());
-                f
-            }
-            Arg::Value(Value::Imm(imm)) => {
-                let v = 0x03 << 4;
-                let mut f = vec![v];
-                f.extend(imm.encode());
-                f
-            }
-            Arg::Value(Value::Reg(reg)) => {
-                let v = (0x04 << 4) | (reg.to_byte() & 0x0F);
-                vec![v]
-            }
-        }
-    }
-}
-
-impl Decodable for Arg {
-    fn decode<T: Read>(reader: &mut T) -> Option<Self> {
-        let mut buf = [0];
-        reader.read_exact(&mut buf).ok()?;
-        let inst = buf[0] >> 4 & 0xF;
-        let rest = buf[0] & 0xF;
-        match inst {
-            0x0 => {
-                let val = u16::decode(reader)?;
-                Some(Arg::Address(Address::Dir(val)))
-            }
-            0x1 => {
-                let reg = Reg::from_byte(rest)?;
-                Some(Arg::Address(Address::Ind(reg)))
-            }
-            0x2 => {
-                let reg = Reg::from_byte(rest)?;
-                let val = i16::decode(reader)?;
-                Some(Arg::Address(Address::Idx(reg, val)))
-            }
-            0x3 => {
-                let val = u16::decode(reader)?;
-                Some(Arg::Value(Value::Imm(val)))
-            }
-            0x4 => {
-                let reg = Reg::from_byte(rest)?;
-                Some(Arg::Value(Value::Reg(reg)))
-            }
-            _ => None,
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq)]
 enum ArgSwap {
     Reg(Reg),
     Address(Address),
-}
-
-#[derive(Debug, Clone, PartialEq)]
-enum Cond {
-    Eq,
-    Ne,
-    Le,
-    Lt,
-    Ge,
-    Gt,
 }
 
 #[derive(Debug, Clone, PartialEq, Instruction)]
@@ -696,10 +464,15 @@ pub enum Instruction {
 impl Instruction {
     #[tracing::instrument]
     fn execute(self, computer: &mut Computer) -> Result<()> {
+        todo!()
+        /*
         match self {
             Instruction::Add(arg, reg) => {
-                let val = computer.arg(arg)?;
-                let reg = computer.registers.get_mut(reg);
+                let val = UnsignedWord::try_from_cell(&computer.arg(arg)?)
+                    .map_err(|inner| Exception::InvalidRegistry { reg, inner })?;
+                let reg_val = UnsignedWord::try_from_cell(&computer.registers.get(reg))
+                    .map_err(|inner| Exception::InvalidRegistry { reg, inner })?;
+                let reg_val = computer.registers.get(reg);
                 let (res, overflow) = reg.overflowing_add(val);
                 *reg = res;
 
@@ -873,27 +646,13 @@ impl Instruction {
         };
 
         Ok(())
+        */
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn arg_encode_test() {
-        Arg::Address(Address::Dir(42)).assert_stable();
-        Arg::Address(Address::Dir(0xFFFF)).assert_stable();
-        Arg::Address(Address::Ind(Reg::A)).assert_stable();
-        Arg::Address(Address::Ind(Reg::B)).assert_stable();
-        Arg::Address(Address::Idx(Reg::A, -24)).assert_stable();
-        Arg::Address(Address::Idx(Reg::B, 0x7FFF)).assert_stable(); // Max i16
-        Arg::Address(Address::Idx(Reg::PC, -0x8000)).assert_stable(); // Min i16
-        Arg::Value(Value::Imm(42)).assert_stable();
-        Arg::Value(Value::Imm(0xFFFF)).assert_stable();
-        Arg::Value(Value::Reg(Reg::SP)).assert_stable();
-        Arg::Value(Value::Reg(Reg::SR)).assert_stable();
-    }
 
     #[test]
     fn inst_encode_test() {
@@ -907,14 +666,17 @@ mod tests {
 
         let instruction = Instruction::Add(Arg::Value(Value::Imm(5)), Reg::A);
         instruction.execute(&mut computer).unwrap();
-        assert_eq!(computer.registers.get(Reg::A), 5);
+        assert_eq!(computer.registers.get(Reg::A), Cell::UnsignedWord(5));
 
         // Write some memory (with indirect access)
-        computer.write(Address::Dir(0x42), 100 as Word).unwrap();
-        *computer.registers.get_mut(Reg::B) = 0x32;
+        computer.write(Address::Dir(0x42), 100 as u64).unwrap();
+        computer
+            .registers
+            .set(Reg::B, Cell::UnsignedWord(0x32))
+            .unwrap();
         let instruction = Instruction::Add(Arg::Address(Address::Idx(Reg::B, 0x10)), Reg::A);
         instruction.execute(&mut computer).unwrap();
-        assert_eq!(computer.registers.get(Reg::A), 105);
+        assert_eq!(computer.registers.get(Reg::A), Cell::UnsignedWord(105));
     }
 
     #[test]
@@ -927,26 +689,31 @@ mod tests {
             Instruction::Add(Arg::Value(Value::Reg(Reg::A)), Reg::B),
         ];
 
-        computer.write(start.into(), program).unwrap();
+        for (offset, instruction) in program.into_iter().enumerate() {
+            computer
+                .write((start + offset as u64).into(), instruction)
+                .unwrap();
+        }
+
         computer.jump(start.into()).unwrap();
 
-        assert_eq!(computer.registers.a, 0x00);
-        assert_eq!(computer.registers.b, 0x00);
+        assert_eq!(computer.registers.a, Cell::Empty);
+        assert_eq!(computer.registers.b, Cell::Empty);
         assert_eq!(computer.registers.pc, start);
         computer.step().unwrap();
 
-        assert_eq!(computer.registers.a, 0x42);
-        assert_eq!(computer.registers.b, 0x00);
+        assert_eq!(computer.registers.a, Cell::UnsignedWord(0x42));
+        assert_eq!(computer.registers.b, Cell::Empty);
         assert_eq!(computer.registers.pc, start + 5);
         computer.step().unwrap();
 
-        assert_eq!(computer.registers.a, 0x42);
-        assert_eq!(computer.registers.b, 0x24);
+        assert_eq!(computer.registers.a, Cell::UnsignedWord(0x42));
+        assert_eq!(computer.registers.b, Cell::UnsignedWord(0x24));
         assert_eq!(computer.registers.pc, start + 10);
         computer.step().unwrap();
 
-        assert_eq!(computer.registers.a, 0x42);
-        assert_eq!(computer.registers.b, 0x66);
+        assert_eq!(computer.registers.a, Cell::UnsignedWord(0x42));
+        assert_eq!(computer.registers.b, Cell::UnsignedWord(0x66));
         assert_eq!(computer.registers.pc, start + 13);
     }
 
@@ -969,70 +736,71 @@ mod tests {
         //      ld 0x24, %b
         //      rtn
 
-        computer
-            .write(
-                start.into(),
-                vec![
-                    Instruction::Call(Arg::Value(Value::Imm(subroutine))),
-                    Instruction::Add(Arg::Value(Value::Reg(Reg::A)), Reg::B),
-                ],
-            )
-            .unwrap();
+        let start_inst = vec![
+            Instruction::Call(Arg::Value(Value::Imm(subroutine))),
+            Instruction::Add(Arg::Value(Value::Reg(Reg::A)), Reg::B),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(offset, instruction)| (start + offset as u64, instruction));
 
-        computer
-            .write(
-                subroutine.into(),
-                vec![
-                    Instruction::Ld(Arg::Value(Value::Imm(0x42)), Reg::A),
-                    Instruction::Ld(Arg::Value(Value::Imm(0x24)), Reg::B),
-                    Instruction::Rtn,
-                ],
-            )
-            .unwrap();
+        let subroutine_inst = vec![
+            Instruction::Ld(Arg::Value(Value::Imm(0x42)), Reg::A),
+            Instruction::Ld(Arg::Value(Value::Imm(0x24)), Reg::B),
+            Instruction::Rtn,
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(offset, instruction)| (subroutine + offset as u64, instruction));
+
+        for (addr, inst) in start_inst.chain(subroutine_inst) {
+            computer.write(addr.into(), inst).unwrap();
+        }
 
         computer.jump(start.into()).unwrap();
 
-        assert_eq!(computer.registers.a, 0x00);
-        assert_eq!(computer.registers.b, 0x00);
+        assert_eq!(computer.registers.a, Cell::Empty);
+        assert_eq!(computer.registers.b, Cell::Empty);
         assert_eq!(computer.registers.pc, start);
         assert_eq!(computer.registers.sp, stack);
         // call subroutine
         computer.step().unwrap();
 
-        assert_eq!(computer.registers.a, 0x00);
-        assert_eq!(computer.registers.b, 0x00);
+        assert_eq!(computer.registers.a, Cell::Empty);
+        assert_eq!(computer.registers.b, Cell::Empty);
         assert_eq!(computer.registers.pc, subroutine);
-        assert_eq!(computer.registers.sp, stack - 2);
+        assert_eq!(computer.registers.sp, stack - 1);
         // ld 0x42, %a
         computer.step().unwrap();
 
-        assert_eq!(computer.registers.a, 0x42);
-        assert_eq!(computer.registers.b, 0x00);
-        assert_eq!(computer.registers.pc, subroutine + 5);
-        assert_eq!(computer.registers.sp, stack - 2);
+        assert_eq!(computer.registers.a, Cell::UnsignedWord(0x42));
+        assert_eq!(computer.registers.b, Cell::Empty);
+        assert_eq!(computer.registers.pc, subroutine + 1);
+        assert_eq!(computer.registers.sp, stack - 1);
         // ld 0x24, %b
         computer.step().unwrap();
 
-        assert_eq!(computer.registers.a, 0x42);
-        assert_eq!(computer.registers.b, 0x24);
-        assert_eq!(computer.registers.pc, subroutine + 10);
+        assert_eq!(computer.registers.a, Cell::UnsignedWord(0x42));
+        assert_eq!(computer.registers.b, Cell::UnsignedWord(0x24));
+        assert_eq!(computer.registers.pc, subroutine + 2);
         assert_eq!(computer.registers.sp, stack - 2);
         // rtn
         computer.step().unwrap();
 
-        assert_eq!(computer.registers.a, 0x42);
-        assert_eq!(computer.registers.b, 0x24);
-        assert_eq!(computer.registers.pc, start + 4);
+        assert_eq!(computer.registers.a, Cell::UnsignedWord(0x42));
+        assert_eq!(computer.registers.b, Cell::UnsignedWord(0x24));
+        assert_eq!(computer.registers.pc, start + 1);
         assert_eq!(computer.registers.sp, stack);
         // add %a, %b
         computer.step().unwrap();
 
-        assert_eq!(computer.registers.a, 0x42);
-        assert_eq!(computer.registers.b, 0x66);
-        assert_eq!(computer.registers.pc, start + 7);
+        assert_eq!(computer.registers.a, Cell::UnsignedWord(0x42));
+        assert_eq!(computer.registers.b, Cell::UnsignedWord(0x66));
+        assert_eq!(computer.registers.pc, start + 2);
         assert_eq!(computer.registers.sp, stack);
     }
 
+    /*
     #[test]
     fn overflow_test() {
         let mut computer = Computer::default();
@@ -1048,4 +816,5 @@ mod tests {
         assert_eq!(computer.registers.a, 1);
         assert!(!computer.registers.sr.contains(StatusRegister::OVERFLOW));
     }
+    */
 }

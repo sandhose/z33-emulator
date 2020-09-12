@@ -3,10 +3,11 @@ use structopt::StructOpt;
 use tracing::info;
 
 mod compiler;
+mod memory;
 mod parser;
 mod preprocessor;
 mod processor;
-mod util;
+// mod util;
 
 use crate::compiler::{Compiler, CompilerState};
 use crate::parser::{Directive, Parser, ProgramLine};
@@ -70,7 +71,9 @@ fn run(input: PathBuf, entrypoint: String) -> Result<(), Box<dyn std::error::Err
                 compiler.ingest(word)?;
             }
             ProgramLine::Directive(Directive::StringLiteral(literal)) => {
-                compiler.ingest(literal)?;
+                for c in literal.chars() {
+                    compiler.ingest(c)?;
+                }
             }
             ProgramLine::Empty => {}
         }
@@ -81,11 +84,11 @@ fn run(input: PathBuf, entrypoint: String) -> Result<(), Box<dyn std::error::Err
     info!("Running program");
     computer.run()?;
 
-    println!("Registers:");
-    util::display_registers(computer.registers);
-    println!("-------");
-    println!("Memory:");
-    util::display_memory(computer.memory);
+    // println!("Registers:");
+    // util::display_registers(computer.registers);
+    // println!("-------");
+    // println!("Memory:");
+    // util::display_memory(computer.memory);
     Ok(())
 }
 
