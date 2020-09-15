@@ -8,7 +8,7 @@ use nom::{
     bytes::complete::tag_no_case,
     character::complete::char,
     combinator::{all_consuming, value},
-    IResult,
+    IResult, Offset,
 };
 use regex::{Captures, Regex};
 use thiserror::Error;
@@ -41,7 +41,20 @@ pub enum PreprocessorError {
     FileNotClean(SourceFileState),
 
     #[error("parse error")]
-    ParseError,
+    ParseError {
+        line: Option<usize>,
+        col: Option<usize>,
+        path: Option<PathBuf>,
+    },
+}
+
+fn nom_err_offset(e: nom::Err<(&str, nom::error::ErrorKind)>, input: &str) -> Option<usize> {
+    match e {
+        nom::Err::Incomplete(_) => None,
+        nom::Err::Error((remaining, _)) | nom::Err::Failure((remaining, _)) => {
+            Some(input.offset(remaining))
+        }
+    }
 }
 
 type Result<T> = std::result::Result<T, PreprocessorError>;
@@ -242,9 +255,13 @@ impl PreprocessorState {
     fn evaluate_condition(&self, input: &str) -> Result<bool> {
         let input = self.replace_defined(input);
         let input = self.replace_definitions(input);
-        let (_, value) = all_consuming(parse_condition)(input.as_str())
-            // TODO: encapsulate the error
-            .map_err(|_e| PreprocessorError::ParseError)?;
+        let input = input.as_str();
+        let (_, value) =
+            all_consuming(parse_condition)(input).map_err(|e| PreprocessorError::ParseError {
+                line: None,
+                col: nom_err_offset(e, input),
+                path: None,
+            })?;
         Ok(value)
     }
 
@@ -312,8 +329,13 @@ impl PreprocessorState {
                 }
             }
             DirectiveToken::Include => {
-                let (_, path) = all_consuming(parse_string_literal)(args)
-                    .map_err(|_e| PreprocessorError::ParseError)?;
+                let (_, path) = all_consuming(parse_string_literal)(args).map_err(|e| {
+                    PreprocessorError::ParseError {
+                        line: None,
+                        col: nom_err_offset(e, args),
+                        path: None,
+                    }
+                })?;
                 let path = self.resolve_path(path)?;
                 self.read_file(path).map(Some)
             }

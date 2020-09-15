@@ -9,7 +9,7 @@ use nom::{
     branch::alt,
     bytes::complete::{escaped_transform, tag_no_case, take_while1},
     character::complete::{char, none_of},
-    combinator::{map_res, value},
+    combinator::{cut, map_res, value},
     IResult,
 };
 
@@ -48,9 +48,9 @@ fn is_hex_digit(c: char) -> bool {
 }
 
 /// Extract a hexadecimal literal
-fn take_hexadecimal_literal(input: &str) -> IResult<&str, &str> {
+fn parse_hexadecimal_literal(input: &str) -> IResult<&str, u64> {
     let (input, _) = tag_no_case("0x")(input)?;
-    take_while1(is_hex_digit)(input)
+    cut(map_res(take_while1(is_hex_digit), from_hexadecimal))(input)
 }
 
 /// Parse an octal number
@@ -64,9 +64,9 @@ fn is_oct_digit(c: char) -> bool {
 }
 
 /// Extract an octal literal
-fn take_octal_literal(input: &str) -> IResult<&str, &str> {
+fn parse_octal_literal(input: &str) -> IResult<&str, u64> {
     let (input, _) = tag_no_case("0o")(input)?;
-    take_while1(is_oct_digit)(input)
+    cut(map_res(take_while1(is_oct_digit), from_octal))(input)
 }
 
 /// Parse a binary number
@@ -80,17 +80,17 @@ fn is_bin_digit(c: char) -> bool {
 }
 
 /// Extract a binary literal
-fn take_binary_literal(input: &str) -> IResult<&str, &str> {
+fn parse_binary_literal(input: &str) -> IResult<&str, u64> {
     let (input, _) = tag_no_case("0b")(input)?;
-    take_while1(is_bin_digit)(input)
+    cut(map_res(take_while1(is_bin_digit), from_binary))(input)
 }
 
 /// Parse a number literal
 pub fn parse_literal(input: &str) -> IResult<&str, u64> {
     alt((
-        map_res(take_hexadecimal_literal, from_hexadecimal),
-        map_res(take_octal_literal, from_octal),
-        map_res(take_binary_literal, from_binary),
+        parse_hexadecimal_literal,
+        parse_octal_literal,
+        parse_binary_literal,
         map_res(take_while1(is_digit), from_decimal),
     ))(input)
 }
@@ -102,8 +102,7 @@ mod tests {
     #[test]
     fn from_decimal_test() {
         assert_eq!(from_decimal("16"), Ok(16));
-        assert_eq!(from_decimal("65535"), Ok(65535)); // Upper boundary
-        assert!(from_decimal("65536").is_err()); // Upper boundary
+        assert_eq!(from_decimal("65535"), Ok(65535));
         assert!(from_decimal("foo").is_err());
     }
 
@@ -122,8 +121,7 @@ mod tests {
     fn from_hexadecimal_test() {
         assert_eq!(from_hexadecimal("4F"), Ok(0x4f));
         assert_eq!(from_hexadecimal("4f"), Ok(0x4f)); // Lower case works
-        assert_eq!(from_hexadecimal("ffff"), Ok(0xffff)); // Upper boundary
-        assert!(from_hexadecimal("10000").is_err()); // Out of bounds
+        assert_eq!(from_hexadecimal("ffff"), Ok(0xffff));
         assert!(from_hexadecimal("foo").is_err());
     }
 
@@ -140,20 +138,19 @@ mod tests {
 
     #[test]
     fn take_hexadecimal_literal_test() {
-        assert_eq!(take_hexadecimal_literal("0x4F"), Ok(("", "4F")));
-        assert_eq!(take_hexadecimal_literal("0X4f"), Ok(("", "4f")));
-        assert_eq!(take_hexadecimal_literal("0xffff"), Ok(("", "ffff"))); // Upper boundary
-        assert_eq!(take_hexadecimal_literal("0x10000"), Ok(("", "10000"))); // Out of bounds (but still eats)
-        assert!(take_hexadecimal_literal("0xinvalid").is_err()); // Invalid
-        assert!(take_hexadecimal_literal("ffff").is_err()); // No prefix
+        assert_eq!(parse_hexadecimal_literal("0x4F"), Ok(("", 0x4F)));
+        assert_eq!(parse_hexadecimal_literal("0X4f"), Ok(("", 0x4f)));
+        assert_eq!(parse_hexadecimal_literal("0xffff"), Ok(("", 0xffff)));
+        assert_eq!(parse_hexadecimal_literal("0x10000"), Ok(("", 0x10000)));
+        assert!(parse_hexadecimal_literal("0xinvalid").is_err()); // Invalid
+        assert!(parse_hexadecimal_literal("ffff").is_err()); // No prefix
     }
 
     #[test]
     fn from_octal_test() {
         assert_eq!(from_octal("24"), Ok(0o24));
         assert!(from_octal("98").is_err());
-        assert_eq!(from_octal("177777"), Ok(0xffff)); // Upper boundary
-        assert!(from_octal("200000").is_err()); // Out of bounds
+        assert_eq!(from_octal("177777"), Ok(0xffff));
         assert!(from_octal("foo").is_err());
     }
 
@@ -170,20 +167,19 @@ mod tests {
 
     #[test]
     fn take_octal_literal_test() {
-        assert_eq!(take_octal_literal("0o77"), Ok(("", "77")));
-        assert_eq!(take_octal_literal("0O77"), Ok(("", "77")));
-        assert_eq!(take_octal_literal("0o177777"), Ok(("", "177777"))); // Upper boundary
-        assert_eq!(take_octal_literal("0o200000"), Ok(("", "200000"))); // Out of bounds (but still eats)
-        assert!(take_octal_literal("0oinvalid").is_err()); // Invalid
-        assert!(take_octal_literal("77").is_err()); // No prefix
+        assert_eq!(parse_octal_literal("0o77"), Ok(("", 0o77)));
+        assert_eq!(parse_octal_literal("0O77"), Ok(("", 0o77)));
+        assert_eq!(parse_octal_literal("0o177777"), Ok(("", 0o177777)));
+        assert_eq!(parse_octal_literal("0o200000"), Ok(("", 0o200000)));
+        assert!(parse_octal_literal("0oinvalid").is_err()); // Invalid
+        assert!(parse_octal_literal("77").is_err()); // No prefix
     }
 
     #[test]
     fn from_binary_test() {
         assert_eq!(from_binary("10"), Ok(0b10));
         assert!(from_binary("98").is_err());
-        assert_eq!(from_binary("1111111111111111"), Ok(0xffff)); // Upper boundary
-        assert!(from_binary("10000000000000000").is_err()); // Out of bounds
+        assert_eq!(from_binary("1111111111111111"), Ok(0xffff));
         assert!(from_binary("foo").is_err());
     }
 
@@ -200,18 +196,18 @@ mod tests {
 
     #[test]
     fn take_binary_literal_test() {
-        assert_eq!(take_binary_literal("0b10"), Ok(("", "10")));
-        assert_eq!(take_binary_literal("0B10"), Ok(("", "10")));
+        assert_eq!(parse_binary_literal("0b10"), Ok(("", 0b10)));
+        assert_eq!(parse_binary_literal("0B10"), Ok(("", 0b10)));
         assert_eq!(
-            take_binary_literal("0b1111111111111111"),
-            Ok(("", "1111111111111111"))
-        ); // Upper boundary
+            parse_binary_literal("0b1111111111111111"),
+            Ok(("", 0b1111111111111111))
+        );
         assert_eq!(
-            take_binary_literal("0b10000000000000000"),
-            Ok(("", "10000000000000000"))
-        ); // Out of bounds (but still eats)
-        assert!(take_binary_literal("0binvalid").is_err()); // Invalid
-        assert!(take_binary_literal("10").is_err()); // No prefix
+            parse_binary_literal("0b10000000000000000"),
+            Ok(("", 0b10000000000000000))
+        );
+        assert!(parse_binary_literal("0binvalid").is_err()); // Invalid
+        assert!(parse_binary_literal("10").is_err()); // No prefix
     }
 
     #[test]
@@ -219,28 +215,21 @@ mod tests {
         // Decimal
         assert_eq!(parse_literal("100"), Ok(("", 100)));
         assert_eq!(parse_literal("42"), Ok(("", 42)));
-        assert_eq!(parse_literal("65535"), Ok(("", 0xffff))); // Upper bound
-        assert!(parse_literal("65536").is_err()); // Out of bounds
+        assert_eq!(parse_literal("65535"), Ok(("", 0xffff)));
 
         // Hexadecimal
         assert_eq!(parse_literal("0x4f"), Ok(("", 0x4f)));
         assert_eq!(parse_literal("0x42"), Ok(("", 0x42)));
-        assert_eq!(parse_literal("0xffff"), Ok(("", 0xffff))); // Upper bound
-        assert_eq!(parse_literal("0x10000"), Ok(("x10000", 0))); // Out of bounds (so it parses the first digit)
+        assert_eq!(parse_literal("0xffff"), Ok(("", 0xffff)));
 
         // Octal
         assert_eq!(parse_literal("0o77"), Ok(("", 0o77)));
         assert_eq!(parse_literal("0o42"), Ok(("", 0o42)));
         assert_eq!(parse_literal("0o177777"), Ok(("", 0xffff))); // Upper bound
-        assert_eq!(parse_literal("0o200000"), Ok(("o200000", 0))); // Out of bounds (so it parses the first digit)
 
         // Binary
         assert_eq!(parse_literal("0b10"), Ok(("", 2)));
         assert_eq!(parse_literal("0B10"), Ok(("", 2)));
         assert_eq!(parse_literal("0b1111111111111111"), Ok(("", 0xffff))); // Upper bound
-        assert_eq!(
-            parse_literal("0b10000000000000000"),
-            Ok(("b10000000000000000", 0))
-        ); // Out of bounds (so it parses the first digit)
     }
 }

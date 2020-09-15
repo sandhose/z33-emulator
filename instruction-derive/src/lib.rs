@@ -154,16 +154,15 @@ fn impl_instruction(ast: &DeriveInput) -> syn::parse::Result<TokenStream> {
         }
     });
 
-    let (parser_alt, parser_funcs) = instructions.iter().enumerate().fold((quote!(), quote!()), |(alt, funcs), (i, instruction)| {
+    let (parser_alt, parser_funcs) = instructions.iter().fold((quote!(), quote!()), |(alt, funcs), instruction| {
         let t = instruction.ident.clone();
         let inst = t.to_string().to_lowercase();
-        let func_name = Ident::new(format!("parse_instruction_{}", inst).as_str(), t.span());
+        let func_name = Ident::new(format!("parse_{}_args", inst).as_str(), t.span());
         let inst = Literal::string(&inst);
 
         let parser = if instruction.args.is_empty() {
             quote_spanned! { Span::call_site() =>
                 fn #func_name(input: &str) -> ::nom::IResult<&str, (Option<&str>, Self)> {
-                    let (input, _) = ::nom::bytes::complete::tag_no_case(#inst)(input)?;
                     Ok((input, (None, Self::#t)))
                 }
             }
@@ -187,12 +186,14 @@ fn impl_instruction(ast: &DeriveInput) -> syn::parse::Result<TokenStream> {
                         quote_spanned! { Span::call_site() =>
                             #body
                             let (input, (label, #id)) = crate::processor::Parsable::parse_labelable(input)?;
+                            tracing::trace!("parsed arg {:?}", #id);
                             let (input, _) = ::nom::character::complete::space0(input)?;
                         }
                     } else {
                         quote_spanned! { Span::call_site() =>
                             #body
                             let (input, #id) = crate::processor::Parsable::parse(input)?;
+                            tracing::trace!("parsed arg {:?}", #id);
                             let (input, _) = ::nom::character::complete::space0(input)?;
                         }
                     };
@@ -202,8 +203,8 @@ fn impl_instruction(ast: &DeriveInput) -> syn::parse::Result<TokenStream> {
             );
 
             quote_spanned! { Span::call_site() =>
+                #[tracing::instrument]
                 fn #func_name(input: &str) -> ::nom::IResult<&str, (Option<&str>, Self)> {
-                    let (input, _) = ::nom::bytes::complete::tag_no_case(#inst)(input)?;
                     let (input, _) = ::nom::character::complete::space1(input)?;
                     let label: Option<&str> = None;
                     #body
@@ -212,14 +213,9 @@ fn impl_instruction(ast: &DeriveInput) -> syn::parse::Result<TokenStream> {
             }
         };
 
-        let alt = if i == 0 {
-            quote_spanned! { Span::call_site() =>
-                Self::#func_name(input)
-            }
-        } else {
-            quote_spanned! { Span::call_site() =>
-                #alt.or_else(|_| Self::#func_name(input))
-            }
+        let alt = quote_spanned! { Span::call_site() =>
+            #alt
+            #inst => ::nom::combinator::cut(Self::#func_name)(input),
         };
 
         let funcs = quote! {
@@ -252,8 +248,15 @@ fn impl_instruction(ast: &DeriveInput) -> syn::parse::Result<TokenStream> {
         }
 
         impl #t {
+            #[tracing::instrument]
             pub fn parse(input: &str) -> ::nom::IResult<&str, (Option<&str>, Self)> {
-                #parser_alt
+                let original_input = input;
+                let (input, inst) = ::nom::character::complete::alpha1(input)?;
+                let inst = inst.to_string().to_ascii_lowercase();
+                match inst.as_str() {
+                    #parser_alt
+                    _ => Err(::nom::Err::Error(::nom::error::make_error(original_input, ::nom::error::ErrorKind::Alt))),
+                }
             }
 
             #parser_funcs

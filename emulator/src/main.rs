@@ -7,10 +7,10 @@ mod memory;
 mod parser;
 mod preprocessor;
 mod processor;
-// mod util;
+mod util;
 
-use crate::compiler::{Compiler, CompilerState};
-use crate::parser::{Directive, Parser, ProgramLine};
+use crate::compiler::CompilerState;
+use crate::parser::Parser;
 use crate::preprocessor::preprocess;
 
 #[derive(StructOpt)]
@@ -44,40 +44,23 @@ impl Opt {
 fn run(input: PathBuf, entrypoint: String) -> Result<(), Box<dyn std::error::Error>> {
     info!("Reading program from file {:?}", input);
     let source = preprocess(input)?;
+    let source = source.as_str();
 
     info!("Parsing program");
-    let parser = Parser::new(source.as_str());
+    let parser = Parser::new(source);
 
     let mut compiler = CompilerState::default();
-    for line in parser {
-        let line = line?;
-        match line {
-            ProgramLine::Instruction(inst) => {
-                compiler.ingest(inst)?;
+    parser.compile(&mut compiler).map_err(|e| {
+        match e {
+            parser::ParserError::ParserError { kind, offset } => {
+                let message = format!("{:?}", kind);
+                util::display_error_offset(source, offset, message.as_str());
             }
-            ProgramLine::LabeledInstruction(label, inst) => {
-                compiler.ingest_labeled_instruction(inst, label)?;
-            }
-            ProgramLine::Directive(Directive::LabelDefinition(label)) => {
-                compiler.ingest_label(label)?;
-            }
-            ProgramLine::Directive(Directive::AddressChange(addr)) => {
-                compiler.change_address(addr)?;
-            }
-            ProgramLine::Directive(Directive::Space(offset)) => {
-                compiler.memory_skip(offset)?;
-            }
-            ProgramLine::Directive(Directive::Word(word)) => {
-                compiler.ingest(word)?;
-            }
-            ProgramLine::Directive(Directive::StringLiteral(literal)) => {
-                for c in literal.chars() {
-                    compiler.ingest(c)?;
-                }
-            }
-            ProgramLine::Empty => {}
-        }
-    }
+            _ => {}
+        };
+
+        e
+    })?;
 
     info!("Buiding computer (entrypoint: {})", entrypoint);
     let mut computer = compiler.build(entrypoint)?;

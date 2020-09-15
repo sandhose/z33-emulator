@@ -5,9 +5,12 @@ use nom::{
     bytes::complete::{tag, tag_no_case, take_while, take_while1},
     character::complete::{char, newline, one_of, space0},
     combinator::{map, value, verify},
-    IResult,
+    error::context,
+    IResult, Offset,
 };
+use thiserror::Error;
 
+use crate::compiler::Compiler;
 use crate::processor::{Address, Arg, Instruction, Labelable, Reg, Value};
 
 mod condition;
@@ -23,20 +26,26 @@ pub use literal::parse_string_literal;
 
 fn parse_reg(input: &str) -> IResult<&str, Reg> {
     let (input, _) = tag("%")(input)?;
-    alt((
-        value(Reg::A, tag_no_case("a")),
-        value(Reg::B, tag_no_case("b")),
-        value(Reg::PC, tag_no_case("pc")),
-        value(Reg::SP, tag_no_case("sp")),
-        value(Reg::SR, tag_no_case("sr")),
-    ))(input)
+    context(
+        "expected a valid register",
+        alt((
+            value(Reg::A, tag_no_case("a")),
+            value(Reg::B, tag_no_case("b")),
+            value(Reg::PC, tag_no_case("pc")),
+            value(Reg::SP, tag_no_case("sp")),
+            value(Reg::SR, tag_no_case("sr")),
+        )),
+    )(input)
 }
 
 fn parse_value(input: &str) -> IResult<&str, Value> {
-    alt((
-        map(parse_reg, Value::Reg),
-        map(parse_const_expression, Value::Imm),
-    ))(input)
+    context(
+        "expected a register or an immediate value",
+        alt((
+            map(parse_reg, Value::Reg),
+            map(parse_const_expression, Value::Imm),
+        )),
+    )(input)
 }
 
 fn parse_indexed(input: &str) -> IResult<&str, (Reg, i64)> {
@@ -50,11 +59,14 @@ fn parse_indexed(input: &str) -> IResult<&str, (Reg, i64)> {
 }
 
 fn parse_inner_address(input: &str) -> IResult<&str, Address> {
-    alt((
-        map(parse_const_expression, Address::Dir),
-        map(parse_indexed, |(reg, off)| Address::Idx(reg, off)),
-        map(parse_reg, Address::Ind),
-    ))(input)
+    context(
+        "expected a valid address",
+        alt((
+            map(parse_const_expression, Address::Dir),
+            map(parse_indexed, |(reg, off)| Address::Idx(reg, off)),
+            map(parse_reg, Address::Ind),
+        )),
+    )(input)
 }
 
 fn parse_address(input: &str) -> IResult<&str, Address> {
@@ -65,10 +77,13 @@ fn parse_address(input: &str) -> IResult<&str, Address> {
 }
 
 fn parse_arg(input: &str) -> IResult<&str, Arg> {
-    alt((
-        map(parse_value, Arg::Value),
-        map(parse_address, Arg::Address),
-    ))(input)
+    context(
+        "expected a value or an address",
+        alt((
+            map(parse_value, Arg::Value),
+            map(parse_address, Arg::Address),
+        )),
+    )(input)
 }
 
 fn is_identifier_char(c: char) -> bool {
@@ -189,25 +204,105 @@ fn parse_program_line(input: &str) -> IResult<&str, ProgramLine> {
 
 pub struct Parser<'a> {
     program: &'a str,
+    state: &'a str,
     first: bool,
     errored: bool,
+}
+
+#[derive(Debug, Error)]
+pub enum ParserError<T>
+where
+    T: std::fmt::Display + std::fmt::Debug,
+{
+    #[error("Error from parser at offset {offset}: {kind:?}")]
+    ParserError {
+        kind: nom::error::ErrorKind,
+        offset: usize,
+    },
+
+    #[error("Incomplete line")]
+    Incomplete,
+
+    #[error("Error from compiler at offset {offset}: {inner}")]
+    Compiler { inner: T, offset: usize },
 }
 
 impl<'a> Parser<'a> {
     pub fn new(program: &'a str) -> Self {
         Parser {
             program,
+            state: program,
             first: true,
             errored: false,
         }
     }
+
+    pub fn compile<T: Compiler>(self, compiler: &mut T) -> Result<(), ParserError<T::Error>>
+    where
+        T::Error: std::fmt::Display + std::fmt::Debug,
+    {
+        let start = self.program;
+        for res in self {
+            let (offset, line) = res.map_err(|e| match e {
+                nom::Err::Incomplete(_) => ParserError::Incomplete,
+                nom::Err::Error((remaining, kind)) | nom::Err::Failure((remaining, kind)) => {
+                    ParserError::ParserError {
+                        kind,
+                        offset: start.offset(remaining),
+                    }
+                }
+            })?;
+            match line {
+                ProgramLine::Instruction(inst) => {
+                    compiler
+                        .ingest(inst)
+                        .map_err(|inner| ParserError::Compiler { inner, offset })?;
+                }
+                ProgramLine::LabeledInstruction(label, inst) => {
+                    compiler
+                        .ingest_labeled_instruction(inst, label)
+                        .map_err(|inner| ParserError::Compiler { inner, offset })?;
+                }
+                ProgramLine::Directive(Directive::LabelDefinition(label)) => {
+                    compiler
+                        .ingest_label(label)
+                        .map_err(|inner| ParserError::Compiler { inner, offset })?;
+                }
+                ProgramLine::Directive(Directive::AddressChange(addr)) => {
+                    compiler
+                        .change_address(addr)
+                        .map_err(|inner| ParserError::Compiler { inner, offset })?;
+                }
+                ProgramLine::Directive(Directive::Space(space)) => {
+                    compiler
+                        .memory_skip(space)
+                        .map_err(|inner| ParserError::Compiler { inner, offset })?;
+                }
+                ProgramLine::Directive(Directive::Word(word)) => {
+                    compiler
+                        .ingest(word)
+                        .map_err(|inner| ParserError::Compiler { inner, offset })?;
+                }
+                ProgramLine::Directive(Directive::StringLiteral(literal)) => {
+                    for c in literal.chars() {
+                        compiler
+                            .ingest(c)
+                            .map_err(|inner| ParserError::Compiler { inner, offset })?;
+                    }
+                }
+                ProgramLine::Empty => {}
+            }
+        }
+
+        Ok(())
+    }
 }
 
 impl<'a> Iterator for Parser<'a> {
-    type Item = Result<ProgramLine, nom::Err<nom::error::ErrorKind>>;
+    type Item = Result<(usize, ProgramLine), nom::Err<(&'a str, nom::error::ErrorKind)>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.program == "" {
+        if self.state == "" {
             return None;
         }
 
@@ -216,27 +311,27 @@ impl<'a> Iterator for Parser<'a> {
         }
 
         if !self.first {
-            self.program = match parse_newline(self.program) {
-                Ok((program, _)) => program,
+            self.state = match parse_newline(self.state) {
+                Ok((state, _)) => state,
                 Err(e) => {
                     self.errored = true;
-                    return Some(Err(e.map(|(_, e)| e)));
+                    return Some(Err(e));
                 }
             };
         } else {
             self.first = false;
         }
 
-        let (program, line) = match parse_program_line(self.program) {
+        let (state, line) = match parse_program_line(self.state) {
             Ok(f) => f,
             Err(e) => {
                 self.errored = true;
-                return Some(Err(e.map(|(_, e)| e)));
+                return Some(Err(e));
             }
         };
-        self.program = program;
+        self.state = state;
 
-        Some(Ok(line))
+        Some(Ok((self.program.offset(self.state), line)))
     }
 }
 
@@ -259,7 +354,7 @@ mod tests {
     fn parse_value_test() {
         assert_eq!(parse_value("100"), Ok(("", Value::Imm(100))));
         assert_eq!(parse_value("42"), Ok(("", Value::Imm(42))));
-        assert!(parse_value("65536").is_err()); // Value too big
+        assert!(parse_value("0x10000000000000000").is_err()); // Value too big
 
         assert_eq!(parse_value("%a"), Ok(("", Value::Reg(Reg::A))));
         assert_eq!(parse_value("%b"), Ok(("", Value::Reg(Reg::B))));
@@ -481,7 +576,7 @@ mod tests {
         ];
 
         let parser = Parser::new(program);
-        let program: Result<Vec<_>, _> = parser.collect();
+        let program: Result<Vec<_>, _> = parser.map(|r| r.map(|(_, line)| line)).collect();
         let program = program.unwrap();
         assert_eq!(program, expected);
     }
