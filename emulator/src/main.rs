@@ -1,4 +1,5 @@
-#[forbid(unsafe_code)]
+#![forbid(unsafe_code)]
+
 use clap::Clap;
 use std::path::PathBuf;
 use tracing::{debug, info};

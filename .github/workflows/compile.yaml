@@ -1,0 +1,46 @@
+on: [push, pull_request]
+
+name: Compile
+
+jobs:
+  build:
+    name: Build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-20.04
+            exe: z33-emulator
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            exe: z33-emulator
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            exe: z33-emulator.exe
+
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}-${{ matrix.target }}
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+          override: true
+      - uses: actions-rs/cargo@v1
+        with:
+          use-cross: true
+          command: build
+          args: --release --target=${{ matrix.target }}
+
+      - uses: actions/upload-artifact@v2
+        with:
+          name: z33-emulator-${{ matrix.target }}
+          path: target/${{ matrix.target }}/release/${{ matrix.exe }}
