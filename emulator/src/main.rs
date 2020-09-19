@@ -1,8 +1,11 @@
+#[forbid(unsafe_code)]
+use clap::Clap;
 use std::path::PathBuf;
-use structopt::StructOpt;
-use tracing::info;
+use tracing::{debug, info};
+use tracing_subscriber::filter::{EnvFilter, LevelFilter};
 
 mod compiler;
+mod interactive;
 mod memory;
 mod parser;
 mod preprocessor;
@@ -10,24 +13,28 @@ mod processor;
 mod util;
 
 use crate::compiler::CompilerState;
+use crate::interactive::run_interactive;
 use crate::parser::Parser;
 use crate::preprocessor::preprocess;
 
-#[derive(StructOpt)]
+#[derive(Clap)]
 enum Opt {
     /// Preprocess, compile and run a program
     Run {
         /// Input file
-        #[structopt(parse(from_os_str))]
+        #[clap(parse(from_os_str))]
         input: PathBuf,
 
         /// Start label
         entrypoint: String,
+
+        #[clap(short, long)]
+        interactive: bool,
     },
     /// Run the preprocessor
     Preprocess {
         /// Input file
-        #[structopt(parse(from_os_str))]
+        #[clap(parse(from_os_str))]
         input: PathBuf,
     },
 }
@@ -35,18 +42,26 @@ enum Opt {
 impl Opt {
     fn exec(self) -> Result<(), Box<dyn std::error::Error>> {
         match self {
-            Opt::Run { input, entrypoint } => run(input, entrypoint),
+            Opt::Run {
+                input,
+                entrypoint,
+                interactive,
+            } => run(input, entrypoint, interactive),
             Opt::Preprocess { input } => run_preprocessor(input),
         }
     }
 }
 
-fn run(input: PathBuf, entrypoint: String) -> Result<(), Box<dyn std::error::Error>> {
-    info!("Reading program from file {:?}", input);
+fn run(
+    input: PathBuf,
+    entrypoint: String,
+    interactive: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    info!(path = ?input, "Reading program");
     let source = preprocess(input)?;
     let source = source.as_str();
 
-    info!("Parsing program");
+    debug!("Parsing program");
     let parser = Parser::new(source);
 
     let mut compiler = CompilerState::default();
@@ -62,16 +77,17 @@ fn run(input: PathBuf, entrypoint: String) -> Result<(), Box<dyn std::error::Err
         e
     })?;
 
-    info!("Buiding computer (entrypoint: {})", entrypoint);
+    info!(entrypoint = %entrypoint, "Building computer");
     let mut computer = compiler.build(entrypoint)?;
-    info!("Running program");
-    computer.run()?;
 
-    // println!("Registers:");
-    // util::display_registers(computer.registers);
-    // println!("-------");
-    // println!("Memory:");
-    // util::display_memory(computer.memory);
+    if interactive {
+        run_interactive(&mut computer)?;
+    } else {
+        info!("Running program");
+        computer.run()?;
+    }
+
+    info!("Registers: {}", computer.registers);
     Ok(())
 }
 
@@ -83,11 +99,21 @@ fn run_preprocessor(input: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+    let format = tracing_subscriber::fmt::format()
         .compact()
+        .without_time()
+        .with_target(false);
+
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            // Parse log level from env
+            EnvFilter::from_default_env()
+                // With INFO enabled by default
+                .add_directive(LevelFilter::INFO.into()),
+        )
+        .event_format(format)
         .init();
 
-    let opt = Opt::from_args();
+    let opt = Opt::parse();
     opt.exec()
 }

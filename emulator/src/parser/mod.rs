@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use nom::{
     branch::alt,
     bytes::complete::{tag, tag_no_case, take_while, take_while1},
@@ -58,7 +56,7 @@ fn parse_indexed(input: &str) -> IResult<&str, (Reg, i64)> {
     Ok((input, (reg, value)))
 }
 
-fn parse_inner_address(input: &str) -> IResult<&str, Address> {
+pub(crate) fn parse_inner_address(input: &str) -> IResult<&str, Address> {
     context(
         "expected a valid address",
         alt((

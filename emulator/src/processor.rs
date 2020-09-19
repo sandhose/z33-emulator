@@ -84,7 +84,7 @@ impl std::fmt::Debug for Computer {
 
 impl Computer {
     #[tracing::instrument(skip(self))]
-    fn resolve_address(&self, address: Address) -> Result<u64> {
+    pub fn resolve_address(&self, address: Address) -> Result<u64> {
         match address {
             Address::Dir(addr) => Ok(addr),
             Address::Ind(reg) => u64::try_from_cell(&self.registers.get(reg))
@@ -124,7 +124,7 @@ impl Computer {
                 let addr = self.resolve_address(addr)?;
                 self.memory
                     .get(addr)
-                    .map_err(|_err| Exception::Todo)
+                    .map_err(|err| err.into())
                     .and_then(|cell| cell.extract_word().map_err(|_err| Exception::Todo))
             }
             Arg::Value(val) => self.word_from_value(val),
@@ -180,7 +180,7 @@ impl Computer {
     }
 
     #[tracing::instrument(skip(self))]
-    fn step(&mut self) -> Result<()> {
+    pub fn step(&mut self) -> Result<()> {
         let inst = self.decode_instruction()?;
         info!("Executing instruction \"{}\"", inst);
         // TODO: this could be an unnecessary clone
@@ -270,6 +270,16 @@ impl Registers {
     }
 }
 
+impl std::fmt::Display for Registers {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "%a = {} | %b = {} | %pc = {} | %sp = {} | %sr = {:?}",
+            self.a, self.b, self.pc, self.sp, self.sr
+        )
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Reg {
     A,
@@ -291,11 +301,45 @@ impl std::fmt::Display for Reg {
     }
 }
 
+#[derive(Error, Debug)]
+#[error("could not parse register")]
+pub struct RegisterParseError;
+
+impl std::str::FromStr for Reg {
+    type Err = RegisterParseError;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "%a" | "a" => Ok(Reg::A),
+            "%b" | "b" => Ok(Reg::B),
+            "%pc" | "pc" => Ok(Reg::PC),
+            "%sp" | "sp" => Ok(Reg::SP),
+            "%sr" | "sr" => Ok(Reg::SR),
+            _ => Err(RegisterParseError),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Address {
     Dir(u64),
     Ind(Reg),
     Idx(Reg, i64),
+}
+
+#[derive(Error, Debug)]
+#[error("could not parse address")]
+pub struct AddressParseError;
+
+impl std::str::FromStr for Address {
+    type Err = AddressParseError;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        // TODO: better error handling
+        crate::parser::parse_inner_address(s)
+            .map_err(|_| AddressParseError)
+            .map(|(_, a)| a)
+    }
 }
 
 impl std::fmt::Display for Address {

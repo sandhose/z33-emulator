@@ -59,7 +59,6 @@ impl Cell {
     }
 
     pub fn extract_word(&self) -> Result<Word, CellError> {
-        // TODO: convert from char
         match self {
             Self::Word(w) => Ok(*w),
             Self::Empty => Ok(0),
@@ -87,14 +86,25 @@ impl Cell {
     }
 
     fn extract_char(&self) -> Result<Char, CellError> {
-        // TODO: convert from words
         match self {
             Self::Char(c) => Ok(*c),
             Self::Empty => Ok('\0'),
+            Self::Word(w) if (0x00..=0xFF).contains(w) => Ok(char::from(*w as u8)),
             t => Err(CellError::InvalidType {
                 expected: CellType::Char,
                 was: t.cell_type(),
             }),
+        }
+    }
+}
+
+impl std::fmt::Display for Cell {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Cell::Instruction(i) => write!(f, "{}", i),
+            Cell::Word(w) => write!(f, "{}", w),
+            Cell::Char(c) => write!(f, "{:?}", c),
+            Cell::Empty => write!(f, "empty"),
         }
     }
 }
