@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::collections::HashSet;
 
 use ansi_term::Style;
-use clap::{derive::IntoApp, AppSettings, Clap};
+use clap::{IntoApp, AppSettings, Clap};
 use nom::character::is_space;
 use rustyline::{
     completion::Completer,
