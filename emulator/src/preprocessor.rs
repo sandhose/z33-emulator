@@ -231,7 +231,12 @@ impl PreprocessorState {
     fn replace_definitions(&self, source: String) -> String {
         let words: Vec<_> = source
             .split_word_bounds()
-            .map(|word| self.definitions.get(word).cloned().unwrap_or(word.into()))
+            .map(|word| {
+                self.definitions
+                    .get(word)
+                    .cloned()
+                    .unwrap_or_else(|| word.into())
+            })
             .collect();
         words.join("")
     }

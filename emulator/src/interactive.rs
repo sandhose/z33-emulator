@@ -1,8 +1,17 @@
+//! This module implements the TTY interactive interface.
+//!
+//! It is mainly based on two crates:
+//!   - rustyline, to handle the line-editting logic
+//!   - clap, to handle the parsing of those interactive commands
+//!
+//! Using Clap to do this is a bit of a hack, and requires some weird options to have it working
+//! but works nonetheless.
+
 use std::borrow::Cow;
 use std::collections::HashSet;
 
 use ansi_term::Style;
-use clap::{IntoApp, AppSettings, Clap};
+use clap::{AppSettings, Clap, IntoApp};
 use nom::character::is_space;
 use rustyline::{
     completion::Completer,
@@ -17,7 +26,7 @@ use tracing::{debug, info};
 
 use crate::processor::{Address, Computer, Reg};
 
-static HELP: &'static str = r#"
+static HELP: &str = r#"
 Run "help [command]" for command-specific help.
 An empty line re-runs the last valid command."#;
 
@@ -88,7 +97,6 @@ impl Completer for RunHelper {
         let app = Command::into_app();
         let candidates: HashSet<_> = app
             .get_subcommands()
-            .into_iter()
             // Extract subcommand name & aliases
             .flat_map(|cmd| std::iter::once(cmd.get_name()).chain(cmd.get_all_aliases()))
             .chain(std::iter::once("help"))
@@ -131,7 +139,6 @@ impl Hinter for RunHelper {
         let app = Command::into_app();
         let candidates: Vec<_> = app
             .get_subcommands()
-            .into_iter()
             .map(|cmd| cmd.get_name())
             .chain(std::iter::once("help"))
             .filter_map(|name| {

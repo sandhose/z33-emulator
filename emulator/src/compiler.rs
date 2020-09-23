@@ -132,7 +132,7 @@ impl CompilerState {
 
             let resolved = labels
                 .get(&p.label)
-                .ok_or(CompilerError::InvalidLabel(p.label.clone()))?
+                .ok_or_else(|| CompilerError::InvalidLabel(p.label.clone()))?
                 .to_owned();
 
             let target = p.address;
@@ -152,7 +152,7 @@ impl CompilerState {
         // Set the PC to the start label
         let start = labels
             .get(&start)
-            .ok_or(CompilerError::InvalidLabel(start.clone()))?
+            .ok_or_else(|| CompilerError::InvalidLabel(start.clone()))?
             .to_owned();
 
         computer.registers.pc = start;

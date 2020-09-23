@@ -8,6 +8,9 @@ pub type Address = u64;
 pub type Word = u64;
 pub type Char = char;
 
+/// Type of cells
+///
+/// There is a 1-1 mapping with the `Cell` type in this module.
 #[derive(Debug)]
 pub enum CellType {
     Instruction,
@@ -22,6 +25,7 @@ pub enum CellError {
     InvalidType { expected: CellType, was: CellType },
 }
 
+/// Represents a cell in memory and in general purpose registers
 #[derive(Debug, Clone, PartialEq)]
 pub enum Cell {
     /// An instruction
@@ -104,12 +108,16 @@ impl std::fmt::Display for Cell {
             Cell::Instruction(i) => write!(f, "{}", i),
             Cell::Word(w) => write!(f, "{}", w),
             Cell::Char(c) => write!(f, "{:?}", c),
-            Cell::Empty => write!(f, "empty"),
+            Cell::Empty => write!(f, "0"),
         }
     }
 }
 
+/// Trait to help converting from cells
 pub trait TryFromCell: Sized {
+    /// Convert the cell to a value
+    ///
+    /// The inner value of the cell is copied/cloned.
     fn try_from_cell(value: &Cell) -> Result<Self, CellError>;
 }
 
@@ -149,12 +157,17 @@ impl TryFromCell for Char {
     }
 }
 
+/// Represents errors related to memory manipulations
 #[derive(Debug, Error)]
 pub enum MemoryError {
+    /// The given address was invalid
     #[error("invalid address {0:#x}")]
     InvalidAddress(Address),
 }
 
+/// Holds the memory cells of the computer.
+///
+/// It has 65536 cells by default.
 pub struct Memory {
     inner: Vec<Cell>,
 }
@@ -169,6 +182,9 @@ impl Default for Memory {
 }
 
 impl Memory {
+    /// Get a cell at an address
+    ///
+    /// It fails if the address is invalid or out of bounds.
     pub fn get(&self, address: Address) -> Result<&Cell, MemoryError> {
         let addr: usize = address
             .try_into()
@@ -179,6 +195,9 @@ impl Memory {
             .ok_or(MemoryError::InvalidAddress(address))
     }
 
+    /// Get a mutable reference to a cell at an address
+    ///
+    /// It fails if the address is invalid or out of bounds.
     pub fn get_mut(&mut self, address: Address) -> Result<&mut Cell, MemoryError> {
         let addr: usize = address
             .try_into()

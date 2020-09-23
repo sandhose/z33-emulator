@@ -1,3 +1,8 @@
+//! Program parsing logic
+//!
+//! This module is splitted in multiple submodules to make things easier to read. The parsing is
+//! handled by the `nom` library.
+
 use nom::{
     branch::alt,
     bytes::complete::{tag, tag_no_case, take_while, take_while1},
@@ -16,10 +21,11 @@ mod directive;
 mod expression;
 mod literal;
 
-pub use condition::parse_condition;
 use directive::parse_directive;
-pub use directive::Directive;
 use expression::parse_const_expression;
+
+pub use condition::parse_condition;
+pub use directive::Directive;
 pub use literal::parse_string_literal;
 
 fn parse_reg(input: &str) -> IResult<&str, Reg> {
@@ -155,11 +161,19 @@ impl Parsable for Value {
     }
 }
 
+/// Represents a parsed line of a program
 #[derive(Debug, Clone, PartialEq)]
 pub enum ProgramLine {
+    /// A bare instruction
     Instruction(Instruction),
+
+    /// An instruction with a label as argument
     LabeledInstruction(String, Instruction),
+
+    /// An assembly directive
     Directive(Directive),
+
+    /// An empty line
     Empty,
 }
 
@@ -200,6 +214,9 @@ fn parse_program_line(input: &str) -> IResult<&str, ProgramLine> {
     Ok((input, line))
 }
 
+/// The Parser structure holds state while parsing a program
+///
+/// It implements the Iterator trait that emits ProgramLines.
 pub struct Parser<'a> {
     program: &'a str,
     state: &'a str,

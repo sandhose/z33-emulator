@@ -41,6 +41,7 @@ enum Opt {
 }
 
 impl Opt {
+    /// Run a subcommand
     fn exec(self) -> Result<(), Box<dyn std::error::Error>> {
         match self {
             Opt::Run {
@@ -53,6 +54,7 @@ impl Opt {
     }
 }
 
+/// Run a program
 fn run(
     input: PathBuf,
     entrypoint: String,
@@ -67,12 +69,10 @@ fn run(
 
     let mut compiler = CompilerState::default();
     parser.compile(&mut compiler).map_err(|e| {
-        match e {
-            parser::ParserError::ParserError { kind, offset } => {
-                let message = format!("{:?}", kind);
-                util::display_error_offset(source, offset, message.as_str());
-            }
-            _ => {}
+        // Display a nice message if it is a parser error
+        if let parser::ParserError::ParserError { kind, offset } = e {
+            let message = format!("{:?}", kind);
+            util::display_error_offset(source, offset, message.as_str());
         };
 
         e
@@ -92,6 +92,7 @@ fn run(
     Ok(())
 }
 
+/// Run the preprocessor on a file
 fn run_preprocessor(input: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     info!("Reading program from file {:?}", input);
     let source = preprocess(input)?;
@@ -100,6 +101,7 @@ fn run_preprocessor(input: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // First, setup the tracing formatter for logging and instrumentation
     let format = tracing_subscriber::fmt::format()
         .compact()
         .without_time()
@@ -115,6 +117,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .event_format(format)
         .init();
 
+    // Parse the arguments
     let opt = Opt::parse();
+    // And run the command
     opt.exec()
 }
