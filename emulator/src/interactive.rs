@@ -22,7 +22,7 @@ use rustyline::{
     CompletionType, Config, Context, EditMode, Editor,
 };
 use rustyline_derive::Helper;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use crate::processor::{Address, Computer, Exception, Reg};
 
@@ -76,6 +76,21 @@ enum Command {
         #[clap(default_value = "10")]
         number: u64,
     },
+
+    /// Set a breakpoint
+    Break {
+        /// The address where to set the breakpoint
+        address: Address,
+    },
+
+    /// Remove a breakpoint
+    Unbreak {
+        /// The address of the breakpoint to remove
+        address: Address,
+    },
+
+    /// Continue the program until the next breakpoint or reset
+    Continue,
 }
 
 /// Rustyline helper, that handles interactive completion, highlighting and hinting.
@@ -196,6 +211,7 @@ pub fn run_interactive(computer: &mut Computer) -> Result<(), Box<dyn std::error
 
     let mut last_command = None;
     let mut list_address = computer.registers.pc;
+    let mut breakpoints = HashSet::new();
 
     loop {
         let readline = rl.readline(">> ")?;
@@ -277,14 +293,53 @@ pub fn run_interactive(computer: &mut Computer) -> Result<(), Box<dyn std::error
                         .ok()
                         .and_then(|c| c.extract_instruction().ok());
 
+                    let gutter = match (breakpoints.contains(&addr), addr == computer.registers.pc)
+                    {
+                        (true, true) => "B>",
+                        (true, false) => "B ",
+                        (false, true) => " >",
+                        (false, false) => "  ",
+                    };
+
                     if let Some(instruction) = instruction {
-                        info!("{:>5}: {}", addr, instruction);
+                        info!("{:<2} {:>5}: {}", gutter, addr, instruction);
                     } else {
-                        info!("{:>5}: –", addr);
+                        info!("{:<2} {:>5}: –", gutter, addr);
                     }
                 }
 
                 list_address += number;
+            }
+
+            Command::Break { address } => {
+                // TODO: recover from error
+                let address = computer.resolve_address(address)?;
+                if !breakpoints.insert(address) {
+                    warn!(address, "A breakpoint was already set");
+                } else {
+                    info!(address, "Setting a breakpoint");
+                }
+            }
+
+            Command::Unbreak { address } => {
+                // TODO: recover from error
+                let address = computer.resolve_address(address)?;
+                if !breakpoints.remove(&address) {
+                    warn!(address, "No breakpoint was set here");
+                } else {
+                    info!(address, "Removing breakpoint");
+                }
+            }
+
+            Command::Continue => {
+                loop {
+                    // TODO: recover from error
+                    computer.step()?;
+                    if breakpoints.contains(&computer.registers.pc) {
+                        break;
+                    }
+                }
+                info!(address = computer.registers.pc, "Stopped at a breakpoint");
             }
         };
 
