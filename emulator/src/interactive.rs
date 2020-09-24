@@ -69,6 +69,13 @@ enum Command {
 
     /// Trigger a hardware interrupt
     Interrupt,
+
+    /// Show the next few instructions
+    List {
+        /// Number of instructions to show.
+        #[clap(default_value = "10")]
+        number: u64,
+    },
 }
 
 /// Rustyline helper, that handles interactive completion, highlighting and hinting.
@@ -188,6 +195,7 @@ pub fn run_interactive(computer: &mut Computer) -> Result<(), Box<dyn std::error
     rl.set_helper(Some(h));
 
     let mut last_command = None;
+    let mut list_address = computer.registers.pc;
 
     loop {
         let readline = rl.readline(">> ")?;
@@ -219,6 +227,8 @@ pub fn run_interactive(computer: &mut Computer) -> Result<(), Box<dyn std::error
                 for _ in 0..number {
                     computer.step()?;
                 }
+
+                list_address = computer.registers.pc;
             }
             Command::Registers { register } => {
                 if let Some(reg) = register {
@@ -255,6 +265,26 @@ pub fn run_interactive(computer: &mut Computer) -> Result<(), Box<dyn std::error
 
             Command::Interrupt => {
                 computer.recover_from_exception(Exception::HardwareInterrupt)?;
+                list_address = computer.registers.pc;
+            }
+
+            Command::List { number } => {
+                for i in 0..number {
+                    let addr = list_address + i;
+                    let instruction = computer
+                        .memory
+                        .get(addr)
+                        .ok()
+                        .and_then(|c| c.extract_instruction().ok());
+
+                    if let Some(instruction) = instruction {
+                        info!("{:>5}: {}", addr, instruction);
+                    } else {
+                        info!("{:>5}: –", addr);
+                    }
+                }
+
+                list_address += number;
             }
         };
 
