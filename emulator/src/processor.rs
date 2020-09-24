@@ -10,11 +10,49 @@ use crate::parser::Parsable;
 
 #[derive(Error, Debug)]
 pub enum Exception {
+    #[error("hardware interrupt")]
+    HardwareInterrupt,
+
     #[error("division by zero")]
     DivByZero,
 
     #[error("invalid instruction")]
     InvalidInstruction,
+
+    #[error("privileged instruction")]
+    PrivilegedInstruction,
+
+    #[error("trap")]
+    Trap,
+
+    #[error("invalid memory access")]
+    InvalidMemoryAccess,
+}
+
+impl Exception {
+    fn code(&self) -> Word {
+        match self {
+            Exception::HardwareInterrupt => 0,
+            Exception::DivByZero => 1,
+            Exception::InvalidInstruction => 2,
+            Exception::PrivilegedInstruction => 3,
+            Exception::Trap => 4,
+            Exception::InvalidMemoryAccess => 5,
+        }
+    }
+
+    fn is_hardware_interrupt(&self) -> bool {
+        match self {
+            Exception::HardwareInterrupt => true,
+            _ => false,
+        }
+    }
+}
+
+#[derive(Error, Debug)]
+pub enum ProcessorError {
+    #[error("CPU exception: {0}")]
+    Exception(#[from] Exception),
 
     #[error("memory error: {0}")]
     MemoryError(#[from] MemoryError),
@@ -35,17 +73,17 @@ pub enum Exception {
     Todo,
 }
 
-type Result<T> = std::result::Result<T, Exception>;
+type Result<T> = std::result::Result<T, ProcessorError>;
 
 bitflags! {
     #[derive(Default)]
     pub struct StatusRegister: Word {
-        const CARRY            = 0b00000000_00000001;
-        const ZERO             = 0b00000000_00000010;
-        const NEGATIVE         = 0b00000000_00000100;
-        const OVERFLOW         = 0b00000000_00001000;
-        const INTERRUPT_ENABLE = 0b00000001_00000000;
-        const SUPERVISOR       = 0b00000010_00000000;
+        const CARRY            = 0b000_0000_0001;
+        const ZERO             = 0b000_0000_0010;
+        const NEGATIVE         = 0b000_0000_0100;
+        const OVERFLOW         = 0b000_0000_1000;
+        const INTERRUPT_ENABLE = 0b001_0000_0000;
+        const SUPERVISOR       = 0b010_0000_0000;
     }
 }
 
@@ -88,18 +126,17 @@ impl Computer {
         match address {
             Address::Dir(addr) => Ok(addr),
             Address::Ind(reg) => u64::try_from_cell(&self.registers.get(reg))
-                .map_err(|e| Exception::InvalidRegister { reg, inner: e }),
+                .map_err(|e| ProcessorError::InvalidRegister { reg, inner: e }),
 
             Address::Idx(reg, off) => u64::try_from_cell(&self.registers.get(reg))
-                .map_err(|e| Exception::InvalidRegister { reg, inner: e })
+                .map_err(|e| ProcessorError::InvalidRegister { reg, inner: e })
                 .and_then(|address| {
                     let address = address as i64 + off;
-                    u64::try_from(address).map_err(|_| Exception::InvalidAddress { address })
+                    u64::try_from(address).map_err(|_| ProcessorError::InvalidAddress { address })
                 }),
         }
     }
 
-    #[tracing::instrument(skip(self), err)]
     pub fn write<T: Into<Cell> + Debug>(&mut self, address: Address, value: T) -> Result<()> {
         let address = self.resolve_address(address)?;
         let cell = self.memory.get_mut(address)?;
@@ -107,9 +144,17 @@ impl Computer {
         Ok(())
     }
 
+    /// Set the value of a register
+    ///
+    /// If the instruction tries to set the %sr register, it checks if the processor is running in
+    /// supervisor mode first.
     #[tracing::instrument(skip(self))]
-    pub fn set_register(&mut self, reg: Reg, val: u64) -> Result<()> {
-        self.registers.set(reg, Cell::Word(val))
+    pub fn set_register(&mut self, reg: Reg, val: Cell) -> Result<()> {
+        if reg == Reg::SR {
+            self.check_privileged()?;
+        }
+
+        self.registers.set(reg, val)
     }
 
     #[tracing::instrument(skip(self))]
@@ -125,7 +170,7 @@ impl Computer {
                 self.memory
                     .get(addr)
                     .map_err(|err| err.into())
-                    .and_then(|cell| cell.extract_word().map_err(|_err| Exception::Todo))
+                    .and_then(|cell| cell.extract_word().map_err(|_err| ProcessorError::Todo))
             }
             Arg::Value(val) => self.word_from_value(val),
         }
@@ -162,7 +207,6 @@ impl Computer {
         }
     }
 
-    #[tracing::instrument(skip(self), err)]
     fn jump(&mut self, address: Address) -> Result<()> {
         let address = self.resolve_address(address)?;
         debug!("Jumping to address {:#x}", address);
@@ -176,7 +220,7 @@ impl Computer {
         let cell = self.memory.get(address)?;
         self.registers.pc += 1;
         cell.extract_instruction()
-            .map_err(|_| Exception::InvalidInstruction)
+            .map_err(|_| Exception::InvalidInstruction.into())
     }
 
     #[tracing::instrument(skip(self))]
@@ -184,9 +228,37 @@ impl Computer {
         let inst = self.decode_instruction()?;
         info!("Executing instruction \"{}\"", inst);
         // TODO: this could be an unnecessary clone
-        inst.clone().execute(self)?;
+        inst.clone().execute(self).or_else(|e| {
+            if let ProcessorError::Exception(e) = e {
+                self.recover_from_exception(e)
+            } else {
+                Err(e)
+            }
+        })?;
         debug!("Register state {:?}", self.registers);
         Ok(())
+    }
+
+    pub fn recover_from_exception(&mut self, exception: Exception) -> Result<()> {
+        debug!(exception = %exception, "Recovering from exception");
+        *(self.memory.get_mut(100)?) = self.registers.get(Reg::PC);
+        *(self.memory.get_mut(101)?) = self.registers.get(Reg::SR);
+        *(self.memory.get_mut(102)?) = exception.code().into();
+        self.registers.sr.set(StatusRegister::SUPERVISOR, true);
+        self.registers.sr.set(
+            StatusRegister::INTERRUPT_ENABLE,
+            !exception.is_hardware_interrupt(),
+        );
+        self.registers.pc = 200;
+        Ok(())
+    }
+
+    fn check_privileged(&self) -> Result<()> {
+        if self.registers.sr.contains(StatusRegister::SUPERVISOR) {
+            Ok(())
+        } else {
+            Err(Exception::PrivilegedInstruction.into())
+        }
     }
 
     #[tracing::instrument(skip(self))]
@@ -194,7 +266,7 @@ impl Computer {
         loop {
             match self.step() {
                 Ok(_) => {}
-                Err(Exception::Reset) => return Ok(()),
+                Err(ProcessorError::Reset) => return Ok(()),
                 Err(v) => return Err(v),
             }
         }
@@ -247,11 +319,11 @@ impl Registers {
             Reg::A => self
                 .a
                 .extract_word()
-                .map_err(|inner| Exception::InvalidRegister { reg, inner }),
+                .map_err(|inner| ProcessorError::InvalidRegister { reg, inner }),
             Reg::B => self
                 .b
                 .extract_word()
-                .map_err(|inner| Exception::InvalidRegister { reg, inner }),
+                .map_err(|inner| ProcessorError::InvalidRegister { reg, inner }),
             Reg::PC => Ok(self.pc),
             Reg::SP => Ok(self.sp),
             Reg::SR => Ok(self.sr.bits),
@@ -584,7 +656,7 @@ impl Instruction {
                 let b = computer.word_from_reg(reg)?;
                 let (res, overflow) = a.overflowing_add(b);
                 debug!("{} + {} = {}", a, b, res);
-                computer.registers.set(reg, res.into())?;
+                computer.set_register(reg, res.into())?;
 
                 computer
                     .registers
@@ -596,7 +668,7 @@ impl Instruction {
                 let b = computer.word_from_reg(reg)?;
                 let res = a & b;
                 debug!("{} & {} = {}", a, b, res);
-                computer.registers.set(reg, res.into())?;
+                computer.set_register(reg, res.into())?;
             }
             Instruction::Call(arg) => {
                 // Push PC
@@ -626,16 +698,19 @@ impl Instruction {
                 let b = computer.word_from_reg(reg)?;
                 let res = b.checked_div(a).ok_or(Exception::DivByZero)?;
                 debug!("{} / {} = {}", b, a, res);
-                computer.registers.set(reg, res.into())?;
+                computer.set_register(reg, res.into())?;
             }
             Instruction::Fas(addr, reg) => {
                 let addr = computer.resolve_address(addr)?;
                 let cell = computer.memory.get_mut(addr)?;
                 let val = cell.clone();
-                computer.registers.set(reg, val)?;
                 *cell = Cell::Word(1);
+                computer.set_register(reg, val)?;
             }
-            Instruction::In(_, _) => todo!(),
+            Instruction::In(_, _) => {
+                computer.check_privileged()?;
+                todo!();
+            }
             Instruction::Jmp(arg) => {
                 let val = computer.word_from_arg(arg)?;
                 debug!("Jumping to address {:#x}", val);
@@ -693,14 +768,14 @@ impl Instruction {
             }
             Instruction::Ld(arg, reg) => {
                 let val = computer.arg(arg)?;
-                computer.registers.set(reg, val)?;
+                computer.set_register(reg, val)?;
             }
             Instruction::Mul(arg, reg) => {
                 let a = computer.word_from_arg(arg)?;
                 let b = computer.word_from_reg(reg)?;
                 let (res, overflow) = a.overflowing_mul(b);
                 debug!("{} * {} = {}", a, b, res);
-                computer.registers.set(reg, res.into())?;
+                computer.set_register(reg, res.into())?;
 
                 computer
                     .registers
@@ -712,35 +787,43 @@ impl Instruction {
                 let res = -(val as i64);
                 let res = res as Word;
                 debug!("-{} = {}", val, res);
-                computer.registers.set(reg, res.into())?;
+                computer.set_register(reg, res.into())?;
             }
             Instruction::Nop => {}
             Instruction::Not(reg) => {
                 let val = computer.word_from_reg(reg)?;
                 let res = !val;
                 debug!("!{} = {}", val, res);
-                computer.registers.set(reg, res.into())?;
+                computer.set_register(reg, res.into())?;
             }
             Instruction::Or(arg, reg) => {
                 let a = computer.word_from_arg(arg)?;
                 let b = computer.word_from_reg(reg)?;
                 let res = a | b;
                 debug!("{} | {} = {}", a, b, res);
-                computer.registers.set(reg, res.into())?;
+                computer.set_register(reg, res.into())?;
             }
-            Instruction::Out(_, _) => todo!(),
+            Instruction::Out(_, _) => {
+                computer.check_privileged()?;
+                todo!()
+            }
             Instruction::Pop(reg) => {
                 let val = computer.pop()?.clone();
                 debug!("pop => {:?}", val);
-                computer.registers.set(reg, val)?;
+                computer.set_register(reg, val)?;
             }
             Instruction::Push(val) => {
                 let val = computer.value(val);
                 debug!("push({:?})", val);
                 computer.push(val)?;
             }
-            Instruction::Reset => return Err(Exception::Reset),
-            Instruction::Rti => todo!(),
+            Instruction::Reset => return Err(ProcessorError::Reset),
+            Instruction::Rti => {
+                computer.check_privileged()?;
+                computer.registers.pc = computer.memory.get(100)?.extract_word()?;
+                computer.registers.sr =
+                    StatusRegister::from_bits_truncate(computer.memory.get(101)?.extract_word()?);
+            }
             Instruction::Rtn => {
                 let ret = computer.pop()?; // Pop the return address
                 let ret = ret.extract_word()?; // Convert it to an address
@@ -755,7 +838,7 @@ impl Instruction {
                 let res = a.checked_shl(b).ok_or(Exception::InvalidInstruction)?;
 
                 debug!("{} << {} = {}", a, b, res);
-                computer.registers.set(reg, res.into())?;
+                computer.set_register(reg, res.into())?;
             }
             Instruction::Shr(arg, reg) => {
                 let a = computer.word_from_arg(arg)?;
@@ -765,7 +848,7 @@ impl Instruction {
                 let res = a.checked_shr(b).ok_or(Exception::InvalidInstruction)?;
 
                 debug!("{} >> {} = {}", a, b, res);
-                computer.registers.set(reg, res.into())?;
+                computer.set_register(reg, res.into())?;
             }
             Instruction::St(reg, address) => {
                 let val = computer.registers.get(reg);
@@ -775,7 +858,7 @@ impl Instruction {
                 let a = computer.word_from_arg(arg)?;
                 let b = computer.word_from_reg(reg)?;
                 let (res, overflow) = b.overflowing_sub(a);
-                computer.registers.set(reg, res.into())?;
+                computer.set_register(reg, res.into())?;
 
                 debug!("{} - {} = {}", b, a, res);
 
@@ -784,13 +867,15 @@ impl Instruction {
                     .sr
                     .set(StatusRegister::OVERFLOW, overflow);
             }
-            Instruction::Trap => todo!(),
+            Instruction::Trap => {
+                return Err(Exception::Trap.into());
+            }
             Instruction::Xor(arg, reg) => {
                 let a = computer.word_from_arg(arg)?;
                 let b = computer.word_from_reg(reg)?;
                 let res = a ^ b;
                 debug!("{} ^ {} = {}", a, b, res);
-                computer.registers.set(reg, res.into())?;
+                computer.set_register(reg, res.into())?;
             }
         };
 

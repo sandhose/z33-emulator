@@ -24,7 +24,7 @@ use rustyline::{
 use rustyline_derive::Helper;
 use tracing::{debug, info};
 
-use crate::processor::{Address, Computer, Reg};
+use crate::processor::{Address, Computer, Exception, Reg};
 
 static HELP: &str = r#"
 Run "help [command]" for command-specific help.
@@ -66,6 +66,9 @@ enum Command {
         #[clap(default_value = "1")]
         number: i64,
     },
+
+    /// Trigger a hardware interrupt
+    Interrupt,
 }
 
 /// Rustyline helper, that handles interactive completion, highlighting and hinting.
@@ -170,7 +173,6 @@ impl Validator for RunHelper {
     }
 }
 
-#[tracing::instrument(level = "debug", err)]
 pub fn run_interactive(computer: &mut Computer) -> Result<(), Box<dyn std::error::Error>> {
     info!("Running in interactive mode. Type \"help\" to list available commands.");
     let config = Config::builder()
@@ -249,6 +251,10 @@ pub fn run_interactive(computer: &mut Computer) -> Result<(), Box<dyn std::error
                         info!(address, value = %cell);
                     }
                 }
+            }
+
+            Command::Interrupt => {
+                computer.recover_from_exception(Exception::HardwareInterrupt)?;
             }
         };
 
