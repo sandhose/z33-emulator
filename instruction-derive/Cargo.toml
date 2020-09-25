@@ -1,5 +1,5 @@
 [package]
-name = "z33_instruction_derive"
+name = "z33-instruction-derive"
 description = "Utility derive macro for the z33-emulator"
 version = "0.1.0"
 authors = ["Quentin Gliech <gliech@unistra.fr>"]

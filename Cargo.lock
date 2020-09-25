@@ -744,11 +744,11 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "unicode-segmentation",
- "z33_instruction_derive",
+ "z33-instruction-derive",
 ]
 
 [[package]]
-name = "z33_instruction_derive"
+name = "z33-instruction-derive"
 version = "0.1.0"
 dependencies = [
  "proc-macro-error",
