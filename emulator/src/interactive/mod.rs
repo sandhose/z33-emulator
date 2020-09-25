@@ -7,24 +7,16 @@
 //! Using Clap to do this is a bit of a hack, and requires some weird options to have it working
 //! but works nonetheless.
 
-use std::borrow::Cow;
 use std::collections::HashSet;
 
-use ansi_term::Style;
-use clap::{AppSettings, Clap, IntoApp};
-use nom::character::is_space;
-use rustyline::{
-    completion::Completer,
-    config::OutputStreamType,
-    highlight::Highlighter,
-    hint::Hinter,
-    validate::{ValidationContext, ValidationResult, Validator},
-    CompletionType, Config, Context, EditMode, Editor,
-};
-use rustyline_derive::Helper;
+use clap::{AppSettings, Clap};
+use rustyline::{config::OutputStreamType, CompletionType, Config, EditMode, Editor};
 use tracing::{debug, info, warn};
 
 use crate::processor::{Address, Computer, Exception, Reg};
+
+mod helper;
+use self::helper::RunHelper;
 
 static HELP: &str = r#"
 Run "help [command]" for command-specific help.
@@ -91,108 +83,17 @@ enum Command {
 
     /// Continue the program until the next breakpoint or reset
     Continue,
+
+    /// Show informations about the current debugging session
+    Info {
+        #[clap(subcommand)]
+        sub: InfoCommand,
+    },
 }
 
-/// Rustyline helper, that handles interactive completion, highlighting and hinting.
-#[derive(Helper, Debug)]
-struct RunHelper {}
-
-impl Completer for RunHelper {
-    type Candidate = String;
-
-    fn complete(
-        &self,
-        line: &str,
-        pos: usize,
-        _ctx: &Context<'_>,
-    ) -> rustyline::Result<(usize, Vec<Self::Candidate>)> {
-        let start = line
-            .chars()
-            .position(|c| !c.is_ascii() || !is_space(c as u8))
-            .unwrap_or_default();
-
-        let word: String = line
-            .chars()
-            .take(pos)
-            .skip_while(|c| c.is_ascii() && is_space(*c as u8))
-            .map(|c| c.to_ascii_lowercase())
-            .collect();
-        let word = word.as_str();
-
-        let app = Command::into_app();
-        let candidates: HashSet<_> = app
-            .get_subcommands()
-            // Extract subcommand name & aliases
-            .flat_map(|cmd| std::iter::once(cmd.get_name()).chain(cmd.get_all_aliases()))
-            .chain(std::iter::once("help"))
-            .filter(|alias| alias.starts_with(word))
-            .map(|alias| alias.to_string())
-            .collect();
-
-        Ok((start, candidates.into_iter().collect()))
-    }
-}
-
-impl Highlighter for RunHelper {
-    fn highlight_hint<'h>(&self, hint: &'h str) -> Cow<'h, str> {
-        let style = Style::new().dimmed();
-        let hint = style.paint(hint).to_string();
-        Cow::Owned(hint)
-    }
-
-    fn highlight_prompt<'b, 's: 'b, 'p: 'b>(
-        &'s self,
-        prompt: &'p str,
-        _default: bool,
-    ) -> Cow<'b, str> {
-        let style = Style::new().bold();
-        let prompt = style.paint(prompt).to_string();
-        Cow::Owned(prompt)
-    }
-}
-
-impl Hinter for RunHelper {
-    fn hint(&self, line: &str, pos: usize, _ctx: &Context<'_>) -> Option<String> {
-        let word: String = line
-            .chars()
-            .take(pos)
-            .skip_while(|c| c.is_ascii() && is_space(*c as u8))
-            .map(|c| c.to_ascii_lowercase())
-            .collect();
-        let word = word.as_str();
-
-        let app = Command::into_app();
-        let candidates: Vec<_> = app
-            .get_subcommands()
-            .map(|cmd| cmd.get_name())
-            .chain(std::iter::once("help"))
-            .filter_map(|name| {
-                if name.starts_with(word) {
-                    Some(&name[word.len()..])
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        if candidates.len() == 1 {
-            Some(candidates[0].to_string())
-        } else {
-            None
-        }
-    }
-}
-
-impl Validator for RunHelper {
-    fn validate(&self, ctx: &mut ValidationContext) -> rustyline::Result<ValidationResult> {
-        let input = ctx.input();
-        let res = shell_words::split(input);
-        if res.is_err() {
-            Ok(ValidationResult::Incomplete)
-        } else {
-            Ok(ValidationResult::Valid(None))
-        }
-    }
+#[derive(Clap, Clone, Debug)]
+enum InfoCommand {
+    Breakpoints,
 }
 
 pub fn run_interactive(computer: &mut Computer) -> Result<(), Box<dyn std::error::Error>> {
@@ -205,7 +106,7 @@ pub fn run_interactive(computer: &mut Computer) -> Result<(), Box<dyn std::error
         .auto_add_history(true)
         .build();
 
-    let h = RunHelper {};
+    let h: RunHelper<Command> = RunHelper::new();
     let mut rl = Editor::with_config(config);
     rl.set_helper(Some(h));
 
@@ -341,6 +242,29 @@ pub fn run_interactive(computer: &mut Computer) -> Result<(), Box<dyn std::error
                 }
                 info!(address = computer.registers.pc, "Stopped at a breakpoint");
             }
+
+            Command::Info { sub } => match sub {
+                InfoCommand::Breakpoints => {
+                    match breakpoints.len() {
+                        0 => info!("No breakpoints"),
+                        1 => info!("1 breakpoint:"),
+                        x => info!("{} breakpoints:", x),
+                    }
+                    for addr in breakpoints.iter() {
+                        let instruction = computer
+                            .memory
+                            .get(*addr)
+                            .ok()
+                            .and_then(|c| c.extract_instruction().ok());
+
+                        if let Some(instruction) = instruction {
+                            info!("{:>5}: {}", addr, instruction);
+                        } else {
+                            info!("{:>5}: –", addr);
+                        }
+                    }
+                }
+            },
         };
 
         last_command = Some(command);
