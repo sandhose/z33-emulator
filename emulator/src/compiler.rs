@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use thiserror::Error;
 use tracing::{debug, span, Level};
 
+use crate::constants::*;
 use crate::memory::Cell;
 use crate::processor::{Computer, Instruction, Labelable};
 
@@ -50,12 +51,23 @@ pub trait Compiler {
     fn memory_skip(&mut self, offset: u64) -> std::result::Result<(), Self::Error>;
 }
 
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub struct CompilerState {
     computer: Computer,
     labels: Labels,
     pending_labels: Vec<PendingLabel>,
     memory_position: u64,
+}
+
+impl Default for CompilerState {
+    fn default() -> Self {
+        CompilerState {
+            memory_position: PROGRAM_START,
+            computer: Default::default(),
+            labels: Default::default(),
+            pending_labels: Default::default(),
+        }
+    }
 }
 
 impl Compiler for CompilerState {
@@ -158,7 +170,7 @@ impl CompilerState {
         computer.registers.pc = start;
 
         // Initialize the SP
-        computer.registers.sp = 0xF000;
+        computer.registers.sp = STACK_START;
 
         Ok(computer)
     }

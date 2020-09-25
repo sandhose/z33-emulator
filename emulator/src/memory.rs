@@ -2,7 +2,8 @@ use std::convert::TryInto;
 
 use thiserror::Error;
 
-use super::processor::Instruction;
+use crate::constants::*;
+use crate::processor::Instruction;
 
 pub type Address = u64;
 pub type Word = u64;
@@ -175,7 +176,7 @@ pub struct Memory {
 impl Default for Memory {
     fn default() -> Self {
         let inner: Vec<_> = std::iter::repeat(Cell::default())
-            .take(u16::MAX as usize)
+            .take(MEMORY_SIZE as _)
             .collect();
         Self { inner }
     }

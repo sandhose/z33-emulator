@@ -6,6 +6,7 @@ use tracing::{debug, info};
 use tracing_subscriber::filter::{EnvFilter, LevelFilter};
 
 mod compiler;
+mod constants;
 mod interactive;
 mod memory;
 mod parser;

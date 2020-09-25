@@ -5,7 +5,8 @@ use thiserror::Error;
 use tracing::{debug, info};
 use z33_instruction_derive::Instruction;
 
-use super::memory::{Cell, CellError, Memory, MemoryError, TryFromCell, Word};
+use crate::constants::*;
+use crate::memory::{Cell, CellError, Memory, MemoryError, TryFromCell, Word};
 use crate::parser::Parsable;
 
 #[derive(Error, Debug)]
@@ -241,15 +242,15 @@ impl Computer {
 
     pub fn recover_from_exception(&mut self, exception: Exception) -> Result<()> {
         debug!(exception = %exception, "Recovering from exception");
-        *(self.memory.get_mut(100)?) = self.registers.get(Reg::PC);
-        *(self.memory.get_mut(101)?) = self.registers.get(Reg::SR);
-        *(self.memory.get_mut(102)?) = exception.code().into();
+        *(self.memory.get_mut(INTERRUPT_PC_SAVE)?) = self.registers.get(Reg::PC);
+        *(self.memory.get_mut(INTERRUPT_SR_SAVE)?) = self.registers.get(Reg::SR);
+        *(self.memory.get_mut(INTERRUPT_EXCEPTION)?) = exception.code().into();
         self.registers.sr.set(StatusRegister::SUPERVISOR, true);
         self.registers.sr.set(
             StatusRegister::INTERRUPT_ENABLE,
             !exception.is_hardware_interrupt(),
         );
-        self.registers.pc = 200;
+        self.registers.pc = INTERRUPT_HANDLER;
         Ok(())
     }
 
@@ -820,9 +821,10 @@ impl Instruction {
             Instruction::Reset => return Err(ProcessorError::Reset),
             Instruction::Rti => {
                 computer.check_privileged()?;
-                computer.registers.pc = computer.memory.get(100)?.extract_word()?;
-                computer.registers.sr =
-                    StatusRegister::from_bits_truncate(computer.memory.get(101)?.extract_word()?);
+                computer.registers.pc = computer.memory.get(INTERRUPT_PC_SAVE)?.extract_word()?;
+                computer.registers.sr = StatusRegister::from_bits_truncate(
+                    computer.memory.get(INTERRUPT_SR_SAVE)?.extract_word()?,
+                );
             }
             Instruction::Rtn => {
                 let ret = computer.pop()?; // Pop the return address
