@@ -19,6 +19,7 @@ use crate::parser::Parser;
 use crate::preprocessor::preprocess;
 
 #[derive(Clap)]
+#[clap(version, author, about)]
 enum Opt {
     /// Preprocess, compile and run a program
     Run {

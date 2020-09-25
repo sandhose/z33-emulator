@@ -1,10 +1,12 @@
 [package]
 name = "z33-emulator"
+description = "An emulator for the Zorglub-33 architecture"
+homepage = "https://pdagog.gitlab.io/ens/z33refcard.pdf"
 version = "0.1.0"
-authors = ["Quentin Gliech <quentingliech@gmail.com>"]
+authors = ["Quentin Gliech <gliech@unistra.fr>"]
 edition = "2018"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+readme = "../README.md"
+license = "MIT"
 
 [dependencies]
 bitflags = "1.2.1"

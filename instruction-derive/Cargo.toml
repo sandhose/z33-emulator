@@ -1,14 +1,16 @@
 [package]
 name = "z33_instruction_derive"
+description = "Utility derive macro for the z33-emulator"
 version = "0.1.0"
-authors = ["Quentin Gliech <quentingliech@gmail.com>"]
+authors = ["Quentin Gliech <gliech@unistra.fr>"]
 edition = "2018"
+license = "MIT"
 
 [lib]
 proc-macro = true
 
 [dependencies]
-syn = { version = "1.0.41", features = ["extra-traits"] }
+syn = "1.0.41"
 quote = "1.0.7"
 proc-macro2 = "1.0.21"
 proc-macro-error = "1.0.4"

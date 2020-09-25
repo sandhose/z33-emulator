@@ -23,3 +23,7 @@ cargo build --release
 - `registers [register]`: Show the value of a register. If no register is specified, shows the value of all five of them.
 - `step [n]`: Run `n` step of the program (one by default).
 - `exit`: Exit the emulator
+
+# License
+
+[MIT](./LICENSE) © [Quentin Gliech](https://sandhose.fr)
