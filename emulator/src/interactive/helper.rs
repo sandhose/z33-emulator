@@ -26,7 +26,7 @@ impl<T: IntoApp> RunHelper<T> {
     }
 }
 
-fn suggest(app: &App, input: &[String], complete: bool) -> (usize, HashSet<String>) {
+fn suggest(app: &App, input: &[String]) -> (usize, HashSet<String>) {
     // We're building the suggestions here
     // The only downside is that it's wasted work if we're not on the first word (second pattern of
     // the match bellow)
@@ -41,8 +41,23 @@ fn suggest(app: &App, input: &[String], complete: bool) -> (usize, HashSet<Strin
         suggestions.insert("help".to_string());
     }
 
-    match (&input[..], complete) {
-        ([last], false) => (
+    let mut index = input.len();
+    if index > 0 {
+        index -= 1
+    }
+
+    // Find the curresponding positional arg if it exists and add suggestions for it
+    if let Some(arg) = app.get_positionals().nth(index) {
+        let additional: Vec<&str> = match arg.get_name() {
+            "register" | "address" => vec!["%a", "%b", "%sp", "%sr"],
+            _ => Vec::new(),
+        };
+
+        suggestions.extend(additional.into_iter().map(String::from))
+    }
+
+    match &input[..] {
+        [last] => (
             last.len(),
             suggestions
                 .into_iter()
@@ -50,12 +65,12 @@ fn suggest(app: &App, input: &[String], complete: bool) -> (usize, HashSet<Strin
                 .collect(),
         ),
 
-        ([head, tail @ ..], _) => app
+        [head, tail @ ..] => app
             .find_subcommand(head)
-            .map(|sub: &App| suggest(sub, tail, complete))
+            .map(|sub: &App| suggest(sub, tail))
             .unwrap_or_default(),
 
-        ([], _) => (0, suggestions),
+        [] => (0, suggestions),
     }
 }
 
@@ -70,9 +85,15 @@ impl<T: IntoApp> Completer for RunHelper<T> {
     ) -> rustyline::Result<(usize, Vec<Self::Candidate>)> {
         let line = &line[..pos];
         let complete = line.bytes().last().filter(|&c| is_space(c)).is_some(); // Line is considered "complete" if the last char is a space
-        if let Ok(words) = shell_words::split(line) {
+        if let Ok(mut words) = shell_words::split(line) {
             let app = T::into_app();
-            let (offset, candidates) = suggest(&app, words.as_slice(), complete);
+
+            // If the last char was a space, insert an empty word to autocomplete the next word
+            if complete {
+                words.push("".to_string());
+            }
+
+            let (offset, candidates) = suggest(&app, words.as_slice());
 
             Ok((pos - offset, candidates.into_iter().collect()))
         } else {
@@ -102,11 +123,16 @@ impl<T: IntoApp> Highlighter for RunHelper<T> {
 impl<T: IntoApp> Hinter for RunHelper<T> {
     fn hint(&self, line: &str, pos: usize, _ctx: &Context<'_>) -> Option<String> {
         let line = &line[..pos];
-        let complete = line.chars().last().unwrap_or_default() == ' ';
-        let words = shell_words::split(line).ok()?;
+        let complete = line.bytes().last().filter(|&c| is_space(c)).is_some(); // Line is considered "complete" if the last char is a space
+        let mut words = shell_words::split(line).ok()?;
+
+        // If the last char was a space, insert an empty word to autocomplete the next word
+        if complete {
+            words.push("".to_string());
+        }
 
         let app = T::into_app();
-        let (offset, candidates) = suggest(&app, words.as_slice(), complete);
+        let (offset, candidates) = suggest(&app, words.as_slice());
 
         if candidates.len() == 1 {
             Some(candidates.iter().next().unwrap()[offset..].to_string())
