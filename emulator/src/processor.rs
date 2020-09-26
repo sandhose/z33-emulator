@@ -952,9 +952,9 @@ mod tests {
     #[test]
     fn call_test() {
         let mut computer = Computer::default();
-        let start = 0x100;
-        let subroutine = 0x200;
-        let stack = 0xF000;
+        let start = 100;
+        let subroutine = 200;
+        let stack = STACK_START;
         computer.registers.sp = stack; // Set the stack pointer somewhere
 
         // program:
