@@ -1,4 +1,9 @@
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
+  release:
+    types:
+      - created
 
 name: Compile
 
@@ -44,3 +49,59 @@ jobs:
         with:
           name: z33-emulator-${{ matrix.target }}
           path: target/${{ matrix.target }}/release/${{ matrix.exe }}
+
+  publish:
+    name: Publish draft release
+    needs: [build]
+    runs-on: ubuntu-20.04
+    if: github.event_name == 'release'
+
+    steps:
+      - uses: actions/download-artifact@v2
+        with:
+          path: artifacts
+
+      - name: Fix permissions (x86_64-apple-darwin)
+        run: chmod +x artifacts/z33-emulator-x86_64-apple-darwin/z33-emulator
+
+      - name: Fix permissions (x86_64-unknown-linux-musl)
+        run: chmod +x artifacts/z33-emulator-x86_64-unknown-linux-musl/z33-emulator
+
+      - name: Create darwin archive
+        run: tar -czvf z33-emulator-x86_64-apple-darwin.tar.gz --owner=0 --group=0  -C artifacts/z33-emulator-x86_64-apple-darwin/ z33-emulator
+
+      - name: Create linux archive
+        run: tar -czvf z33-emulator-x86_64-unknown-linux-musl.tar.gz --owner=0 --group=0  -C artifacts/z33-emulator-x86_64-unknown-linux-musl/ z33-emulator
+
+      - name: Upload darwin archive
+        id: upload-darwin-asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./z33-emulator-x86_64-apple-darwin.tar.gz
+          asset_name: z33-emulator-x86_64-apple-darwin.tar.gz
+          asset_content_type: application/tar+gzip
+
+      - name: Upload linux archive
+        id: upload-linux-asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./z33-emulator-x86_64-unknown-linux-musl.tar.gz
+          asset_name: z33-emulator-x86_64-unknown-linux-musl.tar.gz
+          asset_content_type: application/tar+gzip
+
+      - name: Upload windows executable
+        id: upload-windows-asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./artifacts/z33-emulator-x86_64-pc-windows-msvc/z33-emulator.exe
+          asset_name: z33-emulator-x86_64-pc-windows-msvc.exe
+          asset_content_type: application/vnd.microsoft.portable-executable
