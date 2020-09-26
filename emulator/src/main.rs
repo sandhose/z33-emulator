@@ -81,10 +81,10 @@ fn run(
     })?;
 
     info!(entrypoint = %entrypoint, "Building computer");
-    let mut computer = compiler.build(entrypoint)?;
+    let (mut computer, debug_info) = compiler.build(entrypoint)?;
 
     if interactive {
-        run_interactive(&mut computer)?;
+        run_interactive(&mut computer, debug_info)?;
     } else {
         info!("Running program");
         computer.run()?;

@@ -7,12 +7,13 @@
 //! Using Clap to do this is a bit of a hack, and requires some weird options to have it working
 //! but works nonetheless.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use clap::{AppSettings, Clap};
 use rustyline::{config::OutputStreamType, CompletionType, Config, EditMode, Editor};
 use tracing::{debug, info, warn};
 
+use crate::compiler::DebugInfo;
 use crate::processor::{Address, Computer, Exception, Reg};
 
 mod helper;
@@ -93,10 +94,26 @@ enum Command {
 
 #[derive(Clap, Clone, Debug)]
 enum InfoCommand {
+    /// List active breakpoints
     Breakpoints,
+
+    /// List program labels
+    Labels,
 }
 
-pub fn run_interactive(computer: &mut Computer) -> Result<(), Box<dyn std::error::Error>> {
+fn labels_to_address_map(labels: &HashMap<String, u64>) -> HashMap<u64, Vec<String>> {
+    labels
+        .iter()
+        .fold(HashMap::new(), |mut acc, (label, address)| {
+            acc.entry(*address).or_default().push(label.clone());
+            acc
+        })
+}
+
+pub fn run_interactive(
+    computer: &mut Computer,
+    debug_info: DebugInfo,
+) -> Result<(), Box<dyn std::error::Error>> {
     info!("Running in interactive mode. Type \"help\" to list available commands.");
     let config = Config::builder()
         .history_ignore_space(true)
@@ -113,6 +130,7 @@ pub fn run_interactive(computer: &mut Computer) -> Result<(), Box<dyn std::error
     let mut last_command = None;
     let mut list_address = computer.registers.pc;
     let mut breakpoints = HashSet::new();
+    let labels = labels_to_address_map(&debug_info.labels);
 
     loop {
         let readline = rl.readline(">> ")?;
@@ -194,6 +212,10 @@ pub fn run_interactive(computer: &mut Computer) -> Result<(), Box<dyn std::error
                         .ok()
                         .and_then(|c| c.extract_instruction().ok());
 
+                    for label in labels.get(&addr).cloned().unwrap_or_default() {
+                        info!("          {}:", label);
+                    }
+
                     let gutter = match (breakpoints.contains(&addr), addr == computer.registers.pc)
                     {
                         (true, true) => "B>",
@@ -203,9 +225,9 @@ pub fn run_interactive(computer: &mut Computer) -> Result<(), Box<dyn std::error
                     };
 
                     if let Some(instruction) = instruction {
-                        info!("{:<2} {:>5}: {}", gutter, addr, instruction);
+                        info!("{:<2} {:>5}    {}", gutter, addr, instruction);
                     } else {
-                        info!("{:<2} {:>5}: –", gutter, addr);
+                        info!("{:<2} {:>5}    –", gutter, addr);
                     }
                 }
 
@@ -262,6 +284,11 @@ pub fn run_interactive(computer: &mut Computer) -> Result<(), Box<dyn std::error
                         } else {
                             info!("{:>5}: –", addr);
                         }
+                    }
+                }
+                InfoCommand::Labels => {
+                    for (label, &addr) in debug_info.labels.iter() {
+                        info!("{}: {}", label, addr);
                     }
                 }
             },

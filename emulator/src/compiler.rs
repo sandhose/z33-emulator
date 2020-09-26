@@ -59,6 +59,12 @@ pub struct CompilerState {
     memory_position: u64,
 }
 
+/// Holds informations about the compilation
+pub struct DebugInfo {
+    /// Map of labels to addresses
+    pub labels: Labels,
+}
+
 impl Default for CompilerState {
     fn default() -> Self {
         CompilerState {
@@ -125,7 +131,7 @@ impl Compiler for CompilerState {
 
 impl CompilerState {
     #[tracing::instrument(err)]
-    pub fn build(self, start: String) -> Result<Computer> {
+    pub fn build(self, start: String) -> Result<(Computer, DebugInfo)> {
         let pending_labels = self.pending_labels;
         let labels = self.labels;
         let mut computer = self.computer;
@@ -172,7 +178,7 @@ impl CompilerState {
         // Initialize the SP
         computer.registers.sp = STACK_START;
 
-        Ok(computer)
+        Ok((computer, DebugInfo { labels }))
     }
 }
 
@@ -205,7 +211,7 @@ mod tests {
             .unwrap();
         compiler.ingest(Instruction::Rtn).unwrap();
 
-        let mut computer = compiler.build("start".into()).unwrap();
+        let (mut computer, _) = compiler.build("start".into()).unwrap();
         computer.run().unwrap();
 
         assert_eq!(computer.registers.get(Reg::A), Cell::Word(0x42));
