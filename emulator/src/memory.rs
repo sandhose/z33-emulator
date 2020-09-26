@@ -63,6 +63,10 @@ impl Cell {
         }
     }
 
+    /// Extract a word from the cell.
+    ///
+    /// If the cell is empty, it extracts "0"
+    /// If it is a char, it tries to convert it to its ASCII code
     pub fn extract_word(&self) -> Result<Word, CellError> {
         match self {
             Self::Word(w) => Ok(*w),
@@ -80,6 +84,9 @@ impl Cell {
         }
     }
 
+    /// Extract an instruction from the cell.
+    ///
+    /// Raises an error if it is any other type
     pub fn extract_instruction(&self) -> Result<&Instruction, CellError> {
         match self {
             Self::Instruction(i) => Ok(i),
@@ -90,6 +97,10 @@ impl Cell {
         }
     }
 
+    /// Extracts a char from the cell.
+    ///
+    /// If the cell is empty, it extracts '\0'
+    /// If the cell is a word, it tries converting it to a char if it is in the ASCII range
     fn extract_char(&self) -> Result<Char, CellError> {
         match self {
             Self::Char(c) => Ok(*c),
@@ -162,7 +173,7 @@ impl TryFromCell for Char {
 #[derive(Debug, Error)]
 pub enum MemoryError {
     /// The given address was invalid
-    #[error("invalid address {0:#x}")]
+    #[error("invalid address {0}")]
     InvalidAddress(Address),
 }
 
@@ -175,14 +186,19 @@ pub struct Memory {
 
 impl Default for Memory {
     fn default() -> Self {
-        let inner: Vec<_> = std::iter::repeat(Cell::default())
-            .take(MEMORY_SIZE as _)
-            .collect();
-        Self { inner }
+        Self::new(MEMORY_SIZE as _)
     }
 }
 
 impl Memory {
+    /// Create a new memory component with a given size
+    pub fn new(size: usize) -> Self {
+        let inner = std::iter::repeat(Cell::Empty) // Fill the memory with empty cells
+            .take(size)
+            .collect();
+        Self { inner }
+    }
+
     /// Get a cell at an address
     ///
     /// It fails if the address is invalid or out of bounds.

@@ -8,7 +8,7 @@ use syn::{Data, DeriveInput, Type};
 
 // TODO: use appropriate span in quotes
 
-#[proc_macro_derive(Instruction, attributes(instruction, labelable))]
+#[proc_macro_derive(Instruction, attributes(labelable))]
 #[proc_macro_error]
 pub fn derive_instruction(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     // Parse the string representation
@@ -24,7 +24,6 @@ pub fn derive_instruction(input: proc_macro::TokenStream) -> proc_macro::TokenSt
 #[derive(Debug)]
 struct Instruction {
     ident: Ident,
-    opcode: Literal,
     args: Vec<Type>,
     labelable: Option<usize>,
 }
@@ -35,22 +34,6 @@ fn impl_instruction(ast: &DeriveInput) -> syn::parse::Result<TokenStream> {
 
     if let Data::Enum(ref e) = ast.data {
         for variant in e.variants.iter() {
-            // Let's parse the opcode
-            let mut opcode = None;
-            for attr in variant.attrs.iter() {
-                if let Some(ident) = attr.path.get_ident() {
-                    if ident.to_string() == "instruction" {
-                        let args: Literal = attr.parse_args()?;
-                        opcode = Some(args);
-                    }
-                }
-            }
-
-            if opcode.is_none() {
-                abort!(variant.span(), "No opcode for this instruction");
-            }
-            let opcode = opcode.unwrap();
-
             // Let's parse the fields
             let (args, labelable) = match variant.fields {
                 syn::Fields::Named(_) => {
@@ -63,7 +46,7 @@ fn impl_instruction(ast: &DeriveInput) -> syn::parse::Result<TokenStream> {
                         f.attrs.iter().any(|attr| {
                             attr.path
                                 .get_ident()
-                                .filter(|ident| ident.to_string() == "labelable")
+                                .filter(|ident| *ident == "labelable")
                                 .is_some()
                         })
                     });
@@ -74,7 +57,6 @@ fn impl_instruction(ast: &DeriveInput) -> syn::parse::Result<TokenStream> {
 
             instructions.push(Instruction {
                 ident: variant.ident.clone(),
-                opcode,
                 args,
                 labelable,
             });
@@ -263,5 +245,5 @@ fn impl_instruction(ast: &DeriveInput) -> syn::parse::Result<TokenStream> {
         }
     };
 
-    Ok(im.into())
+    Ok(im)
 }
