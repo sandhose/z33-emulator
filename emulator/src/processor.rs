@@ -27,7 +27,7 @@ pub enum Exception {
     Trap,
 
     #[error("invalid memory access")]
-    InvalidMemoryAccess,
+    InvalidMemoryAccess(#[from] MemoryError),
 }
 
 impl Exception {
@@ -38,7 +38,7 @@ impl Exception {
             Exception::InvalidInstruction => 2,
             Exception::PrivilegedInstruction => 3,
             Exception::Trap => 4,
-            Exception::InvalidMemoryAccess => 5,
+            Exception::InvalidMemoryAccess(_) => 5,
         }
     }
 
@@ -55,9 +55,6 @@ pub enum ProcessorError {
     #[error("CPU exception: {0}")]
     Exception(#[from] Exception),
 
-    #[error("memory error: {0}")]
-    MemoryError(#[from] MemoryError),
-
     #[error("cell error: {0}")]
     CellError(#[from] CellError),
 
@@ -72,6 +69,13 @@ pub enum ProcessorError {
 
     #[error("TODO error handling")]
     Todo,
+}
+
+// Implement a MemoryError -> ProcessorError conversion to simplify code
+impl From<MemoryError> for ProcessorError {
+    fn from(e: MemoryError) -> Self {
+        Self::Exception(Exception::InvalidMemoryAccess(e))
+    }
 }
 
 type Result<T> = std::result::Result<T, ProcessorError>;
@@ -232,6 +236,7 @@ impl Computer {
         inst.clone().execute(self).or_else(|e| {
             if let ProcessorError::Exception(e) = e {
                 self.recover_from_exception(e)
+                    .map_err(ProcessorError::Exception)
             } else {
                 Err(e)
             }
@@ -240,7 +245,10 @@ impl Computer {
         Ok(())
     }
 
-    pub fn recover_from_exception(&mut self, exception: Exception) -> Result<()> {
+    pub fn recover_from_exception(
+        &mut self,
+        exception: Exception,
+    ) -> std::result::Result<(), Exception> {
         debug!(exception = %exception, "Recovering from exception");
         *(self.memory.get_mut(INTERRUPT_PC_SAVE)?) = self.registers.get(Reg::PC);
         *(self.memory.get_mut(INTERRUPT_SR_SAVE)?) = self.registers.get(Reg::SR);
@@ -274,7 +282,7 @@ impl Computer {
     }
 
     #[tracing::instrument(skip(self))]
-    fn push<T: Into<Cell> + Debug>(&mut self, value: T) -> Result<()> {
+    fn push<T: Into<Cell> + Debug>(&mut self, value: T) -> std::result::Result<(), Exception> {
         self.registers.sp -= 1;
 
         // And write it on memeory
@@ -285,7 +293,7 @@ impl Computer {
     }
 
     #[tracing::instrument(skip(self))]
-    fn pop(&mut self) -> Result<&Cell> {
+    fn pop(&mut self) -> std::result::Result<&Cell, Exception> {
         // First read the value
         let val = self.memory.get(self.registers.sp)?;
         // Then move the SP
