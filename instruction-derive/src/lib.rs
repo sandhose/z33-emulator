@@ -4,7 +4,7 @@ use proc_macro2::{Ident, Literal, Span, TokenStream};
 use proc_macro_error::{abort, proc_macro_error};
 use quote::{quote, quote_spanned};
 use syn::spanned::Spanned;
-use syn::{Data, DeriveInput, Type};
+use syn::{parse::Result, Data, DataEnum, DeriveInput, Type};
 
 // TODO: use appropriate span in quotes
 
@@ -21,6 +21,32 @@ pub fn derive_instruction(input: proc_macro::TokenStream) -> proc_macro::TokenSt
     gen.into()
 }
 
+fn impl_instruction(ast: &DeriveInput) -> Result<TokenStream> {
+    let t = ast.ident.clone();
+
+    let instructions = if let Data::Enum(ref e) = ast.data {
+        parse_instructions(e)?
+    } else {
+        abort!(ast.span(), "should be only called on enums")
+    };
+
+    let display_impl = generate_display_trait(&t, &instructions);
+    let parsers = generate_parsers(&instructions);
+    let label_resolver = generate_label_resolver(&instructions);
+
+    let im = quote! {
+        #display_impl
+
+        impl #t {
+            #parsers
+
+            #label_resolver
+        }
+    };
+
+    Ok(im)
+}
+
 #[derive(Debug)]
 struct Instruction {
     ident: Ident,
@@ -28,79 +54,44 @@ struct Instruction {
     labelable: Option<usize>,
 }
 
-fn impl_instruction(ast: &DeriveInput) -> syn::parse::Result<TokenStream> {
-    let t = ast.ident.clone();
+/// Parse the list of instructions from an enum AST
+fn parse_instructions(e: &DataEnum) -> Result<Vec<Instruction>> {
     let mut instructions = Vec::new();
 
-    if let Data::Enum(ref e) = ast.data {
-        for variant in e.variants.iter() {
-            // Let's parse the fields
-            let (args, labelable) = match variant.fields {
-                syn::Fields::Named(_) => {
-                    abort!(variant.fields.span(), "Named fields are not supported");
-                }
-                syn::Fields::Unnamed(ref fields) => {
-                    let args = fields.unnamed.iter().map(|f| f.ty.clone()).collect();
-                    // TODO: warn if multiple labelable are set
-                    let labelable = fields.unnamed.iter().position(|f| {
-                        f.attrs.iter().any(|attr| {
-                            attr.path
-                                .get_ident()
-                                .filter(|ident| *ident == "labelable")
-                                .is_some()
-                        })
-                    });
-                    (args, labelable)
-                }
-                syn::Fields::Unit => (Vec::new(), None),
-            };
-
-            instructions.push(Instruction {
-                ident: variant.ident.clone(),
-                args,
-                labelable,
-            });
-        }
-    } else {
-        abort!(ast.span(), "should be only called on enums")
-    }
-
-    let match_label = instructions.iter().fold(quote!(), |acc, instruction| {
-        let t = instruction.ident.clone();
-        let arm = if instruction.args.is_empty() {
-            quote_spanned! { Span::call_site() =>
-                Self::#t => None
+    for variant in e.variants.iter() {
+        // Let's parse the fields
+        let (args, labelable) = match variant.fields {
+            syn::Fields::Named(_) => {
+                abort!(variant.fields.span(), "Named fields are not supported");
             }
-        } else if let Some(labelable) = instruction.labelable {
-            let pat = instruction
-                .args
-                .iter()
-                .enumerate()
-                .fold(quote! {}, |pat, (i, arg)| {
-                    let id = Ident::new(format!("arg{}", i).as_str(), arg.span());
-                    quote! { #pat #id, }
+            syn::Fields::Unnamed(ref fields) => {
+                let args = fields.unnamed.iter().map(|f| f.ty.clone()).collect();
+                // TODO: warn if multiple labelable are set
+                let labelable = fields.unnamed.iter().position(|f| {
+                    f.attrs.iter().any(|attr| {
+                        attr.path
+                            .get_ident()
+                            .filter(|ident| *ident == "labelable")
+                            .is_some()
+                    })
                 });
-
-            let labelable = Ident::new(format!("arg{}", labelable).as_str(), t.span());
-
-            quote_spanned! { Span::call_site() =>
-                Self::#t(#pat) => {
-                    let #labelable = #labelable.resolve_label(address)?;
-                    Some(Self::#t(#pat))
-                }
+                (args, labelable)
             }
-        } else {
-            quote_spanned! { Span::call_site() =>
-                Self::#t(..) => None
-            }
+            syn::Fields::Unit => (Vec::new(), None),
         };
 
-        quote_spanned! { Span::call_site() =>
-            #arm,
-            #acc
-        }
-    });
+        instructions.push(Instruction {
+            ident: variant.ident.clone(),
+            args,
+            labelable,
+        });
+    }
 
+    Ok(instructions)
+}
+
+/// Generate the `Display` trait for the enum
+fn generate_display_trait(ident: &Ident, instructions: &[Instruction]) -> TokenStream {
     let match_display = instructions.iter().fold(quote!(), |acc, instruction| {
         let t = instruction.ident.clone();
         let inst = t.to_string().to_lowercase();
@@ -136,6 +127,19 @@ fn impl_instruction(ast: &DeriveInput) -> syn::parse::Result<TokenStream> {
         }
     });
 
+    quote! {
+        impl ::std::fmt::Display for #ident {
+            fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                match self {
+                    #match_display
+                }
+            }
+        }
+    }
+}
+
+/// Generates parsers for each instruction
+fn generate_parsers(instructions: &[Instruction]) -> TokenStream {
     let (parser_alt, parser_funcs) = instructions.iter().fold((quote!(), quote!()), |(alt, funcs), instruction| {
         let t = instruction.ident.clone();
         let inst = t.to_string().to_lowercase();
@@ -208,42 +212,68 @@ fn impl_instruction(ast: &DeriveInput) -> syn::parse::Result<TokenStream> {
         (alt, funcs)
     });
 
-    let im = quote! {
-        impl Labelable for #t {
-            fn resolve_label(self, address: u64) -> Option<Self> {
-                match self {
-                    #match_label
-                }
-            }
-
-            fn label() -> Self {
-                unimplemented!()
-            }
-        }
-
-        impl ::std::fmt::Display for #t {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                match self {
-                    #match_display
-                }
+    quote! {
+        #[tracing::instrument]
+        pub fn parse(input: &str) -> ::nom::IResult<&str, (Option<&str>, Self)> {
+            let original_input = input;
+            let (input, inst) = ::nom::character::complete::alpha1(input)?;
+            let inst = inst.to_string().to_ascii_lowercase();
+            match inst.as_str() {
+                #parser_alt
+                _ => Err(::nom::Err::Error(::nom::error::make_error(original_input, ::nom::error::ErrorKind::Alt))),
             }
         }
 
-        impl #t {
-            #[tracing::instrument]
-            pub fn parse(input: &str) -> ::nom::IResult<&str, (Option<&str>, Self)> {
-                let original_input = input;
-                let (input, inst) = ::nom::character::complete::alpha1(input)?;
-                let inst = inst.to_string().to_ascii_lowercase();
-                match inst.as_str() {
-                    #parser_alt
-                    _ => Err(::nom::Err::Error(::nom::error::make_error(original_input, ::nom::error::ErrorKind::Alt))),
+        #parser_funcs
+    }
+}
+
+/// Generates the `resolve_label` method that helps replacing labels with addresses.
+fn generate_label_resolver(instructions: &[Instruction]) -> TokenStream {
+    let match_label = instructions.iter().fold(quote!(), |acc, instruction| {
+        let t = instruction.ident.clone();
+        let arm = if instruction.args.is_empty() {
+            quote_spanned! { Span::call_site() =>
+                Self::#t => None
+            }
+        } else if let Some(labelable) = instruction.labelable {
+            let pat = instruction
+                .args
+                .iter()
+                .enumerate()
+                .fold(quote! {}, |pat, (i, arg)| {
+                    let id = Ident::new(format!("arg{}", i).as_str(), arg.span());
+                    quote! { #pat #id, }
+                });
+
+            let labelable = Ident::new(format!("arg{}", labelable).as_str(), t.span());
+
+            quote_spanned! { Span::call_site() =>
+                Self::#t(#pat) => {
+                    let #labelable = #labelable.resolve_label(address)?;
+                    Some(Self::#t(#pat))
                 }
             }
+        } else {
+            quote_spanned! { Span::call_site() =>
+                Self::#t(..) => None
+            }
+        };
 
-            #parser_funcs
+        quote_spanned! { Span::call_site() =>
+            #arm,
+            #acc
         }
-    };
+    });
 
-    Ok(im)
+    quote! {
+        /// Change the label in an instruction by the given address.
+        ///
+        /// Some instructions can't have labels in them, in that case this method returns `None`.
+        pub fn resolve_label(self, address: u64) -> Option<Self> {
+            match self {
+                #match_label
+            }
+        }
+    }
 }

@@ -4,7 +4,7 @@ use tracing::{debug, span, Level};
 
 use crate::constants::*;
 use crate::memory::Cell;
-use crate::processor::{Computer, Instruction, Labelable};
+use crate::processor::{Computer, Instruction};
 
 #[derive(Error, Debug)]
 pub enum CompilerError {
