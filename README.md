@@ -1,22 +1,42 @@
+# Zorglub-33 emulator
+
+This is an emulator for the z33 architecture used in the _"Architecture des Systèmes d'Exploitation"_ course at the University of Strasbourg.
+
+## Getting the emulator
+
+### Binaries
+
+Binaries for [the latest release](https://github.com/sandhose/z33-emulator/releases/latest) are available here:
+
+- [Linux](https://github.com/sandhose/z33-emulator/releases/latest/download/z33-emulator-x86_64-unknown-linux-musl.tar.gz) (x86 64bit)
+- [macOS](https://github.com/sandhose/z33-emulator/releases/latest/download/z33-emulator-x86_64-apple-darwin.tar.gz) (x86 64bit)
+- [Windows](https://github.com/sandhose/z33-emulator/releases/latest/download/z33-emulator-x86_64-pc-windows-msvc.exe) (x86 64bit)
+
 ### Compiling
 
+Alternatively, it can be compiled from source with a recent enough Rust compiler (>= 1.40).
+Check the official documentation on [how to install Rust](https://www.rust-lang.org/tools/install).
+
 ```sh
+git clone https://github.com/sandhose/z33-emulator
+cd z33-emulator
 cargo build --release
+# Binary is available under `target/release/z33-emulator
 ```
 
-### Running a program
+## Running a program
 
 ```sh
-./target/release/z33-emulator run samples/fact.S main
+[path to]/z33-emulator run samples/fact.S main
 ```
 
-### Interactive mode
+## Interactive mode
 
 ```sh
-./target/release/z33-emulator run -i samples/fact.S main
+[path to]/z33-emulator run -i samples/fact.S main
 ```
 
-#### Available commands:
+### Available commands:
 
 - `help [command]`: Print the help message of a command
 - `memory <address> [n]`: Show a block of memory. The address can be either a register with or without offset (e.g. `%sp-5`) or a literal (e.g. `100`). The second argument is the number of cells to show (one by default).
