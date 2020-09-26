@@ -3,7 +3,7 @@ on:
   pull_request:
   release:
     types:
-      - created
+      - published
 
 name: Compile
 
@@ -51,7 +51,7 @@ jobs:
           path: target/${{ matrix.target }}/release/${{ matrix.exe }}
 
   publish:
-    name: Publish draft release
+    name: Upload the release artifacts
     needs: [build]
     runs-on: ubuntu-20.04
     if: github.event_name == 'release'
