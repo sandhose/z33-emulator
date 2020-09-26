@@ -88,7 +88,7 @@ enum Command {
     /// Show informations about the current debugging session
     Info {
         #[clap(subcommand)]
-        sub: InfoCommand,
+        sub: Option<InfoCommand>,
     },
 }
 
@@ -101,13 +101,125 @@ enum InfoCommand {
     Labels,
 }
 
-fn labels_to_address_map(labels: &HashMap<String, u64>) -> HashMap<u64, Vec<String>> {
-    labels
-        .iter()
-        .fold(HashMap::new(), |mut acc, (label, address)| {
-            acc.entry(*address).or_default().push(label.clone());
-            acc
-        })
+/// Holds informations about a interactive session
+#[derive(Debug, Default)]
+struct Session {
+    /// List of active breakpoints
+    breakpoints: HashSet<u64>,
+
+    /// Map of labels in program
+    labels: HashMap<String, u64>,
+
+    /// Current address for the `list` command
+    list_address: Option<u64>,
+}
+
+impl Session {
+    fn from_debug_info(info: DebugInfo) -> Session {
+        Session {
+            labels: info.labels,
+            ..Default::default()
+        }
+    }
+
+    /// Add a breakpoint
+    fn add_breakpoint(&mut self, address: u64) {
+        if !self.breakpoints.insert(address) {
+            warn!(address, "A breakpoint was already set");
+        } else {
+            info!(address, "Setting a breakpoint");
+        }
+    }
+
+    /// Remove a breakpoint
+    fn remove_breakpoint(&mut self, address: u64) {
+        if !self.breakpoints.remove(&address) {
+            warn!(address, "No breakpoint was set here");
+        } else {
+            info!(address, "Removing breakpoint");
+        }
+    }
+
+    /// Checks if the given address has a breakpoint
+    fn has_breakpoint(&self, address: u64) -> bool {
+        self.breakpoints.contains(&address)
+    }
+
+    /// Reset the `list` command (after running an instruction)
+    fn reset_list(&mut self) {
+        self.list_address = None;
+    }
+
+    /// Offset the `list` command, returns the address to show
+    fn offset_list(&mut self, computer: &Computer, offset: u64) -> u64 {
+        let addr = self.list_address.clone().unwrap_or(computer.registers.pc);
+        self.list_address = Some(addr + offset);
+        addr
+    }
+
+    /// Display the list of breakpoints
+    fn display_breakpoints(&self, computer: &Computer) {
+        match self.breakpoints.len() {
+            0 => info!("No breakpoints"),
+            1 => info!("1 breakpoint:"),
+            x => info!("{} breakpoints:", x),
+        }
+
+        // This might be an unnecessary copy, but we want them to be sorted by address for
+        // readability
+        let mut bp: Vec<_> = self.breakpoints.iter().cloned().collect();
+        bp.sort();
+        for addr in bp.into_iter() {
+            self.display_instruction(computer, addr);
+        }
+    }
+
+    /// Display an instruction at specified address
+    fn display_instruction(&self, computer: &Computer, address: u64) {
+        // First, display the labels on the line if any
+        self.labels
+            .iter()
+            .filter(|(_, &a)| a == address)
+            .for_each(|(label, _)| info!("          {}:", label));
+
+        // Then compute what is supposed to show in the gutter
+        let is_current_line = computer.registers.pc == address;
+        let has_breakpoint = self.has_breakpoint(address);
+
+        let gutter = match (has_breakpoint, is_current_line) {
+            (true, true) => "B>",
+            (true, false) => "B ",
+            (false, true) => " >",
+            (false, false) => "  ",
+        };
+
+        // Find the instruction in memory. This will be `None` if the address is to high or if the
+        // cell is not an instruction.
+        let instruction = computer
+            .memory
+            .get(address)
+            .ok()
+            .and_then(|c| c.extract_instruction().ok());
+
+        if let Some(instruction) = instruction {
+            info!("{:<2} {:>5}    {}", gutter, address, instruction);
+        } else {
+            info!("{:<2} {:>5}    –", gutter, address);
+        }
+    }
+
+    /// Display the list of labels
+    fn display_labels(&self) {
+        match self.labels.len() {
+            0 => info!("No labels"),
+            1 => info!("1 label:"),
+            x => info!("{} labels:", x),
+        }
+
+        for (label, &addr) in self.labels.iter() {
+            info!("  {} => {}", label, addr);
+        }
+    }
 }
 
 pub fn run_interactive(
@@ -123,14 +235,13 @@ pub fn run_interactive(
         .auto_add_history(true)
         .build();
 
+    let mut session = Session::from_debug_info(debug_info);
+
     let h: RunHelper<Command> = RunHelper::new();
     let mut rl = Editor::with_config(config);
     rl.set_helper(Some(h));
 
     let mut last_command = None;
-    let mut list_address = computer.registers.pc;
-    let mut breakpoints = HashSet::new();
-    let labels = labels_to_address_map(&debug_info.labels);
 
     loop {
         let readline = rl.readline(">> ")?;
@@ -163,7 +274,7 @@ pub fn run_interactive(
                     computer.step()?;
                 }
 
-                list_address = computer.registers.pc;
+                session.reset_list();
             }
             Command::Registers { register } => {
                 if let Some(reg) = register {
@@ -200,65 +311,34 @@ pub fn run_interactive(
 
             Command::Interrupt => {
                 computer.recover_from_exception(Exception::HardwareInterrupt)?;
-                list_address = computer.registers.pc;
+                session.reset_list();
             }
 
             Command::List { number } => {
+                let addr = session.offset_list(computer, number);
                 for i in 0..number {
-                    let addr = list_address + i;
-                    let instruction = computer
-                        .memory
-                        .get(addr)
-                        .ok()
-                        .and_then(|c| c.extract_instruction().ok());
-
-                    for label in labels.get(&addr).cloned().unwrap_or_default() {
-                        info!("          {}:", label);
-                    }
-
-                    let gutter = match (breakpoints.contains(&addr), addr == computer.registers.pc)
-                    {
-                        (true, true) => "B>",
-                        (true, false) => "B ",
-                        (false, true) => " >",
-                        (false, false) => "  ",
-                    };
-
-                    if let Some(instruction) = instruction {
-                        info!("{:<2} {:>5}    {}", gutter, addr, instruction);
-                    } else {
-                        info!("{:<2} {:>5}    –", gutter, addr);
-                    }
+                    let addr = addr + i;
+                    session.display_instruction(computer, addr);
                 }
-
-                list_address += number;
             }
 
             Command::Break { address } => {
                 // TODO: recover from error
                 let address = computer.resolve_address(address)?;
-                if !breakpoints.insert(address) {
-                    warn!(address, "A breakpoint was already set");
-                } else {
-                    info!(address, "Setting a breakpoint");
-                }
+                session.add_breakpoint(address);
             }
 
             Command::Unbreak { address } => {
                 // TODO: recover from error
                 let address = computer.resolve_address(address)?;
-                if !breakpoints.remove(&address) {
-                    warn!(address, "No breakpoint was set here");
-                } else {
-                    info!(address, "Removing breakpoint");
-                }
+                session.remove_breakpoint(address);
             }
 
             Command::Continue => {
                 loop {
                     // TODO: recover from error
                     computer.step()?;
-                    if breakpoints.contains(&computer.registers.pc) {
+                    if session.has_breakpoint(computer.registers.pc) {
                         break;
                     }
                 }
@@ -266,30 +346,16 @@ pub fn run_interactive(
             }
 
             Command::Info { sub } => match sub {
-                InfoCommand::Breakpoints => {
-                    match breakpoints.len() {
-                        0 => info!("No breakpoints"),
-                        1 => info!("1 breakpoint:"),
-                        x => info!("{} breakpoints:", x),
-                    }
-                    for addr in breakpoints.iter() {
-                        let instruction = computer
-                            .memory
-                            .get(*addr)
-                            .ok()
-                            .and_then(|c| c.extract_instruction().ok());
-
-                        if let Some(instruction) = instruction {
-                            info!("{:>5}: {}", addr, instruction);
-                        } else {
-                            info!("{:>5}: –", addr);
-                        }
-                    }
+                Some(InfoCommand::Breakpoints) => {
+                    session.display_breakpoints(computer);
                 }
-                InfoCommand::Labels => {
-                    for (label, &addr) in debug_info.labels.iter() {
-                        info!("{}: {}", label, addr);
-                    }
+                Some(InfoCommand::Labels) => {
+                    session.display_labels();
+                }
+                None => {
+                    session.display_breakpoints(computer);
+                    info!("–");
+                    session.display_labels();
                 }
             },
         };
