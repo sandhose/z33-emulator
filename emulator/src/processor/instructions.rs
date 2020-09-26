@@ -378,4 +378,42 @@ impl Instruction {
 
         Ok(())
     }
+
+    /// Get the total cost of an instruction in terms of CPU cycles
+    pub const fn cost(&self) -> usize {
+        match self {
+            Instruction::Add(a, b) => 1 + a.cost() + b.cost(),
+            Instruction::And(a, b) => 1 + a.cost() + b.cost(),
+            Instruction::Call(a) => 1 + a.cost(),
+            Instruction::Cmp(a, b) => 1 + a.cost() + b.cost(),
+            Instruction::Div(a, b) => 1 + a.cost() + b.cost(),
+            Instruction::Fas(a, b) => 1 + a.cost() + b.cost(),
+            Instruction::In(a, b) => 1 + a.cost() + b.cost(),
+            Instruction::Jmp(a) => 1 + a.cost(),
+            Instruction::Jeq(a) => 1 + a.cost(),
+            Instruction::Jne(a) => 1 + a.cost(),
+            Instruction::Jle(a) => 1 + a.cost(),
+            Instruction::Jlt(a) => 1 + a.cost(),
+            Instruction::Jge(a) => 1 + a.cost(),
+            Instruction::Jgt(a) => 1 + a.cost(),
+            Instruction::Ld(a, b) => 1 + a.cost() + b.cost(),
+            Instruction::Mul(a, b) => 1 + a.cost() + b.cost(),
+            Instruction::Neg(a) => 1 + a.cost(),
+            Instruction::Nop => 1,
+            Instruction::Not(a) => 1 + a.cost(),
+            Instruction::Or(a, b) => 1 + a.cost() + b.cost(),
+            Instruction::Out(a, b) => 1 + a.cost() + b.cost(),
+            Instruction::Pop(a) => 1 + a.cost(),
+            Instruction::Push(a) => 1 + a.cost(),
+            Instruction::Reset => 1,
+            Instruction::Rti => 1,
+            Instruction::Rtn => 1,
+            Instruction::Shl(a, b) => 1 + a.cost() + b.cost(),
+            Instruction::Shr(a, b) => 1 + a.cost() + b.cost(),
+            Instruction::St(a, b) => 1 + a.cost() + b.cost(),
+            Instruction::Sub(a, b) => 1 + a.cost() + b.cost(),
+            Instruction::Trap => 1,
+            Instruction::Xor(a, b) => 1 + a.cost() + b.cost(),
+        }
+    }
 }

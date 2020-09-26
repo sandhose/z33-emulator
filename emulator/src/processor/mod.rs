@@ -54,6 +54,7 @@ pub trait Labelable: Sized {
 pub struct Computer {
     pub registers: Registers,
     pub memory: Memory,
+    pub cycles: usize,
 }
 
 impl std::fmt::Debug for Computer {
@@ -176,10 +177,11 @@ impl Computer {
             .map_err(|_| Exception::InvalidInstruction.into())
     }
 
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(skip(self), level = "debug")]
     pub fn step(&mut self) -> Result<()> {
         let inst = self.decode_instruction()?;
-        info!("Executing instruction \"{}\"", inst);
+        let cost = inst.cost();
+        info!(cost, "Executing instruction \"{}\"", inst);
         // TODO: this could be an unnecessary clone
         inst.clone().execute(self).or_else(|e| {
             if let ProcessorError::Exception(e) = e {
@@ -189,6 +191,7 @@ impl Computer {
                 Err(e)
             }
         })?;
+        self.cycles += cost;
         debug!("Register state {:?}", self.registers);
         Ok(())
     }
@@ -258,6 +261,14 @@ pub enum Address {
     Idx(Reg, i64),
 }
 
+impl Address {
+    /// CPU cycles count to use this value
+    pub const fn cost(&self) -> usize {
+        // Accessing a memory cell, from a direct, indirect or indexed address costs 1 CPU cycle
+        1
+    }
+}
+
 #[derive(Error, Debug)]
 #[error("could not parse address")]
 pub struct AddressParseError;
@@ -309,6 +320,14 @@ pub enum Value {
     Reg(Reg),
 }
 
+impl Value {
+    /// CPU cycles count to use this value
+    pub const fn cost(&self) -> usize {
+        // Using a direct value, immediate or from a register costs no CPU cycles
+        0
+    }
+}
+
 impl std::fmt::Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -338,8 +357,12 @@ pub enum Arg {
 }
 
 impl Arg {
-    pub fn label() -> Self {
-        Arg::Value(Value::Imm(0))
+    /// CPU cycles count to use this value
+    pub const fn cost(&self) -> usize {
+        match self {
+            Self::Address(a) => a.cost(),
+            Self::Value(v) => v.cost(),
+        }
     }
 }
 

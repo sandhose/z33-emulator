@@ -185,7 +185,7 @@ impl CompilerState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::processor::{Arg, Reg, Value};
+    use crate::processor::{Arg, Labelable, Reg, Value};
 
     #[test]
     fn build_and_run_test() {

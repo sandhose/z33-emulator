@@ -99,6 +99,9 @@ enum InfoCommand {
 
     /// List program labels
     Labels,
+
+    /// Show the number of CPU cycles used since the beginning of the program
+    Cycles,
 }
 
 /// Holds informations about a interactive session
@@ -219,6 +222,11 @@ impl Session {
         for (label, &addr) in self.labels.iter() {
             info!("  {} => {}", label, addr);
         }
+    }
+
+    /// Display the number of CPU cycles used
+    fn display_cycles(&self, computer: &Computer) {
+        info!("Cycles: {}", computer.cycles);
     }
 }
 
@@ -352,10 +360,15 @@ pub fn run_interactive(
                 Some(InfoCommand::Labels) => {
                     session.display_labels();
                 }
+                Some(InfoCommand::Cycles) => {
+                    session.display_cycles(computer);
+                }
                 None => {
                     session.display_breakpoints(computer);
                     info!("–");
                     session.display_labels();
+                    info!("–");
+                    session.display_cycles(computer);
                 }
             },
         };
