@@ -142,10 +142,7 @@ impl ConditionState {
     }
 
     fn is_active(&self) -> bool {
-        match self {
-            ConditionState::Active | ConditionState::ElseActive => true,
-            _ => false,
-        }
+        matches!(self, ConditionState::Active | ConditionState::ElseActive)
     }
 }
 

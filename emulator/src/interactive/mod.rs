@@ -171,7 +171,7 @@ impl Session {
         // This might be an unnecessary copy, but we want them to be sorted by address for
         // readability
         let mut bp: Vec<_> = self.breakpoints.iter().cloned().collect();
-        bp.sort();
+        bp.sort_unstable();
         for addr in bp.into_iter() {
             self.display_instruction(computer, addr);
         }

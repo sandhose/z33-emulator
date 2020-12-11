@@ -36,9 +36,6 @@ impl Exception {
     }
 
     pub fn is_hardware_interrupt(&self) -> bool {
-        match self {
-            Exception::HardwareInterrupt => true,
-            _ => false,
-        }
+        matches!(self, Exception::HardwareInterrupt)
     }
 }
