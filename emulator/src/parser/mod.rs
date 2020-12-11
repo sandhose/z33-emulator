@@ -260,12 +260,10 @@ impl<'a> Parser<'a> {
         for res in self {
             let (offset, line) = res.map_err(|e| match e {
                 nom::Err::Incomplete(_) => ParserError::Incomplete,
-                nom::Err::Error((remaining, kind)) | nom::Err::Failure((remaining, kind)) => {
-                    ParserError::ParserError {
-                        kind,
-                        offset: start.offset(remaining),
-                    }
-                }
+                nom::Err::Error(e) | nom::Err::Failure(e) => ParserError::ParserError {
+                    kind: e.code,
+                    offset: start.offset(e.input),
+                },
             })?;
             match line {
                 ProgramLine::Instruction(inst) => {
@@ -314,7 +312,7 @@ impl<'a> Parser<'a> {
 }
 
 impl<'a> Iterator for Parser<'a> {
-    type Item = Result<(usize, ProgramLine), nom::Err<(&'a str, nom::error::ErrorKind)>>;
+    type Item = Result<(usize, ProgramLine), nom::Err<nom::error::Error<&'a str>>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.state == "" {
