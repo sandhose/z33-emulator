@@ -14,9 +14,9 @@ use nom::{
 };
 
 /// Parse a string literal
-pub fn parse_string_literal(input: &str) -> IResult<&str, String> {
+pub fn parse_string_literal<'a>(input: &'a str) -> IResult<&'a str, String> {
     let (input, _) = char('"')(input)?;
-    let (input, string) = escaped_transform(none_of("\"\\"), '\\', |input: &str| {
+    let (input, string) = escaped_transform(none_of("\"\\"), '\\', |input: &'a str| {
         alt((
             value("\\", char('\\')),
             value("\"", char('"')),

@@ -121,6 +121,7 @@ impl<T: IntoApp> Highlighter for RunHelper<T> {
 }
 
 impl<T: IntoApp> Hinter for RunHelper<T> {
+    type Hint = String;
     fn hint(&self, line: &str, pos: usize, _ctx: &Context<'_>) -> Option<String> {
         let line = &line[..pos];
         let complete = line.bytes().last().filter(|&c| is_space(c)).is_some(); // Line is considered "complete" if the last char is a space

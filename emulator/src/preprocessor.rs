@@ -48,12 +48,10 @@ pub enum PreprocessorError {
     },
 }
 
-fn nom_err_offset(e: nom::Err<(&str, nom::error::ErrorKind)>, input: &str) -> Option<usize> {
+fn nom_err_offset(e: nom::Err<nom::error::Error<&str>>, input: &str) -> Option<usize> {
     match e {
         nom::Err::Incomplete(_) => None,
-        nom::Err::Error((remaining, _)) | nom::Err::Failure((remaining, _)) => {
-            Some(input.offset(remaining))
-        }
+        nom::Err::Error(e) | nom::Err::Failure(e) => Some(input.offset(e.input)),
     }
 }
 
