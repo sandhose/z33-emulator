@@ -20,6 +20,7 @@ mod condition;
 mod directive;
 mod expression;
 mod literal;
+mod line;
 
 use directive::parse_directive;
 use expression::parse_const_expression;

@@ -8,7 +8,7 @@ use std::str::FromStr;
 use nom::{
     branch::alt,
     bytes::complete::{escaped_transform, tag_no_case, take_while1},
-    character::complete::{char, none_of},
+    character::complete::{char, line_ending, none_of},
     combinator::{cut, map_res, value},
     IResult,
 };
@@ -18,6 +18,7 @@ pub fn parse_string_literal<'a>(input: &'a str) -> IResult<&'a str, String> {
     let (input, _) = char('"')(input)?;
     let (input, string) = escaped_transform(none_of("\"\\"), '\\', |input: &'a str| {
         alt((
+            value("", line_ending),
             value("\\", char('\\')),
             value("\"", char('"')),
             value("\n", char('n')),
