@@ -47,16 +47,19 @@ pub struct Line<'a> {
 }
 
 impl<'a> Line<'a> {
+    #[cfg(test)] // Only used in tests for now
     pub fn comment(mut self, comment: &'a str) -> Self {
         self.comment = Some(comment);
         self
     }
 
+    #[cfg(test)] // Only used in tests for now
     pub fn symbol(mut self, symbol: &'a str) -> Self {
         self.symbols.push(symbol);
         self
     }
 
+    #[cfg(test)] // Only used in tests for now
     pub fn directive(mut self, directive: &'a str, argument: &'a str) -> Self {
         self.content = Some(LineContent::Directive {
             directive,
@@ -65,6 +68,7 @@ impl<'a> Line<'a> {
         self
     }
 
+    #[cfg(test)] // Only used in tests for now
     pub fn instruction(mut self, opcode: &'a str, arguments: Vec<&'a str>) -> Self {
         self.content = Some(LineContent::Instruction { opcode, arguments });
         self

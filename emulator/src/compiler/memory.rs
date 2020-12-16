@@ -26,7 +26,7 @@ pub enum CompilationError<'a> {
 }
 
 fn compile_placement<'a>(
-    labels: &Labels<'a>,
+    _labels: &Labels<'a>,
     placement: &Placement<'a>,
 ) -> Result<Cell, CompilationError<'a>> {
     match placement {
