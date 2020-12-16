@@ -6,8 +6,27 @@ use thiserror::Error;
 use crate::parser::{parse_const_expression, Line, LineContent};
 use crate::{constants::*, parser::parse_string_literal};
 
+pub type Labels<'a> = HashMap<&'a str, u64>;
+
+pub enum Placement<'a> {
+    /// A memory cell filled by .space
+    Reserved,
+
+    /// A memory cell filled by .string
+    Char(char),
+
+    /// A instruction or a .word directive
+    Line(&'a LineContent<'a>),
+}
+
+#[derive(Default)]
+pub struct Layout<'a> {
+    pub labels: Labels<'a>,
+    pub memory: HashMap<u64, Placement<'a>>,
+}
+
 #[derive(Debug, Error)]
-enum PlaceLabelError<'a> {
+pub enum MemoryLayoutError<'a> {
     #[error("duplicate label {label}")]
     DuplicateLabel { label: &'a str },
 
@@ -18,30 +37,34 @@ enum PlaceLabelError<'a> {
     ArgumentParseError(nom::error::Error<&'a str>),
 }
 
-fn place_labels<'a>(program: &[Line<'a>]) -> Result<HashMap<&'a str, u64>, PlaceLabelError<'a>> {
-    use PlaceLabelError::*;
-    let mut labels = HashMap::new();
+/// Lays out the memory
+///
+/// It places the labels & prepare a hashmap of cells to be filled.
+#[allow(dead_code)]
+pub fn layout_memory<'a>(program: &'a [Line<'a>]) -> Result<Layout<'a>, MemoryLayoutError<'a>> {
+    use MemoryLayoutError::*;
+    let mut layout: Layout = Default::default();
     let mut position = PROGRAM_START;
 
     for line in program {
         for label in line.symbols.iter() {
-            if labels.contains_key(label) {
+            if layout.labels.contains_key(label) {
                 return Err(DuplicateLabel { label });
             }
 
-            labels.insert(*label, position);
+            layout.labels.insert(*label, position);
         }
 
         if let Some(ref content) = line.content {
             match content {
-                LineContent::Instruction { .. } => {
-                    position += 1; // Any instruction takes one memory space
-                }
                 LineContent::Directive {
                     directive: "word", ..
-                } => {
-                    position += 1; // A word takes one memory space
                 }
+                | LineContent::Instruction { .. } => {
+                    layout.memory.insert(position, Placement::Line(content));
+                    position += 1; // Instructions and word directives take one memory cell
+                }
+
                 LineContent::Directive {
                     directive: "space",
                     argument,
@@ -49,9 +72,13 @@ fn place_labels<'a>(program: &[Line<'a>]) -> Result<HashMap<&'a str, u64>, Place
                     let (_, size): (_, u64) = all_consuming(parse_const_expression)(argument)
                         .finish()
                         .map_err(ArgumentParseError)?;
-                    // The ".space N" directive takes N memory spaces
-                    position += size;
+
+                    for _ in 0..size {
+                        layout.memory.insert(position, Placement::Reserved);
+                        position += 1;
+                    }
                 }
+
                 LineContent::Directive {
                     directive: "addr",
                     argument,
@@ -62,6 +89,7 @@ fn place_labels<'a>(program: &[Line<'a>]) -> Result<HashMap<&'a str, u64>, Place
                     // The ".addr N" directive changes the current address to N
                     position = addr;
                 }
+
                 LineContent::Directive {
                     directive: "string",
                     argument,
@@ -69,9 +97,14 @@ fn place_labels<'a>(program: &[Line<'a>]) -> Result<HashMap<&'a str, u64>, Place
                     let (_, literal) = all_consuming(parse_string_literal)(argument)
                         .finish()
                         .map_err(ArgumentParseError)?;
-                    // The ".string X" takes N memory cells, where N is the length of X
-                    position += literal.chars().count() as u64;
+
+                    // Fill the memory with the chars of the string
+                    for c in literal.chars() {
+                        layout.memory.insert(position, Placement::Char(c));
+                        position += 1;
+                    }
                 }
+
                 LineContent::Directive { directive, .. } => {
                     return Err(UnsupportedDirective { directive });
                 }
@@ -79,7 +112,7 @@ fn place_labels<'a>(program: &[Line<'a>]) -> Result<HashMap<&'a str, u64>, Place
         }
     }
 
-    Ok(labels)
+    Ok(layout)
 }
 
 #[cfg(test)]
@@ -98,7 +131,7 @@ mod tests {
                 .instruction("jmp", vec!["loop"]),
         ];
 
-        let labels = place_labels(&program).unwrap();
+        let labels = layout_memory(&program).unwrap().labels;
         let expected = {
             let mut h = HashMap::new();
             h.insert("main", PROGRAM_START);
@@ -117,7 +150,7 @@ mod tests {
                 .instruction("jmp", vec!["main"]),
         ];
 
-        let labels = place_labels(&program).unwrap();
+        let labels = layout_memory(&program).unwrap().labels;
         let expected = {
             let mut h = HashMap::new();
             h.insert("main", 10);
@@ -136,7 +169,7 @@ mod tests {
                 .instruction("jmp", vec!["main"]),
         ];
 
-        let labels = place_labels(&program).unwrap();
+        let labels = layout_memory(&program).unwrap().labels;
         let expected = {
             let mut h = HashMap::new();
             h.insert("first", PROGRAM_START);
@@ -158,7 +191,7 @@ mod tests {
                 .instruction("jmp", vec!["main"]),
         ];
 
-        let labels = place_labels(&program).unwrap();
+        let labels = layout_memory(&program).unwrap().labels;
         let expected = {
             let mut h = HashMap::new();
             h.insert("first", PROGRAM_START);
@@ -184,7 +217,7 @@ mod tests {
                 .instruction("jmp", vec!["main"]),
         ];
 
-        let labels = place_labels(&program).unwrap();
+        let labels = layout_memory(&program).unwrap().labels;
         let expected = {
             let mut h = HashMap::new();
             h.insert("first", PROGRAM_START);

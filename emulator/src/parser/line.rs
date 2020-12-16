@@ -150,6 +150,7 @@ fn split_lines(input: &str) -> IResult<&str, Vec<&str>> {
     separated_list1(line_ending, line_parser)(input)
 }
 
+#[allow(dead_code)]
 pub fn parse_program(input: &str) -> IResult<&str, Vec<Line>> {
     let (input, lines) = split_lines(input)?;
     let lines: Result<_, _> = lines
