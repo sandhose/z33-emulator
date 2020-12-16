@@ -29,14 +29,135 @@ use nom::{
     sequence::preceded,
     IResult,
 };
+use thiserror::Error;
 
-use super::literal::parse_literal;
+use super::{literal::parse_literal, parse_identifier};
+
+#[derive(Clone, Debug)]
+pub enum Node<'a> {
+    BinaryOr(Box<Node<'a>>, Box<Node<'a>>),
+    BinaryAnd(Box<Node<'a>>, Box<Node<'a>>),
+    LeftShift(Box<Node<'a>>, Box<Node<'a>>),
+    RightShift(Box<Node<'a>>, Box<Node<'a>>),
+    Sum(Box<Node<'a>>, Box<Node<'a>>),
+    Substract(Box<Node<'a>>, Box<Node<'a>>),
+    Multiply(Box<Node<'a>>, Box<Node<'a>>),
+    Divide(Box<Node<'a>>, Box<Node<'a>>),
+    Invert(Box<Node<'a>>),
+    BinaryNot(Box<Node<'a>>),
+    Literal(Value),
+    Variable(&'a str),
+}
+
+pub trait Context {
+    fn resolve_variable(&self, variable: &str) -> Option<Value>;
+}
+
+struct EmptyContext;
+impl Context for EmptyContext {
+    fn resolve_variable(&self, _variable: &str) -> Option<Value> {
+        None
+    }
+}
+
+#[derive(Error, Debug)]
+enum EvaluationError<'a> {
+    #[error("undefined variable {variable:?}")]
+    UndefinedVariable { variable: &'a str },
+
+    #[error("could not downcast value")]
+    Downcast,
+}
+
+impl<'a> Node<'a> {
+    fn compute<C: Context, V: TryFrom<Value>>(self, context: &C) -> Result<V, EvaluationError<'a>> {
+        let value: Value = match self {
+            Node::BinaryOr(left, right) => {
+                let left: Value = left.compute(context)?;
+                let right: Value = right.compute(context)?;
+                left | right
+            }
+
+            Node::BinaryAnd(left, right) => {
+                let left: Value = left.compute(context)?;
+                let right: Value = right.compute(context)?;
+                left & right
+            }
+
+            Node::LeftShift(left, right) => {
+                let left: Value = left.compute(context)?;
+                let right: Value = right.compute(context)?;
+                left << right
+            }
+
+            Node::RightShift(left, right) => {
+                let left: Value = left.compute(context)?;
+                let right: Value = right.compute(context)?;
+                left >> right
+            }
+
+            Node::Sum(left, right) => {
+                let left: Value = left.compute(context)?;
+                let right: Value = right.compute(context)?;
+                left + right
+            }
+
+            Node::Substract(left, right) => {
+                let left: Value = left.compute(context)?;
+                let right: Value = right.compute(context)?;
+                left - right
+            }
+
+            Node::Multiply(left, right) => {
+                let left: Value = left.compute(context)?;
+                let right: Value = right.compute(context)?;
+                left * right
+            }
+
+            Node::Divide(left, right) => {
+                let left: Value = left.compute(context)?;
+                let right: Value = right.compute(context)?;
+                left / right
+            }
+
+            Node::Invert(operand) => {
+                let operand: Value = operand.compute(context)?;
+                -operand
+            }
+
+            Node::BinaryNot(operand) => {
+                let _operand: Value = operand.compute(context)?;
+                // TODO: bit inversion is tricky because we're not supposed to know the word length
+                // here. It's a bit opiniated, but for now it tries casting down to u16 before
+                // negating.
+
+                /*
+                u16::try_from(v) // try casting it down to u16
+                    .map(|v| !v) // invert the bits
+                    .map(|v| v as _) // cast it back up
+                */
+                todo!()
+            }
+
+            Node::Literal(value) => value,
+
+            Node::Variable(variable) => {
+                let value = context
+                    .resolve_variable(variable)
+                    .ok_or(EvaluationError::UndefinedVariable { variable })?;
+                value
+            }
+        };
+
+        V::try_from(value).map_err(|_| EvaluationError::Downcast)
+    }
+}
 
 /// The type of value used throughout the calculation
 pub type Value = i128;
 
 #[doc(hidden)]
-fn parse_or_rec(input: &str) -> IResult<&str, Value> {
+fn parse_or_rec(input: &str) -> IResult<&str, Node> {
     let (input, _) = space0(input)?;
     let (input, _) = char('|')(input)?;
     let (input, _) = space0(input)?;
@@ -44,13 +165,15 @@ fn parse_or_rec(input: &str) -> IResult<&str, Value> {
 }
 
 /// Parse a bitwise "or" operation
-fn parse_or(input: &str) -> IResult<&str, Value> {
+fn parse_or(input: &str) -> IResult<&str, Node> {
     let (input, value) = parse_and(input)?;
-    fold_many0(parse_or_rec, value, |value, arg| value | arg)(input)
+    fold_many0(parse_or_rec, value, |value, arg| {
+        Node::BinaryOr(Box::new(value), Box::new(arg))
+    })(input)
 }
 
 #[doc(hidden)]
-fn parse_and_rec(input: &str) -> IResult<&str, Value> {
+fn parse_and_rec(input: &str) -> IResult<&str, Node> {
     let (input, _) = space0(input)?;
     let (input, _) = char('&')(input)?;
     let (input, _) = space0(input)?;
@@ -58,9 +181,11 @@ fn parse_and_rec(input: &str) -> IResult<&str, Value> {
 }
 
 /// Parse a bitwise "and" operation
-fn parse_and(input: &str) -> IResult<&str, Value> {
+fn parse_and(input: &str) -> IResult<&str, Node> {
     let (input, value) = parse_shift(input)?;
-    fold_many0(parse_and_rec, value, |value, arg| value & arg)(input)
+    fold_many0(parse_and_rec, value, |value, arg| {
+        Node::BinaryAnd(Box::new(value), Box::new(arg))
+    })(input)
 }
 
 /// Represents a bit-shift operation direction
@@ -73,7 +198,7 @@ enum ShiftOp {
 }
 
 #[doc(hidden)]
-fn parse_shift_rec(input: &str) -> IResult<&str, (ShiftOp, Value)> {
+fn parse_shift_rec(input: &str) -> IResult<&str, (ShiftOp, Node)> {
     let (input, _) = space0(input)?;
     let (input, op) = alt((
         value(ShiftOp::Right, tag(">>")),
@@ -85,13 +210,13 @@ fn parse_shift_rec(input: &str) -> IResult<&str, (ShiftOp, Value)> {
 }
 
 /// Parse a bitshift operation
-fn parse_shift(input: &str) -> IResult<&str, Value> {
+fn parse_shift(input: &str) -> IResult<&str, Node> {
     let (input, value) = parse_sum(input)?;
     let (input, op) = opt(parse_shift_rec)(input)?;
 
     let value = match op {
-        Some((ShiftOp::Right, arg)) => value >> arg,
-        Some((ShiftOp::Left, arg)) => value << arg,
+        Some((ShiftOp::Right, arg)) => Node::RightShift(Box::new(value), Box::new(arg)),
+        Some((ShiftOp::Left, arg)) => Node::LeftShift(Box::new(value), Box::new(arg)),
         None => value,
     };
 
@@ -106,7 +231,7 @@ enum SumOp {
 }
 
 #[doc(hidden)]
-fn parse_sum_rec(input: &str) -> IResult<&str, (SumOp, Value)> {
+fn parse_sum_rec(input: &str) -> IResult<&str, (SumOp, Node)> {
     let (input, _) = space0(input)?;
     let (input, op) = alt((
         value(SumOp::Sum, char('+')), // Add
@@ -118,11 +243,11 @@ fn parse_sum_rec(input: &str) -> IResult<&str, (SumOp, Value)> {
 }
 
 /// Parse a sum/sub operation
-fn parse_sum(input: &str) -> IResult<&str, Value> {
+fn parse_sum(input: &str) -> IResult<&str, Node> {
     let (input, value) = parse_mul(input)?;
     fold_many0(parse_sum_rec, value, |value, (op, arg)| match op {
-        SumOp::Sum => value + arg,
-        SumOp::Sub => value - arg,
+        SumOp::Sum => Node::Sum(Box::new(value), Box::new(arg)),
+        SumOp::Sub => Node::Substract(Box::new(value), Box::new(arg)),
     })(input)
 }
 
@@ -134,7 +259,7 @@ enum MulOp {
 }
 
 #[doc(hidden)]
-fn parse_mul_rec(input: &str) -> IResult<&str, (MulOp, Value)> {
+fn parse_mul_rec(input: &str) -> IResult<&str, (MulOp, Node)> {
     let (input, _) = space0(input)?;
     let (input, op) = alt((
         value(MulOp::Mul, char('*')), // Multiply
@@ -146,38 +271,40 @@ fn parse_mul_rec(input: &str) -> IResult<&str, (MulOp, Value)> {
 }
 
 /// Parse a multiply/divide operation
-fn parse_mul(input: &str) -> IResult<&str, Value> {
+fn parse_mul(input: &str) -> IResult<&str, Node> {
     let (input, value) = parse_unary(input)?;
     fold_many0(parse_mul_rec, value, |value, (op, arg)| match op {
-        MulOp::Mul => value * arg,
-        MulOp::Div => value / arg,
+        MulOp::Mul => Node::Multiply(Box::new(value), Box::new(arg)),
+        MulOp::Div => Node::Divide(Box::new(value), Box::new(arg)),
     })(input)
 }
 
 /// Parse unary operations (negation and bit inversion)
-fn parse_unary(input: &str) -> IResult<&str, Value> {
+fn parse_unary(input: &str) -> IResult<&str, Node> {
     let (input, _) = space0(input)?;
-    // TODO: bit inversion is tricky because we're not supposed to know the word length here. It's
-    // a bit opiniated, but for now it tries casting down to u16 before negating.
     alt((
-        map(preceded(char('-'), parse_atom), |v| -v),
-        map_res(preceded(char('~'), parse_atom), |v| {
-            u16::try_from(v) // Try casting it down to u16
-                .map(|v| !v) // Invert the bits
-                .map(|v| v as _) // Cast it back up
+        map(preceded(char('-'), parse_atom), |n| {
+            Node::Invert(Box::new(n))
+        }),
+        map(preceded(char('~'), parse_atom), |n| {
+            Node::BinaryNot(Box::new(n))
         }),
         parse_atom,
     ))(input)
 }
 
 /// Parse an atom of an expression: either a literal or a full expression within parenthesis
-fn parse_atom(input: &str) -> IResult<&str, Value> {
+fn parse_atom(input: &str) -> IResult<&str, Node> {
     let (input, _) = space0(input)?;
-    alt((map(parse_literal, |v| v as Value), parse_parenthesis))(input)
+    alt((
+        map(parse_literal, |v| Node::Literal(v as Value)),
+        map(parse_identifier, |i| Node::Variable(i)),
+        parse_parenthesis,
+    ))(input)
 }
 
 /// Parse an expression surrounded by parenthesis
-fn parse_parenthesis(input: &str) -> IResult<&str, Value> {
+fn parse_parenthesis(input: &str) -> IResult<&str, Node> {
     let (input, _) = char('(')(input)?;
     let (input, _) = space0(input)?;
     let (input, value) = parse_or(input)?;
@@ -186,10 +313,15 @@ fn parse_parenthesis(input: &str) -> IResult<&str, Value> {
     Ok((input, value))
 }
 
+/// Parse an expression, returning its AST
+pub fn parse_expression(input: &str) -> IResult<&str, Node> {
+    parse_or(input)
+}
+
 /// Parse a const expression, casting the value at the end
 pub fn parse_const_expression<T: TryFrom<Value>>(input: &str) -> IResult<&str, T> {
     // At the end, we try converting the Value (i128) back to T (mostly u64 or i64)
-    map_res(parse_or, TryFrom::try_from)(input)
+    map_res(parse_expression, |n| n.compute(&EmptyContext))(input)
 }
 
 #[cfg(test)]
