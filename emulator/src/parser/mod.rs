@@ -19,14 +19,15 @@ use crate::processor::{Address, Arg, Instruction, Labelable, Reg, Value};
 mod condition;
 mod directive;
 mod expression;
-mod literal;
 mod line;
+mod literal;
 
 use directive::parse_directive;
-use expression::parse_const_expression;
 
 pub use condition::parse_condition;
 pub use directive::Directive;
+pub use expression::parse_const_expression;
+pub use line::{Line, LineContent};
 pub use literal::parse_string_literal;
 
 fn parse_reg(input: &str) -> IResult<&str, Reg> {

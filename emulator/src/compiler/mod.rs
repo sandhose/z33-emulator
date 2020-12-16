@@ -6,6 +6,8 @@ use crate::constants::*;
 use crate::memory::Cell;
 use crate::processor::{Computer, Instruction};
 
+mod new;
+
 #[derive(Error, Debug)]
 pub enum CompilerError {
     #[error("failed to encode instruction")]

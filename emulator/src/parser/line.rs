@@ -41,23 +41,23 @@ pub enum LineContent<'a> {
 /// Note that the `Default::default()` implementation represents an empty line.
 #[derive(Debug, PartialEq, Default)]
 pub struct Line<'a> {
-    symbols: Vec<&'a str>,
-    content: Option<LineContent<'a>>,
+    pub symbols: Vec<&'a str>,
+    pub content: Option<LineContent<'a>>,
     comment: Option<&'a str>,
 }
 
 impl<'a> Line<'a> {
-    fn comment(mut self, comment: &'a str) -> Self {
+    pub fn comment(mut self, comment: &'a str) -> Self {
         self.comment = Some(comment);
         self
     }
 
-    fn symbol(mut self, symbol: &'a str) -> Self {
+    pub fn symbol(mut self, symbol: &'a str) -> Self {
         self.symbols.push(symbol);
         self
     }
 
-    fn directive(mut self, directive: &'a str, argument: &'a str) -> Self {
+    pub fn directive(mut self, directive: &'a str, argument: &'a str) -> Self {
         self.content = Some(LineContent::Directive {
             directive,
             argument,
@@ -65,7 +65,7 @@ impl<'a> Line<'a> {
         self
     }
 
-    fn instruction(mut self, opcode: &'a str, arguments: Vec<&'a str>) -> Self {
+    pub fn instruction(mut self, opcode: &'a str, arguments: Vec<&'a str>) -> Self {
         self.content = Some(LineContent::Instruction { opcode, arguments });
         self
     }
