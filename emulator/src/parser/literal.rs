@@ -10,13 +10,13 @@ use nom::{
     bytes::complete::{escaped_transform, tag_no_case, take_while1},
     character::complete::{char, line_ending, none_of},
     combinator::{cut, map_res, value},
-    IResult,
+    AsChar, Compare, IResult, InputTake, InputTakeAtPosition,
 };
 
 /// Parse a string literal
-pub fn parse_string_literal<'a>(input: &'a str) -> IResult<&'a str, String> {
+pub fn parse_string_literal(input: &str) -> IResult<&str, String> {
     let (input, _) = char('"')(input)?;
-    let (input, string) = escaped_transform(none_of("\"\\"), '\\', |input: &'a str| {
+    let (input, string) = escaped_transform(none_of("\"\\"), '\\', |input| {
         alt((
             value("", line_ending),
             value("\\", char('\\')),
@@ -29,65 +29,93 @@ pub fn parse_string_literal<'a>(input: &'a str) -> IResult<&'a str, String> {
 }
 
 /// Parse a decimal number
-fn from_decimal(input: &str) -> Result<u64, std::num::ParseIntError> {
-    u64::from_str(input)
+fn from_decimal<T>(input: T) -> Result<u64, std::num::ParseIntError>
+where
+    T: ToString,
+{
+    u64::from_str(&input.to_string())
 }
 
 /// Check if character is a decimal digit
-fn is_digit(c: char) -> bool {
-    c.is_digit(10)
+fn is_digit<C: AsChar>(c: C) -> bool {
+    c.as_char().is_digit(10)
 }
 
 /// Parse a hexadecimal number
-fn from_hexadecimal(input: &str) -> Result<u64, std::num::ParseIntError> {
-    u64::from_str_radix(input, 16)
+fn from_hexadecimal<T>(input: T) -> Result<u64, std::num::ParseIntError>
+where
+    T: ToString,
+{
+    u64::from_str_radix(&input.to_string(), 16)
 }
 
 /// Check if character is a hexadecimal digit
-fn is_hex_digit(c: char) -> bool {
-    c.is_digit(16)
+fn is_hex_digit<C: AsChar>(c: C) -> bool {
+    c.as_char().is_digit(16)
 }
 
 /// Extract a hexadecimal literal
-fn parse_hexadecimal_literal(input: &str) -> IResult<&str, u64> {
+fn parse_hexadecimal_literal<T>(input: T) -> IResult<T, u64>
+where
+    T: InputTakeAtPosition + InputTake + Compare<&'static str> + ToString + Clone,
+    <T as InputTakeAtPosition>::Item: AsChar,
+{
     let (input, _) = tag_no_case("0x")(input)?;
     cut(map_res(take_while1(is_hex_digit), from_hexadecimal))(input)
 }
 
 /// Parse an octal number
-fn from_octal(input: &str) -> Result<u64, std::num::ParseIntError> {
-    u64::from_str_radix(input, 8)
+fn from_octal<T>(input: T) -> Result<u64, std::num::ParseIntError>
+where
+    T: ToString,
+{
+    u64::from_str_radix(&input.to_string(), 8)
 }
 
 /// Check if character is an octal digit
-fn is_oct_digit(c: char) -> bool {
-    c.is_digit(8)
+fn is_oct_digit<C: AsChar>(c: C) -> bool {
+    c.as_char().is_digit(8)
 }
 
 /// Extract an octal literal
-fn parse_octal_literal(input: &str) -> IResult<&str, u64> {
+fn parse_octal_literal<T>(input: T) -> IResult<T, u64>
+where
+    T: InputTakeAtPosition + InputTake + Compare<&'static str> + ToString + Clone,
+    <T as InputTakeAtPosition>::Item: AsChar,
+{
     let (input, _) = tag_no_case("0o")(input)?;
     cut(map_res(take_while1(is_oct_digit), from_octal))(input)
 }
 
 /// Parse a binary number
-fn from_binary(input: &str) -> Result<u64, std::num::ParseIntError> {
-    u64::from_str_radix(input, 2)
+fn from_binary<T>(input: T) -> Result<u64, std::num::ParseIntError>
+where
+    T: ToString,
+{
+    u64::from_str_radix(&input.to_string(), 2)
 }
 
 /// Check if character is a binary digit
-fn is_bin_digit(c: char) -> bool {
-    c.is_digit(2)
+fn is_bin_digit<C: AsChar>(c: C) -> bool {
+    c.as_char().is_digit(2)
 }
 
 /// Extract a binary literal
-fn parse_binary_literal(input: &str) -> IResult<&str, u64> {
+fn parse_binary_literal<T>(input: T) -> IResult<T, u64>
+where
+    T: InputTakeAtPosition + InputTake + Compare<&'static str> + ToString + Clone,
+    <T as InputTakeAtPosition>::Item: AsChar,
+{
     let (input, _) = tag_no_case("0b")(input)?;
     cut(map_res(take_while1(is_bin_digit), from_binary))(input)
 }
 
 /// Parse a number literal
-pub fn parse_literal(input: &str) -> IResult<&str, u64> {
+pub fn parse_literal<T>(input: T) -> IResult<T, u64>
+where
+    T: InputTakeAtPosition + InputTake + Compare<&'static str> + ToString + Clone,
+    <T as InputTakeAtPosition>::Item: AsChar,
+{
     alt((
         parse_hexadecimal_literal,
         parse_octal_literal,
