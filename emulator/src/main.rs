@@ -1,6 +1,10 @@
 #![forbid(unsafe_code)]
 
 use clap::Clap;
+use compiler::DebugInfo;
+use constants::STACK_START;
+use nom::{combinator::all_consuming, Finish};
+use processor::{Computer, Registers};
 use std::path::PathBuf;
 use tracing::{debug, info};
 use tracing_subscriber::filter::{EnvFilter, LevelFilter};
@@ -16,7 +20,7 @@ mod util;
 
 use crate::compiler::CompilerState;
 use crate::interactive::run_interactive;
-use crate::parser::Parser;
+use crate::parser::{parse_program, Parser};
 use crate::preprocessor::preprocess;
 
 #[derive(Clap)]
@@ -67,21 +71,28 @@ fn run(
     let source = source.as_str();
 
     debug!("Parsing program");
-    let parser = Parser::new(source);
-
-    let mut compiler = CompilerState::default();
-    parser.compile(&mut compiler).map_err(|e| {
-        // Display a nice message if it is a parser error
-        if let parser::ParserError::ParserError { kind, offset } = e {
-            let message = format!("{:?}", kind);
-            util::display_error_offset(source, offset, message.as_str());
-        };
-
-        e
-    })?;
+    // TODO: proper error handling & wrap those steps
+    let (_, lines) = all_consuming(parse_program)(source).finish().unwrap();
+    let layout = crate::compiler::layout::layout_memory(&lines).unwrap();
+    let memory = crate::compiler::memory::fill_memory(&layout).unwrap();
 
     info!(entrypoint = %entrypoint, "Building computer");
-    let (mut computer, debug_info) = compiler.build(entrypoint)?;
+    let mut computer = Computer {
+        memory,
+        registers: Registers {
+            pc: *layout.labels.get(entrypoint.as_str()).unwrap(),
+            sp: STACK_START,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let debug_info = DebugInfo {
+        labels: layout
+            .labels
+            .iter()
+            .map(|(key, value)| (key.to_string(), *value))
+            .collect(),
+    };
 
     if interactive {
         run_interactive(&mut computer, debug_info)?;

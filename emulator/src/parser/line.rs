@@ -14,7 +14,7 @@ use nom::{
     character::complete::{char, line_ending, none_of, not_line_ending, one_of, space0, space1},
     combinator::{all_consuming, eof, map, opt, peek, value},
     multi::{many0, separated_list1},
-    sequence::{delimited, terminated},
+    sequence::{delimited, preceded, terminated},
     IResult,
 };
 
@@ -124,11 +124,14 @@ fn parse_directive_line(input: &str) -> IResult<&str, LineContent> {
 /// Parses an instruction
 fn parse_instruction_line(input: &str) -> IResult<&str, LineContent> {
     let (input, opcode) = parse_identifier(input)?;
-    let (input, _) = space1(input)?;
-    let (input, arguments) = separated_list1(
-        delimited(space0, char(','), space0),
-        super::value::parse_argument,
-    )(input)?;
+    let (input, arguments) = opt(preceded(
+        space1,
+        separated_list1(
+            delimited(space0, char(','), space0),
+            super::value::parse_argument,
+        ),
+    ))(input)?;
+    let arguments = arguments.unwrap_or_default();
     Ok((input, LineContent::Instruction { opcode, arguments }))
 }
 
@@ -175,7 +178,6 @@ fn split_lines(input: &str) -> IResult<&str, Vec<&str>> {
     separated_list1(line_ending, line_parser)(input)
 }
 
-#[allow(dead_code)]
 pub fn parse_program(input: &str) -> IResult<&str, Vec<Line>> {
     let (input, lines) = split_lines(input)?;
     let lines: Result<_, _> = lines

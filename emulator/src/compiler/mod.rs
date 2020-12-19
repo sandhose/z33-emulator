@@ -6,8 +6,8 @@ use crate::constants::*;
 use crate::memory::Cell;
 use crate::processor::{Computer, Instruction};
 
-mod layout;
-mod memory;
+pub mod layout;
+pub mod memory;
 
 #[derive(Error, Debug)]
 pub enum CompilerError {

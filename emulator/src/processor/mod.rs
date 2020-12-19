@@ -267,6 +267,14 @@ impl Address {
         // Accessing a memory cell, from a direct, indirect or indexed address costs 1 CPU cycle
         1
     }
+
+    fn kind(&self) -> ArgKind {
+        match self {
+            Address::Dir(_) => ArgKind::Dir,
+            Address::Ind(_) => ArgKind::Ind,
+            Address::Idx(_, _) => ArgKind::Idx,
+        }
+    }
 }
 
 #[derive(Error, Debug)]
@@ -326,6 +334,13 @@ impl Value {
         // Using a direct value, immediate or from a register costs no CPU cycles
         0
     }
+
+    fn kind(&self) -> ArgKind {
+        match self {
+            Value::Imm(_) => ArgKind::Imm,
+            Value::Reg(_) => ArgKind::Reg,
+        }
+    }
 }
 
 impl std::fmt::Display for Value {
@@ -350,10 +365,72 @@ impl Labelable for Value {
     }
 }
 
+#[derive(Debug)]
+pub enum ArgKind {
+    Imm,
+    Reg,
+    Ind,
+    Dir,
+    Idx,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Arg {
     Address(Address),
     Value(Value),
+}
+
+#[derive(Error, Debug)]
+#[error("invalid argument type {got:?}, expected one of {expected:?}")]
+pub struct ArgConversionError {
+    expected: Vec<ArgKind>,
+    got: ArgKind,
+}
+
+pub trait TryFromArg: Sized {
+    fn try_from_arg(arg: Arg) -> std::result::Result<Self, ArgConversionError>;
+}
+
+impl TryFromArg for Arg {
+    fn try_from_arg(arg: Arg) -> std::result::Result<Self, ArgConversionError> {
+        Ok(arg)
+    }
+}
+
+impl TryFromArg for Address {
+    fn try_from_arg(arg: Arg) -> std::result::Result<Self, ArgConversionError> {
+        match arg {
+            Arg::Address(a) => Ok(a),
+            other => Err(ArgConversionError {
+                expected: vec![ArgKind::Ind, ArgKind::Dir, ArgKind::Idx],
+                got: other.kind(),
+            }),
+        }
+    }
+}
+
+impl TryFromArg for Value {
+    fn try_from_arg(arg: Arg) -> std::result::Result<Self, ArgConversionError> {
+        match arg {
+            Arg::Value(v) => Ok(v),
+            other => Err(ArgConversionError {
+                expected: vec![ArgKind::Reg, ArgKind::Imm],
+                got: other.kind(),
+            }),
+        }
+    }
+}
+
+impl TryFromArg for Reg {
+    fn try_from_arg(arg: Arg) -> std::result::Result<Self, ArgConversionError> {
+        match arg {
+            Arg::Value(Value::Reg(r)) => Ok(r),
+            other => Err(ArgConversionError {
+                expected: vec![ArgKind::Reg],
+                got: other.kind(),
+            }),
+        }
+    }
 }
 
 impl Arg {
@@ -362,6 +439,13 @@ impl Arg {
         match self {
             Self::Address(a) => a.cost(),
             Self::Value(v) => v.cost(),
+        }
+    }
+
+    fn kind(&self) -> ArgKind {
+        match self {
+            Arg::Address(a) => a.kind(),
+            Arg::Value(v) => v.kind(),
         }
     }
 }

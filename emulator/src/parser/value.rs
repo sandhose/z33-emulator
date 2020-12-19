@@ -25,7 +25,7 @@ pub enum Argument<'a> {
 }
 
 #[derive(Error, Debug)]
-enum ComputeError<'a> {
+pub enum ComputeError<'a> {
     #[error("could not evaluate argument: {0}")]
     EvaluationError(EvaluationError<'a>),
 
@@ -46,7 +46,7 @@ fn convert_register(register: &str) -> Result<Reg, ComputeError> {
 
 impl<'a> Argument<'a> {
     #[allow(dead_code)]
-    fn compute<C: Context>(self, context: &C) -> Result<Arg, ComputeError<'a>> {
+    pub fn compute<C: Context>(&self, context: &C) -> Result<Arg, ComputeError<'a>> {
         match self {
             Argument::Value(v) => {
                 let value = v

@@ -3,7 +3,9 @@ use std::collections::HashMap;
 use thiserror::Error;
 
 use crate::constants::*;
-use crate::parser::{DirectiveArgument, ExpressionContext, Line, LineContent};
+use crate::parser::{
+    DirectiveArgument, ExpressionContext, ExpressionEvaluationError, Line, LineContent,
+};
 
 pub type Labels<'a> = HashMap<&'a str, u64>;
 
@@ -43,6 +45,12 @@ pub enum MemoryLayoutError<'a> {
 
     #[error("unsupported directive {directive}")]
     UnsupportedDirective { directive: &'a str },
+
+    #[error("failed to evaluate argument for directive {directive}: {inner}")]
+    DirectiveArgumentEvaluation {
+        directive: &'a str,
+        inner: ExpressionEvaluationError<'a>,
+    },
 }
 
 /// Lays out the memory
@@ -74,10 +82,12 @@ pub fn layout_memory<'a>(program: &'a [Line<'a>]) -> Result<Layout<'a>, MemoryLa
                 }
 
                 LineContent::Directive {
-                    directive: "space",
+                    directive,
                     argument: DirectiveArgument::Expression(e),
-                } => {
-                    let size = e.compute().unwrap(); // TODO
+                } if *directive == "space" => {
+                    let size = e
+                        .compute()
+                        .map_err(|inner| DirectiveArgumentEvaluation { directive, inner })?;
 
                     for _ in 0..size {
                         layout.memory.insert(position, Placement::Reserved);
@@ -86,10 +96,12 @@ pub fn layout_memory<'a>(program: &'a [Line<'a>]) -> Result<Layout<'a>, MemoryLa
                 }
 
                 LineContent::Directive {
-                    directive: "addr",
+                    directive,
                     argument: DirectiveArgument::Expression(e),
-                } => {
-                    let addr = e.compute().unwrap(); // TODO
+                } if *directive == "addr" => {
+                    let addr = e
+                        .compute()
+                        .map_err(|inner| DirectiveArgumentEvaluation { directive, inner })?;
 
                     // The ".addr N" directive changes the current address to N
                     position = addr;

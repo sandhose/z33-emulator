@@ -16,12 +16,12 @@ use thiserror::Error;
 use crate::compiler::Compiler;
 use crate::processor::{Address, Arg, Instruction, Labelable, Reg, Value};
 
-mod condition;
-mod directive;
-mod expression;
-mod line;
-mod literal;
-mod value;
+pub(crate) mod condition;
+pub(crate) mod directive;
+pub(crate) mod expression;
+pub(crate) mod line;
+pub(crate) mod literal;
+pub(crate) mod value;
 
 use directive::parse_directive;
 
@@ -31,7 +31,7 @@ pub use expression::{
     parse_const_expression, parse_expression, Context as ExpressionContext,
     EvaluationError as ExpressionEvaluationError, Node as Expression,
 };
-pub use line::{DirectiveArgument, Line, LineContent};
+pub use line::{parse_program, DirectiveArgument, Line, LineContent};
 pub use literal::parse_string_literal;
 pub use value::Argument;
 
