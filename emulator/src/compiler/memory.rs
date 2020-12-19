@@ -302,7 +302,6 @@ fn compile_placement<'a>(
     }
 }
 
-#[allow(dead_code)]
 pub fn fill_memory<'a>(layout: &Layout<'a>) -> Result<Memory, CompilationError<'a>> {
     let mut memory = Memory::default();
 

@@ -56,7 +56,6 @@ pub enum MemoryLayoutError<'a> {
 /// Lays out the memory
 ///
 /// It places the labels & prepare a hashmap of cells to be filled.
-#[allow(dead_code)]
 pub fn layout_memory<'a>(program: &'a [Line<'a>]) -> Result<Layout<'a>, MemoryLayoutError<'a>> {
     use MemoryLayoutError::*;
     let mut layout: Layout = Default::default();

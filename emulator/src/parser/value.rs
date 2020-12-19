@@ -45,7 +45,6 @@ fn convert_register(register: &str) -> Result<Reg, ComputeError> {
 }
 
 impl<'a> Argument<'a> {
-    #[allow(dead_code)]
     pub fn compute<C: Context>(&self, context: &C) -> Result<Arg, ComputeError<'a>> {
         match self {
             Argument::Value(v) => {
