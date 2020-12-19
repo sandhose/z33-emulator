@@ -195,6 +195,11 @@ fn compile_instruction<'a>(
             Ok(Instruction::Nop)
         }
 
+        "not" => {
+            let a = get_singleton(arguments)?;
+            Ok(Instruction::Not(a))
+        }
+
         "or" => {
             let (a, b) = get_tuple(arguments)?;
             Ok(Instruction::Or(a, b))

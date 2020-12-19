@@ -10,7 +10,6 @@ license = "MIT"
 
 [dependencies]
 bitflags = "1.2.1"
-z33-instruction-derive = { path = "../instruction-derive" }
 thiserror = "1.0.22"
 nom = "6.0.1"
 tracing = "0.1.22"

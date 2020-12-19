@@ -879,15 +879,4 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "unicode-segmentation",
- "z33-instruction-derive",
-]
-
-[[package]]
-name = "z33-instruction-derive"
-version = "0.1.0"
-dependencies = [
- "proc-macro-error",
- "proc-macro2",
- "quote",
- "syn",
 ]

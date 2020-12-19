@@ -10,6 +10,7 @@ fn display_line(line: (usize, &str)) {
     eprintln!("{:>5}: {}", line, content);
 }
 
+#[allow(dead_code)]
 pub fn display_error_offset(input: &str, offset: usize, message: &str) {
     let mut lines = input.lines().enumerate().peekable();
 

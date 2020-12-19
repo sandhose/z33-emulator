@@ -18,9 +18,8 @@ mod preprocessor;
 mod processor;
 mod util;
 
-use crate::compiler::CompilerState;
 use crate::interactive::run_interactive;
-use crate::parser::{parse_program, Parser};
+use crate::parser::parse_program;
 use crate::preprocessor::preprocess;
 
 #[derive(Clap)]

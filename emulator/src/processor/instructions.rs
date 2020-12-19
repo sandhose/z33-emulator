@@ -1,7 +1,6 @@
 use std::convert::TryInto;
 
 use tracing::debug;
-use z33_instruction_derive::Instruction;
 
 use crate::constants::*;
 use crate::memory::{Cell, Word};
@@ -9,25 +8,25 @@ use crate::memory::{Cell, Word};
 use super::{
     exception::Exception,
     registers::{Reg, StatusRegister},
-    Address, Arg, Computer, Labelable, ProcessorError, Value,
+    Address, Arg, Computer, ProcessorError, Value,
 };
 
-#[derive(Debug, Clone, PartialEq, Instruction)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Instruction {
     /// Add a value to a register
-    Add(#[labelable] Arg, Reg),
+    Add(Arg, Reg),
 
     /// Bitwise `and` with a given value
-    And(#[labelable] Arg, Reg),
+    And(Arg, Reg),
 
     /// Push `%pc` and go to the given address
-    Call(#[labelable] Arg),
+    Call(Arg),
 
     /// Compare a value with a register
-    Cmp(#[labelable] Arg, Reg),
+    Cmp(Arg, Reg),
 
     /// Divide a register by a value
-    Div(#[labelable] Arg, Reg),
+    Div(Arg, Reg),
 
     /// Load a memory cell to a register and set this cell to 1
     Fas(Address, Reg),
@@ -36,31 +35,31 @@ pub enum Instruction {
     In(Address, Reg),
 
     /// Unconditional jump
-    Jmp(#[labelable] Arg),
+    Jmp(Arg),
 
     /// Jump if equal
-    Jeq(#[labelable] Arg),
+    Jeq(Arg),
 
     /// Jump if not equal
-    Jne(#[labelable] Arg),
+    Jne(Arg),
 
     /// Jump if less or equal
-    Jle(#[labelable] Arg),
+    Jle(Arg),
 
     /// Jump if strictly less
-    Jlt(#[labelable] Arg),
+    Jlt(Arg),
 
     /// Jump if greater of equal
-    Jge(#[labelable] Arg),
+    Jge(Arg),
 
     /// Jump if strictly greater
-    Jgt(#[labelable] Arg),
+    Jgt(Arg),
 
     /// Load a register with a value
-    Ld(#[labelable] Arg, Reg),
+    Ld(Arg, Reg),
 
     /// Multiply a value to a register
-    Mul(#[labelable] Arg, Reg),
+    Mul(Arg, Reg),
 
     Neg(Reg),
 
@@ -71,7 +70,7 @@ pub enum Instruction {
     Not(Reg),
 
     /// Bitwise `or` with a given value
-    Or(#[labelable] Arg, Reg),
+    Or(Arg, Reg),
 
     /// Write a value to an I/O controller
     Out(Value, Address),
@@ -92,16 +91,16 @@ pub enum Instruction {
     Rtn,
 
     /// Bitshift to the left
-    Shl(#[labelable] Arg, Reg),
+    Shl(Arg, Reg),
 
     /// Bitshift to the right
-    Shr(#[labelable] Arg, Reg),
+    Shr(Arg, Reg),
 
     /// Store a register value in memory
     St(Reg, Address),
 
     /// Substract a value from a register
-    Sub(#[labelable] Arg, Reg),
+    Sub(Arg, Reg),
 
     // /// Swap a value and a register
     // Swap(ArgSwap, Reg),
@@ -109,7 +108,7 @@ pub enum Instruction {
     Trap,
 
     /// Bitwise `xor` with a given value
-    Xor(#[labelable] Arg, Reg),
+    Xor(Arg, Reg),
 }
 
 impl Instruction {
@@ -414,6 +413,45 @@ impl Instruction {
             Instruction::Sub(a, b) => 1 + a.cost() + b.cost(),
             Instruction::Trap => 1,
             Instruction::Xor(a, b) => 1 + a.cost() + b.cost(),
+        }
+    }
+}
+
+impl std::fmt::Display for Instruction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Instruction::Add(a, b) => write!(f, "add {}, {}", a, b),
+            Instruction::And(a, b) => write!(f, "and {}, {}", a, b),
+            Instruction::Call(a) => write!(f, "call {}", a),
+            Instruction::Cmp(a, b) => write!(f, "cmp {}, {}", a, b),
+            Instruction::Div(a, b) => write!(f, "div {}, {}", a, b),
+            Instruction::Fas(a, b) => write!(f, "fas {}, {}", a, b),
+            Instruction::In(a, b) => write!(f, "in {}, {}", a, b),
+            Instruction::Jmp(a) => write!(f, "jmp {}", a),
+            Instruction::Jeq(a) => write!(f, "jeq {}", a),
+            Instruction::Jne(a) => write!(f, "jne {}", a),
+            Instruction::Jle(a) => write!(f, "jle {}", a),
+            Instruction::Jlt(a) => write!(f, "jlt {}", a),
+            Instruction::Jge(a) => write!(f, "jge {}", a),
+            Instruction::Jgt(a) => write!(f, "jgt {}", a),
+            Instruction::Ld(a, b) => write!(f, "ld {}, {}", a, b),
+            Instruction::Mul(a, b) => write!(f, "mul {}, {}", a, b),
+            Instruction::Neg(a) => write!(f, "neg {}", a),
+            Instruction::Nop => write!(f, "nop"),
+            Instruction::Not(a) => write!(f, "not {}", a),
+            Instruction::Or(a, b) => write!(f, "or {}, {}", a, b),
+            Instruction::Out(a, b) => write!(f, "out {}, {}", a, b),
+            Instruction::Pop(a) => write!(f, "pop {}", a),
+            Instruction::Push(a) => write!(f, "push {}", a),
+            Instruction::Reset => write!(f, "reset"),
+            Instruction::Rti => write!(f, "rti"),
+            Instruction::Rtn => write!(f, "rtn"),
+            Instruction::Shl(a, b) => write!(f, "shl {}, {}", a, b),
+            Instruction::Shr(a, b) => write!(f, "shr {}, {}", a, b),
+            Instruction::St(a, b) => write!(f, "st {}, {}", a, b),
+            Instruction::Sub(a, b) => write!(f, "sub {}, {}", a, b),
+            Instruction::Trap => write!(f, "trap"),
+            Instruction::Xor(a, b) => write!(f, "xor {}, {}", a, b),
         }
     }
 }

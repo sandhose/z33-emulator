@@ -5,7 +5,6 @@ use tracing::{debug, info};
 
 use crate::constants::*;
 use crate::memory::{Cell, CellError, Memory, MemoryError, TryFromCell, Word};
-use crate::parser::Parsable;
 
 mod exception;
 mod instructions;
