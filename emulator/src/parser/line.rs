@@ -10,15 +10,34 @@
 
 use nom::{
     branch::alt,
-    bytes::complete::{escaped, is_not, tag},
+    bytes::complete::{escaped, tag},
     character::complete::{char, line_ending, none_of, not_line_ending, one_of, space0, space1},
-    combinator::{all_consuming, eof, opt, peek, recognize, value},
+    combinator::{all_consuming, eof, map, opt, peek, value},
     multi::{many0, separated_list1},
     sequence::{delimited, terminated},
     IResult,
 };
 
+use super::{parse_expression, value::Argument, Expression};
 use super::{parse_identifier, parse_string_literal};
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum DirectiveArgument<'a> {
+    StringLiteral(String),
+    Expression(Expression<'a>),
+}
+
+impl<'a> From<&str> for DirectiveArgument<'a> {
+    fn from(literal: &str) -> Self {
+        Self::StringLiteral(literal.to_string())
+    }
+}
+
+impl<'a> From<i128> for DirectiveArgument<'a> {
+    fn from(value: i128) -> Self {
+        Self::Expression(Expression::Literal(value))
+    }
+}
 
 /// Holds the content of a line
 #[derive(Clone, Debug, PartialEq)]
@@ -26,12 +45,12 @@ pub enum LineContent<'a> {
     /// Represents an instruction, with its opcode and list of arguments
     Instruction {
         opcode: &'a str,
-        arguments: Vec<&'a str>,
+        arguments: Vec<Argument<'a>>,
     },
     /// Represents a directive, with its type and argument
     Directive {
         directive: &'a str,
-        argument: &'a str,
+        argument: DirectiveArgument<'a>,
     },
 }
 
@@ -60,31 +79,31 @@ impl<'a> Line<'a> {
     }
 
     #[cfg(test)] // Only used in tests for now
-    pub fn directive(mut self, directive: &'a str, argument: &'a str) -> Self {
+    pub fn directive<T: Into<DirectiveArgument<'a>>>(
+        mut self,
+        directive: &'a str,
+        argument: T,
+    ) -> Self {
         self.content = Some(LineContent::Directive {
             directive,
-            argument,
+            argument: argument.into(),
         });
         self
     }
 
     #[cfg(test)] // Only used in tests for now
-    pub fn instruction(mut self, opcode: &'a str, arguments: Vec<&'a str>) -> Self {
+    pub fn instruction(mut self, opcode: &'a str, arguments: Vec<Argument<'a>>) -> Self {
         self.content = Some(LineContent::Instruction { opcode, arguments });
         self
     }
 }
 
-/// Extracts a single directive/instruction argument, excluding string literals
-fn parse_argument(input: &str) -> IResult<&str, &str> {
-    // This seems weird, but is there to avoid eating the trailing spaces.
-    // TODO: this might be either too wide or too narrow of a match.
-    recognize(separated_list1(space1, is_not(r#"#,\t\r\n" "#)))(input)
-}
-
 /// Extracts a directive argument, including string literals
-fn parse_directive_argument(input: &str) -> IResult<&str, &str> {
-    alt((recognize(parse_string_literal), parse_argument))(input)
+fn parse_directive_argument(input: &str) -> IResult<&str, DirectiveArgument> {
+    alt((
+        map(parse_string_literal, DirectiveArgument::StringLiteral),
+        map(parse_expression, DirectiveArgument::Expression),
+    ))(input)
 }
 
 /// Parses a directive
@@ -106,8 +125,10 @@ fn parse_directive_line(input: &str) -> IResult<&str, LineContent> {
 fn parse_instruction_line(input: &str) -> IResult<&str, LineContent> {
     let (input, opcode) = parse_identifier(input)?;
     let (input, _) = space1(input)?;
-    let (input, arguments) =
-        separated_list1(delimited(space0, char(','), space0), parse_argument)(input)?;
+    let (input, arguments) = separated_list1(
+        delimited(space0, char(','), space0),
+        super::value::parse_argument,
+    )(input)?;
     Ok((input, LineContent::Instruction { opcode, arguments }))
 }
 
@@ -166,6 +187,8 @@ pub fn parse_program(input: &str) -> IResult<&str, Vec<Line>> {
 
 #[cfg(test)]
 mod tests {
+    use crate::parser::Expression;
+
     use super::*;
 
     #[track_caller]
@@ -214,7 +237,10 @@ mod tests {
                 symbols: vec!["foo", "bar"],
                 content: Some(LineContent::Directive {
                     directive: "space",
-                    argument: "30 + 5",
+                    argument: DirectiveArgument::Expression(Expression::Sum(
+                        Box::new(Expression::Literal(30)),
+                        Box::new(Expression::Literal(5))
+                    )),
                 }),
                 comment: Some("# comment"),
             }
@@ -252,13 +278,17 @@ string"
             lines,
             vec![
                 Line::default(),
-                Line::default()
-                    .symbol("str")
-                    .directive("space", "\"some multiline \\\nstring\""),
+                Line::default().symbol("str").directive(
+                    "space",
+                    DirectiveArgument::StringLiteral(String::from("some multiline string"))
+                ),
                 Line::default()
                     .symbol("main")
                     .comment("# beginning of program"),
-                Line::default().instruction("add", vec!["%a", "%b"]),
+                Line::default().instruction(
+                    "add",
+                    vec![Argument::Register("a"), Argument::Register("b")]
+                ),
                 Line::default(),
             ]
         );

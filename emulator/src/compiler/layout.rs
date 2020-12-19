@@ -1,12 +1,17 @@
 use std::collections::HashMap;
 
-use nom::{combinator::all_consuming, Finish};
 use thiserror::Error;
 
-use crate::parser::{parse_const_expression, Line, LineContent};
-use crate::{constants::*, parser::parse_string_literal};
+use crate::constants::*;
+use crate::parser::{DirectiveArgument, ExpressionContext, Line, LineContent};
 
 pub type Labels<'a> = HashMap<&'a str, u64>;
+
+impl<'a> ExpressionContext for Labels<'a> {
+    fn resolve_variable(&self, variable: &str) -> Option<i128> {
+        self.get(variable).map(|v| *v as _)
+    }
+}
 
 pub enum Placement<'a> {
     /// A memory cell filled by .space
@@ -30,11 +35,14 @@ pub enum MemoryLayoutError<'a> {
     #[error("duplicate label {label}")]
     DuplicateLabel { label: &'a str },
 
+    #[error("invalid argument for directive {directive}")]
+    InvalidDirectiveArgument {
+        directive: &'a str,
+        argument: &'a DirectiveArgument<'a>,
+    },
+
     #[error("unsupported directive {directive}")]
     UnsupportedDirective { directive: &'a str },
-
-    #[error("could not parse directive argument")]
-    ArgumentParseError(nom::error::Error<&'a str>),
 }
 
 /// Lays out the memory
@@ -67,11 +75,9 @@ pub fn layout_memory<'a>(program: &'a [Line<'a>]) -> Result<Layout<'a>, MemoryLa
 
                 LineContent::Directive {
                     directive: "space",
-                    argument,
+                    argument: DirectiveArgument::Expression(e),
                 } => {
-                    let (_, size): (_, u64) = all_consuming(parse_const_expression)(argument)
-                        .finish()
-                        .map_err(ArgumentParseError)?;
+                    let size = e.compute().unwrap(); // TODO
 
                     for _ in 0..size {
                         layout.memory.insert(position, Placement::Reserved);
@@ -81,23 +87,18 @@ pub fn layout_memory<'a>(program: &'a [Line<'a>]) -> Result<Layout<'a>, MemoryLa
 
                 LineContent::Directive {
                     directive: "addr",
-                    argument,
+                    argument: DirectiveArgument::Expression(e),
                 } => {
-                    let (_, addr): (_, u64) = all_consuming(parse_const_expression)(argument)
-                        .finish()
-                        .map_err(ArgumentParseError)?;
+                    let addr = e.compute().unwrap(); // TODO
+
                     // The ".addr N" directive changes the current address to N
                     position = addr;
                 }
 
                 LineContent::Directive {
                     directive: "string",
-                    argument,
+                    argument: DirectiveArgument::StringLiteral(literal),
                 } => {
-                    let (_, literal) = all_consuming(parse_string_literal)(argument)
-                        .finish()
-                        .map_err(ArgumentParseError)?;
-
                     // Fill the memory with the chars of the string
                     for c in literal.chars() {
                         layout.memory.insert(position, Placement::Char(c));
@@ -105,8 +106,18 @@ pub fn layout_memory<'a>(program: &'a [Line<'a>]) -> Result<Layout<'a>, MemoryLa
                     }
                 }
 
-                LineContent::Directive { directive, .. } => {
-                    return Err(UnsupportedDirective { directive });
+                LineContent::Directive {
+                    directive,
+                    argument,
+                } => {
+                    if matches!(*directive, "space" | "addr" | "string") {
+                        return Err(InvalidDirectiveArgument {
+                            directive,
+                            argument,
+                        });
+                    } else {
+                        return Err(UnsupportedDirective { directive });
+                    }
                 }
             }
         }
@@ -118,17 +129,18 @@ pub fn layout_memory<'a>(program: &'a [Line<'a>]) -> Result<Layout<'a>, MemoryLa
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parser::Line;
+    use crate::parser::{Argument, Expression, Line};
 
     #[test]
     fn place_labels_simple_test() {
         let program = vec![
-            Line::default()
-                .symbol("main")
-                .instruction("add", vec!["%a", "%b"]),
+            Line::default().symbol("main").instruction(
+                "add",
+                vec![Argument::Register("a"), Argument::Register("b")],
+            ),
             Line::default()
                 .symbol("loop")
-                .instruction("jmp", vec!["loop"]),
+                .instruction("jmp", vec![Argument::Value(Expression::Variable("main"))]),
         ];
 
         let labels = layout_memory(&program).unwrap().labels;
@@ -144,10 +156,10 @@ mod tests {
     #[test]
     fn place_labels_addr_test() {
         let program = vec![
-            Line::default().directive("addr", "10"),
+            Line::default().directive("addr", 10),
             Line::default()
                 .symbol("main")
-                .instruction("jmp", vec!["main"]),
+                .instruction("jmp", vec![Argument::Value(Expression::Variable("main"))]),
         ];
 
         let labels = layout_memory(&program).unwrap().labels;
@@ -162,11 +174,11 @@ mod tests {
     #[test]
     fn place_labels_space_test() {
         let program = vec![
-            Line::default().symbol("first").directive("space", "10"),
-            Line::default().symbol("second").directive("space", "5"),
+            Line::default().symbol("first").directive("space", 10),
+            Line::default().symbol("second").directive("space", 5),
             Line::default()
                 .symbol("main")
-                .instruction("jmp", vec!["main"]),
+                .instruction("jmp", vec![Argument::Value(Expression::Variable("main"))]),
         ];
 
         let labels = layout_memory(&program).unwrap().labels;
@@ -184,11 +196,11 @@ mod tests {
     #[test]
     fn place_labels_word_test() {
         let program = vec![
-            Line::default().symbol("first").directive("word", "123"),
-            Line::default().symbol("second").directive("word", "456"),
+            Line::default().symbol("first").directive("word", 123),
+            Line::default().symbol("second").directive("word", 456),
             Line::default()
                 .symbol("main")
-                .instruction("jmp", vec!["main"]),
+                .instruction("jmp", vec![Argument::Value(Expression::Variable("main"))]),
         ];
 
         let labels = layout_memory(&program).unwrap().labels;
@@ -206,15 +218,13 @@ mod tests {
     #[test]
     fn place_labels_string_test() {
         let program = vec![
-            Line::default()
-                .symbol("first")
-                .directive("string", r#""hello""#),
+            Line::default().symbol("first").directive("string", "hello"),
             Line::default()
                 .symbol("second")
-                .directive("string", r#""Émoticône: 🚙""#), // length: 12 chars
+                .directive("string", "Émoticône: 🚙"), // length: 12 chars
             Line::default()
                 .symbol("main")
-                .instruction("jmp", vec!["main"]),
+                .instruction("jmp", vec![Argument::Value(Expression::Variable("main"))]),
         ];
 
         let labels = layout_memory(&program).unwrap().labels;

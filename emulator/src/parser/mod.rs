@@ -21,14 +21,19 @@ mod directive;
 mod expression;
 mod line;
 mod literal;
+mod value;
 
 use directive::parse_directive;
 
 pub use condition::parse_condition;
 pub use directive::Directive;
-pub use expression::parse_const_expression;
-pub use line::{Line, LineContent};
+pub use expression::{
+    parse_const_expression, parse_expression, Context as ExpressionContext,
+    EvaluationError as ExpressionEvaluationError, Node as Expression,
+};
+pub use line::{DirectiveArgument, Line, LineContent};
 pub use literal::parse_string_literal;
+pub use value::Argument;
 
 fn parse_reg(input: &str) -> IResult<&str, Reg> {
     let (input, _) = tag("%")(input)?;

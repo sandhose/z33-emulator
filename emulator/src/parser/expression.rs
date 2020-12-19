@@ -33,7 +33,7 @@ use thiserror::Error;
 
 use super::{literal::parse_literal, parse_identifier};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Node<'a> {
     BinaryOr(Box<Node<'a>>, Box<Node<'a>>),
     BinaryAnd(Box<Node<'a>>, Box<Node<'a>>),
@@ -50,6 +50,7 @@ pub enum Node<'a> {
 }
 
 pub trait Context {
+    // TODO: use something else than Value
     fn resolve_variable(&self, variable: &str) -> Option<Value>;
 }
 
@@ -61,7 +62,7 @@ impl Context for EmptyContext {
 }
 
 #[derive(Error, Debug)]
-enum EvaluationError<'a> {
+pub enum EvaluationError<'a> {
     #[error("undefined variable {variable:?}")]
     UndefinedVariable { variable: &'a str },
 
@@ -70,63 +71,70 @@ enum EvaluationError<'a> {
 }
 
 impl<'a> Node<'a> {
-    fn compute<C: Context, V: TryFrom<Value>>(self, context: &C) -> Result<V, EvaluationError<'a>> {
+    pub fn compute<V: TryFrom<Value>>(&self) -> Result<V, EvaluationError<'a>> {
+        self.compute_with_context(&EmptyContext)
+    }
+
+    pub fn compute_with_context<C: Context, V: TryFrom<Value>>(
+        &self,
+        context: &C,
+    ) -> Result<V, EvaluationError<'a>> {
         let value: Value = match self {
             Node::BinaryOr(left, right) => {
-                let left: Value = left.compute(context)?;
-                let right: Value = right.compute(context)?;
+                let left: Value = left.compute_with_context(context)?;
+                let right: Value = right.compute_with_context(context)?;
                 left | right
             }
 
             Node::BinaryAnd(left, right) => {
-                let left: Value = left.compute(context)?;
-                let right: Value = right.compute(context)?;
+                let left: Value = left.compute_with_context(context)?;
+                let right: Value = right.compute_with_context(context)?;
                 left & right
             }
 
             Node::LeftShift(left, right) => {
-                let left: Value = left.compute(context)?;
-                let right: Value = right.compute(context)?;
+                let left: Value = left.compute_with_context(context)?;
+                let right: Value = right.compute_with_context(context)?;
                 left << right
             }
 
             Node::RightShift(left, right) => {
-                let left: Value = left.compute(context)?;
-                let right: Value = right.compute(context)?;
+                let left: Value = left.compute_with_context(context)?;
+                let right: Value = right.compute_with_context(context)?;
                 left >> right
             }
 
             Node::Sum(left, right) => {
-                let left: Value = left.compute(context)?;
-                let right: Value = right.compute(context)?;
+                let left: Value = left.compute_with_context(context)?;
+                let right: Value = right.compute_with_context(context)?;
                 left + right
             }
 
             Node::Substract(left, right) => {
-                let left: Value = left.compute(context)?;
-                let right: Value = right.compute(context)?;
+                let left: Value = left.compute_with_context(context)?;
+                let right: Value = right.compute_with_context(context)?;
                 left - right
             }
 
             Node::Multiply(left, right) => {
-                let left: Value = left.compute(context)?;
-                let right: Value = right.compute(context)?;
+                let left: Value = left.compute_with_context(context)?;
+                let right: Value = right.compute_with_context(context)?;
                 left * right
             }
 
             Node::Divide(left, right) => {
-                let left: Value = left.compute(context)?;
-                let right: Value = right.compute(context)?;
+                let left: Value = left.compute_with_context(context)?;
+                let right: Value = right.compute_with_context(context)?;
                 left / right
             }
 
             Node::Invert(operand) => {
-                let operand: Value = operand.compute(context)?;
+                let operand: Value = operand.compute_with_context(context)?;
                 -operand
             }
 
             Node::BinaryNot(operand) => {
-                let _operand: Value = operand.compute(context)?;
+                let _operand: Value = operand.compute_with_context(context)?;
                 // TODO: bit inversion is tricky because we're not supposed to know the word length
                 // here. It's a bit opiniated, but for now it tries casting down to u16 before
                 // negating.
@@ -139,7 +147,7 @@ impl<'a> Node<'a> {
                 todo!()
             }
 
-            Node::Literal(value) => value,
+            Node::Literal(value) => *value,
 
             Node::Variable(variable) => {
                 let value = context
@@ -321,7 +329,7 @@ pub fn parse_expression(input: &str) -> IResult<&str, Node> {
 /// Parse a const expression, casting the value at the end
 pub fn parse_const_expression<T: TryFrom<Value>>(input: &str) -> IResult<&str, T> {
     // At the end, we try converting the Value (i128) back to T (mostly u64 or i64)
-    map_res(parse_expression, |n| n.compute(&EmptyContext))(input)
+    map_res(parse_expression, |n| n.compute_with_context(&EmptyContext))(input)
 }
 
 #[cfg(test)]

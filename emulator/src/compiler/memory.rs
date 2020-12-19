@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use thiserror::Error;
 
 use crate::memory::{Cell, Memory};
-use crate::parser::LineContent;
+use crate::parser::{DirectiveArgument, ExpressionEvaluationError, LineContent};
 
 use super::layout::{Labels, Layout, Placement};
 
@@ -23,21 +23,35 @@ impl<'a> From<CompilationError<'a>> for MemoryFillError<'a> {
 pub enum CompilationError<'a> {
     #[error("unsupported directive {directive}")]
     UnsupportedDirective { directive: &'a str },
+
+    #[error("could not evaluate expression: {0}")]
+    EvaluationError(ExpressionEvaluationError<'a>),
 }
 
 fn compile_placement<'a>(
-    _labels: &Labels<'a>,
+    labels: &Labels<'a>,
     placement: &Placement<'a>,
 ) -> Result<Cell, CompilationError<'a>> {
+    use CompilationError::*;
     match placement {
         Placement::Reserved => Ok(Cell::Empty),
         Placement::Char(c) => Ok(Cell::Char(*c)),
         Placement::Line(LineContent::Directive {
-            directive: "word", ..
+            directive: "word",
+            argument: DirectiveArgument::Expression(expression),
         }) => {
-            todo!()
+            let value = expression
+                .compute_with_context(labels)
+                .map_err(EvaluationError)?;
+            Ok(Cell::Word(value))
         }
-        Placement::Line(LineContent::Instruction { .. }) => {
+        Placement::Line(LineContent::Instruction {
+            opcode: _,
+            arguments: _,
+        }) => {
+            // TODO: parse the instructions
+            // 1. Parse all the arguments
+            // 2. Then validate the opcode/argument association
             todo!()
         }
         Placement::Line(LineContent::Directive { directive, .. }) => {
