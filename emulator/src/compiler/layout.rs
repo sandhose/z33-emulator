@@ -3,9 +3,11 @@ use std::collections::HashMap;
 use thiserror::Error;
 
 use crate::constants::*;
-use crate::parser::{
-    DirectiveArgument, ExpressionContext, ExpressionEvaluationError, Line, LineContent,
+use crate::parser::expression::{
+    Context as ExpressionContext, EmptyContext as EmptyExpressionContext,
+    EvaluationError as ExpressionEvaluationError,
 };
+use crate::parser::{DirectiveArgument, Line, LineContent};
 
 pub type Labels<'a> = HashMap<&'a str, u64>;
 
@@ -85,7 +87,7 @@ pub fn layout_memory<'a>(program: &'a [Line<'a>]) -> Result<Layout<'a>, MemoryLa
                     argument: DirectiveArgument::Expression(e),
                 } if *directive == "space" => {
                     let size = e
-                        .compute()
+                        .evaluate(&EmptyExpressionContext)
                         .map_err(|inner| DirectiveArgumentEvaluation { directive, inner })?;
 
                     for _ in 0..size {
@@ -99,7 +101,7 @@ pub fn layout_memory<'a>(program: &'a [Line<'a>]) -> Result<Layout<'a>, MemoryLa
                     argument: DirectiveArgument::Expression(e),
                 } if *directive == "addr" => {
                     let addr = e
-                        .compute()
+                        .evaluate(&EmptyExpressionContext)
                         .map_err(|inner| DirectiveArgumentEvaluation { directive, inner })?;
 
                     // The ".addr N" directive changes the current address to N
@@ -140,7 +142,8 @@ pub fn layout_memory<'a>(program: &'a [Line<'a>]) -> Result<Layout<'a>, MemoryLa
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parser::{Argument, Expression, Line};
+    use crate::parser::expression::Node;
+    use crate::parser::{Argument, Line};
 
     #[test]
     fn place_labels_simple_test() {
@@ -151,7 +154,7 @@ mod tests {
             ),
             Line::default()
                 .symbol("loop")
-                .instruction("jmp", vec![Argument::Value(Expression::Variable("main"))]),
+                .instruction("jmp", vec![Argument::Value(Node::Variable("main"))]),
         ];
 
         let labels = layout_memory(&program).unwrap().labels;
@@ -170,7 +173,7 @@ mod tests {
             Line::default().directive("addr", 10),
             Line::default()
                 .symbol("main")
-                .instruction("jmp", vec![Argument::Value(Expression::Variable("main"))]),
+                .instruction("jmp", vec![Argument::Value(Node::Variable("main"))]),
         ];
 
         let labels = layout_memory(&program).unwrap().labels;
@@ -189,7 +192,7 @@ mod tests {
             Line::default().symbol("second").directive("space", 5),
             Line::default()
                 .symbol("main")
-                .instruction("jmp", vec![Argument::Value(Expression::Variable("main"))]),
+                .instruction("jmp", vec![Argument::Value(Node::Variable("main"))]),
         ];
 
         let labels = layout_memory(&program).unwrap().labels;
@@ -211,7 +214,7 @@ mod tests {
             Line::default().symbol("second").directive("word", 456),
             Line::default()
                 .symbol("main")
-                .instruction("jmp", vec![Argument::Value(Expression::Variable("main"))]),
+                .instruction("jmp", vec![Argument::Value(Node::Variable("main"))]),
         ];
 
         let labels = layout_memory(&program).unwrap().labels;
@@ -235,7 +238,7 @@ mod tests {
                 .directive("string", "Émoticône: 🚙"), // length: 12 chars
             Line::default()
                 .symbol("main")
-                .instruction("jmp", vec![Argument::Value(Expression::Variable("main"))]),
+                .instruction("jmp", vec![Argument::Value(Node::Variable("main"))]),
         ];
 
         let labels = layout_memory(&program).unwrap().labels;

@@ -18,7 +18,10 @@ use nom::{
     IResult,
 };
 
-use super::{parse_expression, value::Argument, Expression};
+use super::{
+    expression::{parse_expression, Node as Expression},
+    value::Argument,
+};
 use super::{parse_identifier, parse_string_literal};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -189,8 +192,6 @@ pub fn parse_program(input: &str) -> IResult<&str, Vec<Line>> {
 
 #[cfg(test)]
 mod tests {
-    use crate::parser::Expression;
-
     use super::*;
 
     #[track_caller]

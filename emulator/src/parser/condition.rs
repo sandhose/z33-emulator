@@ -84,55 +84,55 @@ impl<'a> Node<'a> {
         match self {
             Node::Equal(a, b) => {
                 let a: i128 = a
-                    .compute_with_context(context.get_expression_context())
+                    .evaluate(context.get_expression_context())
                     .map_err(ExpressionEvaluation)?;
                 let b: i128 = b
-                    .compute_with_context(context.get_expression_context())
+                    .evaluate(context.get_expression_context())
                     .map_err(ExpressionEvaluation)?;
                 Ok(a == b)
             }
             Node::NotEqual(a, b) => {
                 let a: i128 = a
-                    .compute_with_context(context.get_expression_context())
+                    .evaluate(context.get_expression_context())
                     .map_err(ExpressionEvaluation)?;
                 let b: i128 = b
-                    .compute_with_context(context.get_expression_context())
+                    .evaluate(context.get_expression_context())
                     .map_err(ExpressionEvaluation)?;
                 Ok(a != b)
             }
             Node::GreaterOrEqual(a, b) => {
                 let a: i128 = a
-                    .compute_with_context(context.get_expression_context())
+                    .evaluate(context.get_expression_context())
                     .map_err(ExpressionEvaluation)?;
                 let b: i128 = b
-                    .compute_with_context(context.get_expression_context())
+                    .evaluate(context.get_expression_context())
                     .map_err(ExpressionEvaluation)?;
                 Ok(a >= b)
             }
             Node::GreaterThan(a, b) => {
                 let a: i128 = a
-                    .compute_with_context(context.get_expression_context())
+                    .evaluate(context.get_expression_context())
                     .map_err(ExpressionEvaluation)?;
                 let b: i128 = b
-                    .compute_with_context(context.get_expression_context())
+                    .evaluate(context.get_expression_context())
                     .map_err(ExpressionEvaluation)?;
                 Ok(a > b)
             }
             Node::LesserOrEqual(a, b) => {
                 let a: i128 = a
-                    .compute_with_context(context.get_expression_context())
+                    .evaluate(context.get_expression_context())
                     .map_err(ExpressionEvaluation)?;
                 let b: i128 = b
-                    .compute_with_context(context.get_expression_context())
+                    .evaluate(context.get_expression_context())
                     .map_err(ExpressionEvaluation)?;
                 Ok(a <= b)
             }
             Node::LesserThan(a, b) => {
                 let a: i128 = a
-                    .compute_with_context(context.get_expression_context())
+                    .evaluate(context.get_expression_context())
                     .map_err(ExpressionEvaluation)?;
                 let b: i128 = b
-                    .compute_with_context(context.get_expression_context())
+                    .evaluate(context.get_expression_context())
                     .map_err(ExpressionEvaluation)?;
                 Ok(a < b)
             }

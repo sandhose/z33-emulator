@@ -24,7 +24,7 @@ use nom::{
     branch::alt,
     bytes::complete::tag,
     character::complete::{char, space0},
-    combinator::{map, map_res, opt, value},
+    combinator::{map, opt, value},
     multi::fold_many0,
     sequence::preceded,
     IResult,
@@ -71,70 +71,66 @@ pub enum EvaluationError<'a> {
 }
 
 impl<'a> Node<'a> {
-    pub fn compute<V: TryFrom<Value>>(&self) -> Result<V, EvaluationError<'a>> {
-        self.compute_with_context(&EmptyContext)
-    }
-
-    pub fn compute_with_context<C: Context, V: TryFrom<Value>>(
+    pub fn evaluate<C: Context, V: TryFrom<Value>>(
         &self,
         context: &C,
     ) -> Result<V, EvaluationError<'a>> {
         let value: Value = match self {
             Node::BinaryOr(left, right) => {
-                let left: Value = left.compute_with_context(context)?;
-                let right: Value = right.compute_with_context(context)?;
+                let left: Value = left.evaluate(context)?;
+                let right: Value = right.evaluate(context)?;
                 left | right
             }
 
             Node::BinaryAnd(left, right) => {
-                let left: Value = left.compute_with_context(context)?;
-                let right: Value = right.compute_with_context(context)?;
+                let left: Value = left.evaluate(context)?;
+                let right: Value = right.evaluate(context)?;
                 left & right
             }
 
             Node::LeftShift(left, right) => {
-                let left: Value = left.compute_with_context(context)?;
-                let right: Value = right.compute_with_context(context)?;
+                let left: Value = left.evaluate(context)?;
+                let right: Value = right.evaluate(context)?;
                 left << right
             }
 
             Node::RightShift(left, right) => {
-                let left: Value = left.compute_with_context(context)?;
-                let right: Value = right.compute_with_context(context)?;
+                let left: Value = left.evaluate(context)?;
+                let right: Value = right.evaluate(context)?;
                 left >> right
             }
 
             Node::Sum(left, right) => {
-                let left: Value = left.compute_with_context(context)?;
-                let right: Value = right.compute_with_context(context)?;
+                let left: Value = left.evaluate(context)?;
+                let right: Value = right.evaluate(context)?;
                 left + right
             }
 
             Node::Substract(left, right) => {
-                let left: Value = left.compute_with_context(context)?;
-                let right: Value = right.compute_with_context(context)?;
+                let left: Value = left.evaluate(context)?;
+                let right: Value = right.evaluate(context)?;
                 left - right
             }
 
             Node::Multiply(left, right) => {
-                let left: Value = left.compute_with_context(context)?;
-                let right: Value = right.compute_with_context(context)?;
+                let left: Value = left.evaluate(context)?;
+                let right: Value = right.evaluate(context)?;
                 left * right
             }
 
             Node::Divide(left, right) => {
-                let left: Value = left.compute_with_context(context)?;
-                let right: Value = right.compute_with_context(context)?;
+                let left: Value = left.evaluate(context)?;
+                let right: Value = right.evaluate(context)?;
                 left / right
             }
 
             Node::Invert(operand) => {
-                let operand: Value = operand.compute_with_context(context)?;
+                let operand: Value = operand.evaluate(context)?;
                 -operand
             }
 
             Node::BinaryNot(operand) => {
-                let _operand: Value = operand.compute_with_context(context)?;
+                let _operand: Value = operand.evaluate(context)?;
                 // TODO: bit inversion is tricky because we're not supposed to know the word length
                 // here. It's a bit opiniated, but for now it tries casting down to u16 before
                 // negating.
@@ -323,26 +319,29 @@ pub fn parse_expression(input: &str) -> IResult<&str, Node> {
     parse_or(input)
 }
 
-/// Parse a const expression, casting the value at the end
-pub fn parse_const_expression<T: TryFrom<Value>>(input: &str) -> IResult<&str, T> {
-    // At the end, we try converting the Value (i128) back to T (mostly u64 or i64)
-    map_res(parse_expression, |n| n.compute_with_context(&EmptyContext))(input)
-}
-
 #[cfg(test)]
 mod tests {
+    use nom::Finish;
+
     use super::*;
+
+    #[track_caller]
+    fn evaluate(res: IResult<&str, Node>) -> i128 {
+        let (rest, node) = res.finish().unwrap();
+        assert_eq!(rest, "");
+        node.evaluate(&EmptyContext).unwrap()
+    }
 
     #[test]
     fn calculation_test() {
-        assert_eq!(parse_const_expression("1 + 2"), Ok(("", 3)));
-        assert_eq!(parse_const_expression("-3"), Ok(("", -3)));
-        assert_eq!(parse_const_expression("5+2 * 3"), Ok(("", 11)));
-        assert_eq!(parse_const_expression("(5 + 2) * 3"), Ok(("", 21)));
-        assert_eq!(parse_const_expression("0xFF * 2"), Ok(("", 0x1FE)));
-        assert_eq!(parse_const_expression("0x0F <<4"), Ok(("", 0xF0)));
-        assert_eq!(parse_const_expression("0xF0>> 4"), Ok(("", 0x0F)));
-        assert_eq!(parse_const_expression("0xAF & 0xF0"), Ok(("", 0xA0)));
-        assert_eq!(parse_const_expression("0x0F | 0xF0"), Ok(("", 0xFF)));
+        assert_eq!(evaluate(parse_expression("1 + 2")), 3);
+        assert_eq!(evaluate(parse_expression("-3")), -3);
+        assert_eq!(evaluate(parse_expression("5+2 * 3")), 11);
+        assert_eq!(evaluate(parse_expression("(5 + 2) * 3")), 21);
+        assert_eq!(evaluate(parse_expression("0xFF * 2")), 0x1FE);
+        assert_eq!(evaluate(parse_expression("0x0F <<4")), 0xF0);
+        assert_eq!(evaluate(parse_expression("0xF0>> 4")), 0x0F);
+        assert_eq!(evaluate(parse_expression("0xAF & 0xF0")), 0xA0);
+        assert_eq!(evaluate(parse_expression("0x0F | 0xF0")), 0xFF);
     }
 }

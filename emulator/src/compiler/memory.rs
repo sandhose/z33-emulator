@@ -9,7 +9,8 @@ use crate::{
     processor::{Instruction, TryFromArg},
 };
 use crate::{
-    parser::{DirectiveArgument, ExpressionEvaluationError, LineContent},
+    parser::expression::EvaluationError as ExpressionEvaluationError,
+    parser::{DirectiveArgument, LineContent},
     processor::Arg,
 };
 
@@ -281,9 +282,7 @@ fn compile_placement<'a>(
             directive: "word",
             argument: DirectiveArgument::Expression(expression),
         }) => {
-            let value = expression
-                .compute_with_context(labels)
-                .map_err(Evaluation)?;
+            let value = expression.evaluate(labels).map_err(Evaluation)?;
             Ok(Cell::Word(value))
         }
         Placement::Line(LineContent::Instruction { opcode, arguments }) => {

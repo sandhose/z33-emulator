@@ -285,9 +285,12 @@ impl std::str::FromStr for Address {
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         // TODO: better error handling
-        crate::parser::parse_inner_address(s)
-            .map_err(|_| AddressParseError)
-            .map(|(_, a)| a)
+        let (_, arg) =
+            crate::parser::value::parse_indirect_inner(s).map_err(|_| AddressParseError)?;
+        let arg = arg
+            .compute(&crate::parser::expression::EmptyContext)
+            .map_err(|_| AddressParseError)?;
+        Address::try_from_arg(arg).map_err(|_| AddressParseError)
     }
 }
 

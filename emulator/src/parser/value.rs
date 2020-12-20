@@ -48,9 +48,7 @@ impl<'a> Argument<'a> {
     pub fn compute<C: Context>(&self, context: &C) -> Result<Arg, ComputeError<'a>> {
         match self {
             Argument::Value(v) => {
-                let value = v
-                    .compute_with_context(context)
-                    .map_err(ComputeError::EvaluationError)?;
+                let value = v.evaluate(context).map_err(ComputeError::EvaluationError)?;
                 Ok(Arg::Value(Value::Imm(value)))
             }
             Argument::Register(r) => {
@@ -58,9 +56,7 @@ impl<'a> Argument<'a> {
                 Ok(Arg::Value(Value::Reg(register)))
             }
             Argument::Direct(v) => {
-                let value = v
-                    .compute_with_context(context)
-                    .map_err(ComputeError::EvaluationError)?;
+                let value = v.evaluate(context).map_err(ComputeError::EvaluationError)?;
                 Ok(Arg::Address(Address::Dir(value)))
             }
             Argument::Indirect(r) => {
@@ -69,7 +65,7 @@ impl<'a> Argument<'a> {
             }
             Argument::Indexed { register, value } => {
                 let value = value
-                    .compute_with_context(context)
+                    .evaluate(context)
                     .map_err(ComputeError::EvaluationError)?;
                 let register = convert_register(register)?;
                 Ok(Arg::Address(Address::Idx(register, value)))
@@ -98,7 +94,7 @@ fn parse_indirect_indexed_inner<'a>(input: &'a str) -> IResult<&'a str, Argument
     Ok((input, Argument::Indexed { register, value }))
 }
 
-fn parse_indirect_inner<'a>(input: &'a str) -> IResult<&'a str, Argument<'a>> {
+pub fn parse_indirect_inner<'a>(input: &'a str) -> IResult<&'a str, Argument<'a>> {
     alt((
         parse_indirect_indexed_inner,
         map(parse_register, Argument::Indirect),
