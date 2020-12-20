@@ -88,7 +88,7 @@ where
 }
 
 fn get_none<'a>(args: Vec<Arg>) -> Result<(), InstructionCompilationError<'a>> {
-    if args.len() != 0 {
+    if !args.is_empty() {
         return Err(InstructionCompilationError::InvalidArgumentNumber {
             expected: 2,
             got: args.len(),

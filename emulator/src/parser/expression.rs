@@ -54,7 +54,7 @@ pub trait Context {
     fn resolve_variable(&self, variable: &str) -> Option<Value>;
 }
 
-struct EmptyContext;
+pub(crate) struct EmptyContext;
 impl Context for EmptyContext {
     fn resolve_variable(&self, _variable: &str) -> Option<Value> {
         None
@@ -149,12 +149,9 @@ impl<'a> Node<'a> {
 
             Node::Literal(value) => *value,
 
-            Node::Variable(variable) => {
-                let value = context
-                    .resolve_variable(variable)
-                    .ok_or(EvaluationError::UndefinedVariable { variable })?;
-                value
-            }
+            Node::Variable(variable) => context
+                .resolve_variable(variable)
+                .ok_or(EvaluationError::UndefinedVariable { variable })?,
         };
 
         V::try_from(value).map_err(|_| EvaluationError::Downcast)

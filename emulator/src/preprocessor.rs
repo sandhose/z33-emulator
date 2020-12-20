@@ -15,7 +15,9 @@ use thiserror::Error;
 use tracing::debug;
 use unicode_segmentation::UnicodeSegmentation;
 
-use crate::parser::{parse_condition, parse_identifier, parse_string_literal};
+use crate::parser::condition::{parse_condition, Context as ConditionContext};
+use crate::parser::expression::EmptyContext as EmptyExpressionContext;
+use crate::parser::{parse_identifier, parse_string_literal};
 
 #[derive(Error, Debug)]
 pub enum PreprocessorError {
@@ -46,6 +48,10 @@ pub enum PreprocessorError {
         col: Option<usize>,
         path: Option<PathBuf>,
     },
+
+    // TODO
+    #[error("condition evaluation error")]
+    ConditionEvaluation,
 }
 
 fn nom_err_offset(e: nom::Err<nom::error::Error<&str>>, input: &str) -> Option<usize> {
@@ -223,7 +229,7 @@ impl PreprocessorState {
     }
 
     #[tracing::instrument]
-    fn replace_definitions(&self, source: String) -> String {
+    fn replace_definitions(&self, source: &str) -> String {
         let words: Vec<_> = source
             .split_word_bounds()
             .map(|word| {
@@ -253,16 +259,18 @@ impl PreprocessorState {
 
     #[tracing::instrument]
     fn evaluate_condition(&self, input: &str) -> Result<bool> {
-        let input = self.replace_defined(input);
+        // let input = self.replace_defined(input);
         let input = self.replace_definitions(input);
         let input = input.as_str();
-        let (_, value) =
+        let (_, node) =
             all_consuming(parse_condition)(input).map_err(|e| PreprocessorError::ParseError {
                 line: None,
                 col: nom_err_offset(e, input),
                 path: None,
             })?;
-        Ok(value)
+
+        node.evaluate(self) // TODO: capture the error
+            .map_err(|_| PreprocessorError::ConditionEvaluation)
     }
 
     #[tracing::instrument]
@@ -324,7 +332,7 @@ impl PreprocessorState {
                         })?;
 
                     let args = args.trim(); // Remove unnecessary spaces
-                    let args = self.replace_definitions(args.into());
+                    let args = self.replace_definitions(args);
                     self.define(identifier.into(), args).map(|_| None)
                 }
             }
@@ -358,7 +366,7 @@ impl PreprocessorState {
                     lines.push(line);
                 }
             } else {
-                let line = self.replace_definitions(line.into());
+                let line = self.replace_definitions(line);
 
                 if self.is_active() {
                     lines.push(line);
@@ -393,6 +401,18 @@ impl PreprocessorState {
     }
 }
 
+impl ConditionContext for PreprocessorState {
+    type ExpressionContext = EmptyExpressionContext;
+
+    fn is_defined(&self, variable: &str) -> bool {
+        self.definitions.contains_key(variable)
+    }
+
+    fn get_expression_context(&self) -> &Self::ExpressionContext {
+        &EmptyExpressionContext
+    }
+}
+
 #[tracing::instrument]
 pub fn preprocess(path: PathBuf) -> Result<String> {
     let mut state = PreprocessorState::default();
@@ -410,7 +430,7 @@ mod tests {
         preprocessor.define("HELLO".into(), "WORLD".into()).unwrap();
         preprocessor.define("WORLD".into(), "42".into()).unwrap();
         assert_eq!(
-            preprocessor.replace_definitions("HELLO WORLD".into()),
+            preprocessor.replace_definitions("HELLO WORLD"),
             "WORLD 42".to_string()
         );
     }
@@ -426,5 +446,27 @@ hello FOO
         let mut preprocessor = PreprocessorState::default();
         let transformed = preprocessor.transform(source).unwrap();
         assert_eq!(transformed, "hello world".to_string());
+    }
+
+    #[test]
+    fn if_defined_test() {
+        let source = r#"
+#define FOO FOO
+#if defined(FOO)
+FOO is defined
+#endif
+#if !defined(BAR)
+BAR is not defined
+#endif
+        "#
+        .trim()
+        .to_string();
+        let mut preprocessor = PreprocessorState::default();
+        // Conditions need a file stack
+        preprocessor
+            .file_stack
+            .push(SourceFileState::new("hello.S".into()));
+        let transformed = preprocessor.transform(source).unwrap();
+        assert_eq!(transformed, "FOO is defined\nBAR is not defined");
     }
 }
