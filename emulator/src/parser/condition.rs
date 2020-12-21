@@ -9,7 +9,7 @@
 //! LogicalAnd       := LogicalExpr ('&&' LogicalExpr)*
 //! LogicalExpr      := Atom | '!' Atom
 //! Literal          := 'true' | 'false'
-//! Atom             := NumberComparison | '(' Condition ')' | Literal
+//! Atom             := NumberComparison | '(' Condition ')' | 'defined(' Identifier ')' | Literal
 //! NumberComparison := ConstExpr ('==' | '!=' | '>=' | '>' | '<=' | '<') ConstExpr
 //! ```
 //!
@@ -36,50 +36,72 @@ use super::parse_identifier;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Node<'a> {
-    Equal(Box<ExpressionNode<'a>>, Box<ExpressionNode<'a>>),
-    NotEqual(Box<ExpressionNode<'a>>, Box<ExpressionNode<'a>>),
-    GreaterOrEqual(Box<ExpressionNode<'a>>, Box<ExpressionNode<'a>>),
-    GreaterThan(Box<ExpressionNode<'a>>, Box<ExpressionNode<'a>>),
-    LesserOrEqual(Box<ExpressionNode<'a>>, Box<ExpressionNode<'a>>),
-    LesserThan(Box<ExpressionNode<'a>>, Box<ExpressionNode<'a>>),
+    /// a == b
+    Equal(ExpressionNode<'a>, ExpressionNode<'a>),
+
+    /// a != b
+    NotEqual(ExpressionNode<'a>, ExpressionNode<'a>),
+
+    /// a >= b
+    GreaterOrEqual(ExpressionNode<'a>, ExpressionNode<'a>),
+
+    /// a > b
+    GreaterThan(ExpressionNode<'a>, ExpressionNode<'a>),
+
+    /// a <= b
+    LesserOrEqual(ExpressionNode<'a>, ExpressionNode<'a>),
+
+    /// a < b
+    LesserThan(ExpressionNode<'a>, ExpressionNode<'a>),
+
+    /// A || B
     Or(Box<Node<'a>>, Box<Node<'a>>),
+
+    /// A && B
     And(Box<Node<'a>>, Box<Node<'a>>),
+
+    /// !A
     Not(Box<Node<'a>>),
-    Literal(&'a str),
+
+    /// true or false
+    Literal(bool),
+
+    /// defined(N)
     Defined(&'a str),
 }
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, PartialEq)]
 pub enum EvaluationError<'a> {
     #[error("could not evaluate expression: {0}")]
     ExpressionEvaluation(ExpressionEvaluationError<'a>),
-
-    #[error("unknown literal {0:?}")]
-    UnknownLiteral(&'a str),
 }
 
+/// A context holds definitions and expression variables
 pub trait Context {
-    type ExpressionContext;
-    fn is_defined(&self, variable: &str) -> bool;
-    fn get_expression_context(&self) -> &Self::ExpressionContext;
-}
+    type ExpressionContext: ExpressionContext;
 
-pub(crate) struct EmptyContext;
-impl Context for EmptyContext {
-    type ExpressionContext = EmptyExpressionContext;
+    /// Check if a variable is defined
     fn is_defined(&self, _variable: &str) -> bool {
         false
     }
+
+    /// Get the expression context with which expression get evaluated
+    fn get_expression_context(&self) -> &Self::ExpressionContext;
+}
+
+/// An empty context that has no variable defined
+pub(crate) struct EmptyContext;
+impl Context for EmptyContext {
+    type ExpressionContext = EmptyExpressionContext;
+
     fn get_expression_context(&self) -> &Self::ExpressionContext {
         &EmptyExpressionContext
     }
 }
 
 impl<'a> Node<'a> {
-    pub fn evaluate<C: Context>(&self, context: &C) -> Result<bool, EvaluationError>
-    where
-        C::ExpressionContext: ExpressionContext,
-    {
+    /// Evaluate a condition AST node with a given context
+    pub fn evaluate<C: Context>(&self, context: &C) -> Result<bool, EvaluationError> {
         use EvaluationError::*;
         match self {
             Node::Equal(a, b) => {
@@ -150,11 +172,7 @@ impl<'a> Node<'a> {
                 let a = a.evaluate(context)?;
                 Ok(!a)
             }
-            Node::Literal(l) => match l.to_lowercase().as_str() {
-                "true" => Ok(true),
-                "false" => Ok(false),
-                _ => Err(UnknownLiteral(l)),
-            },
+            Node::Literal(l) => Ok(*l),
             Node::Defined(v) => Ok(context.is_defined(v)),
         }
     }
@@ -163,16 +181,6 @@ impl<'a> Node<'a> {
 pub fn parse_condition(input: &str) -> IResult<&str, Node> {
     let (input, _) = space0(input)?;
     parse_logical_or(input)
-}
-
-#[derive(Clone)]
-enum Comparison {
-    Equal,
-    NotEqual,
-    GreaterOrEqual,
-    GreaterThan,
-    LesserOrEqual,
-    LesserThan,
 }
 
 #[doc(hidden)]
@@ -214,21 +222,41 @@ fn parse_logical_expression(input: &str) -> IResult<&str, Node> {
     ))(input)
 }
 
+/// Parse a bool literal (true or false)
+fn parse_literal(input: &str) -> IResult<&str, bool> {
+    alt((
+        value(true, tag_no_case("true")),
+        value(false, tag_no_case("false")),
+    ))(input)
+}
+
 fn parse_atom(input: &str) -> IResult<&str, Node> {
     let (input, _) = space0(input)?;
     alt((
         parse_number_comparison,
         parse_parenthesis,
         map(parse_defined, Node::Defined),
-        map(parse_identifier, Node::Literal),
+        map(parse_literal, Node::Literal),
     ))(input)
 }
 
 fn parse_number_comparison(input: &str) -> IResult<&str, Node> {
+    #[derive(Clone)]
+    enum Comparison {
+        Equal,
+        NotEqual,
+        GreaterOrEqual,
+        GreaterThan,
+        LesserOrEqual,
+        LesserThan,
+    }
+
     use Comparison::*;
+
+    let (input, a) = parse_expression(input)?; // Parse the first operand
     let (input, _) = space0(input)?;
-    let (input, a) = parse_expression(input)?;
-    let (input, _) = space0(input)?;
+
+    // Parse the operator
     let (input, op) = alt((
         value(Equal, tag("==")),
         value(NotEqual, tag("!=")),
@@ -237,16 +265,20 @@ fn parse_number_comparison(input: &str) -> IResult<&str, Node> {
         value(LesserOrEqual, tag("<=")),
         value(LesserThan, tag("<")),
     ))(input)?;
+
     let (input, _) = space0(input)?;
-    let (input, b) = parse_expression(input)?;
+    let (input, b) = parse_expression(input)?; // Parse the second operand
+
+    // Create the node out of the two operands and the operator
     let node = match op {
-        Equal => Node::Equal(Box::new(a), Box::new(b)),
-        NotEqual => Node::NotEqual(Box::new(a), Box::new(b)),
-        GreaterOrEqual => Node::GreaterOrEqual(Box::new(a), Box::new(b)),
-        GreaterThan => Node::GreaterThan(Box::new(a), Box::new(b)),
-        LesserOrEqual => Node::LesserOrEqual(Box::new(a), Box::new(b)),
-        LesserThan => Node::LesserThan(Box::new(a), Box::new(b)),
+        Equal => Node::Equal(a, b),
+        NotEqual => Node::NotEqual(a, b),
+        GreaterOrEqual => Node::GreaterOrEqual(a, b),
+        GreaterThan => Node::GreaterThan(a, b),
+        LesserOrEqual => Node::LesserOrEqual(a, b),
+        LesserThan => Node::LesserThan(a, b),
     };
+
     Ok((input, node))
 }
 
@@ -254,6 +286,7 @@ fn parse_defined(input: &str) -> IResult<&str, &str> {
     let (input, _) = tag_no_case("defined")(input)?;
     let (input, _) = space0(input)?;
     let (input, _) = char('(')(input)?;
+    let (input, _) = space0(input)?;
     let (input, identifier) = parse_identifier(input)?;
     let (input, _) = space0(input)?;
     let (input, _) = char(')')(input)?;
@@ -277,9 +310,14 @@ mod tests {
 
     #[track_caller]
     fn evaluate(res: IResult<&str, Node>) -> bool {
+        evaluate_with_context(res, &EmptyContext)
+    }
+
+    #[track_caller]
+    fn evaluate_with_context<C: Context>(res: IResult<&str, Node>, context: &C) -> bool {
         let (rest, node) = res.finish().unwrap();
         assert_eq!(rest, "");
-        node.evaluate(&EmptyContext).unwrap()
+        node.evaluate(context).unwrap()
     }
 
     #[test]
@@ -328,6 +366,71 @@ mod tests {
         assert_eq!(
             evaluate(parse_condition("!(true || false) && (false || true)")),
             false
+        );
+    }
+
+    #[test]
+    fn ast_test() {
+        use super::super::expression::Node::Literal as ELiteral;
+        use Node::{Literal as CLiteral, *};
+        assert_eq!(
+            parse_condition("3 > 2 && true"),
+            Ok((
+                "",
+                And(
+                    Box::new(GreaterThan(ELiteral(3), ELiteral(2))),
+                    Box::new(CLiteral(true))
+                )
+            ))
+        );
+    }
+
+    #[test]
+    fn context_test() {
+        use super::super::expression::{EvaluationError as ExpressionEvaluationError, Node as E};
+        use Node::*;
+
+        struct TestExpressionContext;
+        impl super::super::expression::Context for TestExpressionContext {
+            fn resolve_variable(&self, variable: &str) -> Option<i128> {
+                match variable {
+                    "ten" => Some(10),
+                    "undefined" => None,
+                    _ => unreachable!(),
+                }
+            }
+        }
+
+        struct TestConditionContext;
+        impl Context for TestConditionContext {
+            type ExpressionContext = TestExpressionContext;
+            fn is_defined(&self, variable: &str) -> bool {
+                match variable {
+                    "yes" => true,
+                    "no" => false,
+                    _ => unreachable!(),
+                }
+            }
+
+            fn get_expression_context(&self) -> &Self::ExpressionContext {
+                &TestExpressionContext
+            }
+        }
+
+        let ctx = &TestConditionContext;
+        assert_eq!(Defined("yes").evaluate(ctx), Ok(true));
+        assert_eq!(Defined("no").evaluate(ctx), Ok(false));
+        assert_eq!(
+            Equal(E::Variable("ten"), E::Literal(10)).evaluate(ctx),
+            Ok(true),
+        );
+        assert_eq!(
+            Equal(E::Variable("undefined"), E::Literal(10)).evaluate(ctx),
+            Err(EvaluationError::ExpressionEvaluation(
+                ExpressionEvaluationError::UndefinedVariable {
+                    variable: "undefined"
+                }
+            ))
         );
     }
 }

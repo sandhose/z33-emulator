@@ -61,7 +61,7 @@ impl Context for EmptyContext {
     }
 }
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, PartialEq)]
 pub enum EvaluationError<'a> {
     #[error("undefined variable {variable:?}")]
     UndefinedVariable { variable: &'a str },
