@@ -14,7 +14,6 @@ pub(crate) mod value;
 pub use condition::parse_condition;
 pub use expression::parse_expression;
 pub use line::{parse_program, Line, LineContent};
-pub use literal::parse_string_literal;
 pub use value::{DirectiveArgument, InstructionArgument};
 
 fn is_identifier_char(c: char) -> bool {

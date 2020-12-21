@@ -3,7 +3,8 @@ use std::convert::TryInto;
 use thiserror::Error;
 
 use crate::constants::*;
-use crate::processor::Instruction;
+
+use super::instructions::Instruction;
 
 pub type Address = u64;
 pub type Word = u64;

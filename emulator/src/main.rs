@@ -12,7 +12,6 @@ use tracing_subscriber::filter::{EnvFilter, LevelFilter};
 mod compiler;
 mod constants;
 mod interactive;
-mod memory;
 mod parser;
 mod preprocessor;
 mod processor;

@@ -1,7 +1,7 @@
 use bitflags::bitflags;
 use thiserror::Error;
 
-use crate::memory::{Cell, CellError, TryFromCell, Word};
+use super::memory::{Cell, CellError, TryFromCell, Word};
 
 bitflags! {
     #[derive(Default)]

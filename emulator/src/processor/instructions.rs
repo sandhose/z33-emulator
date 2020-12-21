@@ -3,10 +3,10 @@ use std::convert::TryInto;
 use tracing::debug;
 
 use crate::constants::*;
-use crate::memory::{Cell, Word};
 
 use super::{
     exception::Exception,
+    memory::Cell,
     registers::{Reg, StatusRegister},
     Address, Arg, Computer, ProcessorError, Value,
 };

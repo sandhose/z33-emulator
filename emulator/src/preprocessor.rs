@@ -10,14 +10,16 @@ use nom::{
     combinator::{all_consuming, value},
     IResult, Offset,
 };
-use regex::{Captures, Regex};
 use thiserror::Error;
 use tracing::debug;
 use unicode_segmentation::UnicodeSegmentation;
 
-use crate::parser::condition::{parse_condition, Context as ConditionContext};
-use crate::parser::expression::EmptyContext as EmptyExpressionContext;
-use crate::parser::{parse_identifier, parse_string_literal};
+use crate::parser::{
+    condition::{parse_condition, Context as ConditionContext},
+    expression::EmptyContext as EmptyExpressionContext,
+    literal::parse_string_literal,
+    parse_identifier,
+};
 
 #[derive(Error, Debug)]
 pub enum PreprocessorError {
@@ -179,7 +181,7 @@ struct PreprocessorState {
 }
 
 fn is_keyword(key: &str) -> bool {
-    key == "if" || key == "endif" || key == "else" || key == "define" || key == "defined"
+    key == "if" || key == "endif" || key == "else" || key == "define"
 }
 
 impl PreprocessorState {
@@ -242,24 +244,8 @@ impl PreprocessorState {
         words.join("")
     }
 
-    /// Replace `defined(CONST)` expressions
-    #[tracing::instrument]
-    fn replace_defined(&self, source: &str) -> String {
-        let re = Regex::new(r"defined\([[:space:]]*([[:word:]]+)[[:space:]]*\)").unwrap();
-        re.replace(source, |caps: &Captures| {
-            let key = caps[0].to_string();
-            if self.definitions.contains_key(&key) {
-                "true"
-            } else {
-                "false"
-            }
-        })
-        .to_string()
-    }
-
     #[tracing::instrument]
     fn evaluate_condition(&self, input: &str) -> Result<bool> {
-        // let input = self.replace_defined(input);
         let input = self.replace_definitions(input);
         let input = input.as_str();
         let (_, node) =

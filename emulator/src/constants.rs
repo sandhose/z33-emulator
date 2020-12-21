@@ -1,4 +1,6 @@
-use crate::memory::Address;
+pub type Address = u64;
+pub type Word = u64;
+pub type Char = char;
 
 /// Total size of the computer memory
 pub const MEMORY_SIZE: Address = 50000;

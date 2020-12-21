@@ -3,16 +3,18 @@ use std::fmt::Debug;
 use thiserror::Error;
 use tracing::{debug, info};
 
-use crate::constants::*;
-use crate::memory::{Cell, CellError, Memory, MemoryError, TryFromCell, Word};
-
 mod exception;
 mod instructions;
+mod memory;
 mod registers;
+
+use crate::constants as C;
 
 pub use self::exception::Exception;
 pub use self::instructions::Instruction;
 pub use self::registers::{Reg, Registers, StatusRegister};
+
+use self::memory::{Cell, CellError, Memory, MemoryError, TryFromCell, Word};
 
 #[derive(Error, Debug)]
 pub enum ProcessorError {
@@ -200,15 +202,15 @@ impl Computer {
         exception: Exception,
     ) -> std::result::Result<(), Exception> {
         debug!(exception = %exception, "Recovering from exception");
-        *(self.memory.get_mut(INTERRUPT_PC_SAVE)?) = self.registers.get(Reg::PC);
-        *(self.memory.get_mut(INTERRUPT_SR_SAVE)?) = self.registers.get(Reg::SR);
-        *(self.memory.get_mut(INTERRUPT_EXCEPTION)?) = exception.code().into();
+        *(self.memory.get_mut(C::INTERRUPT_PC_SAVE)?) = self.registers.get(Reg::PC);
+        *(self.memory.get_mut(C::INTERRUPT_SR_SAVE)?) = self.registers.get(Reg::SR);
+        *(self.memory.get_mut(C::INTERRUPT_EXCEPTION)?) = exception.code().into();
         self.registers.sr.set(StatusRegister::SUPERVISOR, true);
         self.registers.sr.set(
             StatusRegister::INTERRUPT_ENABLE,
             !exception.is_hardware_interrupt(),
         );
-        self.registers.pc = INTERRUPT_HANDLER;
+        self.registers.pc = C::INTERRUPT_HANDLER;
         Ok(())
     }
 
@@ -554,7 +556,7 @@ mod tests {
         let mut computer = Computer::default();
         let start = 100;
         let subroutine = 200;
-        let stack = STACK_START;
+        let stack = C::STACK_START;
         computer.registers.sp = stack; // Set the stack pointer somewhere
 
         // program:
