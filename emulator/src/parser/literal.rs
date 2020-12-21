@@ -28,6 +28,14 @@ pub fn parse_string_literal(input: &str) -> IResult<&str, String> {
     Ok((input, string))
 }
 
+/// Parse a bool literal (true or false)
+pub fn parse_bool_literal(input: &str) -> IResult<&str, bool> {
+    alt((
+        value(true, tag_no_case("true")),
+        value(false, tag_no_case("false")),
+    ))(input)
+}
+
 /// Parse a decimal number
 fn from_decimal<T>(input: T) -> Result<u64, std::num::ParseIntError>
 where
@@ -111,7 +119,7 @@ where
 }
 
 /// Parse a number literal
-pub fn parse_literal<T>(input: T) -> IResult<T, u64>
+pub fn parse_number_literal<T>(input: T) -> IResult<T, u64>
 where
     T: InputTakeAtPosition + InputTake + Compare<&'static str> + ToString + Clone,
     <T as InputTakeAtPosition>::Item: AsChar,
@@ -242,23 +250,24 @@ mod tests {
     #[test]
     fn parse_literal_test() {
         // Decimal
-        assert_eq!(parse_literal("100"), Ok(("", 100)));
-        assert_eq!(parse_literal("42"), Ok(("", 42)));
-        assert_eq!(parse_literal("65535"), Ok(("", 0xffff)));
+        assert_eq!(parse_number_literal("100"), Ok(("", 100)));
+        assert_eq!(parse_number_literal("42"), Ok(("", 42)));
+        assert_eq!(parse_number_literal("65535"), Ok(("", 0xffff)));
 
         // Hexadecimal
-        assert_eq!(parse_literal("0x4f"), Ok(("", 0x4f)));
-        assert_eq!(parse_literal("0x42"), Ok(("", 0x42)));
-        assert_eq!(parse_literal("0xffff"), Ok(("", 0xffff)));
+        assert_eq!(parse_number_literal("0x4f"), Ok(("", 0x4f)));
+        assert_eq!(parse_number_literal("0x42"), Ok(("", 0x42)));
+        assert_eq!(parse_number_literal("0xffff"), Ok(("", 0xffff)));
 
         // Octal
-        assert_eq!(parse_literal("0o77"), Ok(("", 0o77)));
-        assert_eq!(parse_literal("0o42"), Ok(("", 0o42)));
-        assert_eq!(parse_literal("0o177777"), Ok(("", 0xffff))); // Upper bound
+        assert_eq!(parse_number_literal("0o77"), Ok(("", 0o77)));
+        assert_eq!(parse_number_literal("0o42"), Ok(("", 0o42)));
+        assert_eq!(parse_number_literal("0o177777"), Ok(("", 0xffff))); // Upper bound
 
         // Binary
-        assert_eq!(parse_literal("0b10"), Ok(("", 2)));
-        assert_eq!(parse_literal("0B10"), Ok(("", 2)));
-        assert_eq!(parse_literal("0b1111111111111111"), Ok(("", 0xffff))); // Upper bound
+        assert_eq!(parse_number_literal("0b10"), Ok(("", 2)));
+        assert_eq!(parse_number_literal("0B10"), Ok(("", 2)));
+        assert_eq!(parse_number_literal("0b1111111111111111"), Ok(("", 0xffff)));
+        // Upper bound
     }
 }

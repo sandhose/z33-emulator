@@ -31,7 +31,7 @@ use nom::{
 };
 use thiserror::Error;
 
-use super::{literal::parse_literal, parse_identifier};
+use super::{literal::parse_number_literal, parse_identifier};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Node<'a> {
@@ -298,7 +298,7 @@ fn parse_unary(input: &str) -> IResult<&str, Node> {
 fn parse_atom(input: &str) -> IResult<&str, Node> {
     let (input, _) = space0(input)?;
     alt((
-        map(parse_literal, |v| Node::Literal(v as Value)),
+        map(parse_number_literal, |v| Node::Literal(v as Value)),
         map(parse_identifier, |i| Node::Variable(i)),
         parse_parenthesis,
     ))(input)

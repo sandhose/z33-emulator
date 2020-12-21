@@ -288,7 +288,7 @@ impl std::str::FromStr for Address {
         let (_, arg) =
             crate::parser::value::parse_indirect_inner(s).map_err(|_| AddressParseError)?;
         let arg = arg
-            .compute(&crate::parser::expression::EmptyContext)
+            .evaluate(&crate::parser::expression::EmptyContext)
             .map_err(|_| AddressParseError)?;
         Address::try_from_arg(arg).map_err(|_| AddressParseError)
     }

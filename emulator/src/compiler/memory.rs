@@ -288,7 +288,7 @@ fn compile_placement<'a>(
         Placement::Line(LineContent::Instruction { opcode, arguments }) => {
             let arguments: Result<Vec<_>, _> = arguments
                 .iter()
-                .map(|argument| argument.compute(labels))
+                .map(|argument| argument.evaluate(labels))
                 .collect();
             let arguments = arguments.map_err(Compute)?;
             let instruction =

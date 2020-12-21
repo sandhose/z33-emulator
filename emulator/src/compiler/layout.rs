@@ -143,18 +143,22 @@ pub fn layout_memory<'a>(program: &'a [Line<'a>]) -> Result<Layout<'a>, MemoryLa
 mod tests {
     use super::*;
     use crate::parser::expression::Node;
-    use crate::parser::{Argument, Line};
+    use crate::parser::{InstructionArgument, Line};
 
     #[test]
     fn place_labels_simple_test() {
         let program = vec![
             Line::default().symbol("main").instruction(
                 "add",
-                vec![Argument::Register("a"), Argument::Register("b")],
+                vec![
+                    InstructionArgument::Register("a"),
+                    InstructionArgument::Register("b"),
+                ],
             ),
-            Line::default()
-                .symbol("loop")
-                .instruction("jmp", vec![Argument::Value(Node::Variable("main"))]),
+            Line::default().symbol("loop").instruction(
+                "jmp",
+                vec![InstructionArgument::Value(Node::Variable("main"))],
+            ),
         ];
 
         let labels = layout_memory(&program).unwrap().labels;
@@ -171,9 +175,10 @@ mod tests {
     fn place_labels_addr_test() {
         let program = vec![
             Line::default().directive("addr", 10),
-            Line::default()
-                .symbol("main")
-                .instruction("jmp", vec![Argument::Value(Node::Variable("main"))]),
+            Line::default().symbol("main").instruction(
+                "jmp",
+                vec![InstructionArgument::Value(Node::Variable("main"))],
+            ),
         ];
 
         let labels = layout_memory(&program).unwrap().labels;
@@ -190,9 +195,10 @@ mod tests {
         let program = vec![
             Line::default().symbol("first").directive("space", 10),
             Line::default().symbol("second").directive("space", 5),
-            Line::default()
-                .symbol("main")
-                .instruction("jmp", vec![Argument::Value(Node::Variable("main"))]),
+            Line::default().symbol("main").instruction(
+                "jmp",
+                vec![InstructionArgument::Value(Node::Variable("main"))],
+            ),
         ];
 
         let labels = layout_memory(&program).unwrap().labels;
@@ -212,9 +218,10 @@ mod tests {
         let program = vec![
             Line::default().symbol("first").directive("word", 123),
             Line::default().symbol("second").directive("word", 456),
-            Line::default()
-                .symbol("main")
-                .instruction("jmp", vec![Argument::Value(Node::Variable("main"))]),
+            Line::default().symbol("main").instruction(
+                "jmp",
+                vec![InstructionArgument::Value(Node::Variable("main"))],
+            ),
         ];
 
         let labels = layout_memory(&program).unwrap().labels;
@@ -236,9 +243,10 @@ mod tests {
             Line::default()
                 .symbol("second")
                 .directive("string", "Émoticône: 🚙"), // length: 12 chars
-            Line::default()
-                .symbol("main")
-                .instruction("jmp", vec![Argument::Value(Node::Variable("main"))]),
+            Line::default().symbol("main").instruction(
+                "jmp",
+                vec![InstructionArgument::Value(Node::Variable("main"))],
+            ),
         ];
 
         let labels = layout_memory(&program).unwrap().labels;

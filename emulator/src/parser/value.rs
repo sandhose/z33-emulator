@@ -10,24 +10,70 @@ use nom::{
 use thiserror::Error;
 
 use super::{
-    expression::{Context, EvaluationError, Node},
-    parse_expression, parse_identifier,
+    expression::{parse_expression, Context, EvaluationError, Node},
+    literal::parse_string_literal,
+    parse_identifier,
 };
 use crate::processor::{Address, Arg, Reg, Value};
 
+/// Represents an instruction argument
 #[derive(Clone, Debug, PartialEq)]
-pub enum Argument<'a> {
+pub enum InstructionArgument<'a> {
+    /// An immediate value
     Value(Node<'a>),
+
+    /// The content of a register
     Register(&'a str),
+
+    /// A direct memory access
     Direct(Node<'a>),
+
+    /// An indirect memory access (register)
     Indirect(&'a str),
+
+    /// An indexed memory access (register + offset)
     Indexed { register: &'a str, value: Node<'a> },
+}
+
+/// Parse an instruction argument
+pub fn parse_instruction_argument<'a>(input: &'a str) -> IResult<&'a str, InstructionArgument<'a>> {
+    alt((parse_direct, parse_indirect))(input)
+}
+
+/// Represents a directive argument
+#[derive(Clone, Debug, PartialEq)]
+pub enum DirectiveArgument<'a> {
+    /// A string literal (`.string` directive)
+    StringLiteral(String),
+
+    /// An expression (`.addr`, `.word`, `.space` directives)
+    Expression(Node<'a>),
+}
+
+/// Parse a directive argument
+pub fn parse_directive_argument(input: &str) -> IResult<&str, DirectiveArgument> {
+    alt((
+        map(parse_string_literal, DirectiveArgument::StringLiteral),
+        map(parse_expression, DirectiveArgument::Expression),
+    ))(input)
+}
+
+impl<'a> From<&str> for DirectiveArgument<'a> {
+    fn from(literal: &str) -> Self {
+        Self::StringLiteral(literal.to_string())
+    }
+}
+
+impl<'a> From<i128> for DirectiveArgument<'a> {
+    fn from(value: i128) -> Self {
+        Self::Expression(Node::Literal(value))
+    }
 }
 
 #[derive(Error, Debug)]
 pub enum ComputeError<'a> {
     #[error("could not evaluate argument: {0}")]
-    EvaluationError(EvaluationError<'a>),
+    Evaluation(EvaluationError<'a>),
 
     #[error("invalid register {0:?}")]
     InvalidRegister(&'a str),
@@ -44,29 +90,27 @@ fn convert_register(register: &str) -> Result<Reg, ComputeError> {
     }
 }
 
-impl<'a> Argument<'a> {
-    pub fn compute<C: Context>(&self, context: &C) -> Result<Arg, ComputeError<'a>> {
+impl<'a> InstructionArgument<'a> {
+    pub fn evaluate<C: Context>(&self, context: &C) -> Result<Arg, ComputeError<'a>> {
         match self {
-            Argument::Value(v) => {
-                let value = v.evaluate(context).map_err(ComputeError::EvaluationError)?;
+            InstructionArgument::Value(v) => {
+                let value = v.evaluate(context).map_err(ComputeError::Evaluation)?;
                 Ok(Arg::Value(Value::Imm(value)))
             }
-            Argument::Register(r) => {
+            InstructionArgument::Register(r) => {
                 let register = convert_register(r)?;
                 Ok(Arg::Value(Value::Reg(register)))
             }
-            Argument::Direct(v) => {
-                let value = v.evaluate(context).map_err(ComputeError::EvaluationError)?;
+            InstructionArgument::Direct(v) => {
+                let value = v.evaluate(context).map_err(ComputeError::Evaluation)?;
                 Ok(Arg::Address(Address::Dir(value)))
             }
-            Argument::Indirect(r) => {
+            InstructionArgument::Indirect(r) => {
                 let register = convert_register(r)?;
                 Ok(Arg::Address(Address::Ind(register)))
             }
-            Argument::Indexed { register, value } => {
-                let value = value
-                    .evaluate(context)
-                    .map_err(ComputeError::EvaluationError)?;
+            InstructionArgument::Indexed { register, value } => {
+                let value = value.evaluate(context).map_err(ComputeError::Evaluation)?;
                 let register = convert_register(register)?;
                 Ok(Arg::Address(Address::Idx(register, value)))
             }
@@ -78,7 +122,7 @@ fn parse_register<'a>(input: &'a str) -> IResult<&'a str, &'a str> {
     preceded(tag("%"), parse_identifier)(input)
 }
 
-fn parse_indirect_indexed_inner<'a>(input: &'a str) -> IResult<&'a str, Argument<'a>> {
+fn parse_indirect_indexed_inner<'a>(input: &'a str) -> IResult<&'a str, InstructionArgument<'a>> {
     let (input, register) = parse_register(input)?;
     let (input, _) = space0(input)?;
     let (input, sign) = one_of("+-")(input)?;
@@ -91,18 +135,18 @@ fn parse_indirect_indexed_inner<'a>(input: &'a str) -> IResult<&'a str, Argument
         _ => unreachable!(),
     };
 
-    Ok((input, Argument::Indexed { register, value }))
+    Ok((input, InstructionArgument::Indexed { register, value }))
 }
 
-pub fn parse_indirect_inner<'a>(input: &'a str) -> IResult<&'a str, Argument<'a>> {
+pub fn parse_indirect_inner<'a>(input: &'a str) -> IResult<&'a str, InstructionArgument<'a>> {
     alt((
         parse_indirect_indexed_inner,
-        map(parse_register, Argument::Indirect),
-        map(parse_expression, Argument::Direct),
+        map(parse_register, InstructionArgument::Indirect),
+        map(parse_expression, InstructionArgument::Direct),
     ))(input)
 }
 
-fn parse_indirect<'a>(input: &'a str) -> IResult<&'a str, Argument<'a>> {
+fn parse_indirect<'a>(input: &'a str) -> IResult<&'a str, InstructionArgument<'a>> {
     delimited(
         terminated(tag("["), space0),
         parse_indirect_inner,
@@ -110,15 +154,11 @@ fn parse_indirect<'a>(input: &'a str) -> IResult<&'a str, Argument<'a>> {
     )(input)
 }
 
-fn parse_direct<'a>(input: &'a str) -> IResult<&'a str, Argument<'a>> {
+fn parse_direct<'a>(input: &'a str) -> IResult<&'a str, InstructionArgument<'a>> {
     alt((
-        map(parse_register, Argument::Register),
-        map(parse_expression, Argument::Value),
+        map(parse_register, InstructionArgument::Register),
+        map(parse_expression, InstructionArgument::Value),
     ))(input)
-}
-
-pub fn parse_argument<'a>(input: &'a str) -> IResult<&'a str, Argument<'a>> {
-    alt((parse_direct, parse_indirect))(input)
 }
 
 #[cfg(test)]

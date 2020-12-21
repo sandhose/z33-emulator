@@ -12,35 +12,19 @@ use nom::{
     branch::alt,
     bytes::complete::{escaped, tag},
     character::complete::{char, line_ending, none_of, not_line_ending, one_of, space0, space1},
-    combinator::{all_consuming, eof, map, opt, peek, value},
+    combinator::{all_consuming, eof, opt, peek, value},
     multi::{many0, separated_list1},
     sequence::{delimited, preceded, terminated},
     IResult,
 };
 
 use super::{
-    expression::{parse_expression, Node as Expression},
-    value::Argument,
+    parse_identifier,
+    value::{
+        parse_directive_argument, parse_instruction_argument, DirectiveArgument,
+        InstructionArgument,
+    },
 };
-use super::{parse_identifier, parse_string_literal};
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum DirectiveArgument<'a> {
-    StringLiteral(String),
-    Expression(Expression<'a>),
-}
-
-impl<'a> From<&str> for DirectiveArgument<'a> {
-    fn from(literal: &str) -> Self {
-        Self::StringLiteral(literal.to_string())
-    }
-}
-
-impl<'a> From<i128> for DirectiveArgument<'a> {
-    fn from(value: i128) -> Self {
-        Self::Expression(Expression::Literal(value))
-    }
-}
 
 /// Holds the content of a line
 #[derive(Clone, Debug, PartialEq)]
@@ -48,7 +32,7 @@ pub enum LineContent<'a> {
     /// Represents an instruction, with its opcode and list of arguments
     Instruction {
         opcode: &'a str,
-        arguments: Vec<Argument<'a>>,
+        arguments: Vec<InstructionArgument<'a>>,
     },
     /// Represents a directive, with its type and argument
     Directive {
@@ -95,18 +79,10 @@ impl<'a> Line<'a> {
     }
 
     #[cfg(test)] // Only used in tests for now
-    pub fn instruction(mut self, opcode: &'a str, arguments: Vec<Argument<'a>>) -> Self {
+    pub fn instruction(mut self, opcode: &'a str, arguments: Vec<InstructionArgument<'a>>) -> Self {
         self.content = Some(LineContent::Instruction { opcode, arguments });
         self
     }
-}
-
-/// Extracts a directive argument, including string literals
-fn parse_directive_argument(input: &str) -> IResult<&str, DirectiveArgument> {
-    alt((
-        map(parse_string_literal, DirectiveArgument::StringLiteral),
-        map(parse_expression, DirectiveArgument::Expression),
-    ))(input)
 }
 
 /// Parses a directive
@@ -131,7 +107,7 @@ fn parse_instruction_line(input: &str) -> IResult<&str, LineContent> {
         space1,
         separated_list1(
             delimited(space0, char(','), space0),
-            super::value::parse_argument,
+            parse_instruction_argument,
         ),
     ))(input)?;
     let arguments = arguments.unwrap_or_default();
@@ -160,11 +136,19 @@ fn parse_symbol_definition(input: &str) -> IResult<&str, &str> {
 /// Parses a whole line
 fn parse_line(input: &str) -> IResult<&str, Line> {
     let (input, _) = space0(input)?;
+
+    // Extract the list of symbol definitions
     let (input, symbols) = many0(terminated(parse_symbol_definition, space0))(input)?;
     let (input, _) = space0(input)?;
+
+    // Extract the line content
     let (input, content) = opt(parse_line_content)(input)?;
     let (input, _) = space0(input)?;
+
+    // Extract the comment
     let (input, comment) = opt(parse_comment)(input)?;
+
+    // Build the line
     Ok((
         input,
         Line {
@@ -233,6 +217,7 @@ mod tests {
 
     #[test]
     fn parse_full_line_test() {
+        use super::super::expression::Node;
         let line = fully_parsed(parse_line("foo: bar: .space 30 + 5 # comment"));
         assert_eq!(
             line,
@@ -240,9 +225,9 @@ mod tests {
                 symbols: vec!["foo", "bar"],
                 content: Some(LineContent::Directive {
                     directive: "space",
-                    argument: DirectiveArgument::Expression(Expression::Sum(
-                        Box::new(Expression::Literal(30)),
-                        Box::new(Expression::Literal(5))
+                    argument: DirectiveArgument::Expression(Node::Sum(
+                        Box::new(Node::Literal(30)),
+                        Box::new(Node::Literal(5))
                     )),
                 }),
                 comment: Some("# comment"),
@@ -290,7 +275,10 @@ string"
                     .comment("# beginning of program"),
                 Line::default().instruction(
                     "add",
-                    vec![Argument::Register("a"), Argument::Register("b")]
+                    vec![
+                        InstructionArgument::Register("a"),
+                        InstructionArgument::Register("b")
+                    ]
                 ),
                 Line::default(),
             ]

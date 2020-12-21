@@ -32,6 +32,7 @@ use super::expression::{
     parse_expression, Context as ExpressionContext, EmptyContext as EmptyExpressionContext,
     EvaluationError as ExpressionEvaluationError, Node as ExpressionNode,
 };
+use super::literal::parse_bool_literal;
 use super::parse_identifier;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -222,21 +223,13 @@ fn parse_logical_expression(input: &str) -> IResult<&str, Node> {
     ))(input)
 }
 
-/// Parse a bool literal (true or false)
-fn parse_literal(input: &str) -> IResult<&str, bool> {
-    alt((
-        value(true, tag_no_case("true")),
-        value(false, tag_no_case("false")),
-    ))(input)
-}
-
 fn parse_atom(input: &str) -> IResult<&str, Node> {
     let (input, _) = space0(input)?;
     alt((
         parse_number_comparison,
         parse_parenthesis,
         map(parse_defined, Node::Defined),
-        map(parse_literal, Node::Literal),
+        map(parse_bool_literal, Node::Literal),
     ))(input)
 }
 
