@@ -6,15 +6,11 @@ use crate::constants::*;
 
 use super::instructions::Instruction;
 
-pub type Address = u64;
-pub type Word = u64;
-pub type Char = char;
-
 /// Type of cells
 ///
 /// There is a 1-1 mapping with the `Cell` type in this module.
 #[derive(Debug)]
-pub enum CellType {
+pub(crate) enum CellType {
     Instruction,
     Word,
     Char,
@@ -22,14 +18,14 @@ pub enum CellType {
 }
 
 #[derive(Debug, Error)]
-pub enum CellError {
+pub(crate) enum CellError {
     #[error("invalid cell type {was:?} expected {expected:?}")]
     InvalidType { expected: CellType, was: CellType },
 }
 
 /// Represents a cell in memory and in general purpose registers
 #[derive(Debug, Clone, PartialEq)]
-pub enum Cell {
+pub(crate) enum Cell {
     /// An instruction
     ///
     /// The instruction can be a big type, so only a reference is saved here.
@@ -68,7 +64,7 @@ impl Cell {
     ///
     /// If the cell is empty, it extracts "0"
     /// If it is a char, it tries to convert it to its ASCII code
-    pub fn extract_word(&self) -> Result<Word, CellError> {
+    pub(crate) fn extract_word(&self) -> Result<Word, CellError> {
         match self {
             Self::Word(w) => Ok(*w),
             Self::Empty => Ok(0),
@@ -88,7 +84,7 @@ impl Cell {
     /// Extract an instruction from the cell.
     ///
     /// Raises an error if it is any other type
-    pub fn extract_instruction(&self) -> Result<&Instruction, CellError> {
+    pub(crate) fn extract_instruction(&self) -> Result<&Instruction, CellError> {
         match self {
             Self::Instruction(i) => Ok(i),
             t => Err(CellError::InvalidType {
@@ -127,7 +123,7 @@ impl std::fmt::Display for Cell {
 }
 
 /// Trait to help converting from cells
-pub trait TryFromCell: Sized {
+pub(crate) trait TryFromCell: Sized {
     /// Convert the cell to a value
     ///
     /// The inner value of the cell is copied/cloned.
@@ -172,7 +168,7 @@ impl TryFromCell for Char {
 
 /// Represents errors related to memory manipulations
 #[derive(Debug, Error)]
-pub enum MemoryError {
+pub(crate) enum MemoryError {
     /// The given address was invalid
     #[error("invalid address {0}")]
     InvalidAddress(Address),
@@ -181,7 +177,7 @@ pub enum MemoryError {
 /// Holds the memory cells of the computer.
 ///
 /// It has 65536 cells by default.
-pub struct Memory {
+pub(crate) struct Memory {
     inner: Vec<Cell>,
 }
 
@@ -193,7 +189,7 @@ impl Default for Memory {
 
 impl Memory {
     /// Create a new memory component with a given size
-    pub fn new(size: usize) -> Self {
+    pub(crate) fn new(size: usize) -> Self {
         let inner = std::iter::repeat(Cell::Empty) // Fill the memory with empty cells
             .take(size)
             .collect();
@@ -203,7 +199,7 @@ impl Memory {
     /// Get a cell at an address
     ///
     /// It fails if the address is invalid or out of bounds.
-    pub fn get(&self, address: Address) -> Result<&Cell, MemoryError> {
+    pub(crate) fn get(&self, address: Address) -> Result<&Cell, MemoryError> {
         let addr: usize = address
             .try_into()
             .map_err(|_e| MemoryError::InvalidAddress(address))?;
@@ -216,7 +212,7 @@ impl Memory {
     /// Get a mutable reference to a cell at an address
     ///
     /// It fails if the address is invalid or out of bounds.
-    pub fn get_mut(&mut self, address: Address) -> Result<&mut Cell, MemoryError> {
+    pub(crate) fn get_mut(&mut self, address: Address) -> Result<&mut Cell, MemoryError> {
         let addr: usize = address
             .try_into()
             .map_err(|_e| MemoryError::InvalidAddress(address))?;

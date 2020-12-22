@@ -1,9 +1,11 @@
 use thiserror::Error;
 
-use super::memory::{MemoryError, Word};
+use crate::constants::Word;
+
+use super::memory::MemoryError;
 
 #[derive(Error, Debug)]
-pub enum Exception {
+pub(crate) enum Exception {
     #[error("hardware interrupt")]
     HardwareInterrupt,
 
@@ -24,7 +26,7 @@ pub enum Exception {
 }
 
 impl Exception {
-    pub fn code(&self) -> Word {
+    pub(crate) fn code(&self) -> Word {
         match self {
             Exception::HardwareInterrupt => 0,
             Exception::DivByZero => 1,
@@ -35,7 +37,7 @@ impl Exception {
         }
     }
 
-    pub fn is_hardware_interrupt(&self) -> bool {
+    pub(crate) fn is_hardware_interrupt(&self) -> bool {
         matches!(self, Exception::HardwareInterrupt)
     }
 }

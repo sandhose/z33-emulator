@@ -230,7 +230,7 @@ impl Session {
     }
 }
 
-pub fn run_interactive(
+pub(crate) fn run_interactive(
     computer: &mut Computer,
     debug_info: DebugInfo,
 ) -> Result<(), Box<dyn std::error::Error>> {

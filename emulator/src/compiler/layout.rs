@@ -7,9 +7,10 @@ use crate::parser::expression::{
     Context as ExpressionContext, EmptyContext as EmptyExpressionContext,
     EvaluationError as ExpressionEvaluationError,
 };
-use crate::parser::{DirectiveArgument, Line, LineContent};
+use crate::parser::line::{Line, LineContent};
+use crate::parser::value::DirectiveArgument;
 
-pub type Labels<'a> = HashMap<&'a str, u64>;
+pub(crate) type Labels<'a> = HashMap<&'a str, u64>;
 
 impl<'a> ExpressionContext for Labels<'a> {
     fn resolve_variable(&self, variable: &str) -> Option<i128> {
@@ -17,7 +18,7 @@ impl<'a> ExpressionContext for Labels<'a> {
     }
 }
 
-pub enum Placement<'a> {
+pub(crate) enum Placement<'a> {
     /// A memory cell filled by .space
     Reserved,
 
@@ -29,13 +30,13 @@ pub enum Placement<'a> {
 }
 
 #[derive(Default)]
-pub struct Layout<'a> {
+pub(crate) struct Layout<'a> {
     pub labels: Labels<'a>,
     pub memory: HashMap<u64, Placement<'a>>,
 }
 
 #[derive(Debug, Error)]
-pub enum MemoryLayoutError<'a> {
+pub(crate) enum MemoryLayoutError<'a> {
     #[error("duplicate label {label}")]
     DuplicateLabel { label: &'a str },
 
@@ -58,7 +59,9 @@ pub enum MemoryLayoutError<'a> {
 /// Lays out the memory
 ///
 /// It places the labels & prepare a hashmap of cells to be filled.
-pub fn layout_memory<'a>(program: &'a [Line<'a>]) -> Result<Layout<'a>, MemoryLayoutError<'a>> {
+pub(crate) fn layout_memory<'a>(
+    program: &'a [Line<'a>],
+) -> Result<Layout<'a>, MemoryLayoutError<'a>> {
     use MemoryLayoutError::*;
     let mut layout: Layout = Default::default();
     let mut position = PROGRAM_START;
@@ -143,7 +146,8 @@ pub fn layout_memory<'a>(program: &'a [Line<'a>]) -> Result<Layout<'a>, MemoryLa
 mod tests {
     use super::*;
     use crate::parser::expression::Node;
-    use crate::parser::{InstructionArgument, Line};
+    use crate::parser::line::Line;
+    use crate::parser::value::InstructionArgument;
 
     #[test]
     fn place_labels_simple_test() {

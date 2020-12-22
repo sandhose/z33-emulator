@@ -1,11 +1,13 @@
 use bitflags::bitflags;
 use thiserror::Error;
 
-use super::memory::{Cell, CellError, TryFromCell, Word};
+use crate::constants::Word;
+
+use super::memory::{Cell, CellError, TryFromCell};
 
 bitflags! {
     #[derive(Default)]
-    pub struct StatusRegister: Word {
+    pub(crate) struct StatusRegister: Word {
         const CARRY            = 0b000_0000_0001;
         const ZERO             = 0b000_0000_0010;
         const NEGATIVE         = 0b000_0000_0100;
@@ -16,7 +18,7 @@ bitflags! {
 }
 
 #[derive(Debug, Default, Clone, PartialEq)]
-pub struct Registers {
+pub(crate) struct Registers {
     pub a: Cell,
     pub b: Cell,
     pub pc: Word,
@@ -25,7 +27,7 @@ pub struct Registers {
 }
 
 impl Registers {
-    pub fn get(&self, reg: Reg) -> Cell {
+    pub(crate) fn get(&self, reg: Reg) -> Cell {
         match reg {
             Reg::A => self.a.clone(),
             Reg::B => self.b.clone(),
@@ -35,7 +37,7 @@ impl Registers {
         }
     }
 
-    pub fn get_word(&self, reg: Reg) -> Result<Word, CellError> {
+    pub(crate) fn get_word(&self, reg: Reg) -> Result<Word, CellError> {
         match reg {
             Reg::A => self.a.extract_word(),
             Reg::B => self.b.extract_word(),
@@ -45,7 +47,7 @@ impl Registers {
         }
     }
 
-    pub fn set(&mut self, reg: Reg, value: Cell) -> Result<(), CellError> {
+    pub(crate) fn set(&mut self, reg: Reg, value: Cell) -> Result<(), CellError> {
         match reg {
             Reg::A => self.a = value,
             Reg::B => self.b = value,
@@ -68,7 +70,7 @@ impl std::fmt::Display for Registers {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Reg {
+pub(crate) enum Reg {
     A,
     B,
     PC,
@@ -78,7 +80,7 @@ pub enum Reg {
 
 impl Reg {
     /// CPU cycles count to use this value
-    pub const fn cost(&self) -> usize {
+    pub(crate) const fn cost(&self) -> usize {
         // Accessing a register does not take any CPU cycle
         0
     }
@@ -98,7 +100,7 @@ impl std::fmt::Display for Reg {
 
 #[derive(Error, Debug)]
 #[error("could not parse register")]
-pub struct RegisterParseError;
+pub(crate) struct RegisterParseError;
 
 impl std::str::FromStr for Reg {
     type Err = RegisterParseError;

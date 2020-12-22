@@ -12,7 +12,7 @@ use super::{
 };
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Instruction {
+pub(crate) enum Instruction {
     /// Add a value to a register
     Add(Arg, Reg),
 
@@ -113,7 +113,7 @@ pub enum Instruction {
 
 impl Instruction {
     #[tracing::instrument]
-    pub fn execute(self, computer: &mut Computer) -> Result<(), ProcessorError> {
+    pub(crate) fn execute(self, computer: &mut Computer) -> Result<(), ProcessorError> {
         match self {
             Instruction::Add(arg, reg) => {
                 let a = computer.word_from_arg(arg)?;
@@ -379,7 +379,7 @@ impl Instruction {
     }
 
     /// Get the total cost of an instruction in terms of CPU cycles
-    pub const fn cost(&self) -> usize {
+    pub(crate) const fn cost(&self) -> usize {
         match self {
             Instruction::Add(a, b) => 1 + a.cost() + b.cost(),
             Instruction::And(a, b) => 1 + a.cost() + b.cost(),

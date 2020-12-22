@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 
-pub mod layout;
-pub mod memory;
+pub(crate) mod layout;
+pub(crate) mod memory;
 
 type Labels = HashMap<String, u64>;
 
 /// Holds informations about the compilation
-pub struct DebugInfo {
+pub(crate) struct DebugInfo {
     /// Map of labels to addresses
     pub labels: Labels,
 }

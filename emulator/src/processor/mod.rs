@@ -3,21 +3,23 @@ use std::fmt::Debug;
 use thiserror::Error;
 use tracing::{debug, info};
 
+use crate::constants as C;
+
 mod exception;
 mod instructions;
 mod memory;
 mod registers;
 
-use crate::constants as C;
+pub(crate) use self::exception::Exception;
+pub(crate) use self::instructions::Instruction;
+pub(crate) use self::memory::{Cell, Memory};
+pub(crate) use self::registers::{Reg, Registers};
 
-pub use self::exception::Exception;
-pub use self::instructions::Instruction;
-pub use self::registers::{Reg, Registers, StatusRegister};
-
-use self::memory::{Cell, CellError, Memory, MemoryError, TryFromCell, Word};
+use self::memory::{CellError, MemoryError, TryFromCell};
+use self::registers::StatusRegister;
 
 #[derive(Error, Debug)]
-pub enum ProcessorError {
+pub(crate) enum ProcessorError {
     #[error("CPU exception: {0}")]
     Exception(#[from] Exception),
 
@@ -46,13 +48,8 @@ impl From<MemoryError> for ProcessorError {
 
 type Result<T> = std::result::Result<T, ProcessorError>;
 
-pub trait Labelable: Sized {
-    fn resolve_label(self, address: u64) -> Option<Self>;
-    fn label() -> Self;
-}
-
 #[derive(Default)]
-pub struct Computer {
+pub(crate) struct Computer {
     pub registers: Registers,
     pub memory: Memory,
     pub cycles: usize,
@@ -70,7 +67,7 @@ impl std::fmt::Debug for Computer {
 
 impl Computer {
     #[tracing::instrument(skip(self))]
-    pub fn resolve_address(&self, address: Address) -> Result<u64> {
+    pub(crate) fn resolve_address(&self, address: Address) -> Result<u64> {
         match address {
             Address::Dir(addr) => Ok(addr),
             Address::Ind(reg) => u64::try_from_cell(&self.registers.get(reg))
@@ -85,7 +82,11 @@ impl Computer {
         }
     }
 
-    pub fn write<T: Into<Cell> + Debug>(&mut self, address: Address, value: T) -> Result<()> {
+    pub(crate) fn write<T: Into<Cell> + Debug>(
+        &mut self,
+        address: Address,
+        value: T,
+    ) -> Result<()> {
         let address = self.resolve_address(address)?;
         let cell = self.memory.get_mut(address)?;
         *cell = value.into();
@@ -97,7 +98,7 @@ impl Computer {
     /// If the instruction tries to set the %sr register, it checks if the processor is running in
     /// supervisor mode first.
     #[tracing::instrument(skip(self))]
-    pub fn set_register(&mut self, reg: Reg, val: Cell) -> Result<()> {
+    pub(crate) fn set_register(&mut self, reg: Reg, val: Cell) -> Result<()> {
         if reg == Reg::SR {
             self.check_privileged()?;
         }
@@ -108,14 +109,14 @@ impl Computer {
     }
 
     #[tracing::instrument(skip(self))]
-    fn word_from_reg(&self, reg: Reg) -> Result<Word> {
+    fn word_from_reg(&self, reg: Reg) -> Result<C::Word> {
         self.registers
             .get_word(reg)
             .map_err(|inner| ProcessorError::InvalidRegister { reg, inner })
     }
 
     #[tracing::instrument(skip(self))]
-    fn word_from_arg(&self, arg: Arg) -> Result<Word> {
+    fn word_from_arg(&self, arg: Arg) -> Result<C::Word> {
         match arg {
             Arg::Address(addr) => {
                 let addr = self.resolve_address(addr)?;
@@ -152,7 +153,7 @@ impl Computer {
     }
 
     #[tracing::instrument(skip(self))]
-    fn word_from_value(&self, value: Value) -> Result<Word> {
+    fn word_from_value(&self, value: Value) -> Result<C::Word> {
         match value {
             Value::Imm(word) => Ok(word),
             Value::Reg(reg) => self
@@ -179,7 +180,7 @@ impl Computer {
     }
 
     #[tracing::instrument(skip(self), level = "debug")]
-    pub fn step(&mut self) -> Result<()> {
+    pub(crate) fn step(&mut self) -> Result<()> {
         let inst = self.decode_instruction()?;
         let cost = inst.cost();
         info!(cost, "Executing instruction \"{}\"", inst);
@@ -197,7 +198,7 @@ impl Computer {
         Ok(())
     }
 
-    pub fn recover_from_exception(
+    pub(crate) fn recover_from_exception(
         &mut self,
         exception: Exception,
     ) -> std::result::Result<(), Exception> {
@@ -223,7 +224,7 @@ impl Computer {
     }
 
     #[tracing::instrument(skip(self))]
-    pub fn run(&mut self) -> Result<()> {
+    pub(crate) fn run(&mut self) -> Result<()> {
         loop {
             match self.step() {
                 Ok(_) => {}
@@ -256,7 +257,7 @@ impl Computer {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Address {
+pub(crate) enum Address {
     Dir(u64),
     Ind(Reg),
     Idx(Reg, i64),
@@ -264,7 +265,7 @@ pub enum Address {
 
 impl Address {
     /// CPU cycles count to use this value
-    pub const fn cost(&self) -> usize {
+    pub(crate) const fn cost(&self) -> usize {
         // Accessing a memory cell, from a direct, indirect or indexed address costs 1 CPU cycle
         1
     }
@@ -280,7 +281,7 @@ impl Address {
 
 #[derive(Error, Debug)]
 #[error("could not parse address")]
-pub struct AddressParseError;
+pub(crate) struct AddressParseError;
 
 impl std::str::FromStr for Address {
     type Err = AddressParseError;
@@ -312,29 +313,15 @@ impl From<u64> for Address {
     }
 }
 
-impl Labelable for Address {
-    fn resolve_label(self, address: u64) -> Option<Self> {
-        match self {
-            Self::Dir(_) => Some(Self::Dir(address)),
-            Self::Ind(_) => None,
-            Self::Idx(_, _) => None,
-        }
-    }
-
-    fn label() -> Self {
-        Self::Dir(0)
-    }
-}
-
 #[derive(Debug, Clone, PartialEq)]
-pub enum Value {
+pub(crate) enum Value {
     Imm(u64),
     Reg(Reg),
 }
 
 impl Value {
     /// CPU cycles count to use this value
-    pub const fn cost(&self) -> usize {
+    pub(crate) const fn cost(&self) -> usize {
         // Using a direct value, immediate or from a register costs no CPU cycles
         0
     }
@@ -356,21 +343,8 @@ impl std::fmt::Display for Value {
     }
 }
 
-impl Labelable for Value {
-    fn resolve_label(self, address: u64) -> Option<Self> {
-        match self {
-            Self::Imm(_) => Some(Self::Imm(address)),
-            Self::Reg(_) => None,
-        }
-    }
-
-    fn label() -> Self {
-        Self::Imm(0)
-    }
-}
-
 #[derive(Debug)]
-pub enum ArgKind {
+pub(crate) enum ArgKind {
     Imm,
     Reg,
     Ind,
@@ -379,19 +353,19 @@ pub enum ArgKind {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Arg {
+pub(crate) enum Arg {
     Address(Address),
     Value(Value),
 }
 
 #[derive(Error, Debug)]
 #[error("invalid argument type {got:?}, expected one of {expected:?}")]
-pub struct ArgConversionError {
+pub(crate) struct ArgConversionError {
     expected: Vec<ArgKind>,
     got: ArgKind,
 }
 
-pub trait TryFromArg: Sized {
+pub(crate) trait TryFromArg: Sized {
     fn try_from_arg(arg: Arg) -> std::result::Result<Self, ArgConversionError>;
 }
 
@@ -439,7 +413,7 @@ impl TryFromArg for Reg {
 
 impl Arg {
     /// CPU cycles count to use this value
-    pub const fn cost(&self) -> usize {
+    pub(crate) const fn cost(&self) -> usize {
         match self {
             Self::Address(a) => a.cost(),
             Self::Value(v) => v.cost(),
@@ -460,19 +434,6 @@ impl std::fmt::Display for Arg {
             Self::Address(a) => write!(f, "{}", a),
             Self::Value(v) => write!(f, "{}", v),
         }
-    }
-}
-
-impl Labelable for Arg {
-    fn resolve_label(self, address: u64) -> Option<Self> {
-        match self {
-            Self::Address(a) => a.resolve_label(address).map(Self::Address),
-            Self::Value(v) => v.resolve_label(address).map(Self::Value),
-        }
-    }
-
-    fn label() -> Self {
-        Self::Value(Value::label())
     }
 }
 

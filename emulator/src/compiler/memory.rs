@@ -3,21 +3,16 @@ use std::collections::HashMap;
 use thiserror::Error;
 
 use crate::{
-    memory::{Cell, Memory},
-    parser::value::ComputeError,
-    processor::ArgConversionError,
-    processor::{Instruction, TryFromArg},
-};
-use crate::{
     parser::expression::EvaluationError as ExpressionEvaluationError,
-    parser::{DirectiveArgument, LineContent},
-    processor::Arg,
+    parser::line::LineContent,
+    parser::value::{ComputeError, DirectiveArgument},
+    processor::{Arg, ArgConversionError, Cell, Instruction, Memory, TryFromArg},
 };
 
 use super::layout::{Labels, Layout, Placement};
 
 #[derive(Debug, Error)]
-pub enum MemoryFillError<'a> {
+pub(crate) enum MemoryFillError<'a> {
     #[error("could not compile: {0}")]
     CompilationError(CompilationError<'a>),
 }
@@ -29,7 +24,7 @@ impl<'a> From<CompilationError<'a>> for MemoryFillError<'a> {
 }
 
 #[derive(Debug, Error)]
-pub enum CompilationError<'a> {
+pub(crate) enum CompilationError<'a> {
     #[error("unsupported directive {directive}")]
     UnsupportedDirective { directive: &'a str },
 
@@ -44,7 +39,7 @@ pub enum CompilationError<'a> {
 }
 
 #[derive(Debug, Error)]
-pub enum InstructionCompilationError<'a> {
+pub(crate) enum InstructionCompilationError<'a> {
     #[error("invalid opcode {0}")]
     InvalidOpcode(&'a str),
 
@@ -301,7 +296,7 @@ fn compile_placement<'a>(
     }
 }
 
-pub fn fill_memory<'a>(layout: &Layout<'a>) -> Result<Memory, CompilationError<'a>> {
+pub(crate) fn fill_memory<'a>(layout: &Layout<'a>) -> Result<Memory, CompilationError<'a>> {
     let mut memory = Memory::default();
 
     let cells: Result<HashMap<u64, Cell>, CompilationError> = layout

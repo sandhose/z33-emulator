@@ -28,7 +28,7 @@ use super::{
 
 /// Holds the content of a line
 #[derive(Clone, Debug, PartialEq)]
-pub enum LineContent<'a> {
+pub(crate) enum LineContent<'a> {
     /// Represents an instruction, with its opcode and list of arguments
     Instruction {
         opcode: &'a str,
@@ -46,7 +46,7 @@ pub enum LineContent<'a> {
 ///
 /// Note that the `Default::default()` implementation represents an empty line.
 #[derive(Debug, PartialEq, Default)]
-pub struct Line<'a> {
+pub(crate) struct Line<'a> {
     pub symbols: Vec<&'a str>,
     pub content: Option<LineContent<'a>>,
     comment: Option<&'a str>,
@@ -54,19 +54,19 @@ pub struct Line<'a> {
 
 impl<'a> Line<'a> {
     #[cfg(test)] // Only used in tests for now
-    pub fn comment(mut self, comment: &'a str) -> Self {
+    pub(crate) fn comment(mut self, comment: &'a str) -> Self {
         self.comment = Some(comment);
         self
     }
 
     #[cfg(test)] // Only used in tests for now
-    pub fn symbol(mut self, symbol: &'a str) -> Self {
+    pub(crate) fn symbol(mut self, symbol: &'a str) -> Self {
         self.symbols.push(symbol);
         self
     }
 
     #[cfg(test)] // Only used in tests for now
-    pub fn directive<T: Into<DirectiveArgument<'a>>>(
+    pub(crate) fn directive<T: Into<DirectiveArgument<'a>>>(
         mut self,
         directive: &'a str,
         argument: T,
@@ -79,7 +79,11 @@ impl<'a> Line<'a> {
     }
 
     #[cfg(test)] // Only used in tests for now
-    pub fn instruction(mut self, opcode: &'a str, arguments: Vec<InstructionArgument<'a>>) -> Self {
+    pub(crate) fn instruction(
+        mut self,
+        opcode: &'a str,
+        arguments: Vec<InstructionArgument<'a>>,
+    ) -> Self {
         self.content = Some(LineContent::Instruction { opcode, arguments });
         self
     }
@@ -165,7 +169,7 @@ fn split_lines(input: &str) -> IResult<&str, Vec<&str>> {
     separated_list1(line_ending, line_parser)(input)
 }
 
-pub fn parse_program(input: &str) -> IResult<&str, Vec<Line>> {
+pub(crate) fn parse_program(input: &str) -> IResult<&str, Vec<Line>> {
     let (input, lines) = split_lines(input)?;
     let lines: Result<_, _> = lines
         .into_iter()
