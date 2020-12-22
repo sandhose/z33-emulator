@@ -1,11 +1,10 @@
 #![forbid(unsafe_code)]
 
+use std::path::PathBuf;
+
 use clap::Clap;
-use compiler::DebugInfo;
-use constants::STACK_START;
 use nom::{combinator::all_consuming, Finish};
 use processor::{Computer, Registers};
-use std::path::PathBuf;
 use tracing::{debug, info};
 use tracing_subscriber::filter::{EnvFilter, LevelFilter};
 
@@ -17,6 +16,8 @@ mod preprocessor;
 mod processor;
 mod util;
 
+use crate::compiler::DebugInfo;
+use crate::constants::STACK_START;
 use crate::interactive::run_interactive;
 use crate::parser::line::parse_program;
 use crate::preprocessor::preprocess;

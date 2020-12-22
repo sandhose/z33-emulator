@@ -35,7 +35,31 @@ pub(crate) struct Layout<'a> {
     pub memory: HashMap<u64, Placement<'a>>,
 }
 
-#[derive(Debug, Error)]
+impl<'a> Layout<'a> {
+    fn insert_placement(
+        &mut self,
+        address: u64,
+        placement: Placement<'a>,
+    ) -> Result<(), MemoryLayoutError<'a>> {
+        if self.memory.contains_key(&address) {
+            return Err(MemoryLayoutError::MemoryOverlap { address });
+        }
+
+        self.memory.insert(address, placement);
+        Ok(())
+    }
+
+    fn insert_label(&mut self, label: &'a str, address: u64) -> Result<(), MemoryLayoutError<'a>> {
+        if self.labels.contains_key(label) {
+            return Err(MemoryLayoutError::DuplicateLabel { label });
+        }
+
+        self.labels.insert(label, address);
+        Ok(())
+    }
+}
+
+#[derive(Debug, Error, PartialEq)]
 pub(crate) enum MemoryLayoutError<'a> {
     #[error("duplicate label {label}")]
     DuplicateLabel { label: &'a str },
@@ -54,6 +78,9 @@ pub(crate) enum MemoryLayoutError<'a> {
         directive: &'a str,
         inner: ExpressionEvaluationError<'a>,
     },
+
+    #[error("address {address} is already filled")]
+    MemoryOverlap { address: u64 },
 }
 
 /// Lays out the memory
@@ -68,11 +95,7 @@ pub(crate) fn layout_memory<'a>(
 
     for line in program {
         for label in line.symbols.iter() {
-            if layout.labels.contains_key(label) {
-                return Err(DuplicateLabel { label });
-            }
-
-            layout.labels.insert(*label, position);
+            layout.insert_label(*label, position)?;
         }
 
         if let Some(ref content) = line.content {
@@ -81,7 +104,7 @@ pub(crate) fn layout_memory<'a>(
                     directive: "word", ..
                 }
                 | LineContent::Instruction { .. } => {
-                    layout.memory.insert(position, Placement::Line(content));
+                    layout.insert_placement(position, Placement::Line(content))?;
                     position += 1; // Instructions and word directives take one memory cell
                 }
 
@@ -94,7 +117,7 @@ pub(crate) fn layout_memory<'a>(
                         .map_err(|inner| DirectiveArgumentEvaluation { directive, inner })?;
 
                     for _ in 0..size {
-                        layout.memory.insert(position, Placement::Reserved);
+                        layout.insert_placement(position, Placement::Reserved)?;
                         position += 1;
                     }
                 }
@@ -117,7 +140,7 @@ pub(crate) fn layout_memory<'a>(
                 } => {
                     // Fill the memory with the chars of the string
                     for c in literal.chars() {
-                        layout.memory.insert(position, Placement::Char(c));
+                        layout.insert_placement(position, Placement::Char(c))?;
                         position += 1;
                     }
                 }
@@ -263,5 +286,78 @@ mod tests {
         };
 
         assert_eq!(labels, expected);
+    }
+
+    #[test]
+    fn duplicate_label_test() {
+        let program = vec![
+            Line::default().symbol("hello"),
+            Line::default().symbol("hello"),
+        ];
+
+        assert_eq!(
+            layout_memory(&program).err(),
+            Some(MemoryLayoutError::DuplicateLabel { label: "hello" })
+        );
+    }
+
+    #[test]
+    fn invalid_directive_argument_test() {
+        let program = vec![Line::default().directive("string", 3)];
+
+        assert_eq!(
+            layout_memory(&program).err(),
+            Some(MemoryLayoutError::InvalidDirectiveArgument {
+                directive: "string",
+                argument: &3.into(),
+            })
+        );
+
+        let program = vec![Line::default().directive("space", "hello")];
+
+        assert_eq!(
+            layout_memory(&program).err(),
+            Some(MemoryLayoutError::InvalidDirectiveArgument {
+                directive: "space",
+                argument: &"hello".into(),
+            })
+        );
+
+        let program = vec![Line::default().directive("addr", "hello")];
+
+        assert_eq!(
+            layout_memory(&program).err(),
+            Some(MemoryLayoutError::InvalidDirectiveArgument {
+                directive: "addr",
+                argument: &"hello".into(),
+            })
+        );
+    }
+
+    #[test]
+    fn unsupported_directive_test() {
+        let program = vec![Line::default().directive("unsupported", "hello")];
+
+        assert_eq!(
+            layout_memory(&program).err(),
+            Some(MemoryLayoutError::UnsupportedDirective {
+                directive: "unsupported",
+            })
+        );
+    }
+
+    #[test]
+    fn memory_overlap_test() {
+        let program = vec![
+            Line::default().directive("addr", 10),
+            Line::default().directive("string", "hello"), // This takes 5 chars, so fills cells 10 to 15
+            Line::default().directive("addr", 14),
+            Line::default().directive("word", 0), // This overlaps with the second "l"
+        ];
+
+        assert_eq!(
+            layout_memory(&program).err(),
+            Some(MemoryLayoutError::MemoryOverlap { address: 14 })
+        );
     }
 }
