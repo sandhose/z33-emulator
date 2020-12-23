@@ -194,6 +194,22 @@ impl<'a> Node<'a> {
 
         Ok(value)
     }
+
+    #[allow(dead_code)]
+    fn precedence(&self) -> usize {
+        match self {
+            Node::Literal(_) | Node::Defined(_) => 0,
+            Node::Not(_) => 1,
+            Node::GreaterOrEqual(_, _)
+            | Node::GreaterThan(_, _)
+            | Node::LesserOrEqual(_, _)
+            | Node::LesserThan(_, _)
+            | Node::Equal(_, _)
+            | Node::NotEqual(_, _) => 2,
+            Node::And(_, _) => 3,
+            Node::Or(_, _) => 4,
+        }
+    }
 }
 
 pub fn parse_condition(input: &str) -> IResult<&str, Node> {

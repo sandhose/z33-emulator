@@ -83,20 +83,81 @@ impl<'a> std::fmt::Display for Node<'a> {
         } else {
             // TODO: how to remove unnecessary parenthesis?
             match self {
-                Node::BinaryOr(a, b) => write!(f, "({} | {})", a, b),
-                Node::BinaryAnd(a, b) => write!(f, "({} & {})", a, b),
-                Node::LeftShift(a, b) => write!(f, "({} << {})", a, b),
-                Node::RightShift(a, b) => write!(f, "({} >> {})", a, b),
-                Node::Sum(a, b) => write!(f, "({} + {})", a, b),
-                Node::Substract(a, b) => write!(f, "({} - {})", a, b),
-                Node::Multiply(a, b) => write!(f, "({} * {})", a, b),
-                Node::Divide(a, b) => write!(f, "({} / {})", a, b),
-                Node::Invert(a) => write!(f, "-({})", a),
-                Node::BinaryNot(a) => write!(f, "~({})", a),
+                Node::BinaryOr(a, b) => {
+                    write!(f, "{} | {}", a.with_parent(self), b.with_parent(self))
+                }
+                Node::BinaryAnd(a, b) => {
+                    write!(f, "{} & {}", a.with_parent(self), b.with_parent(self))
+                }
+                Node::LeftShift(a, b) => {
+                    write!(f, "{} << {}", a.with_parent(self), b.with_parent(self))
+                }
+                Node::RightShift(a, b) => {
+                    write!(f, "{} >> {}", a.with_parent(self), b.with_parent(self))
+                }
+                Node::Sum(a, b) => write!(f, "{} + {}", a.with_parent(self), b.with_parent(self)),
+                Node::Substract(a, b) => {
+                    write!(f, "{} - {}", a.with_parent(self), b.with_parent(self))
+                }
+                Node::Multiply(a, b) => {
+                    write!(f, "{} * {}", a.with_parent(self), b.with_parent(self))
+                }
+                Node::Divide(a, b) => {
+                    write!(f, "{} / {}", a.with_parent(self), b.with_parent(self))
+                }
+                Node::Invert(a) => write!(f, "-{}", a.with_parent(self)),
+                Node::BinaryNot(a) => write!(f, "~{}", a.with_parent(self)),
                 Node::Literal(a) => write!(f, "{}", a),
                 Node::Variable(a) => write!(f, "{}", a),
             }
         }
+    }
+}
+
+// This part calculates the precedence of a node to allow displaying parenthesis only when needed.
+// This implies storing the precedence of the parent when displaying a node, which is done by
+// temporarily wrapping the node in the ChildNode structure.
+//
+// TODO: extract as a trait & generic struct
+impl<'a> Node<'a> {
+    fn precedence(&self) -> usize {
+        match self {
+            Node::Literal(_) | Node::Variable(_) => 0,
+            Node::Invert(_) | Node::BinaryNot(_) => 1,
+            Node::Multiply(_, _) | Node::Divide(_, _) => 2,
+            Node::Sum(_, _) | Node::Substract(_, _) => 3,
+            Node::LeftShift(_, _) | Node::RightShift(_, _) => 4,
+            Node::BinaryAnd(_, _) => 5,
+            Node::BinaryOr(_, _) => 6,
+        }
+    }
+
+    fn with_parent(&'a self, parent: &Self) -> ChildNode<'a> {
+        ChildNode {
+            parent_precedence: parent.precedence(),
+            inner: self,
+        }
+    }
+}
+
+struct ChildNode<'a> {
+    parent_precedence: usize,
+    inner: &'a Node<'a>,
+}
+
+impl<'a> std::fmt::Display for ChildNode<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.needs_parenthesis() {
+            write!(f, "({})", self.inner)
+        } else {
+            write!(f, "{}", self.inner)
+        }
+    }
+}
+
+impl<'a> ChildNode<'a> {
+    fn needs_parenthesis(&self) -> bool {
+        self.parent_precedence < self.inner.precedence()
     }
 }
 
