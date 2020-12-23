@@ -41,6 +41,41 @@ pub(crate) enum LineContent<'a> {
     },
 }
 
+impl<'a> LineContent<'a> {
+    /// Check if the line is a directive
+    pub(crate) fn is_directive(&self) -> bool {
+        matches!(self, Self::Directive { .. })
+    }
+}
+
+impl<'a> std::fmt::Display for LineContent<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LineContent::Instruction { opcode, arguments } => {
+                // First write the opcode
+                write!(f, "{:4}", opcode)?;
+
+                // then the list of arguments
+                let mut first = true; // This is to properly show comma between arguments
+                for arg in arguments.iter() {
+                    if !first {
+                        write!(f, ",")?;
+                    }
+                    write!(f, " {}", arg)?;
+                    first = false;
+                }
+                Ok(())
+            }
+            LineContent::Directive {
+                directive,
+                argument,
+            } => {
+                write!(f, ".{}: {}", directive, argument)
+            }
+        }
+    }
+}
+
 /// Holds a whole line, with the symbol definitions (if any), the content (if any) and the comment
 /// (if any).
 ///
@@ -50,6 +85,34 @@ pub(crate) struct Line<'a> {
     pub symbols: Vec<&'a str>,
     pub content: Option<LineContent<'a>>,
     comment: Option<&'a str>,
+}
+
+impl<'a> std::fmt::Display for Line<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut had_something = false;
+        for symbol in self.symbols.iter() {
+            write!(f, "{}: ", symbol)?;
+            had_something = true;
+        }
+
+        if let Some(ref c) = self.content {
+            if !c.is_directive() && !had_something {
+                write!(f, "    ")?;
+            }
+            write!(f, "{}", c)?;
+            had_something = true;
+        }
+
+        if let Some(c) = self.comment {
+            if had_something {
+                write!(f, "\t{}", c)?;
+            } else {
+                write!(f, "{}", c)?;
+            }
+        }
+
+        Ok(())
+    }
 }
 
 impl<'a> Line<'a> {

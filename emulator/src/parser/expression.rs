@@ -35,18 +35,69 @@ use super::{literal::parse_number_literal, parse_identifier};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Node<'a> {
+    /// a | b
     BinaryOr(Box<Node<'a>>, Box<Node<'a>>),
+
+    /// a & b
     BinaryAnd(Box<Node<'a>>, Box<Node<'a>>),
+
+    /// a << b
     LeftShift(Box<Node<'a>>, Box<Node<'a>>),
+
+    /// a >> b
     RightShift(Box<Node<'a>>, Box<Node<'a>>),
+
+    /// a + b
     Sum(Box<Node<'a>>, Box<Node<'a>>),
+
+    /// a - b
     Substract(Box<Node<'a>>, Box<Node<'a>>),
+
+    /// a * b
     Multiply(Box<Node<'a>>, Box<Node<'a>>),
+
+    /// a / b
     Divide(Box<Node<'a>>, Box<Node<'a>>),
+
+    /// -a
     Invert(Box<Node<'a>>),
+
+    /// ~a
     BinaryNot(Box<Node<'a>>),
+
+    /// A literal value
     Literal(Value),
+
+    /// A reference to a variable
     Variable(&'a str),
+}
+
+impl<'a> std::fmt::Display for Node<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if f.sign_plus() {
+            // Special case for indexed arguments
+            match self {
+                Node::Invert(a) => write!(f, "- {}", a),
+                n => write!(f, "+ {}", n),
+            }
+        } else {
+            // TODO: how to remove unnecessary parenthesis?
+            match self {
+                Node::BinaryOr(a, b) => write!(f, "({} | {})", a, b),
+                Node::BinaryAnd(a, b) => write!(f, "({} & {})", a, b),
+                Node::LeftShift(a, b) => write!(f, "({} << {})", a, b),
+                Node::RightShift(a, b) => write!(f, "({} >> {})", a, b),
+                Node::Sum(a, b) => write!(f, "({} + {})", a, b),
+                Node::Substract(a, b) => write!(f, "({} - {})", a, b),
+                Node::Multiply(a, b) => write!(f, "({} * {})", a, b),
+                Node::Divide(a, b) => write!(f, "({} / {})", a, b),
+                Node::Invert(a) => write!(f, "-({})", a),
+                Node::BinaryNot(a) => write!(f, "~({})", a),
+                Node::Literal(a) => write!(f, "{}", a),
+                Node::Variable(a) => write!(f, "{}", a),
+            }
+        }
+    }
 }
 
 pub trait Context {

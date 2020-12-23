@@ -37,8 +37,16 @@ enum Opt {
         #[clap(short, long)]
         interactive: bool,
     },
+
     /// Run the preprocessor
     Preprocess {
+        /// Input file
+        #[clap(parse(from_os_str))]
+        input: PathBuf,
+    },
+
+    /// Print the program as parsed
+    Print {
         /// Input file
         #[clap(parse(from_os_str))]
         input: PathBuf,
@@ -55,6 +63,7 @@ impl Opt {
                 interactive,
             } => run(input, entrypoint, interactive),
             Opt::Preprocess { input } => run_preprocessor(input),
+            Opt::Print { input } => print(input),
         }
     }
 }
@@ -101,6 +110,23 @@ fn run(
     }
 
     info!("Registers: {}", computer.registers);
+    Ok(())
+}
+
+/// Preprocess and print a program
+fn print(input: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+    info!(path = ?input, "Reading program");
+    let source = preprocess(input)?;
+    let source = source.as_str();
+
+    debug!("Parsing program");
+    // TODO: proper error handling & wrap those steps
+    let (_, lines) = all_consuming(parse_program)(source).finish().unwrap();
+
+    for line in lines {
+        println!("{}", line);
+    }
+
     Ok(())
 }
 

@@ -71,10 +71,34 @@ pub enum Node<'a> {
     Defined(&'a str),
 }
 
+impl<'a> std::fmt::Display for Node<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Node::Equal(a, b) => write!(f, "({} == {})", a, b),
+            Node::NotEqual(a, b) => write!(f, "({} != {})", a, b),
+            Node::GreaterOrEqual(a, b) => write!(f, "({} >= {})", a, b),
+            Node::GreaterThan(a, b) => write!(f, "({} > {})", a, b),
+            Node::LesserOrEqual(a, b) => write!(f, "({} <= {})", a, b),
+            Node::LesserThan(a, b) => write!(f, "({} < {})", a, b),
+            Node::Or(a, b) => write!(f, "({} || {})", a, b),
+            Node::And(a, b) => write!(f, "({} && {})", a, b),
+            Node::Not(a) => write!(f, "!({})", a),
+            Node::Literal(a) => write!(f, "{}", a),
+            Node::Defined(a) => write!(f, "defined({})", a),
+        }
+    }
+}
+
 #[derive(Error, Debug, PartialEq)]
 pub enum EvaluationError<'a> {
     #[error("could not evaluate expression: {0}")]
     ExpressionEvaluation(ExpressionEvaluationError<'a>),
+}
+
+impl<'a> From<ExpressionEvaluationError<'a>> for EvaluationError<'a> {
+    fn from(e: ExpressionEvaluationError<'a>) -> Self {
+        Self::ExpressionEvaluation(e)
+    }
 }
 
 /// A context holds definitions and expression variables
@@ -103,79 +127,72 @@ impl Context for EmptyContext {
 impl<'a> Node<'a> {
     /// Evaluate a condition AST node with a given context
     pub fn evaluate<C: Context>(&self, context: &C) -> Result<bool, EvaluationError> {
-        use EvaluationError::*;
-        match self {
+        let value = match self {
             Node::Equal(a, b) => {
-                let a: i128 = a
-                    .evaluate(context.get_expression_context())
-                    .map_err(ExpressionEvaluation)?;
-                let b: i128 = b
-                    .evaluate(context.get_expression_context())
-                    .map_err(ExpressionEvaluation)?;
-                Ok(a == b)
+                let context = context.get_expression_context();
+                let a: i128 = a.evaluate(context)?;
+                let b: i128 = b.evaluate(context)?;
+                a == b
             }
+
             Node::NotEqual(a, b) => {
-                let a: i128 = a
-                    .evaluate(context.get_expression_context())
-                    .map_err(ExpressionEvaluation)?;
-                let b: i128 = b
-                    .evaluate(context.get_expression_context())
-                    .map_err(ExpressionEvaluation)?;
-                Ok(a != b)
+                let context = context.get_expression_context();
+                let a: i128 = a.evaluate(context)?;
+                let b: i128 = b.evaluate(context)?;
+                a != b
             }
+
             Node::GreaterOrEqual(a, b) => {
-                let a: i128 = a
-                    .evaluate(context.get_expression_context())
-                    .map_err(ExpressionEvaluation)?;
-                let b: i128 = b
-                    .evaluate(context.get_expression_context())
-                    .map_err(ExpressionEvaluation)?;
-                Ok(a >= b)
+                let context = context.get_expression_context();
+                let a: i128 = a.evaluate(context)?;
+                let b: i128 = b.evaluate(context)?;
+                a >= b
             }
+
             Node::GreaterThan(a, b) => {
-                let a: i128 = a
-                    .evaluate(context.get_expression_context())
-                    .map_err(ExpressionEvaluation)?;
-                let b: i128 = b
-                    .evaluate(context.get_expression_context())
-                    .map_err(ExpressionEvaluation)?;
-                Ok(a > b)
+                let context = context.get_expression_context();
+                let a: i128 = a.evaluate(context)?;
+                let b: i128 = b.evaluate(context)?;
+                a > b
             }
+
             Node::LesserOrEqual(a, b) => {
-                let a: i128 = a
-                    .evaluate(context.get_expression_context())
-                    .map_err(ExpressionEvaluation)?;
-                let b: i128 = b
-                    .evaluate(context.get_expression_context())
-                    .map_err(ExpressionEvaluation)?;
-                Ok(a <= b)
+                let context = context.get_expression_context();
+                let a: i128 = a.evaluate(context)?;
+                let b: i128 = b.evaluate(context)?;
+                a <= b
             }
+
             Node::LesserThan(a, b) => {
-                let a: i128 = a
-                    .evaluate(context.get_expression_context())
-                    .map_err(ExpressionEvaluation)?;
-                let b: i128 = b
-                    .evaluate(context.get_expression_context())
-                    .map_err(ExpressionEvaluation)?;
-                Ok(a < b)
+                let context = context.get_expression_context();
+                let a: i128 = a.evaluate(context)?;
+                let b: i128 = b.evaluate(context)?;
+                a < b
             }
+
             Node::Or(a, b) => {
                 let a = a.evaluate(context)?;
                 let b = b.evaluate(context)?;
-                Ok(a || b)
+                a || b
             }
+
             Node::And(a, b) => {
                 let a = a.evaluate(context)?;
                 let b = b.evaluate(context)?;
-                Ok(a && b)
+                a && b
             }
+
             Node::Not(a) => {
                 let a = a.evaluate(context)?;
-                Ok(!a)
+                !a
             }
-            Node::Literal(l) => Ok(*l),
-            Node::Defined(v) => Ok(context.is_defined(v)),
-        }
+
+            Node::Literal(l) => *l,
+
+            Node::Defined(v) => context.is_defined(v),
+        };
+
+        Ok(value)
     }
 }
 

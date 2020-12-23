@@ -35,6 +35,20 @@ pub(crate) enum InstructionArgument<'a> {
     Indexed { register: &'a str, value: Node<'a> },
 }
 
+impl<'a> std::fmt::Display for InstructionArgument<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            InstructionArgument::Value(v) => write!(f, "{}", v),
+            InstructionArgument::Register(r) => write!(f, "%{}", r),
+            InstructionArgument::Direct(v) => write!(f, "[{}]", v),
+            InstructionArgument::Indirect(r) => write!(f, "[%{}]", r),
+            InstructionArgument::Indexed { register, value } => {
+                write!(f, "[%{} {:+}]", register, value)
+            }
+        }
+    }
+}
+
 /// Parse an instruction argument
 pub(crate) fn parse_instruction_argument<'a>(
     input: &'a str,
@@ -50,6 +64,15 @@ pub(crate) enum DirectiveArgument<'a> {
 
     /// An expression (`.addr`, `.word`, `.space` directives)
     Expression(Node<'a>),
+}
+
+impl<'a> std::fmt::Display for DirectiveArgument<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DirectiveArgument::StringLiteral(l) => write!(f, "{:?}", l),
+            DirectiveArgument::Expression(e) => write!(f, "{}", e),
+        }
+    }
 }
 
 /// Parse a directive argument
