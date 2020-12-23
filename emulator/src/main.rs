@@ -4,7 +4,6 @@ use std::path::PathBuf;
 
 use clap::Clap;
 use nom::{combinator::all_consuming, Finish};
-use processor::{Computer, Registers};
 use tracing::{debug, info};
 use tracing_subscriber::filter::{EnvFilter, LevelFilter};
 
@@ -13,7 +12,7 @@ mod constants;
 mod interactive;
 mod parser;
 mod preprocessor;
-mod processor;
+mod runtime;
 mod util;
 
 use crate::compiler::DebugInfo;
@@ -21,6 +20,7 @@ use crate::constants::STACK_START;
 use crate::interactive::run_interactive;
 use crate::parser::line::parse_program;
 use crate::preprocessor::preprocess;
+use crate::runtime::{Computer, Registers};
 
 #[derive(Clap)]
 #[clap(version, author, about)]

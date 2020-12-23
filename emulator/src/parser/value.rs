@@ -14,7 +14,7 @@ use super::{
     literal::parse_string_literal,
     parse_identifier,
 };
-use crate::processor::{Address, Arg, Reg, Value};
+use crate::runtime::{Address, Arg, Reg, Value};
 
 /// Represents an instruction argument
 #[derive(Clone, Debug, PartialEq)]

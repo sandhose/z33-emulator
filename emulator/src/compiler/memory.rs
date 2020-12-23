@@ -6,7 +6,7 @@ use crate::{
     parser::expression::EvaluationError as ExpressionEvaluationError,
     parser::line::LineContent,
     parser::value::{ComputeError, DirectiveArgument},
-    processor::{Arg, ArgConversionError, Cell, Instruction, Memory, TryFromArg},
+    runtime::{Arg, ArgConversionError, Cell, Instruction, Memory, TryFromArg},
 };
 
 use super::layout::{Labels, Layout, Placement};

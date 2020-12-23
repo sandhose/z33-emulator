@@ -14,7 +14,7 @@ use rustyline::{config::OutputStreamType, CompletionType, Config, EditMode, Edit
 use tracing::{debug, info, warn};
 
 use crate::compiler::DebugInfo;
-use crate::processor::{Address, Computer, Exception, Reg};
+use crate::runtime::{Address, Computer, Exception, Reg};
 
 mod helper;
 use self::helper::RunHelper;
