@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use thiserror::Error;
+use tracing::debug;
 
 use crate::{
     parser::expression::EvaluationError as ExpressionEvaluationError,
@@ -36,6 +37,24 @@ pub(crate) enum CompilationError<'a> {
 
     #[error("could not compile instruction: {0}")]
     InstructionCompilation(InstructionCompilationError<'a>),
+}
+
+impl<'a> From<ExpressionEvaluationError<'a>> for CompilationError<'a> {
+    fn from(e: ExpressionEvaluationError<'a>) -> Self {
+        Self::Evaluation(e)
+    }
+}
+
+impl<'a> From<ComputeError<'a>> for CompilationError<'a> {
+    fn from(e: ComputeError<'a>) -> Self {
+        Self::Compute(e)
+    }
+}
+
+impl<'a> From<InstructionCompilationError<'a>> for CompilationError<'a> {
+    fn from(e: InstructionCompilationError<'a>) -> Self {
+        Self::InstructionCompilation(e)
+    }
 }
 
 #[derive(Debug, Error)]
@@ -269,34 +288,39 @@ fn compile_placement<'a>(
     labels: &Labels<'a>,
     placement: &Placement<'a>,
 ) -> Result<Cell, CompilationError<'a>> {
-    use CompilationError::*;
     match placement {
         Placement::Reserved => Ok(Cell::Empty),
+
         Placement::Char(c) => Ok(Cell::Char(*c)),
+
         Placement::Line(LineContent::Directive {
             directive: "word",
             argument: DirectiveArgument::Expression(expression),
         }) => {
-            let value = expression.evaluate(labels).map_err(Evaluation)?;
+            let value = expression.evaluate(labels)?;
             Ok(Cell::Word(value))
         }
+
+        // We should not have any other directives other than "word" at this point
+        Placement::Line(LineContent::Directive { directive, .. }) => {
+            Err(CompilationError::UnsupportedDirective { directive })
+        }
+
         Placement::Line(LineContent::Instruction { opcode, arguments }) => {
             let arguments: Result<Vec<_>, _> = arguments
                 .iter()
                 .map(|argument| argument.evaluate(labels))
                 .collect();
-            let arguments = arguments.map_err(Compute)?;
-            let instruction =
-                compile_instruction(opcode, arguments).map_err(InstructionCompilation)?;
+            let arguments = arguments?;
+            let instruction = compile_instruction(opcode, arguments)?;
             Ok(Cell::Instruction(Box::new(instruction)))
-        }
-        Placement::Line(LineContent::Directive { directive, .. }) => {
-            Err(CompilationError::UnsupportedDirective { directive })
         }
     }
 }
 
+#[tracing::instrument(skip(layout))]
 pub(crate) fn fill_memory<'a>(layout: &Layout<'a>) -> Result<Memory, CompilationError<'a>> {
+    debug!("Filling memory");
     let mut memory = Memory::default();
 
     let cells: Result<HashMap<u64, Cell>, CompilationError> = layout
@@ -306,6 +330,7 @@ pub(crate) fn fill_memory<'a>(layout: &Layout<'a>) -> Result<Memory, Compilation
         .collect();
 
     for (address, content) in cells? {
+        debug!(address, content = %content, "Filling cell");
         let cell = memory.get_mut(address).unwrap();
         *cell = content;
     }

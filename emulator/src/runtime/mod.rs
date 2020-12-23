@@ -67,14 +67,21 @@ impl std::fmt::Debug for Computer {
 
 impl Computer {
     #[tracing::instrument(skip(self))]
-    pub(crate) fn resolve_address(&self, address: Address) -> Result<u64> {
+    pub(crate) fn resolve_address(&self, address: &Address) -> Result<u64> {
         match address {
-            Address::Dir(addr) => Ok(addr),
-            Address::Ind(reg) => u64::try_from_cell(&self.registers.get(reg))
-                .map_err(|e| ProcessorError::InvalidRegister { reg, inner: e }),
+            Address::Dir(addr) => Ok(*addr),
+            Address::Ind(reg) => u64::try_from_cell(&self.registers.get(reg)).map_err(|e| {
+                ProcessorError::InvalidRegister {
+                    reg: *reg,
+                    inner: e,
+                }
+            }),
 
             Address::Idx(reg, off) => u64::try_from_cell(&self.registers.get(reg))
-                .map_err(|e| ProcessorError::InvalidRegister { reg, inner: e })
+                .map_err(|e| ProcessorError::InvalidRegister {
+                    reg: *reg,
+                    inner: e,
+                })
                 .and_then(|address| {
                     let address = address as i64 + off;
                     u64::try_from(address).map_err(|_| ProcessorError::InvalidAddress { address })
@@ -84,7 +91,7 @@ impl Computer {
 
     pub(crate) fn write<T: Into<Cell> + Debug>(
         &mut self,
-        address: Address,
+        address: &Address,
         value: T,
     ) -> Result<()> {
         let address = self.resolve_address(address)?;
@@ -98,25 +105,25 @@ impl Computer {
     /// If the instruction tries to set the %sr register, it checks if the processor is running in
     /// supervisor mode first.
     #[tracing::instrument(skip(self))]
-    pub(crate) fn set_register(&mut self, reg: Reg, val: Cell) -> Result<()> {
-        if reg == Reg::SR {
+    pub(crate) fn set_register(&mut self, reg: &Reg, val: Cell) -> Result<()> {
+        if *reg == Reg::SR {
             self.check_privileged()?;
         }
 
         self.registers
             .set(reg, val)
-            .map_err(|inner| ProcessorError::InvalidRegister { reg, inner })
+            .map_err(|inner| ProcessorError::InvalidRegister { reg: *reg, inner })
     }
 
     #[tracing::instrument(skip(self))]
-    fn word_from_reg(&self, reg: Reg) -> Result<C::Word> {
+    fn word_from_reg(&self, reg: &Reg) -> Result<C::Word> {
         self.registers
             .get_word(reg)
-            .map_err(|inner| ProcessorError::InvalidRegister { reg, inner })
+            .map_err(|inner| ProcessorError::InvalidRegister { reg: *reg, inner })
     }
 
     #[tracing::instrument(skip(self))]
-    fn word_from_arg(&self, arg: Arg) -> Result<C::Word> {
+    fn word_from_arg(&self, arg: &Arg) -> Result<C::Word> {
         match arg {
             Arg::Address(addr) => {
                 let addr = self.resolve_address(addr)?;
@@ -130,7 +137,7 @@ impl Computer {
     }
 
     #[tracing::instrument(skip(self))]
-    fn arg(&self, arg: Arg) -> Result<Cell> {
+    fn arg(&self, arg: &Arg) -> Result<Cell> {
         match arg {
             Arg::Address(addr) => {
                 let addr = self.resolve_address(addr)?;
@@ -145,25 +152,25 @@ impl Computer {
     }
 
     #[tracing::instrument(skip(self))]
-    fn value(&self, value: Value) -> Cell {
+    fn value(&self, value: &Value) -> Cell {
         match value {
-            Value::Imm(imm) => imm.into(),
+            Value::Imm(imm) => (*imm).into(),
             Value::Reg(reg) => self.registers.get(reg),
         }
     }
 
     #[tracing::instrument(skip(self))]
-    fn word_from_value(&self, value: Value) -> Result<C::Word> {
+    fn word_from_value(&self, value: &Value) -> Result<C::Word> {
         match value {
-            Value::Imm(word) => Ok(word),
+            Value::Imm(word) => Ok(*word),
             Value::Reg(reg) => self
                 .registers
-                .get_word(reg)
-                .map_err(|inner| ProcessorError::InvalidRegister { reg, inner }),
+                .get_word(&reg)
+                .map_err(|inner| ProcessorError::InvalidRegister { reg: *reg, inner }),
         }
     }
 
-    fn jump(&mut self, address: Address) -> Result<()> {
+    fn jump(&mut self, address: &Address) -> Result<()> {
         let address = self.resolve_address(address)?;
         debug!("Jumping to address {}", address);
         self.registers.pc = address;
@@ -172,7 +179,7 @@ impl Computer {
 
     #[tracing::instrument(skip(self), err)]
     fn decode_instruction(&mut self) -> Result<&Instruction> {
-        let address = self.resolve_address(Address::Ind(Reg::PC))?;
+        let address = self.resolve_address(&Address::Ind(Reg::PC))?;
         let cell = self.memory.get(address)?;
         self.registers.pc += 1;
         cell.extract_instruction()
@@ -184,7 +191,8 @@ impl Computer {
         let inst = self.decode_instruction()?;
         let cost = inst.cost();
         info!(cost, "Executing instruction \"{}\"", inst);
-        // TODO: this could be an unnecessary clone
+        // This clone is necessary as `inst` is borrowed from `self`.
+        // The computer might modify the cell where the instruction is stored when executing it.
         inst.clone().execute(self).or_else(|e| {
             if let ProcessorError::Exception(e) = e {
                 self.recover_from_exception(e)
@@ -203,8 +211,8 @@ impl Computer {
         exception: Exception,
     ) -> std::result::Result<(), Exception> {
         debug!(exception = %exception, "Recovering from exception");
-        *(self.memory.get_mut(C::INTERRUPT_PC_SAVE)?) = self.registers.get(Reg::PC);
-        *(self.memory.get_mut(C::INTERRUPT_SR_SAVE)?) = self.registers.get(Reg::SR);
+        *(self.memory.get_mut(C::INTERRUPT_PC_SAVE)?) = self.registers.get(&Reg::PC);
+        *(self.memory.get_mut(C::INTERRUPT_SR_SAVE)?) = self.registers.get(&Reg::SR);
         *(self.memory.get_mut(C::INTERRUPT_EXCEPTION)?) = exception.code().into();
         self.registers.sr.set(StatusRegister::SUPERVISOR, true);
         self.registers.sr.set(
@@ -464,14 +472,14 @@ mod tests {
 
         let instruction = Instruction::Add(Arg::Value(Value::Imm(5)), Reg::A);
         instruction.execute(&mut computer).unwrap();
-        assert_eq!(computer.registers.get(Reg::A), Cell::Word(5));
+        assert_eq!(computer.registers.get(&Reg::A), Cell::Word(5));
 
         // Write some memory (with indirect access)
-        computer.write(Address::Dir(0x42), 100 as u64).unwrap();
-        computer.registers.set(Reg::B, Cell::Word(0x32)).unwrap();
+        computer.write(&Address::Dir(0x42), 100 as u64).unwrap();
+        computer.registers.set(&Reg::B, Cell::Word(0x32)).unwrap();
         let instruction = Instruction::Add(Arg::Address(Address::Idx(Reg::B, 0x10)), Reg::A);
         instruction.execute(&mut computer).unwrap();
-        assert_eq!(computer.registers.get(Reg::A), Cell::Word(105));
+        assert_eq!(computer.registers.get(&Reg::A), Cell::Word(105));
     }
 
     #[test]
@@ -486,11 +494,11 @@ mod tests {
 
         for (offset, instruction) in program.into_iter().enumerate() {
             computer
-                .write((start + offset as u64).into(), instruction)
+                .write(&(start + offset as u64).into(), instruction)
                 .unwrap();
         }
 
-        computer.jump(start.into()).unwrap();
+        computer.jump(&start.into()).unwrap();
 
         assert_eq!(computer.registers.a, Cell::Empty);
         assert_eq!(computer.registers.b, Cell::Empty);
@@ -549,10 +557,10 @@ mod tests {
         .map(|(offset, instruction)| (subroutine + offset as u64, instruction));
 
         for (addr, inst) in start_inst.chain(subroutine_inst) {
-            computer.write(addr.into(), inst).unwrap();
+            computer.write(&addr.into(), inst).unwrap();
         }
 
-        computer.jump(start.into()).unwrap();
+        computer.jump(&start.into()).unwrap();
 
         assert_eq!(computer.registers.a, Cell::Empty);
         assert_eq!(computer.registers.b, Cell::Empty);

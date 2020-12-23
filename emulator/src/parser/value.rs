@@ -104,6 +104,12 @@ pub(crate) enum ComputeError<'a> {
     InvalidRegister(&'a str),
 }
 
+impl<'a> From<EvaluationError<'a>> for ComputeError<'a> {
+    fn from(e: EvaluationError<'a>) -> Self {
+        Self::Evaluation(e)
+    }
+}
+
 fn convert_register(register: &str) -> Result<Reg, ComputeError> {
     match register.to_lowercase().as_str() {
         "a" => Ok(Reg::A),
@@ -119,7 +125,7 @@ impl<'a> InstructionArgument<'a> {
     pub(crate) fn evaluate<C: Context>(&self, context: &C) -> Result<Arg, ComputeError<'a>> {
         match self {
             InstructionArgument::Value(v) => {
-                let value = v.evaluate(context).map_err(ComputeError::Evaluation)?;
+                let value = v.evaluate(context)?;
                 Ok(Arg::Value(Value::Imm(value)))
             }
             InstructionArgument::Register(r) => {
@@ -127,7 +133,7 @@ impl<'a> InstructionArgument<'a> {
                 Ok(Arg::Value(Value::Reg(register)))
             }
             InstructionArgument::Direct(v) => {
-                let value = v.evaluate(context).map_err(ComputeError::Evaluation)?;
+                let value = v.evaluate(context)?;
                 Ok(Arg::Address(Address::Dir(value)))
             }
             InstructionArgument::Indirect(r) => {
@@ -135,7 +141,7 @@ impl<'a> InstructionArgument<'a> {
                 Ok(Arg::Address(Address::Ind(register)))
             }
             InstructionArgument::Indexed { register, value } => {
-                let value = value.evaluate(context).map_err(ComputeError::Evaluation)?;
+                let value = value.evaluate(context)?;
                 let register = convert_register(register)?;
                 Ok(Arg::Address(Address::Idx(register, value)))
             }

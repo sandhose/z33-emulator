@@ -141,7 +141,6 @@ fn run_preprocessor(input: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // First, setup the tracing formatter for logging and instrumentation
     let format = tracing_subscriber::fmt::format()
-        .compact()
         .without_time()
         .with_target(false);
 

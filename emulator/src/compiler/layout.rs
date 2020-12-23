@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use thiserror::Error;
+use tracing::debug;
 
 use crate::constants::*;
 use crate::parser::expression::{
@@ -86,16 +87,19 @@ pub(crate) enum MemoryLayoutError<'a> {
 /// Lays out the memory
 ///
 /// It places the labels & prepare a hashmap of cells to be filled.
+#[tracing::instrument(skip(program))]
 pub(crate) fn layout_memory<'a>(
     program: &'a [Line<'a>],
 ) -> Result<Layout<'a>, MemoryLayoutError<'a>> {
     use MemoryLayoutError::*;
+    debug!("Laying out memory");
     let mut layout: Layout = Default::default();
     let mut position = PROGRAM_START;
 
     for line in program {
-        for label in line.symbols.iter() {
-            layout.insert_label(*label, position)?;
+        for key in line.symbols.iter() {
+            debug!(key, position, "Inserting label");
+            layout.insert_label(*key, position)?;
         }
 
         if let Some(ref content) = line.content {
@@ -105,6 +109,7 @@ pub(crate) fn layout_memory<'a>(
                 }
                 | LineContent::Instruction { .. } => {
                     layout.insert_placement(position, Placement::Line(content))?;
+                    debug!(position, content = %content, "Inserting line");
                     position += 1; // Instructions and word directives take one memory cell
                 }
 
@@ -115,6 +120,8 @@ pub(crate) fn layout_memory<'a>(
                     let size = e
                         .evaluate(&EmptyExpressionContext)
                         .map_err(|inner| DirectiveArgumentEvaluation { directive, inner })?;
+
+                    debug!(size, position, "Reserving space");
 
                     for _ in 0..size {
                         layout.insert_placement(position, Placement::Reserved)?;
@@ -130,16 +137,19 @@ pub(crate) fn layout_memory<'a>(
                         .evaluate(&EmptyExpressionContext)
                         .map_err(|inner| DirectiveArgumentEvaluation { directive, inner })?;
 
+                    debug!(addr, "Changing address");
+
                     // The ".addr N" directive changes the current address to N
                     position = addr;
                 }
 
                 LineContent::Directive {
                     directive: "string",
-                    argument: DirectiveArgument::StringLiteral(literal),
+                    argument: DirectiveArgument::StringLiteral(string),
                 } => {
+                    debug!(position, string = string.as_str(), "Inserting string");
                     // Fill the memory with the chars of the string
-                    for c in literal.chars() {
+                    for c in string.chars() {
                         layout.insert_placement(position, Placement::Char(c))?;
                         position += 1;
                     }

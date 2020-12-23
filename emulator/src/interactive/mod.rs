@@ -274,11 +274,11 @@ pub(crate) fn run_interactive(
 
         debug!("Executing command: {:?}", command);
 
-        match command.clone() {
+        match &command {
             Command::Exit => break,
             Command::Step { number } => {
                 // TODO: recover from errors
-                for _ in 0..number {
+                for _ in 0..*number {
                     computer.step()?;
                 }
 
@@ -303,7 +303,7 @@ pub(crate) fn run_interactive(
                 // TODO: recover from error
                 let address = computer.resolve_address(address)?;
                 if number.is_positive() {
-                    for i in 0..(number as u64) {
+                    for i in 0..(*number as u64) {
                         let address = address + i;
                         let cell = computer.memory.get(address as u64)?;
                         info!(address, value = %cell);
@@ -323,8 +323,8 @@ pub(crate) fn run_interactive(
             }
 
             Command::List { number } => {
-                let addr = session.offset_list(computer, number);
-                for i in 0..number {
+                let addr = session.offset_list(computer, *number);
+                for i in 0..*number {
                     let addr = addr + i;
                     session.display_instruction(computer, addr);
                 }

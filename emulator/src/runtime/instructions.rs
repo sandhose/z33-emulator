@@ -113,7 +113,7 @@ pub(crate) enum Instruction {
 
 impl Instruction {
     #[tracing::instrument]
-    pub(crate) fn execute(self, computer: &mut Computer) -> Result<(), ProcessorError> {
+    pub(crate) fn execute(&self, computer: &mut Computer) -> Result<(), ProcessorError> {
         match self {
             Instruction::Add(arg, reg) => {
                 let a = computer.word_from_arg(arg)?;
@@ -143,7 +143,7 @@ impl Instruction {
 
                 // Jump
                 let addr = computer.word_from_arg(arg)?;
-                computer.jump(Address::Dir(addr))?;
+                computer.jump(&Address::Dir(addr))?;
             }
 
             Instruction::Cmp(arg, reg) => {
@@ -420,38 +420,38 @@ impl Instruction {
 impl std::fmt::Display for Instruction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Instruction::Add(a, b) => write!(f, "add {}, {}", a, b),
-            Instruction::And(a, b) => write!(f, "and {}, {}", a, b),
+            Instruction::Add(a, b) => write!(f, "add  {}, {}", a, b),
+            Instruction::And(a, b) => write!(f, "and  {}, {}", a, b),
             Instruction::Call(a) => write!(f, "call {}", a),
-            Instruction::Cmp(a, b) => write!(f, "cmp {}, {}", a, b),
-            Instruction::Div(a, b) => write!(f, "div {}, {}", a, b),
-            Instruction::Fas(a, b) => write!(f, "fas {}, {}", a, b),
-            Instruction::In(a, b) => write!(f, "in {}, {}", a, b),
-            Instruction::Jmp(a) => write!(f, "jmp {}", a),
-            Instruction::Jeq(a) => write!(f, "jeq {}", a),
-            Instruction::Jne(a) => write!(f, "jne {}", a),
-            Instruction::Jle(a) => write!(f, "jle {}", a),
-            Instruction::Jlt(a) => write!(f, "jlt {}", a),
-            Instruction::Jge(a) => write!(f, "jge {}", a),
-            Instruction::Jgt(a) => write!(f, "jgt {}", a),
-            Instruction::Ld(a, b) => write!(f, "ld {}, {}", a, b),
-            Instruction::Mul(a, b) => write!(f, "mul {}, {}", a, b),
-            Instruction::Neg(a) => write!(f, "neg {}", a),
+            Instruction::Cmp(a, b) => write!(f, "cmp  {}, {}", a, b),
+            Instruction::Div(a, b) => write!(f, "div  {}, {}", a, b),
+            Instruction::Fas(a, b) => write!(f, "fas  {}, {}", a, b),
+            Instruction::In(a, b) => write!(f, "in   {}, {}", a, b),
+            Instruction::Jmp(a) => write!(f, "jmp  {}", a),
+            Instruction::Jeq(a) => write!(f, "jeq  {}", a),
+            Instruction::Jne(a) => write!(f, "jne  {}", a),
+            Instruction::Jle(a) => write!(f, "jle  {}", a),
+            Instruction::Jlt(a) => write!(f, "jlt  {}", a),
+            Instruction::Jge(a) => write!(f, "jge  {}", a),
+            Instruction::Jgt(a) => write!(f, "jgt  {}", a),
+            Instruction::Ld(a, b) => write!(f, "ld   {}, {}", a, b),
+            Instruction::Mul(a, b) => write!(f, "mul  {}, {}", a, b),
+            Instruction::Neg(a) => write!(f, "neg  {}", a),
             Instruction::Nop => write!(f, "nop"),
-            Instruction::Not(a) => write!(f, "not {}", a),
-            Instruction::Or(a, b) => write!(f, "or {}, {}", a, b),
-            Instruction::Out(a, b) => write!(f, "out {}, {}", a, b),
-            Instruction::Pop(a) => write!(f, "pop {}", a),
+            Instruction::Not(a) => write!(f, "not  {}", a),
+            Instruction::Or(a, b) => write!(f, "or   {}, {}", a, b),
+            Instruction::Out(a, b) => write!(f, "out  {}, {}", a, b),
+            Instruction::Pop(a) => write!(f, "pop  {}", a),
             Instruction::Push(a) => write!(f, "push {}", a),
             Instruction::Reset => write!(f, "reset"),
             Instruction::Rti => write!(f, "rti"),
             Instruction::Rtn => write!(f, "rtn"),
-            Instruction::Shl(a, b) => write!(f, "shl {}, {}", a, b),
-            Instruction::Shr(a, b) => write!(f, "shr {}, {}", a, b),
-            Instruction::St(a, b) => write!(f, "st {}, {}", a, b),
-            Instruction::Sub(a, b) => write!(f, "sub {}, {}", a, b),
+            Instruction::Shl(a, b) => write!(f, "shl  {}, {}", a, b),
+            Instruction::Shr(a, b) => write!(f, "shr  {}, {}", a, b),
+            Instruction::St(a, b) => write!(f, "st   {}, {}", a, b),
+            Instruction::Sub(a, b) => write!(f, "sub  {}, {}", a, b),
             Instruction::Trap => write!(f, "trap"),
-            Instruction::Xor(a, b) => write!(f, "xor {}, {}", a, b),
+            Instruction::Xor(a, b) => write!(f, "xor  {}, {}", a, b),
         }
     }
 }

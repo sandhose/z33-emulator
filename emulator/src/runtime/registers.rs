@@ -27,7 +27,7 @@ pub(crate) struct Registers {
 }
 
 impl Registers {
-    pub(crate) fn get(&self, reg: Reg) -> Cell {
+    pub(crate) fn get(&self, reg: &Reg) -> Cell {
         match reg {
             Reg::A => self.a.clone(),
             Reg::B => self.b.clone(),
@@ -37,7 +37,7 @@ impl Registers {
         }
     }
 
-    pub(crate) fn get_word(&self, reg: Reg) -> Result<Word, CellError> {
+    pub(crate) fn get_word(&self, reg: &Reg) -> Result<Word, CellError> {
         match reg {
             Reg::A => self.a.extract_word(),
             Reg::B => self.b.extract_word(),
@@ -47,7 +47,7 @@ impl Registers {
         }
     }
 
-    pub(crate) fn set(&mut self, reg: Reg, value: Cell) -> Result<(), CellError> {
+    pub(crate) fn set(&mut self, reg: &Reg, value: Cell) -> Result<(), CellError> {
         match reg {
             Reg::A => self.a = value,
             Reg::B => self.b = value,
