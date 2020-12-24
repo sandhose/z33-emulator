@@ -9,6 +9,7 @@ pub(crate) mod condition;
 pub(crate) mod expression;
 pub(crate) mod line;
 pub(crate) mod literal;
+mod precedence;
 pub(crate) mod value;
 
 fn is_identifier_char(c: char) -> bool {

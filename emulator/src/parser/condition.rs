@@ -28,12 +28,15 @@ use nom::{
 };
 use thiserror::Error;
 
-use super::expression::{
-    parse_expression, Context as ExpressionContext, EmptyContext as EmptyExpressionContext,
-    EvaluationError as ExpressionEvaluationError, Node as ExpressionNode,
-};
 use super::literal::parse_bool_literal;
 use super::parse_identifier;
+use super::{
+    expression::{
+        parse_expression, Context as ExpressionContext, EmptyContext as EmptyExpressionContext,
+        EvaluationError as ExpressionEvaluationError, Node as ExpressionNode,
+    },
+    precedence::Precedence,
+};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Node<'a> {
@@ -73,18 +76,19 @@ pub enum Node<'a> {
 
 impl<'a> std::fmt::Display for Node<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use Node::*;
         match self {
-            Node::Equal(a, b) => write!(f, "({} == {})", a, b),
-            Node::NotEqual(a, b) => write!(f, "({} != {})", a, b),
-            Node::GreaterOrEqual(a, b) => write!(f, "({} >= {})", a, b),
-            Node::GreaterThan(a, b) => write!(f, "({} > {})", a, b),
-            Node::LesserOrEqual(a, b) => write!(f, "({} <= {})", a, b),
-            Node::LesserThan(a, b) => write!(f, "({} < {})", a, b),
-            Node::Or(a, b) => write!(f, "({} || {})", a, b),
-            Node::And(a, b) => write!(f, "({} && {})", a, b),
-            Node::Not(a) => write!(f, "!({})", a),
-            Node::Literal(a) => write!(f, "{}", a),
-            Node::Defined(a) => write!(f, "defined({})", a),
+            Equal(a, b) => write!(f, "{} == {}", a.with_parent(self), b.with_parent(self)),
+            NotEqual(a, b) => write!(f, "{} != {}", a.with_parent(self), b.with_parent(self)),
+            GreaterOrEqual(a, b) => write!(f, "{} >= {}", a.with_parent(self), b.with_parent(self)),
+            GreaterThan(a, b) => write!(f, "{} > {}", a.with_parent(self), b.with_parent(self)),
+            LesserOrEqual(a, b) => write!(f, "{} <= {}", a.with_parent(self), b.with_parent(self)),
+            LesserThan(a, b) => write!(f, "{} < {}", a.with_parent(self), b.with_parent(self)),
+            Or(a, b) => write!(f, "{} || {}", a.with_parent(self), b.with_parent(self)),
+            And(a, b) => write!(f, "{} && {}", a.with_parent(self), b.with_parent(self)),
+            Not(a) => write!(f, "!{}", a.with_parent(self)),
+            Literal(a) => write!(f, "{}", a),
+            Defined(a) => write!(f, "defined({})", a),
         }
     }
 }
@@ -193,22 +197,6 @@ impl<'a> Node<'a> {
         };
 
         Ok(value)
-    }
-
-    #[allow(dead_code)]
-    fn precedence(&self) -> usize {
-        match self {
-            Node::Literal(_) | Node::Defined(_) => 0,
-            Node::Not(_) => 1,
-            Node::GreaterOrEqual(_, _)
-            | Node::GreaterThan(_, _)
-            | Node::LesserOrEqual(_, _)
-            | Node::LesserThan(_, _)
-            | Node::Equal(_, _)
-            | Node::NotEqual(_, _) => 2,
-            Node::And(_, _) => 3,
-            Node::Or(_, _) => 4,
-        }
     }
 }
 
