@@ -39,44 +39,45 @@ use super::{
 };
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum Node<'a> {
+pub enum Node {
     /// a == b
-    Equal(ExpressionNode<'a>, ExpressionNode<'a>),
+    Equal(ExpressionNode, ExpressionNode),
 
     /// a != b
-    NotEqual(ExpressionNode<'a>, ExpressionNode<'a>),
+    NotEqual(ExpressionNode, ExpressionNode),
 
     /// a >= b
-    GreaterOrEqual(ExpressionNode<'a>, ExpressionNode<'a>),
+    GreaterOrEqual(ExpressionNode, ExpressionNode),
 
     /// a > b
-    GreaterThan(ExpressionNode<'a>, ExpressionNode<'a>),
+    GreaterThan(ExpressionNode, ExpressionNode),
 
     /// a <= b
-    LesserOrEqual(ExpressionNode<'a>, ExpressionNode<'a>),
+    LesserOrEqual(ExpressionNode, ExpressionNode),
 
     /// a < b
-    LesserThan(ExpressionNode<'a>, ExpressionNode<'a>),
+    LesserThan(ExpressionNode, ExpressionNode),
 
     /// A || B
-    Or(Box<Node<'a>>, Box<Node<'a>>),
+    Or(Box<Node>, Box<Node>),
 
     /// A && B
-    And(Box<Node<'a>>, Box<Node<'a>>),
+    And(Box<Node>, Box<Node>),
 
     /// !A
-    Not(Box<Node<'a>>),
+    Not(Box<Node>),
 
     /// true or false
     Literal(bool),
 
     /// defined(N)
-    Defined(&'a str),
+    Defined(String),
 }
 
-impl<'a> std::fmt::Display for Node<'a> {
+impl std::fmt::Display for Node {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use Node::*;
+
         match self {
             Equal(a, b) => write!(f, "{} == {}", a.with_parent(self), b.with_parent(self)),
             NotEqual(a, b) => write!(f, "{} != {}", a.with_parent(self), b.with_parent(self)),
@@ -94,13 +95,13 @@ impl<'a> std::fmt::Display for Node<'a> {
 }
 
 #[derive(Error, Debug, PartialEq)]
-pub enum EvaluationError<'a> {
+pub enum EvaluationError {
     #[error("could not evaluate expression: {0}")]
-    ExpressionEvaluation(ExpressionEvaluationError<'a>),
+    ExpressionEvaluation(ExpressionEvaluationError),
 }
 
-impl<'a> From<ExpressionEvaluationError<'a>> for EvaluationError<'a> {
-    fn from(e: ExpressionEvaluationError<'a>) -> Self {
+impl From<ExpressionEvaluationError> for EvaluationError {
+    fn from(e: ExpressionEvaluationError) -> Self {
         Self::ExpressionEvaluation(e)
     }
 }
@@ -128,7 +129,7 @@ impl Context for EmptyContext {
     }
 }
 
-impl<'a> Node<'a> {
+impl Node {
     /// Evaluate a condition AST node with a given context
     pub fn evaluate<C: Context>(&self, context: &C) -> Result<bool, EvaluationError> {
         let value = match self {
@@ -296,7 +297,7 @@ fn parse_number_comparison(input: &str) -> IResult<&str, Node> {
     Ok((input, node))
 }
 
-fn parse_defined(input: &str) -> IResult<&str, &str> {
+fn parse_defined(input: &str) -> IResult<&str, String> {
     let (input, _) = tag_no_case("defined")(input)?;
     let (input, _) = space0(input)?;
     let (input, _) = char('(')(input)?;
@@ -304,7 +305,7 @@ fn parse_defined(input: &str) -> IResult<&str, &str> {
     let (input, identifier) = parse_identifier(input)?;
     let (input, _) = space0(input)?;
     let (input, _) = char(')')(input)?;
-    Ok((input, identifier))
+    Ok((input, identifier.into()))
 }
 
 fn parse_parenthesis(input: &str) -> IResult<&str, Node> {
@@ -339,7 +340,7 @@ mod tests {
         use Node::*;
         assert_eq!(
             parse_condition("defined(HELLO)"),
-            Ok(("", Defined("HELLO")))
+            Ok(("", Defined("HELLO".into())))
         );
     }
 
@@ -432,17 +433,17 @@ mod tests {
         }
 
         let ctx = &TestConditionContext;
-        assert_eq!(Defined("yes").evaluate(ctx), Ok(true));
-        assert_eq!(Defined("no").evaluate(ctx), Ok(false));
+        assert_eq!(Defined("yes".into()).evaluate(ctx), Ok(true));
+        assert_eq!(Defined("no".into()).evaluate(ctx), Ok(false));
         assert_eq!(
-            Equal(E::Variable("ten"), E::Literal(10)).evaluate(ctx),
+            Equal(E::Variable("ten".into()), E::Literal(10)).evaluate(ctx),
             Ok(true),
         );
         assert_eq!(
-            Equal(E::Variable("undefined"), E::Literal(10)).evaluate(ctx),
+            Equal(E::Variable("undefined".into()), E::Literal(10)).evaluate(ctx),
             Err(EvaluationError::ExpressionEvaluation(
                 ExpressionEvaluationError::UndefinedVariable {
-                    variable: "undefined"
+                    variable: "undefined".into()
                 }
             ))
         );

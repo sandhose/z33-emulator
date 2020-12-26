@@ -10,6 +10,7 @@ use nom::{
     bytes::complete::{escaped_transform, tag_no_case, take_while1},
     character::complete::{char, line_ending, none_of},
     combinator::{cut, map_res, value},
+    error::ParseError,
     AsChar, Compare, IResult, InputTake, InputTakeAtPosition,
 };
 
@@ -29,7 +30,12 @@ pub fn parse_string_literal(input: &str) -> IResult<&str, String> {
 }
 
 /// Parse a bool literal (true or false)
-pub fn parse_bool_literal(input: &str) -> IResult<&str, bool> {
+pub fn parse_bool_literal<Input, Error: ParseError<Input>>(
+    input: Input,
+) -> IResult<Input, bool, Error>
+where
+    Input: InputTake + Compare<&'static str> + Clone,
+{
     alt((
         value(true, tag_no_case("true")),
         value(false, tag_no_case("false")),

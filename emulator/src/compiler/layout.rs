@@ -11,15 +11,15 @@ use crate::parser::expression::{
 use crate::parser::line::{Line, LineContent};
 use crate::parser::value::{DirectiveArgument, DirectiveKind};
 
-pub(crate) type Labels<'a> = HashMap<&'a str, u64>;
+pub(crate) type Labels = HashMap<String, u64>;
 
-impl<'a> ExpressionContext for Labels<'a> {
+impl ExpressionContext for Labels {
     fn resolve_variable(&self, variable: &str) -> Option<i128> {
         self.get(variable).map(|v| *v as _)
     }
 }
 
-pub(crate) enum Placement<'a> {
+pub(crate) enum Placement {
     /// A memory cell filled by .space
     Reserved,
 
@@ -27,21 +27,21 @@ pub(crate) enum Placement<'a> {
     Char(char),
 
     /// A instruction or a .word directive
-    Line(&'a LineContent<'a>),
+    Line(LineContent),
 }
 
 #[derive(Default)]
-pub(crate) struct Layout<'a> {
-    pub labels: Labels<'a>,
-    pub memory: HashMap<u64, Placement<'a>>,
+pub(crate) struct Layout {
+    pub labels: Labels,
+    pub memory: HashMap<u64, Placement>,
 }
 
-impl<'a> Layout<'a> {
+impl Layout {
     fn insert_placement(
         &mut self,
         address: u64,
-        placement: Placement<'a>,
-    ) -> Result<(), MemoryLayoutError<'a>> {
+        placement: Placement,
+    ) -> Result<(), MemoryLayoutError> {
         if self.memory.contains_key(&address) {
             return Err(MemoryLayoutError::MemoryOverlap { address });
         }
@@ -50,8 +50,8 @@ impl<'a> Layout<'a> {
         Ok(())
     }
 
-    fn insert_label(&mut self, label: &'a str, address: u64) -> Result<(), MemoryLayoutError<'a>> {
-        if self.labels.contains_key(label) {
+    fn insert_label(&mut self, label: String, address: u64) -> Result<(), MemoryLayoutError> {
+        if self.labels.contains_key(&label) {
             return Err(MemoryLayoutError::DuplicateLabel { label });
         }
 
@@ -61,20 +61,20 @@ impl<'a> Layout<'a> {
 }
 
 #[derive(Debug, Error, PartialEq)]
-pub(crate) enum MemoryLayoutError<'a> {
+pub(crate) enum MemoryLayoutError {
     #[error("duplicate label {label}")]
-    DuplicateLabel { label: &'a str },
+    DuplicateLabel { label: String },
 
     #[error("invalid argument for directive .{kind}")]
     InvalidDirectiveArgument {
         kind: DirectiveKind,
-        argument: &'a DirectiveArgument<'a>,
+        argument: DirectiveArgument,
     },
 
     #[error("failed to evaluate argument for directive .{kind}: {inner}")]
     DirectiveArgumentEvaluation {
         kind: DirectiveKind,
-        inner: ExpressionEvaluationError<'a>,
+        inner: ExpressionEvaluationError,
     },
 
     #[error("address {address} is already filled")]
@@ -85,9 +85,7 @@ pub(crate) enum MemoryLayoutError<'a> {
 ///
 /// It places the labels & prepare a hashmap of cells to be filled.
 #[tracing::instrument(skip(program))]
-pub(crate) fn layout_memory<'a>(
-    program: &'a [Line<'a>],
-) -> Result<Layout<'a>, MemoryLayoutError<'a>> {
+pub(crate) fn layout_memory(program: &[Line]) -> Result<Layout, MemoryLayoutError> {
     use DirectiveKind::*;
     use MemoryLayoutError::*;
 
@@ -96,15 +94,15 @@ pub(crate) fn layout_memory<'a>(
     let mut position = PROGRAM_START;
 
     for line in program {
-        for key in line.symbols.iter() {
-            debug!(key, position, "Inserting label");
-            layout.insert_label(*key, position)?;
+        for key in line.symbols.clone().into_iter() {
+            debug!(key = %key, position, "Inserting label");
+            layout.insert_label(key, position)?;
         }
 
         if let Some(ref content) = line.content {
             match content {
                 LineContent::Directive { kind: Word, .. } | LineContent::Instruction { .. } => {
-                    layout.insert_placement(position, Placement::Line(content))?;
+                    layout.insert_placement(position, Placement::Line(content.clone()))?;
                     debug!(position, content = %content, "Inserting line");
                     position += 1; // Instructions and word directives take one memory cell
                 }
@@ -152,8 +150,10 @@ pub(crate) fn layout_memory<'a>(
                 }
 
                 LineContent::Directive { kind, argument } => {
-                    let kind = *kind;
-                    return Err(InvalidDirectiveArgument { kind, argument });
+                    return Err(InvalidDirectiveArgument {
+                        kind: *kind,
+                        argument: argument.clone(),
+                    });
                 }
             }
         }
@@ -169,7 +169,6 @@ mod tests {
     use crate::parser::value::{InstructionArgument, InstructionKind};
     use crate::{parser::expression::Node, runtime::Reg};
 
-    use DirectiveKind::*;
     use InstructionKind::*;
 
     #[test]
@@ -184,15 +183,15 @@ mod tests {
             ),
             Line::default().symbol("loop").instruction(
                 Jmp,
-                vec![InstructionArgument::Value(Node::Variable("main"))],
+                vec![InstructionArgument::Value(Node::Variable("main".into()))],
             ),
         ];
 
         let labels = layout_memory(&program).unwrap().labels;
         let expected = {
             let mut h = HashMap::new();
-            h.insert("main", PROGRAM_START);
-            h.insert("loop", PROGRAM_START + 1);
+            h.insert(String::from("main"), PROGRAM_START);
+            h.insert(String::from("loop"), PROGRAM_START + 1);
             h
         };
         assert_eq!(labels, expected);
@@ -201,17 +200,17 @@ mod tests {
     #[test]
     fn place_labels_addr_test() {
         let program = vec![
-            Line::default().directive(Addr, 10),
+            Line::default().directive(DirectiveKind::Addr, 10),
             Line::default().symbol("main").instruction(
                 Jmp,
-                vec![InstructionArgument::Value(Node::Variable("main"))],
+                vec![InstructionArgument::Value(Node::Variable("main".into()))],
             ),
         ];
 
         let labels = layout_memory(&program).unwrap().labels;
         let expected = {
             let mut h = HashMap::new();
-            h.insert("main", 10);
+            h.insert(String::from("main"), 10);
             h
         };
         assert_eq!(labels, expected);
@@ -220,20 +219,24 @@ mod tests {
     #[test]
     fn place_labels_space_test() {
         let program = vec![
-            Line::default().symbol("first").directive(Space, 10),
-            Line::default().symbol("second").directive(Space, 5),
+            Line::default()
+                .symbol("first")
+                .directive(DirectiveKind::Space, 10),
+            Line::default()
+                .symbol("second")
+                .directive(DirectiveKind::Space, 5),
             Line::default().symbol("main").instruction(
                 Jmp,
-                vec![InstructionArgument::Value(Node::Variable("main"))],
+                vec![InstructionArgument::Value(Node::Variable("main".into()))],
             ),
         ];
 
         let labels = layout_memory(&program).unwrap().labels;
         let expected = {
             let mut h = HashMap::new();
-            h.insert("first", PROGRAM_START);
-            h.insert("second", PROGRAM_START + 10);
-            h.insert("main", PROGRAM_START + 15);
+            h.insert(String::from("first"), PROGRAM_START);
+            h.insert(String::from("second"), PROGRAM_START + 10);
+            h.insert(String::from("main"), PROGRAM_START + 15);
             h
         };
 
@@ -243,20 +246,24 @@ mod tests {
     #[test]
     fn place_labels_word_test() {
         let program = vec![
-            Line::default().symbol("first").directive(Word, 123),
-            Line::default().symbol("second").directive(Word, 456),
+            Line::default()
+                .symbol("first")
+                .directive(DirectiveKind::Word, 123),
+            Line::default()
+                .symbol("second")
+                .directive(DirectiveKind::Word, 456),
             Line::default().symbol("main").instruction(
                 Jmp,
-                vec![InstructionArgument::Value(Node::Variable("main"))],
+                vec![InstructionArgument::Value(Node::Variable("main".into()))],
             ),
         ];
 
         let labels = layout_memory(&program).unwrap().labels;
         let expected = {
             let mut h = HashMap::new();
-            h.insert("first", PROGRAM_START);
-            h.insert("second", PROGRAM_START + 1);
-            h.insert("main", PROGRAM_START + 2);
+            h.insert(String::from("first"), PROGRAM_START);
+            h.insert(String::from("second"), PROGRAM_START + 1);
+            h.insert(String::from("main"), PROGRAM_START + 2);
             h
         };
 
@@ -266,22 +273,24 @@ mod tests {
     #[test]
     fn place_labels_string_test() {
         let program = vec![
-            Line::default().symbol("first").directive(String, "hello"),
+            Line::default()
+                .symbol("first")
+                .directive(DirectiveKind::String, "hello"),
             Line::default()
                 .symbol("second")
-                .directive(String, "Émoticône: 🚙"), // length: 12 chars
+                .directive(DirectiveKind::String, "Émoticône: 🚙"), // length: 12 chars
             Line::default().symbol("main").instruction(
                 Jmp,
-                vec![InstructionArgument::Value(Node::Variable("main"))],
+                vec![InstructionArgument::Value(Node::Variable("main".into()))],
             ),
         ];
 
         let labels = layout_memory(&program).unwrap().labels;
         let expected = {
             let mut h = HashMap::new();
-            h.insert("first", PROGRAM_START);
-            h.insert("second", PROGRAM_START + 5);
-            h.insert("main", PROGRAM_START + 5 + 12);
+            h.insert(String::from("first"), PROGRAM_START);
+            h.insert(String::from("second"), PROGRAM_START + 5);
+            h.insert(String::from("main"), PROGRAM_START + 5 + 12);
             h
         };
 
@@ -297,39 +306,41 @@ mod tests {
 
         assert_eq!(
             layout_memory(&program).err(),
-            Some(MemoryLayoutError::DuplicateLabel { label: "hello" })
+            Some(MemoryLayoutError::DuplicateLabel {
+                label: "hello".into()
+            })
         );
     }
 
     #[test]
     fn invalid_directive_argument_test() {
-        let program = vec![Line::default().directive(String, 3)];
+        let program = vec![Line::default().directive(DirectiveKind::String, 3)];
 
         assert_eq!(
             layout_memory(&program).err(),
             Some(MemoryLayoutError::InvalidDirectiveArgument {
-                kind: String,
-                argument: &3.into(),
+                kind: DirectiveKind::String,
+                argument: 3.into(),
             })
         );
 
-        let program = vec![Line::default().directive(Space, "hello")];
+        let program = vec![Line::default().directive(DirectiveKind::Space, "hello")];
 
         assert_eq!(
             layout_memory(&program).err(),
             Some(MemoryLayoutError::InvalidDirectiveArgument {
-                kind: Space,
-                argument: &"hello".into(),
+                kind: DirectiveKind::Space,
+                argument: "hello".into(),
             })
         );
 
-        let program = vec![Line::default().directive(Addr, "hello")];
+        let program = vec![Line::default().directive(DirectiveKind::Addr, "hello")];
 
         assert_eq!(
             layout_memory(&program).err(),
             Some(MemoryLayoutError::InvalidDirectiveArgument {
-                kind: Addr,
-                argument: &"hello".into(),
+                kind: DirectiveKind::Addr,
+                argument: "hello".into(),
             })
         );
     }
@@ -337,10 +348,10 @@ mod tests {
     #[test]
     fn memory_overlap_test() {
         let program = vec![
-            Line::default().directive(Addr, 10),
-            Line::default().directive(String, "hello"), // This takes 5 chars, so fills cells 10 to 15
-            Line::default().directive(Addr, 14),
-            Line::default().directive(Word, 0), // This overlaps with the second "l"
+            Line::default().directive(DirectiveKind::Addr, 10),
+            Line::default().directive(DirectiveKind::String, "hello"), // This takes 5 chars, so fills cells 10 to 15
+            Line::default().directive(DirectiveKind::Addr, 14),
+            Line::default().directive(DirectiveKind::Word, 0), // This overlaps with the second "l"
         ];
 
         assert_eq!(

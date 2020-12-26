@@ -149,24 +149,24 @@ where
 
 /// Represents an instruction argument
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) enum InstructionArgument<'a> {
+pub(crate) enum InstructionArgument {
     /// An immediate value
-    Value(Node<'a>),
+    Value(Node),
 
     /// The content of a register
     Register(Reg),
 
     /// A direct memory access
-    Direct(Node<'a>),
+    Direct(Node),
 
     /// An indirect memory access (register)
     Indirect(Reg),
 
     /// An indexed memory access (register + offset)
-    Indexed { register: Reg, value: Node<'a> },
+    Indexed { register: Reg, value: Node },
 }
 
-impl<'a> std::fmt::Display for InstructionArgument<'a> {
+impl std::fmt::Display for InstructionArgument {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use InstructionArgument::*;
 
@@ -181,9 +181,7 @@ impl<'a> std::fmt::Display for InstructionArgument<'a> {
 }
 
 /// Parse an instruction argument
-pub(crate) fn parse_instruction_argument<'a>(
-    input: &'a str,
-) -> IResult<&'a str, InstructionArgument<'a>> {
+pub(crate) fn parse_instruction_argument(input: &str) -> IResult<&str, InstructionArgument> {
     alt((parse_direct, parse_indirect))(input)
 }
 
@@ -226,15 +224,15 @@ where
 
 /// Represents a directive argument
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) enum DirectiveArgument<'a> {
+pub(crate) enum DirectiveArgument {
     /// A string literal (`.string` directive)
     StringLiteral(String),
 
     /// An expression (`.addr`, `.word`, `.space` directives)
-    Expression(Node<'a>),
+    Expression(Node),
 }
 
-impl<'a> std::fmt::Display for DirectiveArgument<'a> {
+impl std::fmt::Display for DirectiveArgument {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use DirectiveArgument::*;
 
@@ -253,32 +251,32 @@ pub(crate) fn parse_directive_argument(input: &str) -> IResult<&str, DirectiveAr
     ))(input)
 }
 
-impl<'a> From<&str> for DirectiveArgument<'a> {
+impl From<&str> for DirectiveArgument {
     fn from(literal: &str) -> Self {
         Self::StringLiteral(literal.to_string())
     }
 }
 
-impl<'a> From<i128> for DirectiveArgument<'a> {
+impl From<i128> for DirectiveArgument {
     fn from(value: i128) -> Self {
         Self::Expression(Node::Literal(value))
     }
 }
 
 #[derive(Error, Debug)]
-pub(crate) enum ComputeError<'a> {
+pub(crate) enum ComputeError {
     #[error("could not evaluate argument: {0}")]
-    Evaluation(EvaluationError<'a>),
+    Evaluation(EvaluationError),
 }
 
-impl<'a> From<EvaluationError<'a>> for ComputeError<'a> {
-    fn from(e: EvaluationError<'a>) -> Self {
+impl From<EvaluationError> for ComputeError {
+    fn from(e: EvaluationError) -> Self {
         Self::Evaluation(e)
     }
 }
 
-impl<'a> InstructionArgument<'a> {
-    pub(crate) fn evaluate<C: Context>(&self, context: &C) -> Result<Arg, ComputeError<'a>> {
+impl InstructionArgument {
+    pub(crate) fn evaluate<C: Context>(&self, context: &C) -> Result<Arg, ComputeError> {
         match self {
             Self::Value(v) => {
                 let value = v.evaluate(context)?;
@@ -298,7 +296,7 @@ impl<'a> InstructionArgument<'a> {
     }
 }
 
-fn parse_register<'a>(input: &'a str) -> IResult<&'a str, Reg> {
+fn parse_register(input: &str) -> IResult<&str, Reg> {
     use Reg::*;
 
     alt((
@@ -310,7 +308,7 @@ fn parse_register<'a>(input: &'a str) -> IResult<&'a str, Reg> {
     ))(input)
 }
 
-fn parse_indirect_indexed_inner<'a>(input: &'a str) -> IResult<&'a str, InstructionArgument<'a>> {
+fn parse_indirect_indexed_inner(input: &str) -> IResult<&str, InstructionArgument> {
     let (input, register) = parse_register(input)?;
     let (input, _) = space0(input)?;
     let (input, sign) = one_of("+-")(input)?;
@@ -326,9 +324,7 @@ fn parse_indirect_indexed_inner<'a>(input: &'a str) -> IResult<&'a str, Instruct
     Ok((input, InstructionArgument::Indexed { register, value }))
 }
 
-pub(crate) fn parse_indirect_inner<'a>(
-    input: &'a str,
-) -> IResult<&'a str, InstructionArgument<'a>> {
+pub(crate) fn parse_indirect_inner(input: &str) -> IResult<&str, InstructionArgument> {
     alt((
         parse_indirect_indexed_inner,
         map(parse_register, InstructionArgument::Indirect),
@@ -336,7 +332,7 @@ pub(crate) fn parse_indirect_inner<'a>(
     ))(input)
 }
 
-fn parse_indirect<'a>(input: &'a str) -> IResult<&'a str, InstructionArgument<'a>> {
+fn parse_indirect(input: &str) -> IResult<&str, InstructionArgument> {
     delimited(
         terminated(tag("["), space0),
         parse_indirect_inner,
@@ -344,7 +340,7 @@ fn parse_indirect<'a>(input: &'a str) -> IResult<&'a str, InstructionArgument<'a
     )(input)
 }
 
-fn parse_direct<'a>(input: &'a str) -> IResult<&'a str, InstructionArgument<'a>> {
+fn parse_direct(input: &str) -> IResult<&str, InstructionArgument> {
     alt((
         map(parse_register, InstructionArgument::Register),
         map(parse_expression, InstructionArgument::Value),

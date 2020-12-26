@@ -13,42 +13,42 @@ use crate::{
 use super::layout::{Labels, Layout, Placement};
 
 #[derive(Debug, Error)]
-pub(crate) enum MemoryFillError<'a> {
+pub(crate) enum MemoryFillError {
     #[error("could not compile: {0}")]
-    CompilationError(CompilationError<'a>),
+    CompilationError(CompilationError),
 }
 
-impl<'a> From<CompilationError<'a>> for MemoryFillError<'a> {
-    fn from(inner: CompilationError<'a>) -> Self {
+impl From<CompilationError> for MemoryFillError {
+    fn from(inner: CompilationError) -> Self {
         Self::CompilationError(inner)
     }
 }
 
 #[derive(Debug, Error)]
-pub(crate) enum CompilationError<'a> {
+pub(crate) enum CompilationError {
     #[error("could not evaluate expression: {0}")]
-    Evaluation(ExpressionEvaluationError<'a>),
+    Evaluation(ExpressionEvaluationError),
 
     #[error("could not compute instruction argument: {0}")]
-    Compute(ComputeError<'a>),
+    Compute(ComputeError),
 
     #[error("could not compile instruction: {0}")]
     InstructionCompilation(InstructionCompilationError),
 }
 
-impl<'a> From<ExpressionEvaluationError<'a>> for CompilationError<'a> {
-    fn from(e: ExpressionEvaluationError<'a>) -> Self {
+impl From<ExpressionEvaluationError> for CompilationError {
+    fn from(e: ExpressionEvaluationError) -> Self {
         Self::Evaluation(e)
     }
 }
 
-impl<'a> From<ComputeError<'a>> for CompilationError<'a> {
-    fn from(e: ComputeError<'a>) -> Self {
+impl From<ComputeError> for CompilationError {
+    fn from(e: ComputeError) -> Self {
         Self::Compute(e)
     }
 }
 
-impl<'a> From<InstructionCompilationError> for CompilationError<'a> {
+impl From<InstructionCompilationError> for CompilationError {
     fn from(e: InstructionCompilationError) -> Self {
         Self::InstructionCompilation(e)
     }
@@ -278,10 +278,7 @@ fn compile_instruction(
     }
 }
 
-fn compile_placement<'a>(
-    labels: &Labels<'a>,
-    placement: &Placement<'a>,
-) -> Result<Cell, CompilationError<'a>> {
+fn compile_placement(labels: &Labels, placement: &Placement) -> Result<Cell, CompilationError> {
     use DirectiveKind::*;
 
     match placement {
@@ -315,7 +312,7 @@ fn compile_placement<'a>(
 }
 
 #[tracing::instrument(skip(layout))]
-pub(crate) fn fill_memory<'a>(layout: &Layout<'a>) -> Result<Memory, CompilationError<'a>> {
+pub(crate) fn fill_memory(layout: &Layout) -> Result<Memory, CompilationError> {
     debug!("Filling memory");
     let mut memory = Memory::default();
 

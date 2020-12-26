@@ -34,45 +34,45 @@ use thiserror::Error;
 use super::{literal::parse_number_literal, parse_identifier, precedence::Precedence};
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum Node<'a> {
+pub enum Node {
     /// a | b
-    BinaryOr(Box<Node<'a>>, Box<Node<'a>>),
+    BinaryOr(Box<Node>, Box<Node>),
 
     /// a & b
-    BinaryAnd(Box<Node<'a>>, Box<Node<'a>>),
+    BinaryAnd(Box<Node>, Box<Node>),
 
     /// a << b
-    LeftShift(Box<Node<'a>>, Box<Node<'a>>),
+    LeftShift(Box<Node>, Box<Node>),
 
     /// a >> b
-    RightShift(Box<Node<'a>>, Box<Node<'a>>),
+    RightShift(Box<Node>, Box<Node>),
 
     /// a + b
-    Sum(Box<Node<'a>>, Box<Node<'a>>),
+    Sum(Box<Node>, Box<Node>),
 
     /// a - b
-    Substract(Box<Node<'a>>, Box<Node<'a>>),
+    Substract(Box<Node>, Box<Node>),
 
     /// a * b
-    Multiply(Box<Node<'a>>, Box<Node<'a>>),
+    Multiply(Box<Node>, Box<Node>),
 
     /// a / b
-    Divide(Box<Node<'a>>, Box<Node<'a>>),
+    Divide(Box<Node>, Box<Node>),
 
     /// -a
-    Invert(Box<Node<'a>>),
+    Invert(Box<Node>),
 
     /// ~a
-    BinaryNot(Box<Node<'a>>),
+    BinaryNot(Box<Node>),
 
     /// A literal value
     Literal(Value),
 
     /// A reference to a variable
-    Variable(&'a str),
+    Variable(String),
 }
 
-impl<'a> std::fmt::Display for Node<'a> {
+impl std::fmt::Display for Node {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use Node::*;
         if f.sign_plus() {
@@ -112,93 +112,96 @@ impl Context for EmptyContext {
 }
 
 #[derive(Error, Debug, PartialEq)]
-pub enum EvaluationError<'a> {
+pub enum EvaluationError {
     #[error("undefined variable {variable:?}")]
-    UndefinedVariable { variable: &'a str },
+    UndefinedVariable { variable: String },
 
     #[error("could not downcast value")]
     Downcast,
 }
 
-impl<'a> Node<'a> {
+impl Node {
     pub fn evaluate<C: Context, V: TryFrom<Value>>(
         &self,
         context: &C,
-    ) -> Result<V, EvaluationError<'a>> {
-        let value: Value = match self {
-            Node::BinaryOr(left, right) => {
-                let left: Value = left.evaluate(context)?;
-                let right: Value = right.evaluate(context)?;
-                left | right
-            }
+    ) -> Result<V, EvaluationError> {
+        let value: Value =
+            match self {
+                Node::BinaryOr(left, right) => {
+                    let left: Value = left.evaluate(context)?;
+                    let right: Value = right.evaluate(context)?;
+                    left | right
+                }
 
-            Node::BinaryAnd(left, right) => {
-                let left: Value = left.evaluate(context)?;
-                let right: Value = right.evaluate(context)?;
-                left & right
-            }
+                Node::BinaryAnd(left, right) => {
+                    let left: Value = left.evaluate(context)?;
+                    let right: Value = right.evaluate(context)?;
+                    left & right
+                }
 
-            Node::LeftShift(left, right) => {
-                let left: Value = left.evaluate(context)?;
-                let right: Value = right.evaluate(context)?;
-                left << right
-            }
+                Node::LeftShift(left, right) => {
+                    let left: Value = left.evaluate(context)?;
+                    let right: Value = right.evaluate(context)?;
+                    left << right
+                }
 
-            Node::RightShift(left, right) => {
-                let left: Value = left.evaluate(context)?;
-                let right: Value = right.evaluate(context)?;
-                left >> right
-            }
+                Node::RightShift(left, right) => {
+                    let left: Value = left.evaluate(context)?;
+                    let right: Value = right.evaluate(context)?;
+                    left >> right
+                }
 
-            Node::Sum(left, right) => {
-                let left: Value = left.evaluate(context)?;
-                let right: Value = right.evaluate(context)?;
-                left + right
-            }
+                Node::Sum(left, right) => {
+                    let left: Value = left.evaluate(context)?;
+                    let right: Value = right.evaluate(context)?;
+                    left + right
+                }
 
-            Node::Substract(left, right) => {
-                let left: Value = left.evaluate(context)?;
-                let right: Value = right.evaluate(context)?;
-                left - right
-            }
+                Node::Substract(left, right) => {
+                    let left: Value = left.evaluate(context)?;
+                    let right: Value = right.evaluate(context)?;
+                    left - right
+                }
 
-            Node::Multiply(left, right) => {
-                let left: Value = left.evaluate(context)?;
-                let right: Value = right.evaluate(context)?;
-                left * right
-            }
+                Node::Multiply(left, right) => {
+                    let left: Value = left.evaluate(context)?;
+                    let right: Value = right.evaluate(context)?;
+                    left * right
+                }
 
-            Node::Divide(left, right) => {
-                let left: Value = left.evaluate(context)?;
-                let right: Value = right.evaluate(context)?;
-                left / right
-            }
+                Node::Divide(left, right) => {
+                    let left: Value = left.evaluate(context)?;
+                    let right: Value = right.evaluate(context)?;
+                    left / right
+                }
 
-            Node::Invert(operand) => {
-                let operand: Value = operand.evaluate(context)?;
-                -operand
-            }
+                Node::Invert(operand) => {
+                    let operand: Value = operand.evaluate(context)?;
+                    -operand
+                }
 
-            Node::BinaryNot(operand) => {
-                let _operand: Value = operand.evaluate(context)?;
-                // TODO: bit inversion is tricky because we're not supposed to know the word length
-                // here. It's a bit opiniated, but for now it tries casting down to u16 before
-                // negating.
+                Node::BinaryNot(operand) => {
+                    let _operand: Value = operand.evaluate(context)?;
+                    // TODO: bit inversion is tricky because we're not supposed to know the word length
+                    // here. It's a bit opiniated, but for now it tries casting down to u16 before
+                    // negating.
 
-                /*
-                u16::try_from(v) // try casting it down to u16
-                    .map(|v| !v) // invert the bits
-                    .map(|v| v as _) // cast it back up
-                */
-                todo!()
-            }
+                    /*
+                    u16::try_from(v) // try casting it down to u16
+                        .map(|v| !v) // invert the bits
+                        .map(|v| v as _) // cast it back up
+                    */
+                    todo!()
+                }
 
-            Node::Literal(value) => *value,
+                Node::Literal(value) => *value,
 
-            Node::Variable(variable) => context
-                .resolve_variable(variable)
-                .ok_or(EvaluationError::UndefinedVariable { variable })?,
-        };
+                Node::Variable(variable) => context.resolve_variable(variable).ok_or(
+                    EvaluationError::UndefinedVariable {
+                        variable: variable.clone(),
+                    },
+                )?,
+            };
 
         V::try_from(value).map_err(|_| EvaluationError::Downcast)
     }
@@ -349,7 +352,7 @@ fn parse_atom(input: &str) -> IResult<&str, Node> {
     let (input, _) = space0(input)?;
     alt((
         map(parse_number_literal, |v| Node::Literal(v as Value)),
-        map(parse_identifier, |i| Node::Variable(i)),
+        map(parse_identifier, |i| Node::Variable(i.into())),
         parse_parenthesis,
     ))(input)
 }

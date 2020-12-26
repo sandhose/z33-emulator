@@ -29,27 +29,27 @@ use super::{
 
 /// Holds the content of a line
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) enum LineContent<'a> {
+pub(crate) enum LineContent {
     /// Represents an instruction, with its opcode and list of arguments
     Instruction {
         kind: InstructionKind,
-        arguments: Vec<InstructionArgument<'a>>,
+        arguments: Vec<InstructionArgument>,
     },
     /// Represents a directive, with its type and argument
     Directive {
         kind: DirectiveKind,
-        argument: DirectiveArgument<'a>,
+        argument: DirectiveArgument,
     },
 }
 
-impl<'a> LineContent<'a> {
+impl LineContent {
     /// Check if the line is a directive
     pub(crate) fn is_directive(&self) -> bool {
         matches!(self, Self::Directive { .. })
     }
 }
 
-impl<'a> std::fmt::Display for LineContent<'a> {
+impl std::fmt::Display for LineContent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             LineContent::Instruction { kind, arguments } => {
@@ -82,13 +82,13 @@ impl<'a> std::fmt::Display for LineContent<'a> {
 ///
 /// Note that the `Default::default()` implementation represents an empty line.
 #[derive(Debug, PartialEq, Default)]
-pub(crate) struct Line<'a> {
-    pub symbols: Vec<&'a str>,
-    pub content: Option<LineContent<'a>>,
-    comment: Option<&'a str>,
+pub(crate) struct Line {
+    pub symbols: Vec<String>,
+    pub content: Option<LineContent>,
+    comment: Option<String>,
 }
 
-impl<'a> std::fmt::Display for Line<'a> {
+impl std::fmt::Display for Line {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut had_something = false;
         for symbol in self.symbols.iter() {
@@ -104,7 +104,7 @@ impl<'a> std::fmt::Display for Line<'a> {
             had_something = true;
         }
 
-        if let Some(c) = self.comment {
+        if let Some(ref c) = self.comment {
             if had_something {
                 write!(f, "\t{}", c)?;
             } else {
@@ -116,21 +116,21 @@ impl<'a> std::fmt::Display for Line<'a> {
     }
 }
 
-impl<'a> Line<'a> {
+impl Line {
     #[cfg(test)] // Only used in tests for now
-    pub(crate) fn comment(mut self, comment: &'a str) -> Self {
-        self.comment = Some(comment);
+    pub(crate) fn comment(mut self, comment: &str) -> Self {
+        self.comment = Some(comment.into());
         self
     }
 
     #[cfg(test)] // Only used in tests for now
-    pub(crate) fn symbol(mut self, symbol: &'a str) -> Self {
-        self.symbols.push(symbol);
+    pub(crate) fn symbol(mut self, symbol: &str) -> Self {
+        self.symbols.push(symbol.into());
         self
     }
 
     #[cfg(test)] // Only used in tests for now
-    pub(crate) fn directive<T: Into<DirectiveArgument<'a>>>(
+    pub(crate) fn directive<T: Into<DirectiveArgument>>(
         mut self,
         kind: DirectiveKind,
         argument: T,
@@ -146,7 +146,7 @@ impl<'a> Line<'a> {
     pub(crate) fn instruction(
         mut self,
         kind: InstructionKind,
-        arguments: Vec<InstructionArgument<'a>>,
+        arguments: Vec<InstructionArgument>,
     ) -> Self {
         self.content = Some(LineContent::Instruction { kind, arguments });
         self
@@ -182,17 +182,18 @@ fn parse_line_content(input: &str) -> IResult<&str, LineContent> {
 }
 
 /// Parses an inline comment
-fn parse_comment(input: &str) -> IResult<&str, &str> {
+fn parse_comment(input: &str) -> IResult<&str, String> {
     let (input, _) = peek(tag("#"))(input)?;
-    not_line_ending(input)
+    let (input, comment) = not_line_ending(input)?;
+    Ok((input, comment.into()))
 }
 
 /// Parses symbol definitions
-fn parse_symbol_definition(input: &str) -> IResult<&str, &str> {
+fn parse_symbol_definition(input: &str) -> IResult<&str, String> {
     let (input, symbol) = parse_identifier(input)?;
     let (input, _) = space0(input)?;
     let (input, _) = char(':')(input)?;
-    Ok((input, symbol))
+    Ok((input, symbol.into()))
 }
 
 /// Parses a whole line
@@ -261,7 +262,7 @@ mod tests {
         assert_eq!(
             line,
             Line {
-                comment: Some("# hello"),
+                comment: Some("# hello".into()),
                 ..Default::default()
             }
         );
@@ -273,7 +274,11 @@ mod tests {
         assert_eq!(
             line,
             Line {
-                symbols: vec!["hello", "world", "duplicate", "duplicate"],
+                symbols: ["hello", "world", "duplicate", "duplicate"]
+                    .iter()
+                    .cloned()
+                    .map(Into::into)
+                    .collect(),
                 ..Default::default()
             }
         );
@@ -286,7 +291,7 @@ mod tests {
         assert_eq!(
             line,
             Line {
-                symbols: vec!["foo", "bar"],
+                symbols: ["foo", "bar"].iter().cloned().map(Into::into).collect(),
                 content: Some(LineContent::Directive {
                     kind: DirectiveKind::Space,
                     argument: DirectiveArgument::Expression(Node::Sum(
@@ -294,7 +299,7 @@ mod tests {
                         Box::new(Node::Literal(5))
                     )),
                 }),
-                comment: Some("# comment"),
+                comment: Some("# comment".into()),
             }
         );
     }
