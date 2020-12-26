@@ -114,8 +114,10 @@ pub(crate) enum Instruction {
 impl Instruction {
     #[tracing::instrument]
     pub(crate) fn execute(&self, computer: &mut Computer) -> Result<(), ProcessorError> {
+        use Instruction::*;
+
         match self {
-            Instruction::Add(arg, reg) => {
+            Add(arg, reg) => {
                 let a = computer.word_from_arg(arg)?;
                 let b = computer.word_from_reg(reg)?;
                 let (res, overflow) = a.overflowing_add(b);
@@ -128,7 +130,7 @@ impl Instruction {
                     .set(StatusRegister::OVERFLOW, overflow);
             }
 
-            Instruction::And(arg, reg) => {
+            And(arg, reg) => {
                 let a = computer.word_from_arg(arg)?;
                 let b = computer.word_from_reg(reg)?;
                 let res = a & b;
@@ -136,7 +138,7 @@ impl Instruction {
                 computer.set_register(reg, res.into())?;
             }
 
-            Instruction::Call(arg) => {
+            Call(arg) => {
                 // Push PC
                 let pc = computer.registers.pc;
                 computer.push(pc)?;
@@ -146,7 +148,7 @@ impl Instruction {
                 computer.jump(&Address::Dir(addr))?;
             }
 
-            Instruction::Cmp(arg, reg) => {
+            Cmp(arg, reg) => {
                 let a = computer.word_from_arg(arg)?;
                 let b = computer.word_from_reg(reg)?;
 
@@ -161,7 +163,7 @@ impl Instruction {
                 );
             }
 
-            Instruction::Div(arg, reg) => {
+            Div(arg, reg) => {
                 let a = computer.word_from_arg(arg)?;
                 let b = computer.word_from_reg(reg)?;
                 let res = b.checked_div(a).ok_or(Exception::DivByZero)?;
@@ -169,7 +171,7 @@ impl Instruction {
                 computer.set_register(reg, res.into())?;
             }
 
-            Instruction::Fas(addr, reg) => {
+            Fas(addr, reg) => {
                 let addr = computer.resolve_address(addr)?;
                 let cell = computer.memory.get_mut(addr)?;
                 let val = cell.clone();
@@ -177,18 +179,18 @@ impl Instruction {
                 computer.set_register(reg, val)?;
             }
 
-            Instruction::In(_, _) => {
+            In(_, _) => {
                 computer.check_privileged()?;
                 todo!();
             }
 
-            Instruction::Jmp(arg) => {
+            Jmp(arg) => {
                 let val = computer.word_from_arg(arg)?;
                 debug!("Jumping to address {:#x}", val);
                 computer.registers.pc = val;
             }
 
-            Instruction::Jeq(arg) => {
+            Jeq(arg) => {
                 if computer.registers.sr.contains(StatusRegister::ZERO) {
                     let val = computer.word_from_arg(arg)?;
                     debug!("Jumping to address {:#x}", val);
@@ -196,7 +198,7 @@ impl Instruction {
                 }
             }
 
-            Instruction::Jne(arg) => {
+            Jne(arg) => {
                 if !computer.registers.sr.contains(StatusRegister::ZERO) {
                     let val = computer.word_from_arg(arg)?;
                     debug!("Jumping to address {:#x}", val);
@@ -204,7 +206,7 @@ impl Instruction {
                 }
             }
 
-            Instruction::Jle(arg) => {
+            Jle(arg) => {
                 if computer.registers.sr.contains(StatusRegister::ZERO)
                     || computer.registers.sr.contains(StatusRegister::NEGATIVE)
                 {
@@ -214,7 +216,7 @@ impl Instruction {
                 }
             }
 
-            Instruction::Jlt(arg) => {
+            Jlt(arg) => {
                 if !computer.registers.sr.contains(StatusRegister::ZERO)
                     && computer.registers.sr.contains(StatusRegister::NEGATIVE)
                 {
@@ -224,7 +226,7 @@ impl Instruction {
                 }
             }
 
-            Instruction::Jge(arg) => {
+            Jge(arg) => {
                 if computer.registers.sr.contains(StatusRegister::ZERO)
                     || !computer.registers.sr.contains(StatusRegister::NEGATIVE)
                 {
@@ -234,7 +236,7 @@ impl Instruction {
                 }
             }
 
-            Instruction::Jgt(arg) => {
+            Jgt(arg) => {
                 if !computer.registers.sr.contains(StatusRegister::ZERO)
                     && !computer.registers.sr.contains(StatusRegister::NEGATIVE)
                 {
@@ -244,12 +246,12 @@ impl Instruction {
                 }
             }
 
-            Instruction::Ld(arg, reg) => {
+            Ld(arg, reg) => {
                 let val = computer.arg(arg)?;
                 computer.set_register(reg, val)?;
             }
 
-            Instruction::Mul(arg, reg) => {
+            Mul(arg, reg) => {
                 let a = computer.word_from_arg(arg)?;
                 let b = computer.word_from_reg(reg)?;
                 let (res, overflow) = a.overflowing_mul(b);
@@ -262,7 +264,7 @@ impl Instruction {
                     .set(StatusRegister::OVERFLOW, overflow);
             }
 
-            Instruction::Neg(reg) => {
+            Neg(reg) => {
                 let val = computer.word_from_reg(reg)?;
                 let res = -(val as i64);
                 let res = res as Word;
@@ -270,16 +272,16 @@ impl Instruction {
                 computer.set_register(reg, res.into())?;
             }
 
-            Instruction::Nop => {}
+            Nop => {}
 
-            Instruction::Not(reg) => {
+            Not(reg) => {
                 let val = computer.word_from_reg(reg)?;
                 let res = !val;
                 debug!("!{} = {}", val, res);
                 computer.set_register(reg, res.into())?;
             }
 
-            Instruction::Or(arg, reg) => {
+            Or(arg, reg) => {
                 let a = computer.word_from_arg(arg)?;
                 let b = computer.word_from_reg(reg)?;
                 let res = a | b;
@@ -287,26 +289,26 @@ impl Instruction {
                 computer.set_register(reg, res.into())?;
             }
 
-            Instruction::Out(_, _) => {
+            Out(_, _) => {
                 computer.check_privileged()?;
                 todo!()
             }
 
-            Instruction::Pop(reg) => {
+            Pop(reg) => {
                 let val = computer.pop()?.clone();
                 debug!("pop => {:?}", val);
                 computer.set_register(reg, val)?;
             }
 
-            Instruction::Push(val) => {
+            Push(val) => {
                 let val = computer.value(val);
                 debug!("push({:?})", val);
                 computer.push(val)?;
             }
 
-            Instruction::Reset => return Err(ProcessorError::Reset),
+            Reset => return Err(ProcessorError::Reset),
 
-            Instruction::Rti => {
+            Rti => {
                 computer.check_privileged()?;
                 computer.registers.pc = computer.memory.get(INTERRUPT_PC_SAVE)?.extract_word()?;
                 computer.registers.sr = StatusRegister::from_bits_truncate(
@@ -314,14 +316,14 @@ impl Instruction {
                 );
             }
 
-            Instruction::Rtn => {
+            Rtn => {
                 let ret = computer.pop()?; // Pop the return address
                 let ret = ret.extract_word()?; // Convert it to an address
                 debug!("Returning to {}", ret);
                 computer.registers.pc = ret; // and jump to it
             }
 
-            Instruction::Shl(arg, reg) => {
+            Shl(arg, reg) => {
                 let a = computer.word_from_arg(arg)?;
                 let b = computer.word_from_reg(reg)?;
 
@@ -332,7 +334,7 @@ impl Instruction {
                 computer.set_register(reg, res.into())?;
             }
 
-            Instruction::Shr(arg, reg) => {
+            Shr(arg, reg) => {
                 let a = computer.word_from_arg(arg)?;
                 let b = computer.word_from_reg(reg)?;
 
@@ -343,12 +345,12 @@ impl Instruction {
                 computer.set_register(reg, res.into())?;
             }
 
-            Instruction::St(reg, address) => {
+            St(reg, address) => {
                 let val = computer.registers.get(reg);
                 computer.write(address, val)?;
             }
 
-            Instruction::Sub(arg, reg) => {
+            Sub(arg, reg) => {
                 let a = computer.word_from_arg(arg)?;
                 let b = computer.word_from_reg(reg)?;
                 let (res, overflow) = b.overflowing_sub(a);
@@ -362,11 +364,11 @@ impl Instruction {
                     .set(StatusRegister::OVERFLOW, overflow);
             }
 
-            Instruction::Trap => {
+            Trap => {
                 return Err(Exception::Trap.into());
             }
 
-            Instruction::Xor(arg, reg) => {
+            Xor(arg, reg) => {
                 let a = computer.word_from_arg(arg)?;
                 let b = computer.word_from_reg(reg)?;
                 let res = a ^ b;
@@ -380,78 +382,82 @@ impl Instruction {
 
     /// Get the total cost of an instruction in terms of CPU cycles
     pub(crate) const fn cost(&self) -> usize {
+        use Instruction::*;
+
         match self {
-            Instruction::Add(a, b) => 1 + a.cost() + b.cost(),
-            Instruction::And(a, b) => 1 + a.cost() + b.cost(),
-            Instruction::Call(a) => 1 + a.cost(),
-            Instruction::Cmp(a, b) => 1 + a.cost() + b.cost(),
-            Instruction::Div(a, b) => 1 + a.cost() + b.cost(),
-            Instruction::Fas(a, b) => 1 + a.cost() + b.cost(),
-            Instruction::In(a, b) => 1 + a.cost() + b.cost(),
-            Instruction::Jmp(a) => 1 + a.cost(),
-            Instruction::Jeq(a) => 1 + a.cost(),
-            Instruction::Jne(a) => 1 + a.cost(),
-            Instruction::Jle(a) => 1 + a.cost(),
-            Instruction::Jlt(a) => 1 + a.cost(),
-            Instruction::Jge(a) => 1 + a.cost(),
-            Instruction::Jgt(a) => 1 + a.cost(),
-            Instruction::Ld(a, b) => 1 + a.cost() + b.cost(),
-            Instruction::Mul(a, b) => 1 + a.cost() + b.cost(),
-            Instruction::Neg(a) => 1 + a.cost(),
-            Instruction::Nop => 1,
-            Instruction::Not(a) => 1 + a.cost(),
-            Instruction::Or(a, b) => 1 + a.cost() + b.cost(),
-            Instruction::Out(a, b) => 1 + a.cost() + b.cost(),
-            Instruction::Pop(a) => 1 + a.cost(),
-            Instruction::Push(a) => 1 + a.cost(),
-            Instruction::Reset => 1,
-            Instruction::Rti => 1,
-            Instruction::Rtn => 1,
-            Instruction::Shl(a, b) => 1 + a.cost() + b.cost(),
-            Instruction::Shr(a, b) => 1 + a.cost() + b.cost(),
-            Instruction::St(a, b) => 1 + a.cost() + b.cost(),
-            Instruction::Sub(a, b) => 1 + a.cost() + b.cost(),
-            Instruction::Trap => 1,
-            Instruction::Xor(a, b) => 1 + a.cost() + b.cost(),
+            Add(a, b) => 1 + a.cost() + b.cost(),
+            And(a, b) => 1 + a.cost() + b.cost(),
+            Call(a) => 1 + a.cost(),
+            Cmp(a, b) => 1 + a.cost() + b.cost(),
+            Div(a, b) => 1 + a.cost() + b.cost(),
+            Fas(a, b) => 1 + a.cost() + b.cost(),
+            In(a, b) => 1 + a.cost() + b.cost(),
+            Jmp(a) => 1 + a.cost(),
+            Jeq(a) => 1 + a.cost(),
+            Jne(a) => 1 + a.cost(),
+            Jle(a) => 1 + a.cost(),
+            Jlt(a) => 1 + a.cost(),
+            Jge(a) => 1 + a.cost(),
+            Jgt(a) => 1 + a.cost(),
+            Ld(a, b) => 1 + a.cost() + b.cost(),
+            Mul(a, b) => 1 + a.cost() + b.cost(),
+            Neg(a) => 1 + a.cost(),
+            Nop => 1,
+            Not(a) => 1 + a.cost(),
+            Or(a, b) => 1 + a.cost() + b.cost(),
+            Out(a, b) => 1 + a.cost() + b.cost(),
+            Pop(a) => 1 + a.cost(),
+            Push(a) => 1 + a.cost(),
+            Reset => 1,
+            Rti => 1,
+            Rtn => 1,
+            Shl(a, b) => 1 + a.cost() + b.cost(),
+            Shr(a, b) => 1 + a.cost() + b.cost(),
+            St(a, b) => 1 + a.cost() + b.cost(),
+            Sub(a, b) => 1 + a.cost() + b.cost(),
+            Trap => 1,
+            Xor(a, b) => 1 + a.cost() + b.cost(),
         }
     }
 }
 
 impl std::fmt::Display for Instruction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use Instruction::*;
+
         match self {
-            Instruction::Add(a, b) => write!(f, "add  {}, {}", a, b),
-            Instruction::And(a, b) => write!(f, "and  {}, {}", a, b),
-            Instruction::Call(a) => write!(f, "call {}", a),
-            Instruction::Cmp(a, b) => write!(f, "cmp  {}, {}", a, b),
-            Instruction::Div(a, b) => write!(f, "div  {}, {}", a, b),
-            Instruction::Fas(a, b) => write!(f, "fas  {}, {}", a, b),
-            Instruction::In(a, b) => write!(f, "in   {}, {}", a, b),
-            Instruction::Jmp(a) => write!(f, "jmp  {}", a),
-            Instruction::Jeq(a) => write!(f, "jeq  {}", a),
-            Instruction::Jne(a) => write!(f, "jne  {}", a),
-            Instruction::Jle(a) => write!(f, "jle  {}", a),
-            Instruction::Jlt(a) => write!(f, "jlt  {}", a),
-            Instruction::Jge(a) => write!(f, "jge  {}", a),
-            Instruction::Jgt(a) => write!(f, "jgt  {}", a),
-            Instruction::Ld(a, b) => write!(f, "ld   {}, {}", a, b),
-            Instruction::Mul(a, b) => write!(f, "mul  {}, {}", a, b),
-            Instruction::Neg(a) => write!(f, "neg  {}", a),
-            Instruction::Nop => write!(f, "nop"),
-            Instruction::Not(a) => write!(f, "not  {}", a),
-            Instruction::Or(a, b) => write!(f, "or   {}, {}", a, b),
-            Instruction::Out(a, b) => write!(f, "out  {}, {}", a, b),
-            Instruction::Pop(a) => write!(f, "pop  {}", a),
-            Instruction::Push(a) => write!(f, "push {}", a),
-            Instruction::Reset => write!(f, "reset"),
-            Instruction::Rti => write!(f, "rti"),
-            Instruction::Rtn => write!(f, "rtn"),
-            Instruction::Shl(a, b) => write!(f, "shl  {}, {}", a, b),
-            Instruction::Shr(a, b) => write!(f, "shr  {}, {}", a, b),
-            Instruction::St(a, b) => write!(f, "st   {}, {}", a, b),
-            Instruction::Sub(a, b) => write!(f, "sub  {}, {}", a, b),
-            Instruction::Trap => write!(f, "trap"),
-            Instruction::Xor(a, b) => write!(f, "xor  {}, {}", a, b),
+            Add(a, b) => write!(f, "add  {}, {}", a, b),
+            And(a, b) => write!(f, "and  {}, {}", a, b),
+            Call(a) => write!(f, "call {}", a),
+            Cmp(a, b) => write!(f, "cmp  {}, {}", a, b),
+            Div(a, b) => write!(f, "div  {}, {}", a, b),
+            Fas(a, b) => write!(f, "fas  {}, {}", a, b),
+            In(a, b) => write!(f, "in   {}, {}", a, b),
+            Jmp(a) => write!(f, "jmp  {}", a),
+            Jeq(a) => write!(f, "jeq  {}", a),
+            Jne(a) => write!(f, "jne  {}", a),
+            Jle(a) => write!(f, "jle  {}", a),
+            Jlt(a) => write!(f, "jlt  {}", a),
+            Jge(a) => write!(f, "jge  {}", a),
+            Jgt(a) => write!(f, "jgt  {}", a),
+            Ld(a, b) => write!(f, "ld   {}, {}", a, b),
+            Mul(a, b) => write!(f, "mul  {}, {}", a, b),
+            Neg(a) => write!(f, "neg  {}", a),
+            Nop => write!(f, "nop"),
+            Not(a) => write!(f, "not  {}", a),
+            Or(a, b) => write!(f, "or   {}, {}", a, b),
+            Out(a, b) => write!(f, "out  {}, {}", a, b),
+            Pop(a) => write!(f, "pop  {}", a),
+            Push(a) => write!(f, "push {}", a),
+            Reset => write!(f, "reset"),
+            Rti => write!(f, "rti"),
+            Rtn => write!(f, "rtn"),
+            Shl(a, b) => write!(f, "shl  {}, {}", a, b),
+            Shr(a, b) => write!(f, "shr  {}, {}", a, b),
+            St(a, b) => write!(f, "st   {}, {}", a, b),
+            Sub(a, b) => write!(f, "sub  {}, {}", a, b),
+            Trap => write!(f, "trap"),
+            Xor(a, b) => write!(f, "xor  {}, {}", a, b),
         }
     }
 }

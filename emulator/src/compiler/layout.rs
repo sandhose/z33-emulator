@@ -9,7 +9,7 @@ use crate::parser::expression::{
     EvaluationError as ExpressionEvaluationError,
 };
 use crate::parser::line::{Line, LineContent};
-use crate::parser::value::DirectiveArgument;
+use crate::parser::value::{DirectiveArgument, DirectiveKind};
 
 pub(crate) type Labels<'a> = HashMap<&'a str, u64>;
 
@@ -65,18 +65,15 @@ pub(crate) enum MemoryLayoutError<'a> {
     #[error("duplicate label {label}")]
     DuplicateLabel { label: &'a str },
 
-    #[error("invalid argument for directive {directive}")]
+    #[error("invalid argument for directive .{kind}")]
     InvalidDirectiveArgument {
-        directive: &'a str,
+        kind: DirectiveKind,
         argument: &'a DirectiveArgument<'a>,
     },
 
-    #[error("unsupported directive {directive}")]
-    UnsupportedDirective { directive: &'a str },
-
-    #[error("failed to evaluate argument for directive {directive}: {inner}")]
+    #[error("failed to evaluate argument for directive .{kind}: {inner}")]
     DirectiveArgumentEvaluation {
-        directive: &'a str,
+        kind: DirectiveKind,
         inner: ExpressionEvaluationError<'a>,
     },
 
@@ -91,7 +88,9 @@ pub(crate) enum MemoryLayoutError<'a> {
 pub(crate) fn layout_memory<'a>(
     program: &'a [Line<'a>],
 ) -> Result<Layout<'a>, MemoryLayoutError<'a>> {
+    use DirectiveKind::*;
     use MemoryLayoutError::*;
+
     debug!("Laying out memory");
     let mut layout: Layout = Default::default();
     let mut position = PROGRAM_START;
@@ -104,22 +103,19 @@ pub(crate) fn layout_memory<'a>(
 
         if let Some(ref content) = line.content {
             match content {
-                LineContent::Directive {
-                    directive: "word", ..
-                }
-                | LineContent::Instruction { .. } => {
+                LineContent::Directive { kind: Word, .. } | LineContent::Instruction { .. } => {
                     layout.insert_placement(position, Placement::Line(content))?;
                     debug!(position, content = %content, "Inserting line");
                     position += 1; // Instructions and word directives take one memory cell
                 }
 
                 LineContent::Directive {
-                    directive,
+                    kind: Space,
                     argument: DirectiveArgument::Expression(e),
-                } if *directive == "space" => {
+                } => {
                     let size = e
                         .evaluate(&EmptyExpressionContext)
-                        .map_err(|inner| DirectiveArgumentEvaluation { directive, inner })?;
+                        .map_err(|inner| DirectiveArgumentEvaluation { kind: Space, inner })?;
 
                     debug!(size, position, "Reserving space");
 
@@ -130,12 +126,12 @@ pub(crate) fn layout_memory<'a>(
                 }
 
                 LineContent::Directive {
-                    directive,
+                    kind: Addr,
                     argument: DirectiveArgument::Expression(e),
-                } if *directive == "addr" => {
+                } => {
                     let addr = e
                         .evaluate(&EmptyExpressionContext)
-                        .map_err(|inner| DirectiveArgumentEvaluation { directive, inner })?;
+                        .map_err(|inner| DirectiveArgumentEvaluation { kind: Addr, inner })?;
 
                     debug!(addr, "Changing address");
 
@@ -144,7 +140,7 @@ pub(crate) fn layout_memory<'a>(
                 }
 
                 LineContent::Directive {
-                    directive: "string",
+                    kind: String,
                     argument: DirectiveArgument::StringLiteral(string),
                 } => {
                     debug!(position, string = string.as_str(), "Inserting string");
@@ -155,18 +151,9 @@ pub(crate) fn layout_memory<'a>(
                     }
                 }
 
-                LineContent::Directive {
-                    directive,
-                    argument,
-                } => {
-                    if matches!(*directive, "space" | "addr" | "string") {
-                        return Err(InvalidDirectiveArgument {
-                            directive,
-                            argument,
-                        });
-                    } else {
-                        return Err(UnsupportedDirective { directive });
-                    }
+                LineContent::Directive { kind, argument } => {
+                    let kind = *kind;
+                    return Err(InvalidDirectiveArgument { kind, argument });
                 }
             }
         }
@@ -180,20 +167,23 @@ mod tests {
     use super::*;
     use crate::parser::expression::Node;
     use crate::parser::line::Line;
-    use crate::parser::value::InstructionArgument;
+    use crate::parser::value::{InstructionArgument, InstructionKind};
+
+    use DirectiveKind::*;
+    use InstructionKind::*;
 
     #[test]
     fn place_labels_simple_test() {
         let program = vec![
             Line::default().symbol("main").instruction(
-                "add",
+                Add,
                 vec![
                     InstructionArgument::Register("a"),
                     InstructionArgument::Register("b"),
                 ],
             ),
             Line::default().symbol("loop").instruction(
-                "jmp",
+                Jmp,
                 vec![InstructionArgument::Value(Node::Variable("main"))],
             ),
         ];
@@ -211,9 +201,9 @@ mod tests {
     #[test]
     fn place_labels_addr_test() {
         let program = vec![
-            Line::default().directive("addr", 10),
+            Line::default().directive(Addr, 10),
             Line::default().symbol("main").instruction(
-                "jmp",
+                Jmp,
                 vec![InstructionArgument::Value(Node::Variable("main"))],
             ),
         ];
@@ -230,10 +220,10 @@ mod tests {
     #[test]
     fn place_labels_space_test() {
         let program = vec![
-            Line::default().symbol("first").directive("space", 10),
-            Line::default().symbol("second").directive("space", 5),
+            Line::default().symbol("first").directive(Space, 10),
+            Line::default().symbol("second").directive(Space, 5),
             Line::default().symbol("main").instruction(
-                "jmp",
+                Jmp,
                 vec![InstructionArgument::Value(Node::Variable("main"))],
             ),
         ];
@@ -253,10 +243,10 @@ mod tests {
     #[test]
     fn place_labels_word_test() {
         let program = vec![
-            Line::default().symbol("first").directive("word", 123),
-            Line::default().symbol("second").directive("word", 456),
+            Line::default().symbol("first").directive(Word, 123),
+            Line::default().symbol("second").directive(Word, 456),
             Line::default().symbol("main").instruction(
-                "jmp",
+                Jmp,
                 vec![InstructionArgument::Value(Node::Variable("main"))],
             ),
         ];
@@ -276,12 +266,12 @@ mod tests {
     #[test]
     fn place_labels_string_test() {
         let program = vec![
-            Line::default().symbol("first").directive("string", "hello"),
+            Line::default().symbol("first").directive(String, "hello"),
             Line::default()
                 .symbol("second")
-                .directive("string", "Émoticône: 🚙"), // length: 12 chars
+                .directive(String, "Émoticône: 🚙"), // length: 12 chars
             Line::default().symbol("main").instruction(
-                "jmp",
+                Jmp,
                 vec![InstructionArgument::Value(Node::Variable("main"))],
             ),
         ];
@@ -313,45 +303,33 @@ mod tests {
 
     #[test]
     fn invalid_directive_argument_test() {
-        let program = vec![Line::default().directive("string", 3)];
+        let program = vec![Line::default().directive(String, 3)];
 
         assert_eq!(
             layout_memory(&program).err(),
             Some(MemoryLayoutError::InvalidDirectiveArgument {
-                directive: "string",
+                kind: String,
                 argument: &3.into(),
             })
         );
 
-        let program = vec![Line::default().directive("space", "hello")];
+        let program = vec![Line::default().directive(Space, "hello")];
 
         assert_eq!(
             layout_memory(&program).err(),
             Some(MemoryLayoutError::InvalidDirectiveArgument {
-                directive: "space",
+                kind: Space,
                 argument: &"hello".into(),
             })
         );
 
-        let program = vec![Line::default().directive("addr", "hello")];
+        let program = vec![Line::default().directive(Addr, "hello")];
 
         assert_eq!(
             layout_memory(&program).err(),
             Some(MemoryLayoutError::InvalidDirectiveArgument {
-                directive: "addr",
+                kind: Addr,
                 argument: &"hello".into(),
-            })
-        );
-    }
-
-    #[test]
-    fn unsupported_directive_test() {
-        let program = vec![Line::default().directive("unsupported", "hello")];
-
-        assert_eq!(
-            layout_memory(&program).err(),
-            Some(MemoryLayoutError::UnsupportedDirective {
-                directive: "unsupported",
             })
         );
     }
@@ -359,10 +337,10 @@ mod tests {
     #[test]
     fn memory_overlap_test() {
         let program = vec![
-            Line::default().directive("addr", 10),
-            Line::default().directive("string", "hello"), // This takes 5 chars, so fills cells 10 to 15
-            Line::default().directive("addr", 14),
-            Line::default().directive("word", 0), // This overlaps with the second "l"
+            Line::default().directive(Addr, 10),
+            Line::default().directive(String, "hello"), // This takes 5 chars, so fills cells 10 to 15
+            Line::default().directive(Addr, 14),
+            Line::default().directive(Word, 0), // This overlaps with the second "l"
         ];
 
         assert_eq!(

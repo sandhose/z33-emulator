@@ -10,7 +10,7 @@ use super::instructions::Instruction;
 ///
 /// There is a 1-1 mapping with the `Cell` type in this module.
 #[derive(Debug)]
-pub(crate) enum CellType {
+pub(crate) enum CellKind {
     Instruction,
     Word,
     Char,
@@ -20,7 +20,7 @@ pub(crate) enum CellType {
 #[derive(Debug, Error)]
 pub(crate) enum CellError {
     #[error("invalid cell type {was:?} expected {expected:?}")]
-    InvalidType { expected: CellType, was: CellType },
+    InvalidType { expected: CellKind, was: CellKind },
 }
 
 /// Represents a cell in memory and in general purpose registers
@@ -51,12 +51,12 @@ impl Default for Cell {
 
 impl Cell {
     #[inline]
-    fn cell_type(&self) -> CellType {
+    fn cell_kind(&self) -> CellKind {
         match self {
-            Self::Instruction(_) => CellType::Instruction,
-            Self::Word(_) => CellType::Word,
-            Self::Char(_) => CellType::Char,
-            Self::Empty => CellType::Empty,
+            Self::Instruction(_) => CellKind::Instruction,
+            Self::Word(_) => CellKind::Word,
+            Self::Char(_) => CellKind::Char,
+            Self::Empty => CellKind::Empty,
         }
     }
 
@@ -75,8 +75,8 @@ impl Cell {
                 Ok(buf[0] as _)
             }
             t => Err(CellError::InvalidType {
-                expected: CellType::Word,
-                was: t.cell_type(),
+                expected: CellKind::Word,
+                was: t.cell_kind(),
             }),
         }
     }
@@ -88,8 +88,8 @@ impl Cell {
         match self {
             Self::Instruction(i) => Ok(i),
             t => Err(CellError::InvalidType {
-                expected: CellType::Instruction,
-                was: t.cell_type(),
+                expected: CellKind::Instruction,
+                was: t.cell_kind(),
             }),
         }
     }
@@ -104,8 +104,8 @@ impl Cell {
             Self::Empty => Ok('\0'),
             Self::Word(w) if (0x00..=0xFF).contains(w) => Ok(char::from(*w as u8)),
             t => Err(CellError::InvalidType {
-                expected: CellType::Char,
-                was: t.cell_type(),
+                expected: CellKind::Char,
+                was: t.cell_kind(),
             }),
         }
     }

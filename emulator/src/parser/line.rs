@@ -21,8 +21,9 @@ use nom::{
 use super::{
     parse_identifier,
     value::{
-        parse_directive_argument, parse_instruction_argument, DirectiveArgument,
-        InstructionArgument,
+        parse_directive_argument, parse_directive_kind, parse_instruction_argument,
+        parse_instruction_kind, DirectiveArgument, DirectiveKind, InstructionArgument,
+        InstructionKind,
     },
 };
 
@@ -31,12 +32,12 @@ use super::{
 pub(crate) enum LineContent<'a> {
     /// Represents an instruction, with its opcode and list of arguments
     Instruction {
-        opcode: &'a str,
+        kind: InstructionKind,
         arguments: Vec<InstructionArgument<'a>>,
     },
     /// Represents a directive, with its type and argument
     Directive {
-        directive: &'a str,
+        kind: DirectiveKind,
         argument: DirectiveArgument<'a>,
     },
 }
@@ -51,9 +52,9 @@ impl<'a> LineContent<'a> {
 impl<'a> std::fmt::Display for LineContent<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            LineContent::Instruction { opcode, arguments } => {
+            LineContent::Instruction { kind, arguments } => {
                 // First write the opcode
-                write!(f, "{:4}", opcode)?;
+                write!(f, "{:4}", kind)?;
 
                 // then the list of arguments
                 let mut first = true; // This is to properly show comma between arguments
@@ -67,7 +68,7 @@ impl<'a> std::fmt::Display for LineContent<'a> {
                 Ok(())
             }
             LineContent::Directive {
-                directive,
+                kind: directive,
                 argument,
             } => {
                 write!(f, ".{}: {}", directive, argument)
@@ -131,11 +132,11 @@ impl<'a> Line<'a> {
     #[cfg(test)] // Only used in tests for now
     pub(crate) fn directive<T: Into<DirectiveArgument<'a>>>(
         mut self,
-        directive: &'a str,
+        kind: DirectiveKind,
         argument: T,
     ) -> Self {
         self.content = Some(LineContent::Directive {
-            directive,
+            kind,
             argument: argument.into(),
         });
         self
@@ -144,10 +145,10 @@ impl<'a> Line<'a> {
     #[cfg(test)] // Only used in tests for now
     pub(crate) fn instruction(
         mut self,
-        opcode: &'a str,
+        kind: InstructionKind,
         arguments: Vec<InstructionArgument<'a>>,
     ) -> Self {
-        self.content = Some(LineContent::Instruction { opcode, arguments });
+        self.content = Some(LineContent::Instruction { kind, arguments });
         self
     }
 }
@@ -155,21 +156,15 @@ impl<'a> Line<'a> {
 /// Parses a directive
 fn parse_directive_line(input: &str) -> IResult<&str, LineContent> {
     let (input, _) = char('.')(input)?;
-    let (input, directive) = parse_identifier(input)?;
+    let (input, kind) = parse_directive_kind(input)?;
     let (input, _) = space1(input)?;
     let (input, argument) = parse_directive_argument(input)?;
-    Ok((
-        input,
-        LineContent::Directive {
-            directive,
-            argument,
-        },
-    ))
+    Ok((input, LineContent::Directive { kind, argument }))
 }
 
 /// Parses an instruction
 fn parse_instruction_line(input: &str) -> IResult<&str, LineContent> {
-    let (input, opcode) = parse_identifier(input)?;
+    let (input, kind) = parse_instruction_kind(input)?;
     let (input, arguments) = opt(preceded(
         space1,
         separated_list1(
@@ -178,7 +173,7 @@ fn parse_instruction_line(input: &str) -> IResult<&str, LineContent> {
         ),
     ))(input)?;
     let arguments = arguments.unwrap_or_default();
-    Ok((input, LineContent::Instruction { opcode, arguments }))
+    Ok((input, LineContent::Instruction { kind, arguments }))
 }
 
 /// Parses the content of a line: an instruction or a directive
@@ -291,7 +286,7 @@ mod tests {
             Line {
                 symbols: vec!["foo", "bar"],
                 content: Some(LineContent::Directive {
-                    directive: "space",
+                    kind: DirectiveKind::Space,
                     argument: DirectiveArgument::Expression(Node::Sum(
                         Box::new(Node::Literal(30)),
                         Box::new(Node::Literal(5))
@@ -321,6 +316,9 @@ this has escaped chars: \r \n \t \""#;
 
     #[test]
     fn parse_program_test() {
+        use DirectiveKind::Space;
+        use InstructionKind::Add;
+
         let input = r#"
             str: .space "some multiline \
 string"
@@ -334,14 +332,14 @@ string"
             vec![
                 Line::default(),
                 Line::default().symbol("str").directive(
-                    "space",
-                    DirectiveArgument::StringLiteral(String::from("some multiline string"))
+                    Space,
+                    DirectiveArgument::StringLiteral("some multiline string".into())
                 ),
                 Line::default()
                     .symbol("main")
                     .comment("# beginning of program"),
                 Line::default().instruction(
-                    "add",
+                    Add,
                     vec![
                         InstructionArgument::Register("a"),
                         InstructionArgument::Register("b")

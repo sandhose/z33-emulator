@@ -6,7 +6,7 @@ use tracing::debug;
 use crate::{
     parser::expression::EvaluationError as ExpressionEvaluationError,
     parser::line::LineContent,
-    parser::value::{ComputeError, DirectiveArgument},
+    parser::value::{ComputeError, DirectiveArgument, DirectiveKind, InstructionKind},
     runtime::{Arg, ArgConversionError, Cell, Instruction, Memory, TryFromArg},
 };
 
@@ -26,9 +26,6 @@ impl<'a> From<CompilationError<'a>> for MemoryFillError<'a> {
 
 #[derive(Debug, Error)]
 pub(crate) enum CompilationError<'a> {
-    #[error("unsupported directive {directive}")]
-    UnsupportedDirective { directive: &'a str },
-
     #[error("could not evaluate expression: {0}")]
     Evaluation(ExpressionEvaluationError<'a>),
 
@@ -36,7 +33,7 @@ pub(crate) enum CompilationError<'a> {
     Compute(ComputeError<'a>),
 
     #[error("could not compile instruction: {0}")]
-    InstructionCompilation(InstructionCompilationError<'a>),
+    InstructionCompilation(InstructionCompilationError),
 }
 
 impl<'a> From<ExpressionEvaluationError<'a>> for CompilationError<'a> {
@@ -51,17 +48,14 @@ impl<'a> From<ComputeError<'a>> for CompilationError<'a> {
     }
 }
 
-impl<'a> From<InstructionCompilationError<'a>> for CompilationError<'a> {
-    fn from(e: InstructionCompilationError<'a>) -> Self {
+impl<'a> From<InstructionCompilationError> for CompilationError<'a> {
+    fn from(e: InstructionCompilationError) -> Self {
         Self::InstructionCompilation(e)
     }
 }
 
 #[derive(Debug, Error)]
-pub(crate) enum InstructionCompilationError<'a> {
-    #[error("invalid opcode {0}")]
-    InvalidOpcode(&'a str),
-
+pub(crate) enum InstructionCompilationError {
     #[error("invalid number of arguments: expected {expected}, got {got}")]
     InvalidArgumentNumber { expected: usize, got: usize },
 
@@ -69,7 +63,7 @@ pub(crate) enum InstructionCompilationError<'a> {
     ArgumentConversion(#[from] ArgConversionError),
 }
 
-fn get_tuple<'a, X, Y>(mut args: Vec<Arg>) -> Result<(X, Y), InstructionCompilationError<'a>>
+fn get_tuple<X, Y>(mut args: Vec<Arg>) -> Result<(X, Y), InstructionCompilationError>
 where
     X: TryFromArg,
     Y: TryFromArg,
@@ -87,7 +81,7 @@ where
     Ok((X::try_from_arg(x)?, Y::try_from_arg(y)?))
 }
 
-fn get_singleton<'a, X>(mut args: Vec<Arg>) -> Result<X, InstructionCompilationError<'a>>
+fn get_singleton<X>(mut args: Vec<Arg>) -> Result<X, InstructionCompilationError>
 where
     X: TryFromArg,
 {
@@ -102,7 +96,7 @@ where
     Ok(X::try_from_arg(x)?)
 }
 
-fn get_none<'a>(args: Vec<Arg>) -> Result<(), InstructionCompilationError<'a>> {
+fn get_none(args: Vec<Arg>) -> Result<(), InstructionCompilationError> {
     if !args.is_empty() {
         return Err(InstructionCompilationError::InvalidArgumentNumber {
             expected: 2,
@@ -113,174 +107,174 @@ fn get_none<'a>(args: Vec<Arg>) -> Result<(), InstructionCompilationError<'a>> {
     Ok(())
 }
 
-fn compile_instruction<'a>(
-    opcode: &'a str,
+fn compile_instruction(
+    kind: &InstructionKind,
     arguments: Vec<Arg>,
-) -> Result<Instruction, InstructionCompilationError<'a>> {
-    use InstructionCompilationError::*;
+) -> Result<Instruction, InstructionCompilationError> {
+    use InstructionKind::*;
 
-    match opcode.to_lowercase().as_str() {
-        "add" => {
+    match kind {
+        Add => {
             let (a, b) = get_tuple(arguments)?;
             Ok(Instruction::Add(a, b))
         }
 
-        "and" => {
+        And => {
             let (a, b) = get_tuple(arguments)?;
             Ok(Instruction::And(a, b))
         }
 
-        "call" => {
+        Call => {
             let a = get_singleton(arguments)?;
             Ok(Instruction::Call(a))
         }
 
-        "cmp" => {
+        Cmp => {
             let (a, b) = get_tuple(arguments)?;
             Ok(Instruction::Cmp(a, b))
         }
 
-        "div" => {
+        Div => {
             let (a, b) = get_tuple(arguments)?;
             Ok(Instruction::Div(a, b))
         }
 
-        "fas" => {
+        Fas => {
             let (a, b) = get_tuple(arguments)?;
             Ok(Instruction::Fas(a, b))
         }
 
-        "in" => {
+        In => {
             let (a, b) = get_tuple(arguments)?;
             Ok(Instruction::In(a, b))
         }
 
-        "jmp" => {
+        Jmp => {
             let a = get_singleton(arguments)?;
             Ok(Instruction::Jmp(a))
         }
 
-        "jeq" => {
+        Jeq => {
             let a = get_singleton(arguments)?;
             Ok(Instruction::Jeq(a))
         }
 
-        "jne" => {
+        Jne => {
             let a = get_singleton(arguments)?;
             Ok(Instruction::Jne(a))
         }
 
-        "jle" => {
+        Jle => {
             let a = get_singleton(arguments)?;
             Ok(Instruction::Jle(a))
         }
 
-        "jlt" => {
+        Jlt => {
             let a = get_singleton(arguments)?;
             Ok(Instruction::Jlt(a))
         }
 
-        "jge" => {
+        Jge => {
             let a = get_singleton(arguments)?;
             Ok(Instruction::Jge(a))
         }
 
-        "jgt" => {
+        Jgt => {
             let a = get_singleton(arguments)?;
             Ok(Instruction::Jgt(a))
         }
 
-        "ld" => {
+        Ld => {
             let (a, b) = get_tuple(arguments)?;
             Ok(Instruction::Ld(a, b))
         }
 
-        "mul" => {
+        Mul => {
             let (a, b) = get_tuple(arguments)?;
             Ok(Instruction::Mul(a, b))
         }
 
-        "neg" => {
+        Neg => {
             let a = get_singleton(arguments)?;
             Ok(Instruction::Neg(a))
         }
 
-        "nop" => {
+        Nop => {
             get_none(arguments)?;
             Ok(Instruction::Nop)
         }
 
-        "not" => {
+        Not => {
             let a = get_singleton(arguments)?;
             Ok(Instruction::Not(a))
         }
 
-        "or" => {
+        Or => {
             let (a, b) = get_tuple(arguments)?;
             Ok(Instruction::Or(a, b))
         }
 
-        "out" => {
+        Out => {
             let (a, b) = get_tuple(arguments)?;
             Ok(Instruction::Out(a, b))
         }
 
-        "pop" => {
+        Pop => {
             let a = get_singleton(arguments)?;
             Ok(Instruction::Pop(a))
         }
 
-        "push" => {
+        Push => {
             let a = get_singleton(arguments)?;
             Ok(Instruction::Push(a))
         }
 
-        "reset" => {
+        Reset => {
             get_none(arguments)?;
             Ok(Instruction::Reset)
         }
 
-        "rti" => {
+        Rti => {
             get_none(arguments)?;
             Ok(Instruction::Rti)
         }
 
-        "rtn" => {
+        Rtn => {
             get_none(arguments)?;
             Ok(Instruction::Rtn)
         }
 
-        "shl" => {
+        Shl => {
             let (a, b) = get_tuple(arguments)?;
             Ok(Instruction::Shl(a, b))
         }
 
-        "shr" => {
+        Shr => {
             let (a, b) = get_tuple(arguments)?;
             Ok(Instruction::Shr(a, b))
         }
 
-        "st" => {
+        St => {
             let (a, b) = get_tuple(arguments)?;
             Ok(Instruction::St(a, b))
         }
 
-        "sub" => {
+        Sub => {
             let (a, b) = get_tuple(arguments)?;
             Ok(Instruction::Sub(a, b))
         }
 
-        "trap" => {
+        Swap => todo!(),
+
+        Trap => {
             get_none(arguments)?;
             Ok(Instruction::Trap)
         }
 
-        "xor" => {
+        Xor => {
             let (a, b) = get_tuple(arguments)?;
             Ok(Instruction::Xor(a, b))
         }
-
-        _ => Err(InvalidOpcode(opcode)),
     }
 }
 
@@ -288,13 +282,15 @@ fn compile_placement<'a>(
     labels: &Labels<'a>,
     placement: &Placement<'a>,
 ) -> Result<Cell, CompilationError<'a>> {
+    use DirectiveKind::*;
+
     match placement {
         Placement::Reserved => Ok(Cell::Empty),
 
         Placement::Char(c) => Ok(Cell::Char(*c)),
 
         Placement::Line(LineContent::Directive {
-            directive: "word",
+            kind: Word,
             argument: DirectiveArgument::Expression(expression),
         }) => {
             let value = expression.evaluate(labels)?;
@@ -302,17 +298,17 @@ fn compile_placement<'a>(
         }
 
         // We should not have any other directives other than "word" at this point
-        Placement::Line(LineContent::Directive { directive, .. }) => {
-            Err(CompilationError::UnsupportedDirective { directive })
+        Placement::Line(LineContent::Directive { .. }) => {
+            unreachable!();
         }
 
-        Placement::Line(LineContent::Instruction { opcode, arguments }) => {
+        Placement::Line(LineContent::Instruction { kind, arguments }) => {
             let arguments: Result<Vec<_>, _> = arguments
                 .iter()
                 .map(|argument| argument.evaluate(labels))
                 .collect();
             let arguments = arguments?;
-            let instruction = compile_instruction(opcode, arguments)?;
+            let instruction = compile_instruction(kind, arguments)?;
             Ok(Cell::Instruction(Box::new(instruction)))
         }
     }
