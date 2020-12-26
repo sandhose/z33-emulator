@@ -6,15 +6,15 @@ use nom::{
     character::complete::space0,
     combinator::map,
     combinator::value,
+    error::ParseError,
     sequence::{delimited, preceded, terminated},
-    IResult,
+    Compare, IResult, InputTake,
 };
 use thiserror::Error;
 
 use super::{
     expression::{parse_expression, Context, EvaluationError, Node},
     literal::parse_string_literal,
-    parse_identifier,
 };
 use crate::runtime::{Address, Arg, Reg, Value};
 
@@ -97,7 +97,12 @@ impl std::fmt::Display for InstructionKind {
     }
 }
 
-pub(crate) fn parse_instruction_kind(input: &str) -> IResult<&str, InstructionKind> {
+pub(crate) fn parse_instruction_kind<Input, Error: ParseError<Input>>(
+    input: Input,
+) -> IResult<Input, InstructionKind, Error>
+where
+    Input: InputTake + Compare<&'static str> + Clone,
+{
     use InstructionKind::*;
 
     // `alt` only allows for 21-member tuples so we need to trick a bit by nesting them
@@ -149,28 +154,28 @@ pub(crate) enum InstructionArgument<'a> {
     Value(Node<'a>),
 
     /// The content of a register
-    Register(&'a str),
+    Register(Reg),
 
     /// A direct memory access
     Direct(Node<'a>),
 
     /// An indirect memory access (register)
-    Indirect(&'a str),
+    Indirect(Reg),
 
     /// An indexed memory access (register + offset)
-    Indexed { register: &'a str, value: Node<'a> },
+    Indexed { register: Reg, value: Node<'a> },
 }
 
 impl<'a> std::fmt::Display for InstructionArgument<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use InstructionArgument::*;
+
         match self {
-            InstructionArgument::Value(v) => write!(f, "{}", v),
-            InstructionArgument::Register(r) => write!(f, "%{}", r),
-            InstructionArgument::Direct(v) => write!(f, "[{}]", v),
-            InstructionArgument::Indirect(r) => write!(f, "[%{}]", r),
-            InstructionArgument::Indexed { register, value } => {
-                write!(f, "[%{} {:+}]", register, value)
-            }
+            Value(v) => write!(f, "{}", v),
+            Register(r) => write!(f, "%{}", r),
+            Direct(v) => write!(f, "[{}]", v),
+            Indirect(r) => write!(f, "[%{}]", r),
+            Indexed { register, value } => write!(f, "[%{} {:+}]", register, value),
         }
     }
 }
@@ -203,7 +208,12 @@ impl std::fmt::Display for DirectiveKind {
     }
 }
 
-pub(crate) fn parse_directive_kind(input: &str) -> IResult<&str, DirectiveKind> {
+pub(crate) fn parse_directive_kind<Input, Error: ParseError<Input>>(
+    input: Input,
+) -> IResult<Input, DirectiveKind, Error>
+where
+    Input: InputTake + Compare<&'static str> + Clone,
+{
     use DirectiveKind::*;
 
     alt((
@@ -226,9 +236,11 @@ pub(crate) enum DirectiveArgument<'a> {
 
 impl<'a> std::fmt::Display for DirectiveArgument<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use DirectiveArgument::*;
+
         match self {
-            DirectiveArgument::StringLiteral(l) => write!(f, "{:?}", l),
-            DirectiveArgument::Expression(e) => write!(f, "{}", e),
+            StringLiteral(l) => write!(f, "{:?}", l),
+            Expression(e) => write!(f, "{}", e),
         }
     }
 }
@@ -257,9 +269,6 @@ impl<'a> From<i128> for DirectiveArgument<'a> {
 pub(crate) enum ComputeError<'a> {
     #[error("could not evaluate argument: {0}")]
     Evaluation(EvaluationError<'a>),
-
-    #[error("invalid register {0:?}")]
-    InvalidRegister(&'a str),
 }
 
 impl<'a> From<EvaluationError<'a>> for ComputeError<'a> {
@@ -268,47 +277,37 @@ impl<'a> From<EvaluationError<'a>> for ComputeError<'a> {
     }
 }
 
-fn convert_register(register: &str) -> Result<Reg, ComputeError> {
-    match register.to_lowercase().as_str() {
-        "a" => Ok(Reg::A),
-        "b" => Ok(Reg::B),
-        "pc" => Ok(Reg::PC),
-        "sp" => Ok(Reg::SP),
-        "sr" => Ok(Reg::SR),
-        _ => Err(ComputeError::InvalidRegister(register)),
-    }
-}
-
 impl<'a> InstructionArgument<'a> {
     pub(crate) fn evaluate<C: Context>(&self, context: &C) -> Result<Arg, ComputeError<'a>> {
         match self {
-            InstructionArgument::Value(v) => {
+            Self::Value(v) => {
                 let value = v.evaluate(context)?;
                 Ok(Arg::Value(Value::Imm(value)))
             }
-            InstructionArgument::Register(r) => {
-                let register = convert_register(r)?;
-                Ok(Arg::Value(Value::Reg(register)))
-            }
-            InstructionArgument::Direct(v) => {
+            Self::Register(register) => Ok(Arg::Value(Value::Reg(*register))),
+            Self::Direct(v) => {
                 let value = v.evaluate(context)?;
                 Ok(Arg::Address(Address::Dir(value)))
             }
-            InstructionArgument::Indirect(r) => {
-                let register = convert_register(r)?;
-                Ok(Arg::Address(Address::Ind(register)))
-            }
-            InstructionArgument::Indexed { register, value } => {
+            Self::Indirect(register) => Ok(Arg::Address(Address::Ind(*register))),
+            Self::Indexed { register, value } => {
                 let value = value.evaluate(context)?;
-                let register = convert_register(register)?;
-                Ok(Arg::Address(Address::Idx(register, value)))
+                Ok(Arg::Address(Address::Idx(*register, value)))
             }
         }
     }
 }
 
-fn parse_register<'a>(input: &'a str) -> IResult<&'a str, &'a str> {
-    preceded(tag("%"), parse_identifier)(input)
+fn parse_register<'a>(input: &'a str) -> IResult<&'a str, Reg> {
+    use Reg::*;
+
+    alt((
+        value(A, tag_no_case("%a")),
+        value(B, tag_no_case("%b")),
+        value(PC, tag_no_case("%pc")),
+        value(SP, tag_no_case("%sp")),
+        value(SR, tag_no_case("%sr")),
+    ))(input)
 }
 
 fn parse_indirect_indexed_inner<'a>(input: &'a str) -> IResult<&'a str, InstructionArgument<'a>> {
@@ -360,6 +359,6 @@ mod tests {
     fn parse_register_test() {
         let (input, register) = parse_register("%a").unwrap();
         assert_eq!(input, "");
-        assert_eq!(register, "a");
+        assert_eq!(register, Reg::A);
     }
 }

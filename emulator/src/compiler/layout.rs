@@ -165,9 +165,9 @@ pub(crate) fn layout_memory<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parser::expression::Node;
     use crate::parser::line::Line;
     use crate::parser::value::{InstructionArgument, InstructionKind};
+    use crate::{parser::expression::Node, runtime::Reg};
 
     use DirectiveKind::*;
     use InstructionKind::*;
@@ -178,8 +178,8 @@ mod tests {
             Line::default().symbol("main").instruction(
                 Add,
                 vec![
-                    InstructionArgument::Register("a"),
-                    InstructionArgument::Register("b"),
+                    InstructionArgument::Register(Reg::A),
+                    InstructionArgument::Register(Reg::B),
                 ],
             ),
             Line::default().symbol("loop").instruction(

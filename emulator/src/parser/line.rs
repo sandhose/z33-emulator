@@ -238,6 +238,8 @@ pub(crate) fn parse_program(input: &str) -> IResult<&str, Vec<Line>> {
 
 #[cfg(test)]
 mod tests {
+    use crate::runtime::Reg;
+
     use super::*;
 
     #[track_caller]
@@ -341,8 +343,8 @@ string"
                 Line::default().instruction(
                     Add,
                     vec![
-                        InstructionArgument::Register("a"),
-                        InstructionArgument::Register("b")
+                        InstructionArgument::Register(Reg::A),
+                        InstructionArgument::Register(Reg::B)
                     ]
                 ),
                 Line::default(),
