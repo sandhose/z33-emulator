@@ -9,6 +9,7 @@ pub(crate) mod condition;
 pub(crate) mod expression;
 pub(crate) mod line;
 pub(crate) mod literal;
+pub(crate) mod location;
 mod precedence;
 pub(crate) mod value;
 

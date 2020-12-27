@@ -22,74 +22,183 @@ use nom::{
     bytes::complete::tag_no_case,
     character::complete::{char, space0},
     combinator::{map, value},
-    multi::fold_many0,
-    sequence::preceded,
-    IResult,
+    IResult, Offset,
 };
 use thiserror::Error;
 
-use super::literal::parse_bool_literal;
 use super::parse_identifier;
 use super::{
     expression::{
         parse_expression, Context as ExpressionContext, EmptyContext as EmptyExpressionContext,
-        EvaluationError as ExpressionEvaluationError, Node as ExpressionNode,
+        EvaluationError as ExpressionEvaluationError, Node as ENode,
     },
+    location::{Locatable, Located, RelativeLocation},
     precedence::Precedence,
 };
+use super::{literal::parse_bool_literal, location::AbsoluteLocation};
+
+type ChildNode<L> = Located<Box<Node<L>>, L>;
+type ExpressionNode<L> = Located<ENode<L>, L>;
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum Node {
+pub(crate) enum Node<L> {
     /// a == b
-    Equal(ExpressionNode, ExpressionNode),
+    Equal(ExpressionNode<L>, ExpressionNode<L>),
 
     /// a != b
-    NotEqual(ExpressionNode, ExpressionNode),
+    NotEqual(ExpressionNode<L>, ExpressionNode<L>),
 
     /// a >= b
-    GreaterOrEqual(ExpressionNode, ExpressionNode),
+    GreaterOrEqual(ExpressionNode<L>, ExpressionNode<L>),
 
     /// a > b
-    GreaterThan(ExpressionNode, ExpressionNode),
+    GreaterThan(ExpressionNode<L>, ExpressionNode<L>),
 
     /// a <= b
-    LesserOrEqual(ExpressionNode, ExpressionNode),
+    LesserOrEqual(ExpressionNode<L>, ExpressionNode<L>),
 
     /// a < b
-    LesserThan(ExpressionNode, ExpressionNode),
+    LesserThan(ExpressionNode<L>, ExpressionNode<L>),
 
     /// A || B
-    Or(Box<Node>, Box<Node>),
+    Or(ChildNode<L>, ChildNode<L>),
 
     /// A && B
-    And(Box<Node>, Box<Node>),
+    And(ChildNode<L>, ChildNode<L>),
 
     /// !A
-    Not(Box<Node>),
+    Not(ChildNode<L>),
 
     /// true or false
     Literal(bool),
 
     /// defined(N)
-    Defined(String),
+    Defined(Located<String, L>),
 }
 
-impl std::fmt::Display for Node {
+impl<L> std::fmt::Display for Node<L> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use Node::*;
 
         match self {
-            Equal(a, b) => write!(f, "{} == {}", a.with_parent(self), b.with_parent(self)),
-            NotEqual(a, b) => write!(f, "{} != {}", a.with_parent(self), b.with_parent(self)),
-            GreaterOrEqual(a, b) => write!(f, "{} >= {}", a.with_parent(self), b.with_parent(self)),
-            GreaterThan(a, b) => write!(f, "{} > {}", a.with_parent(self), b.with_parent(self)),
-            LesserOrEqual(a, b) => write!(f, "{} <= {}", a.with_parent(self), b.with_parent(self)),
-            LesserThan(a, b) => write!(f, "{} < {}", a.with_parent(self), b.with_parent(self)),
-            Or(a, b) => write!(f, "{} || {}", a.with_parent(self), b.with_parent(self)),
-            And(a, b) => write!(f, "{} && {}", a.with_parent(self), b.with_parent(self)),
-            Not(a) => write!(f, "!{}", a.with_parent(self)),
+            Equal(a, b) => write!(
+                f,
+                "{} == {}",
+                a.inner.with_parent(self),
+                b.inner.with_parent(self)
+            ),
+            NotEqual(a, b) => write!(
+                f,
+                "{} != {}",
+                a.inner.with_parent(self),
+                b.inner.with_parent(self)
+            ),
+            GreaterOrEqual(a, b) => write!(
+                f,
+                "{} >= {}",
+                a.inner.with_parent(self),
+                b.inner.with_parent(self)
+            ),
+            GreaterThan(a, b) => write!(
+                f,
+                "{} > {}",
+                a.inner.with_parent(self),
+                b.inner.with_parent(self)
+            ),
+            LesserOrEqual(a, b) => write!(
+                f,
+                "{} <= {}",
+                a.inner.with_parent(self),
+                b.inner.with_parent(self)
+            ),
+            LesserThan(a, b) => write!(
+                f,
+                "{} < {}",
+                a.inner.with_parent(self),
+                b.inner.with_parent(self)
+            ),
+            Or(a, b) => write!(
+                f,
+                "{} || {}",
+                a.inner.with_parent(self),
+                b.inner.with_parent(self)
+            ),
+            And(a, b) => write!(
+                f,
+                "{} && {}",
+                a.inner.with_parent(self),
+                b.inner.with_parent(self)
+            ),
+            Not(a) => write!(f, "!{}", a.inner.with_parent(self)),
             Literal(a) => write!(f, "{}", a),
-            Defined(a) => write!(f, "defined({})", a),
+            Defined(a) => write!(f, "defined({})", a.inner),
+        }
+    }
+}
+
+impl Node<RelativeLocation> {
+    fn offset(self, offset: usize) -> Self {
+        use Node::*;
+        match self {
+            Equal(a, b) => Equal(a.offset(offset), b.offset(offset)),
+            NotEqual(a, b) => NotEqual(a.offset(offset), b.offset(offset)),
+            GreaterOrEqual(a, b) => GreaterOrEqual(a.offset(offset), b.offset(offset)),
+            GreaterThan(a, b) => GreaterThan(a.offset(offset), b.offset(offset)),
+            LesserOrEqual(a, b) => LesserOrEqual(a.offset(offset), b.offset(offset)),
+            LesserThan(a, b) => LesserThan(a.offset(offset), b.offset(offset)),
+            Or(a, b) => Or(a.offset(offset), b.offset(offset)),
+            And(a, b) => And(a.offset(offset), b.offset(offset)),
+            Not(a) => Not(a.offset(offset)),
+            Literal(a) => Literal(a),
+            Defined(a) => Defined(a.offset(offset)),
+        }
+    }
+
+    // TODO: this should go in a trait
+    #[allow(dead_code)]
+    fn into_absolute(self, location: &AbsoluteLocation) -> Node<AbsoluteLocation> {
+        use Node::*;
+
+        let mapper = |node: Box<Node<RelativeLocation>>, parent: &AbsoluteLocation| {
+            Box::new(node.into_absolute(parent))
+        };
+
+        match self {
+            Equal(a, b) => Equal(
+                a.into_absolute(location, ENode::into_absolute),
+                b.into_absolute(location, ENode::into_absolute),
+            ),
+            NotEqual(a, b) => NotEqual(
+                a.into_absolute(location, ENode::into_absolute),
+                b.into_absolute(location, ENode::into_absolute),
+            ),
+            GreaterOrEqual(a, b) => GreaterOrEqual(
+                a.into_absolute(location, ENode::into_absolute),
+                b.into_absolute(location, ENode::into_absolute),
+            ),
+            GreaterThan(a, b) => GreaterThan(
+                a.into_absolute(location, ENode::into_absolute),
+                b.into_absolute(location, ENode::into_absolute),
+            ),
+            LesserOrEqual(a, b) => LesserOrEqual(
+                a.into_absolute(location, ENode::into_absolute),
+                b.into_absolute(location, ENode::into_absolute),
+            ),
+            LesserThan(a, b) => LesserThan(
+                a.into_absolute(location, ENode::into_absolute),
+                b.into_absolute(location, ENode::into_absolute),
+            ),
+            Or(a, b) => Or(
+                a.into_absolute(location, mapper),
+                b.into_absolute(location, mapper),
+            ),
+            And(a, b) => And(
+                a.into_absolute(location, mapper),
+                b.into_absolute(location, mapper),
+            ),
+            Not(a) => Not(a.into_absolute(location, mapper)),
+            Literal(l) => Literal(l),
+            Defined(d) => Defined(d.into_absolute(location, |d, _| d)),
         }
     }
 }
@@ -129,123 +238,159 @@ impl Context for EmptyContext {
     }
 }
 
-impl Node {
+impl<L> Node<L> {
     /// Evaluate a condition AST node with a given context
     pub fn evaluate<C: Context>(&self, context: &C) -> Result<bool, EvaluationError> {
         let value = match self {
             Node::Equal(a, b) => {
                 let context = context.get_expression_context();
-                let a: i128 = a.evaluate(context)?;
-                let b: i128 = b.evaluate(context)?;
+                let a: i128 = a.inner.evaluate(context)?;
+                let b: i128 = b.inner.evaluate(context)?;
                 a == b
             }
 
             Node::NotEqual(a, b) => {
                 let context = context.get_expression_context();
-                let a: i128 = a.evaluate(context)?;
-                let b: i128 = b.evaluate(context)?;
+                let a: i128 = a.inner.evaluate(context)?;
+                let b: i128 = b.inner.evaluate(context)?;
                 a != b
             }
 
             Node::GreaterOrEqual(a, b) => {
                 let context = context.get_expression_context();
-                let a: i128 = a.evaluate(context)?;
-                let b: i128 = b.evaluate(context)?;
+                let a: i128 = a.inner.evaluate(context)?;
+                let b: i128 = b.inner.evaluate(context)?;
                 a >= b
             }
 
             Node::GreaterThan(a, b) => {
                 let context = context.get_expression_context();
-                let a: i128 = a.evaluate(context)?;
-                let b: i128 = b.evaluate(context)?;
+                let a: i128 = a.inner.evaluate(context)?;
+                let b: i128 = b.inner.evaluate(context)?;
                 a > b
             }
 
             Node::LesserOrEqual(a, b) => {
                 let context = context.get_expression_context();
-                let a: i128 = a.evaluate(context)?;
-                let b: i128 = b.evaluate(context)?;
+                let a: i128 = a.inner.evaluate(context)?;
+                let b: i128 = b.inner.evaluate(context)?;
                 a <= b
             }
 
             Node::LesserThan(a, b) => {
                 let context = context.get_expression_context();
-                let a: i128 = a.evaluate(context)?;
-                let b: i128 = b.evaluate(context)?;
+                let a: i128 = a.inner.evaluate(context)?;
+                let b: i128 = b.inner.evaluate(context)?;
                 a < b
             }
 
             Node::Or(a, b) => {
-                let a = a.evaluate(context)?;
-                let b = b.evaluate(context)?;
+                let a = a.inner.evaluate(context)?;
+                let b = b.inner.evaluate(context)?;
                 a || b
             }
 
             Node::And(a, b) => {
-                let a = a.evaluate(context)?;
-                let b = b.evaluate(context)?;
+                let a = a.inner.evaluate(context)?;
+                let b = b.inner.evaluate(context)?;
                 a && b
             }
 
             Node::Not(a) => {
-                let a = a.evaluate(context)?;
+                let a = a.inner.evaluate(context)?;
                 !a
             }
 
             Node::Literal(l) => *l,
 
-            Node::Defined(v) => context.is_defined(v),
+            Node::Defined(v) => context.is_defined(&v.inner),
         };
 
         Ok(value)
     }
 }
 
-pub fn parse_condition(input: &str) -> IResult<&str, Node> {
+pub(crate) fn parse_condition(input: &str) -> IResult<&str, Node<RelativeLocation>> {
     let (input, _) = space0(input)?;
     parse_logical_or(input)
 }
 
 #[doc(hidden)]
-fn parse_logical_or_rec(input: &str) -> IResult<&str, Node> {
-    let (input, _) = space0(input)?;
-    let (input, _) = tag("||")(input)?;
-    let (input, _) = space0(input)?;
-    parse_logical_and(input)
+fn parse_logical_or_rec(input: &str) -> IResult<&str, ChildNode<RelativeLocation>> {
+    let (rest, _) = space0(input)?;
+    let (rest, _) = tag("||")(rest)?;
+    let (rest, _) = space0(rest)?;
+    let start = rest;
+    let (rest, node) = parse_logical_and(rest)?;
+    let node = Box::new(node).with_location((input.offset(start), start.offset(rest)));
+    Ok((rest, node))
 }
 
 /// Parse a logical "or" operation
-fn parse_logical_or(input: &str) -> IResult<&str, Node> {
-    let (input, value) = parse_logical_and(input)?;
-    fold_many0(parse_logical_or_rec, value, |value, arg| {
-        Node::Or(Box::new(value), Box::new(arg))
-    })(input)
+fn parse_logical_or(input: &str) -> IResult<&str, Node<RelativeLocation>> {
+    let (mut cursor, mut node) = parse_logical_and(input)?;
+
+    while let Ok((rest, right)) = parse_logical_or_rec(cursor) {
+        let offset = input.offset(cursor);
+        // Wrap the "left" node with location information
+        let left = Box::new(node).with_location((0, offset));
+
+        // The location embed in the `right` node is relative to the cursor, so we need to offset
+        // it by the offset between the input and the cursor
+        let right = right.offset(offset);
+
+        node = Node::Or(left, right);
+        cursor = rest;
+    }
+
+    Ok((cursor, node))
 }
 
 #[doc(hidden)]
-fn parse_logical_and_rec(input: &str) -> IResult<&str, Node> {
-    let (input, _) = space0(input)?;
-    let (input, _) = tag("&&")(input)?;
-    let (input, _) = space0(input)?;
-    parse_logical_expression(input)
+fn parse_logical_and_rec(input: &str) -> IResult<&str, ChildNode<RelativeLocation>> {
+    let (rest, _) = space0(input)?;
+    let (rest, _) = tag("&&")(rest)?;
+    let (rest, _) = space0(rest)?;
+    let start = rest;
+    let (rest, node) = parse_logical_expression(rest)?;
+    let node = Box::new(node).with_location((input.offset(start), start.offset(rest)));
+    Ok((rest, node))
 }
 
 /// Parse a logical "and" operation
-fn parse_logical_and(input: &str) -> IResult<&str, Node> {
-    let (input, value) = parse_logical_expression(input)?;
-    fold_many0(parse_logical_and_rec, value, |value, arg| {
-        Node::And(Box::new(value), Box::new(arg))
-    })(input)
+fn parse_logical_and(input: &str) -> IResult<&str, Node<RelativeLocation>> {
+    let (mut cursor, mut node) = parse_logical_expression(input)?;
+
+    while let Ok((rest, right)) = parse_logical_and_rec(cursor) {
+        let offset = input.offset(cursor);
+        // Wrap the "left" node with location information
+        let left = Box::new(node).with_location((0, offset));
+
+        // The location embed in the `right` node is relative to the cursor, so we need to offset
+        // it by the offset between the input and the cursor
+        let right = right.offset(offset);
+
+        node = Node::And(left, right);
+        cursor = rest;
+    }
+
+    Ok((cursor, node))
 }
 
-fn parse_logical_expression(input: &str) -> IResult<&str, Node> {
-    alt((
-        map(preceded(char('!'), parse_atom), |v| Node::Not(Box::new(v))), // Negation
-        parse_atom,
-    ))(input)
+fn parse_logical_not(input: &str) -> IResult<&str, Node<RelativeLocation>> {
+    let (rest, _) = char('!')(input)?;
+    let (rest, _) = space0(rest)?;
+    let start = rest;
+    let (rest, node) = parse_atom(rest)?;
+    let node = Box::new(node).with_location((input.offset(start), start.offset(rest)));
+    Ok((rest, Node::Not(node)))
 }
 
-fn parse_atom(input: &str) -> IResult<&str, Node> {
+fn parse_logical_expression(input: &str) -> IResult<&str, Node<RelativeLocation>> {
+    alt((parse_logical_not, parse_atom))(input)
+}
+
+fn parse_atom(input: &str) -> IResult<&str, Node<RelativeLocation>> {
     let (input, _) = space0(input)?;
     alt((
         parse_number_comparison,
@@ -255,7 +400,7 @@ fn parse_atom(input: &str) -> IResult<&str, Node> {
     ))(input)
 }
 
-fn parse_number_comparison(input: &str) -> IResult<&str, Node> {
+fn parse_number_comparison(input: &str) -> IResult<&str, Node<RelativeLocation>> {
     #[derive(Clone)]
     enum Comparison {
         Equal,
@@ -268,21 +413,24 @@ fn parse_number_comparison(input: &str) -> IResult<&str, Node> {
 
     use Comparison::*;
 
-    let (input, a) = parse_expression(input)?; // Parse the first operand
-    let (input, _) = space0(input)?;
+    let (rest, a) = parse_expression(input)?; // Parse the first operand
+    let a = a.with_location((0, input.offset(rest)));
+    let (rest, _) = space0(rest)?;
 
     // Parse the operator
-    let (input, op) = alt((
+    let (rest, op) = alt((
         value(Equal, tag("==")),
         value(NotEqual, tag("!=")),
         value(GreaterOrEqual, tag(">=")),
         value(GreaterThan, tag(">")),
         value(LesserOrEqual, tag("<=")),
         value(LesserThan, tag("<")),
-    ))(input)?;
+    ))(rest)?;
 
-    let (input, _) = space0(input)?;
-    let (input, b) = parse_expression(input)?; // Parse the second operand
+    let (rest, _) = space0(rest)?;
+    let start = rest;
+    let (rest, b) = parse_expression(rest)?; // Parse the second operand
+    let b = b.with_location((input.offset(start), start.offset(rest)));
 
     // Create the node out of the two operands and the operator
     let node = match op {
@@ -294,27 +442,36 @@ fn parse_number_comparison(input: &str) -> IResult<&str, Node> {
         LesserThan => Node::LesserThan(a, b),
     };
 
-    Ok((input, node))
+    Ok((rest, node))
 }
 
-fn parse_defined(input: &str) -> IResult<&str, String> {
-    let (input, _) = tag_no_case("defined")(input)?;
-    let (input, _) = space0(input)?;
-    let (input, _) = char('(')(input)?;
-    let (input, _) = space0(input)?;
-    let (input, identifier) = parse_identifier(input)?;
-    let (input, _) = space0(input)?;
-    let (input, _) = char(')')(input)?;
-    Ok((input, identifier.into()))
+fn parse_defined(input: &str) -> IResult<&str, Located<String, RelativeLocation>> {
+    let (rest, _) = tag_no_case("defined")(input)?;
+    let (rest, _) = space0(rest)?;
+    let (rest, _) = char('(')(rest)?;
+    let (rest, _) = space0(rest)?;
+    let start = rest;
+    let (rest, identifier) = parse_identifier(rest)?;
+    let identifier = identifier
+        .to_string()
+        .with_location((input.offset(start), start.offset(rest)));
+    let (rest, _) = space0(rest)?;
+    let (rest, _) = char(')')(rest)?;
+    Ok((rest, identifier))
 }
 
-fn parse_parenthesis(input: &str) -> IResult<&str, Node> {
-    let (input, _) = char('(')(input)?;
-    let (input, _) = space0(input)?;
-    let (input, value) = parse_condition(input)?;
-    let (input, _) = space0(input)?;
-    let (input, _) = char(')')(input)?;
-    Ok((input, value))
+fn parse_parenthesis(input: &str) -> IResult<&str, Node<RelativeLocation>> {
+    let (rest, _) = char('(')(input)?;
+    let (rest, _) = space0(rest)?;
+
+    let offset = input.offset(rest);
+    let (rest, value) = parse_condition(rest)?;
+    // This offsets the child nodes location to compensate the parenthesis
+    let value = value.offset(offset);
+
+    let (rest, _) = space0(rest)?;
+    let (rest, _) = char(')')(rest)?;
+    Ok((rest, value))
 }
 
 #[cfg(test)]
@@ -324,12 +481,12 @@ mod tests {
     use super::*;
 
     #[track_caller]
-    fn evaluate(res: IResult<&str, Node>) -> bool {
+    fn evaluate<L>(res: IResult<&str, Node<L>>) -> bool {
         evaluate_with_context(res, &EmptyContext)
     }
 
     #[track_caller]
-    fn evaluate_with_context<C: Context>(res: IResult<&str, Node>, context: &C) -> bool {
+    fn evaluate_with_context<C: Context, L>(res: IResult<&str, Node<L>>, context: &C) -> bool {
         let (rest, node) = res.finish().unwrap();
         assert_eq!(rest, "");
         node.evaluate(context).unwrap()
@@ -340,7 +497,39 @@ mod tests {
         use Node::*;
         assert_eq!(
             parse_condition("defined(HELLO)"),
-            Ok(("", Defined("HELLO".into())))
+            Ok(("", Defined("HELLO".to_string().with_location((8, 5)))))
+        );
+    }
+
+    #[test]
+    fn absolute_location_test() {
+        use Node::*;
+        // This tests that RelativeLocations are correctly transformed into AbsoluteLocations.
+        let tree: Node<RelativeLocation> = parse_condition("true && (false || true)").unwrap().1;
+        assert_eq!(
+            tree,
+            And(
+                Box::new(Literal(true)).with_location((0, 4)),
+                Box::new(Or(
+                    Box::new(Literal(false)).with_location((1, 5)),
+                    Box::new(Literal(true)).with_location((10, 4)),
+                ),)
+                .with_location((8, 15))
+            )
+        );
+
+        let base = AbsoluteLocation::default();
+        let tree: Node<AbsoluteLocation> = tree.into_absolute(&base);
+        assert_eq!(
+            tree,
+            And(
+                Box::new(Literal(true)).with_location((0, 4)),
+                Box::new(Or(
+                    Box::new(Literal(false)).with_location((9, 5)),
+                    Box::new(Literal(true)).with_location((18, 4)),
+                ),)
+                .with_location((8, 15))
+            )
         );
     }
 
@@ -385,7 +574,7 @@ mod tests {
     }
 
     #[test]
-    fn ast_test() {
+    fn ast_location_test() {
         use super::super::expression::Node::Literal as ELiteral;
         use Node::{Literal as CLiteral, *};
         assert_eq!(
@@ -393,8 +582,12 @@ mod tests {
             Ok((
                 "",
                 And(
-                    Box::new(GreaterThan(ELiteral(3), ELiteral(2))),
-                    Box::new(CLiteral(true))
+                    Box::new(GreaterThan(
+                        ELiteral(3).with_location((0, 1)),
+                        ELiteral(2).with_location((4, 1))
+                    ))
+                    .with_location((0, 5)),
+                    Box::new(CLiteral(true)).with_location((9, 4))
                 )
             ))
         );
@@ -433,14 +626,28 @@ mod tests {
         }
 
         let ctx = &TestConditionContext;
-        assert_eq!(Defined("yes".into()).evaluate(ctx), Ok(true));
-        assert_eq!(Defined("no".into()).evaluate(ctx), Ok(false));
         assert_eq!(
-            Equal(E::Variable("ten".into()), E::Literal(10)).evaluate(ctx),
+            Defined::<()>("yes".to_string().with_location(())).evaluate(ctx),
+            Ok(true)
+        );
+        assert_eq!(
+            Defined::<()>("no".to_string().with_location(())).evaluate(ctx),
+            Ok(false)
+        );
+        assert_eq!(
+            Equal::<()>(
+                E::Variable("ten".into()).with_location(()),
+                E::Literal(10).with_location(())
+            )
+            .evaluate(ctx),
             Ok(true),
         );
         assert_eq!(
-            Equal(E::Variable("undefined".into()), E::Literal(10)).evaluate(ctx),
+            Equal::<()>(
+                E::Variable("undefined".into()).with_location(()),
+                E::Literal(10).with_location(())
+            )
+            .evaluate(ctx),
             Err(EvaluationError::ExpressionEvaluation(
                 ExpressionEvaluationError::UndefinedVariable {
                     variable: "undefined".into()

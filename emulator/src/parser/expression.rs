@@ -31,39 +31,46 @@ use nom::{
 };
 use thiserror::Error;
 
-use super::{literal::parse_number_literal, parse_identifier, precedence::Precedence};
+use super::{
+    literal::parse_number_literal,
+    location::{AbsoluteLocation, Locatable, Located, RelativeLocation},
+    parse_identifier,
+    precedence::Precedence,
+};
+
+type ChildNode<L> = Located<Box<Node<L>>, L>;
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum Node {
+pub(crate) enum Node<L> {
     /// a | b
-    BinaryOr(Box<Node>, Box<Node>),
+    BinaryOr(ChildNode<L>, ChildNode<L>),
 
     /// a & b
-    BinaryAnd(Box<Node>, Box<Node>),
+    BinaryAnd(ChildNode<L>, ChildNode<L>),
 
     /// a << b
-    LeftShift(Box<Node>, Box<Node>),
+    LeftShift(ChildNode<L>, ChildNode<L>),
 
     /// a >> b
-    RightShift(Box<Node>, Box<Node>),
+    RightShift(ChildNode<L>, ChildNode<L>),
 
     /// a + b
-    Sum(Box<Node>, Box<Node>),
+    Sum(ChildNode<L>, ChildNode<L>),
 
     /// a - b
-    Substract(Box<Node>, Box<Node>),
+    Substract(ChildNode<L>, ChildNode<L>),
 
     /// a * b
-    Multiply(Box<Node>, Box<Node>),
+    Multiply(ChildNode<L>, ChildNode<L>),
 
     /// a / b
-    Divide(Box<Node>, Box<Node>),
+    Divide(ChildNode<L>, ChildNode<L>),
 
     /// -a
-    Invert(Box<Node>),
+    Invert(ChildNode<L>),
 
     /// ~a
-    BinaryNot(Box<Node>),
+    BinaryNot(ChildNode<L>),
 
     /// A literal value
     Literal(Value),
@@ -72,33 +79,142 @@ pub enum Node {
     Variable(String),
 }
 
-impl std::fmt::Display for Node {
+impl<L> std::fmt::Display for Node<L> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use Node::*;
         if f.sign_plus() {
             // Special case for indexed arguments
             match self {
-                Invert(a) => write!(f, "- {}", a),
+                Invert(a) => write!(f, "- {}", a.inner),
                 n => write!(f, "+ {}", n),
             }
         } else {
             match self {
-                BinaryOr(a, b) => write!(f, "{} | {}", a.with_parent(self), b.with_parent(self)),
-                BinaryAnd(a, b) => write!(f, "{} & {}", a.with_parent(self), b.with_parent(self)),
-                LeftShift(a, b) => write!(f, "{} << {}", a.with_parent(self), b.with_parent(self)),
-                RightShift(a, b) => write!(f, "{} >> {}", a.with_parent(self), b.with_parent(self)),
-                Sum(a, b) => write!(f, "{} + {}", a.with_parent(self), b.with_parent(self)),
-                Substract(a, b) => write!(f, "{} - {}", a.with_parent(self), b.with_parent(self)),
-                Multiply(a, b) => write!(f, "{} * {}", a.with_parent(self), b.with_parent(self)),
-                Divide(a, b) => write!(f, "{} / {}", a.with_parent(self), b.with_parent(self)),
-                Invert(a) => write!(f, "-{}", a.with_parent(self)),
-                BinaryNot(a) => write!(f, "~{}", a.with_parent(self)),
+                BinaryOr(a, b) => write!(
+                    f,
+                    "{} | {}",
+                    a.inner.with_parent(self),
+                    b.inner.with_parent(self)
+                ),
+                BinaryAnd(a, b) => write!(
+                    f,
+                    "{} & {}",
+                    a.inner.with_parent(self),
+                    b.inner.with_parent(self)
+                ),
+                LeftShift(a, b) => write!(
+                    f,
+                    "{} << {}",
+                    a.inner.with_parent(self),
+                    b.inner.with_parent(self)
+                ),
+                RightShift(a, b) => write!(
+                    f,
+                    "{} >> {}",
+                    a.inner.with_parent(self),
+                    b.inner.with_parent(self)
+                ),
+                Sum(a, b) => write!(
+                    f,
+                    "{} + {}",
+                    a.inner.with_parent(self),
+                    b.inner.with_parent(self)
+                ),
+                Substract(a, b) => write!(
+                    f,
+                    "{} - {}",
+                    a.inner.with_parent(self),
+                    b.inner.with_parent(self)
+                ),
+                Multiply(a, b) => write!(
+                    f,
+                    "{} * {}",
+                    a.inner.with_parent(self),
+                    b.inner.with_parent(self)
+                ),
+                Divide(a, b) => write!(
+                    f,
+                    "{} / {}",
+                    a.inner.with_parent(self),
+                    b.inner.with_parent(self)
+                ),
+                Invert(a) => write!(f, "-{}", a.inner.with_parent(self)),
+                BinaryNot(a) => write!(f, "~{}", a.inner.with_parent(self)),
                 Literal(a) => write!(f, "{}", a),
                 Variable(a) => write!(f, "{}", a),
             }
         }
     }
 }
+
+impl Node<RelativeLocation> {
+    #[allow(dead_code)]
+    fn offset(self, offset: usize) -> Self {
+        use Node::*;
+        match self {
+            BinaryOr(a, b) => BinaryOr(a.offset(offset), b.offset(offset)),
+            BinaryAnd(a, b) => BinaryAnd(a.offset(offset), b.offset(offset)),
+            LeftShift(a, b) => LeftShift(a.offset(offset), b.offset(offset)),
+            RightShift(a, b) => RightShift(a.offset(offset), b.offset(offset)),
+            Sum(a, b) => Sum(a.offset(offset), b.offset(offset)),
+            Substract(a, b) => Substract(a.offset(offset), b.offset(offset)),
+            Multiply(a, b) => Multiply(a.offset(offset), b.offset(offset)),
+            Divide(a, b) => Divide(a.offset(offset), b.offset(offset)),
+            Invert(a) => Invert(a.offset(offset)),
+            BinaryNot(a) => BinaryNot(a.offset(offset)),
+            Literal(a) => Literal(a),
+            Variable(a) => Variable(a),
+        }
+    }
+
+    pub(crate) fn into_absolute(self, location: &AbsoluteLocation) -> Node<AbsoluteLocation> {
+        use Node::*;
+
+        let mapper = |node: Box<Node<RelativeLocation>>, parent: &AbsoluteLocation| {
+            Box::new(node.into_absolute(parent))
+        };
+
+        match self {
+            BinaryOr(a, b) => BinaryOr(
+                a.into_absolute(location, mapper),
+                b.into_absolute(location, mapper),
+            ),
+            BinaryAnd(a, b) => BinaryAnd(
+                a.into_absolute(location, mapper),
+                b.into_absolute(location, mapper),
+            ),
+            LeftShift(a, b) => LeftShift(
+                a.into_absolute(location, mapper),
+                b.into_absolute(location, mapper),
+            ),
+            RightShift(a, b) => RightShift(
+                a.into_absolute(location, mapper),
+                b.into_absolute(location, mapper),
+            ),
+            Sum(a, b) => Sum(
+                a.into_absolute(location, mapper),
+                b.into_absolute(location, mapper),
+            ),
+            Substract(a, b) => Substract(
+                a.into_absolute(location, mapper),
+                b.into_absolute(location, mapper),
+            ),
+            Multiply(a, b) => Multiply(
+                a.into_absolute(location, mapper),
+                b.into_absolute(location, mapper),
+            ),
+            Divide(a, b) => Divide(
+                a.into_absolute(location, mapper),
+                b.into_absolute(location, mapper),
+            ),
+            Invert(a) => Invert(a.into_absolute(location, mapper)),
+            BinaryNot(a) => BinaryNot(a.into_absolute(location, mapper)),
+            Literal(a) => Literal(a),
+            Variable(a) => Variable(a),
+        }
+    }
+}
+
 pub trait Context {
     // TODO: use something else than Value
     fn resolve_variable(&self, variable: &str) -> Option<Value>;
@@ -120,7 +236,7 @@ pub enum EvaluationError {
     Downcast,
 }
 
-impl Node {
+impl<L> Node<L> {
     pub fn evaluate<C: Context, V: TryFrom<Value>>(
         &self,
         context: &C,
@@ -128,60 +244,60 @@ impl Node {
         let value: Value =
             match self {
                 Node::BinaryOr(left, right) => {
-                    let left: Value = left.evaluate(context)?;
-                    let right: Value = right.evaluate(context)?;
+                    let left: Value = left.inner.evaluate(context)?;
+                    let right: Value = right.inner.evaluate(context)?;
                     left | right
                 }
 
                 Node::BinaryAnd(left, right) => {
-                    let left: Value = left.evaluate(context)?;
-                    let right: Value = right.evaluate(context)?;
+                    let left: Value = left.inner.evaluate(context)?;
+                    let right: Value = right.inner.evaluate(context)?;
                     left & right
                 }
 
                 Node::LeftShift(left, right) => {
-                    let left: Value = left.evaluate(context)?;
-                    let right: Value = right.evaluate(context)?;
+                    let left: Value = left.inner.evaluate(context)?;
+                    let right: Value = right.inner.evaluate(context)?;
                     left << right
                 }
 
                 Node::RightShift(left, right) => {
-                    let left: Value = left.evaluate(context)?;
-                    let right: Value = right.evaluate(context)?;
+                    let left: Value = left.inner.evaluate(context)?;
+                    let right: Value = right.inner.evaluate(context)?;
                     left >> right
                 }
 
                 Node::Sum(left, right) => {
-                    let left: Value = left.evaluate(context)?;
-                    let right: Value = right.evaluate(context)?;
+                    let left: Value = left.inner.evaluate(context)?;
+                    let right: Value = right.inner.evaluate(context)?;
                     left + right
                 }
 
                 Node::Substract(left, right) => {
-                    let left: Value = left.evaluate(context)?;
-                    let right: Value = right.evaluate(context)?;
+                    let left: Value = left.inner.evaluate(context)?;
+                    let right: Value = right.inner.evaluate(context)?;
                     left - right
                 }
 
                 Node::Multiply(left, right) => {
-                    let left: Value = left.evaluate(context)?;
-                    let right: Value = right.evaluate(context)?;
+                    let left: Value = left.inner.evaluate(context)?;
+                    let right: Value = right.inner.evaluate(context)?;
                     left * right
                 }
 
                 Node::Divide(left, right) => {
-                    let left: Value = left.evaluate(context)?;
-                    let right: Value = right.evaluate(context)?;
+                    let left: Value = left.inner.evaluate(context)?;
+                    let right: Value = right.inner.evaluate(context)?;
                     left / right
                 }
 
                 Node::Invert(operand) => {
-                    let operand: Value = operand.evaluate(context)?;
+                    let operand: Value = operand.inner.evaluate(context)?;
                     -operand
                 }
 
                 Node::BinaryNot(operand) => {
-                    let _operand: Value = operand.evaluate(context)?;
+                    let _operand: Value = operand.inner.evaluate(context)?;
                     // TODO: bit inversion is tricky because we're not supposed to know the word length
                     // here. It's a bit opiniated, but for now it tries casting down to u16 before
                     // negating.
@@ -211,7 +327,7 @@ impl Node {
 pub type Value = i128;
 
 #[doc(hidden)]
-fn parse_or_rec(input: &str) -> IResult<&str, Node> {
+fn parse_or_rec(input: &str) -> IResult<&str, Node<RelativeLocation>> {
     let (input, _) = space0(input)?;
     let (input, _) = char('|')(input)?;
     let (input, _) = space0(input)?;
@@ -219,15 +335,18 @@ fn parse_or_rec(input: &str) -> IResult<&str, Node> {
 }
 
 /// Parse a bitwise "or" operation
-fn parse_or(input: &str) -> IResult<&str, Node> {
+fn parse_or(input: &str) -> IResult<&str, Node<RelativeLocation>> {
     let (input, value) = parse_and(input)?;
     fold_many0(parse_or_rec, value, |value, arg| {
-        Node::BinaryOr(Box::new(value), Box::new(arg))
+        Node::BinaryOr(
+            Box::new(value).with_location(()),
+            Box::new(arg).with_location(()),
+        )
     })(input)
 }
 
 #[doc(hidden)]
-fn parse_and_rec(input: &str) -> IResult<&str, Node> {
+fn parse_and_rec(input: &str) -> IResult<&str, Node<RelativeLocation>> {
     let (input, _) = space0(input)?;
     let (input, _) = char('&')(input)?;
     let (input, _) = space0(input)?;
@@ -235,10 +354,13 @@ fn parse_and_rec(input: &str) -> IResult<&str, Node> {
 }
 
 /// Parse a bitwise "and" operation
-fn parse_and(input: &str) -> IResult<&str, Node> {
+fn parse_and(input: &str) -> IResult<&str, Node<RelativeLocation>> {
     let (input, value) = parse_shift(input)?;
     fold_many0(parse_and_rec, value, |value, arg| {
-        Node::BinaryAnd(Box::new(value), Box::new(arg))
+        Node::BinaryAnd(
+            Box::new(value).with_location(()),
+            Box::new(arg).with_location(()),
+        )
     })(input)
 }
 
@@ -252,7 +374,7 @@ enum ShiftOp {
 }
 
 #[doc(hidden)]
-fn parse_shift_rec(input: &str) -> IResult<&str, (ShiftOp, Node)> {
+fn parse_shift_rec(input: &str) -> IResult<&str, (ShiftOp, Node<RelativeLocation>)> {
     let (input, _) = space0(input)?;
     let (input, op) = alt((
         value(ShiftOp::Right, tag(">>")),
@@ -264,13 +386,19 @@ fn parse_shift_rec(input: &str) -> IResult<&str, (ShiftOp, Node)> {
 }
 
 /// Parse a bitshift operation
-fn parse_shift(input: &str) -> IResult<&str, Node> {
+fn parse_shift(input: &str) -> IResult<&str, Node<RelativeLocation>> {
     let (input, value) = parse_sum(input)?;
     let (input, op) = opt(parse_shift_rec)(input)?;
 
     let value = match op {
-        Some((ShiftOp::Right, arg)) => Node::RightShift(Box::new(value), Box::new(arg)),
-        Some((ShiftOp::Left, arg)) => Node::LeftShift(Box::new(value), Box::new(arg)),
+        Some((ShiftOp::Right, arg)) => Node::RightShift(
+            Box::new(value).with_location(()),
+            Box::new(arg).with_location(()),
+        ),
+        Some((ShiftOp::Left, arg)) => Node::LeftShift(
+            Box::new(value).with_location(()),
+            Box::new(arg).with_location(()),
+        ),
         None => value,
     };
 
@@ -285,7 +413,7 @@ enum SumOp {
 }
 
 #[doc(hidden)]
-fn parse_sum_rec(input: &str) -> IResult<&str, (SumOp, Node)> {
+fn parse_sum_rec(input: &str) -> IResult<&str, (SumOp, Node<RelativeLocation>)> {
     let (input, _) = space0(input)?;
     let (input, op) = alt((
         value(SumOp::Sum, char('+')), // Add
@@ -297,11 +425,17 @@ fn parse_sum_rec(input: &str) -> IResult<&str, (SumOp, Node)> {
 }
 
 /// Parse a sum/sub operation
-fn parse_sum(input: &str) -> IResult<&str, Node> {
+fn parse_sum(input: &str) -> IResult<&str, Node<RelativeLocation>> {
     let (input, value) = parse_mul(input)?;
     fold_many0(parse_sum_rec, value, |value, (op, arg)| match op {
-        SumOp::Sum => Node::Sum(Box::new(value), Box::new(arg)),
-        SumOp::Sub => Node::Substract(Box::new(value), Box::new(arg)),
+        SumOp::Sum => Node::Sum(
+            Box::new(value).with_location(()),
+            Box::new(arg).with_location(()),
+        ),
+        SumOp::Sub => Node::Substract(
+            Box::new(value).with_location(()),
+            Box::new(arg).with_location(()),
+        ),
     })(input)
 }
 
@@ -313,7 +447,7 @@ enum MulOp {
 }
 
 #[doc(hidden)]
-fn parse_mul_rec(input: &str) -> IResult<&str, (MulOp, Node)> {
+fn parse_mul_rec(input: &str) -> IResult<&str, (MulOp, Node<RelativeLocation>)> {
     let (input, _) = space0(input)?;
     let (input, op) = alt((
         value(MulOp::Mul, char('*')), // Multiply
@@ -325,30 +459,36 @@ fn parse_mul_rec(input: &str) -> IResult<&str, (MulOp, Node)> {
 }
 
 /// Parse a multiply/divide operation
-fn parse_mul(input: &str) -> IResult<&str, Node> {
+fn parse_mul(input: &str) -> IResult<&str, Node<RelativeLocation>> {
     let (input, value) = parse_unary(input)?;
     fold_many0(parse_mul_rec, value, |value, (op, arg)| match op {
-        MulOp::Mul => Node::Multiply(Box::new(value), Box::new(arg)),
-        MulOp::Div => Node::Divide(Box::new(value), Box::new(arg)),
+        MulOp::Mul => Node::Multiply(
+            Box::new(value).with_location(()),
+            Box::new(arg).with_location(()),
+        ),
+        MulOp::Div => Node::Divide(
+            Box::new(value).with_location(()),
+            Box::new(arg).with_location(()),
+        ),
     })(input)
 }
 
 /// Parse unary operations (negation and bit inversion)
-fn parse_unary(input: &str) -> IResult<&str, Node> {
+fn parse_unary(input: &str) -> IResult<&str, Node<RelativeLocation>> {
     let (input, _) = space0(input)?;
     alt((
         map(preceded(char('-'), parse_atom), |n| {
-            Node::Invert(Box::new(n))
+            Node::Invert(Box::new(n).with_location(()))
         }),
         map(preceded(char('~'), parse_atom), |n| {
-            Node::BinaryNot(Box::new(n))
+            Node::BinaryNot(Box::new(n).with_location(()))
         }),
         parse_atom,
     ))(input)
 }
 
 /// Parse an atom of an expression: either a literal or a full expression within parenthesis
-fn parse_atom(input: &str) -> IResult<&str, Node> {
+fn parse_atom(input: &str) -> IResult<&str, Node<RelativeLocation>> {
     let (input, _) = space0(input)?;
     alt((
         map(parse_number_literal, |v| Node::Literal(v as Value)),
@@ -358,7 +498,7 @@ fn parse_atom(input: &str) -> IResult<&str, Node> {
 }
 
 /// Parse an expression surrounded by parenthesis
-fn parse_parenthesis(input: &str) -> IResult<&str, Node> {
+fn parse_parenthesis(input: &str) -> IResult<&str, Node<RelativeLocation>> {
     let (input, _) = char('(')(input)?;
     let (input, _) = space0(input)?;
     let (input, value) = parse_or(input)?;
@@ -368,7 +508,7 @@ fn parse_parenthesis(input: &str) -> IResult<&str, Node> {
 }
 
 /// Parse an expression, returning its AST
-pub fn parse_expression(input: &str) -> IResult<&str, Node> {
+pub(crate) fn parse_expression(input: &str) -> IResult<&str, Node<RelativeLocation>> {
     parse_or(input)
 }
 
@@ -379,7 +519,7 @@ mod tests {
     use super::*;
 
     #[track_caller]
-    fn evaluate(res: IResult<&str, Node>) -> i128 {
+    fn evaluate<L>(res: IResult<&str, Node<L>>) -> i128 {
         let (rest, node) = res.finish().unwrap();
         assert_eq!(rest, "");
         node.evaluate(&EmptyContext).unwrap()

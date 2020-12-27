@@ -15,6 +15,8 @@ use thiserror::Error;
 use super::{
     expression::{parse_expression, Context, EvaluationError, Node},
     literal::parse_string_literal,
+    location::Locatable,
+    location::RelativeLocation,
 };
 use crate::runtime::{Address, Arg, Reg, Value};
 
@@ -151,19 +153,22 @@ where
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum InstructionArgument {
     /// An immediate value
-    Value(Node),
+    Value(Node<RelativeLocation>),
 
     /// The content of a register
     Register(Reg),
 
     /// A direct memory access
-    Direct(Node),
+    Direct(Node<RelativeLocation>),
 
     /// An indirect memory access (register)
     Indirect(Reg),
 
     /// An indexed memory access (register + offset)
-    Indexed { register: Reg, value: Node },
+    Indexed {
+        register: Reg,
+        value: Node<RelativeLocation>,
+    },
 }
 
 impl std::fmt::Display for InstructionArgument {
@@ -229,7 +234,7 @@ pub(crate) enum DirectiveArgument {
     StringLiteral(String),
 
     /// An expression (`.addr`, `.word`, `.space` directives)
-    Expression(Node),
+    Expression(Node<RelativeLocation>),
 }
 
 impl std::fmt::Display for DirectiveArgument {
@@ -317,7 +322,7 @@ fn parse_indirect_indexed_inner(input: &str) -> IResult<&str, InstructionArgumen
 
     let value = match sign {
         '+' => value,
-        '-' => Node::Invert(Box::new(value)),
+        '-' => Node::Invert(Box::new(value).with_location(())),
         _ => unreachable!(),
     };
 

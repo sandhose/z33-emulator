@@ -42,7 +42,7 @@ impl<'a, T: std::fmt::Display + Precedence> std::fmt::Display for ChildTree<'a, 
 
 // Precedence values are taken from here: https://en.cppreference.com/w/c/language/operator_precedence
 
-impl Precedence for ExpressionNode {
+impl<L> Precedence for ExpressionNode<L> {
     fn precedence(&self) -> usize {
         use ExpressionNode::*;
         match self {
@@ -57,7 +57,7 @@ impl Precedence for ExpressionNode {
     }
 }
 
-impl Precedence for ConditionNode {
+impl<L> Precedence for ConditionNode<L> {
     fn precedence(&self) -> usize {
         use ConditionNode::*;
         match self {

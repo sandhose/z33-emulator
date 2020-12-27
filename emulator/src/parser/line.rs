@@ -241,6 +241,7 @@ pub(crate) fn parse_program(input: &str) -> IResult<&str, Vec<Line>> {
 mod tests {
     use crate::runtime::Reg;
 
+    use super::super::location::Locatable;
     use super::*;
 
     #[track_caller]
@@ -295,8 +296,8 @@ mod tests {
                 content: Some(LineContent::Directive {
                     kind: DirectiveKind::Space,
                     argument: DirectiveArgument::Expression(Node::Sum(
-                        Box::new(Node::Literal(30)),
-                        Box::new(Node::Literal(5))
+                        Box::new(Node::Literal(30)).with_location(()),
+                        Box::new(Node::Literal(5)).with_location(())
                     )),
                 }),
                 comment: Some("# comment".into()),
