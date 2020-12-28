@@ -4,9 +4,11 @@ use std::path::PathBuf;
 
 use clap::Clap;
 use nom::{combinator::all_consuming, Finish};
+use parser::location::{AbsoluteLocation, Locatable, RelativeLocation};
 use tracing::{debug, info};
 use tracing_subscriber::filter::{EnvFilter, LevelFilter};
 
+mod ast;
 mod compiler;
 mod constants;
 mod interactive;
@@ -51,6 +53,13 @@ enum Opt {
         #[clap(parse(from_os_str))]
         input: PathBuf,
     },
+
+    /// Dump the AST of the program
+    Dump {
+        /// Input file
+        #[clap(parse(from_os_str))]
+        input: PathBuf,
+    },
 }
 
 impl Opt {
@@ -64,6 +73,7 @@ impl Opt {
             } => run(input, entrypoint, interactive),
             Opt::Preprocess { input } => run_preprocessor(input),
             Opt::Print { input } => print(input),
+            Opt::Dump { input } => dump(input),
         }
     }
 }
@@ -127,6 +137,27 @@ fn print(input: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     for line in program.lines {
         println!("{}", line.inner);
     }
+
+    Ok(())
+}
+
+/// Preprocess and print the AST of a program
+fn dump(input: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+    info!(path = ?input, "Reading program");
+    let source = preprocess(input)?;
+    let source = source.as_str();
+
+    debug!("Parsing program");
+    // TODO: proper error handling & wrap those steps
+    let (_, program) = all_consuming(parse_program)(source).finish().unwrap();
+    let program = program.with_location((0, source.len()));
+    let ast = program.to_node();
+    // Transform the AST relative locations to absolute ones
+    let ast = ast.transform_location(
+        &AbsoluteLocation::default(),
+        &RelativeLocation::into_absolute,
+    );
+    ast.print();
 
     Ok(())
 }

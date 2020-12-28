@@ -18,6 +18,8 @@ use nom::{
     IResult,
 };
 
+use crate::ast::{AstNode, Node, NodeKind};
+
 use super::{
     location::{Locatable, Located, RelativeLocation},
     parse_identifier,
@@ -47,6 +49,24 @@ impl<L> LineContent<L> {
     /// Check if the line is a directive
     pub(crate) fn is_directive(&self) -> bool {
         matches!(self, Self::Directive { .. })
+    }
+}
+
+impl<L: Clone> AstNode<L> for LineContent<L> {
+    fn kind(&self) -> NodeKind {
+        match self {
+            LineContent::Instruction { .. } => NodeKind::Instruction,
+            LineContent::Directive { .. } => NodeKind::Directive,
+        }
+    }
+
+    fn children(&self) -> Vec<Node<L>> {
+        match self {
+            LineContent::Instruction { kind, arguments } => std::iter::once(kind.to_node())
+                .chain(arguments.iter().map(|a| a.to_node()))
+                .collect(),
+            LineContent::Directive { kind, argument } => vec![kind.to_node(), argument.to_node()],
+        }
     }
 }
 
@@ -84,6 +104,32 @@ pub(crate) struct Line<L> {
     pub symbols: Vec<Located<String, L>>,
     pub content: Option<Located<LineContent<L>, L>>,
     comment: Option<Located<String, L>>,
+}
+
+impl<L: Clone> AstNode<L> for Line<L> {
+    fn kind(&self) -> NodeKind {
+        NodeKind::Line
+    }
+
+    fn children(&self) -> Vec<Node<L>> {
+        let mut children = Vec::new();
+
+        children.extend(
+            self.symbols
+                .iter()
+                .map(|s| Node::new(NodeKind::Symbol, s.location.clone()).content(s.inner.clone())),
+        );
+
+        children.extend(self.content.iter().map(|c| c.to_node()));
+
+        children.extend(
+            self.comment
+                .iter()
+                .map(|c| Node::new(NodeKind::Comment, c.location.clone()).content(c.inner.clone())),
+        );
+
+        children
+    }
 }
 
 impl<L> std::fmt::Display for Line<L> {
@@ -160,6 +206,16 @@ where
 #[derive(Debug, PartialEq)]
 pub(crate) struct Program<L> {
     pub(crate) lines: Vec<Located<Line<L>, L>>,
+}
+
+impl<L: Clone> AstNode<L> for Program<L> {
+    fn kind(&self) -> NodeKind {
+        NodeKind::Program
+    }
+
+    fn children(&self) -> Vec<Node<L>> {
+        self.lines.iter().map(|l| l.to_node()).collect()
+    }
 }
 
 /// Parses a directive

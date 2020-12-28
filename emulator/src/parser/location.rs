@@ -3,7 +3,7 @@ use nom::Offset;
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Located<T, L> {
     pub inner: T,
-    location: L,
+    pub location: L,
 }
 
 impl<T> Located<T, RelativeLocation> {
@@ -56,11 +56,21 @@ impl<'a> From<(&'a str, &'a str, &'a str)> for RelativeLocation {
 }
 
 impl RelativeLocation {
+    pub(crate) fn into_absolute(self, parent: &AbsoluteLocation) -> AbsoluteLocation {
+        self.to_absolute(parent)
+    }
+
     pub(crate) fn to_absolute(&self, parent: &AbsoluteLocation) -> AbsoluteLocation {
         AbsoluteLocation {
             offset: parent.offset + self.offset,
             length: self.length,
         }
+    }
+}
+
+impl std::fmt::Display for RelativeLocation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}..{}", self.offset, self.offset + self.length)
     }
 }
 
@@ -88,5 +98,11 @@ pub(crate) struct AbsoluteLocation {
 impl From<(usize, usize)> for AbsoluteLocation {
     fn from((offset, length): (usize, usize)) -> Self {
         AbsoluteLocation { offset, length }
+    }
+}
+
+impl std::fmt::Display for AbsoluteLocation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}..{}", self.offset, self.offset + self.length)
     }
 }

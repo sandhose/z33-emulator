@@ -18,7 +18,10 @@ use super::{
     location::Locatable,
     location::RelativeLocation,
 };
-use crate::runtime::{Address, Arg, Reg, Value};
+use crate::{
+    ast::{AstNode, NodeKind},
+    runtime::{Address, Arg, Reg, Value},
+};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum InstructionKind {
@@ -55,6 +58,16 @@ pub(crate) enum InstructionKind {
     Swap,
     Trap,
     Xor,
+}
+
+impl<L> AstNode<L> for InstructionKind {
+    fn kind(&self) -> NodeKind {
+        NodeKind::InstructionKind
+    }
+
+    fn content(&self) -> Option<String> {
+        Some(format!("{}", self))
+    }
 }
 
 impl std::fmt::Display for InstructionKind {
@@ -149,6 +162,7 @@ where
     ))(input)
 }
 
+// TODO: save and embed location informations
 /// Represents an instruction argument
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum InstructionArgument {
@@ -177,10 +191,10 @@ impl std::fmt::Display for InstructionArgument {
 
         match self {
             Value(v) => write!(f, "{}", v),
-            Register(r) => write!(f, "%{}", r),
+            Register(r) => write!(f, "{}", r),
             Direct(v) => write!(f, "[{}]", v),
-            Indirect(r) => write!(f, "[%{}]", r),
-            Indexed { register, value } => write!(f, "[%{} {:+}]", register, value),
+            Indirect(r) => write!(f, "[{}]", r),
+            Indexed { register, value } => write!(f, "[{} {:+}]", register, value),
         }
     }
 }
@@ -196,6 +210,18 @@ pub(crate) enum DirectiveKind {
     Space,
     String,
     Word,
+}
+
+impl<L> AstNode<L> for DirectiveKind {
+    fn kind(&self) -> NodeKind {
+        NodeKind::DirectiveKind
+    }
+
+    fn content(&self) -> Option<String> {
+        Some(format!("{}", self))
+    }
+
+    // TODO: implement children
 }
 
 impl std::fmt::Display for DirectiveKind {
@@ -235,6 +261,29 @@ pub(crate) enum DirectiveArgument<L> {
 
     /// An expression (`.addr`, `.word`, `.space` directives)
     Expression(Node<L>),
+}
+
+impl<L> AstNode<L> for DirectiveArgument<L> {
+    fn kind(&self) -> NodeKind {
+        match self {
+            DirectiveArgument::StringLiteral(_) => NodeKind::StringLiteral,
+            DirectiveArgument::Expression(e) => e.kind(),
+        }
+    }
+
+    fn content(&self) -> Option<String> {
+        match self {
+            DirectiveArgument::StringLiteral(s) => Some(s.clone()),
+            DirectiveArgument::Expression(e) => e.content(),
+        }
+    }
+
+    fn children(&self) -> Vec<crate::ast::Node<L>> {
+        match self {
+            DirectiveArgument::StringLiteral(_) => Vec::new(),
+            DirectiveArgument::Expression(e) => e.children(),
+        }
+    }
 }
 
 impl<L> std::fmt::Display for DirectiveArgument<L> {
@@ -300,6 +349,16 @@ impl InstructionArgument {
                 Ok(Arg::Address(Address::Idx(*register, value)))
             }
         }
+    }
+}
+
+impl<L> AstNode<L> for InstructionArgument {
+    fn kind(&self) -> NodeKind {
+        NodeKind::InstructionArgument
+    }
+
+    fn content(&self) -> Option<String> {
+        Some(format!("{}", self))
     }
 }
 

@@ -29,6 +29,8 @@ use nom::{
 };
 use thiserror::Error;
 
+use crate::ast::{AstNode, NodeKind};
+
 use super::{
     literal::parse_number_literal,
     location::{AbsoluteLocation, Locatable, Located, RelativeLocation},
@@ -75,6 +77,36 @@ pub(crate) enum Node<L> {
 
     /// A reference to a variable
     Variable(String),
+}
+
+impl<L> AstNode<L> for Node<L> {
+    fn kind(&self) -> crate::ast::NodeKind {
+        use Node::*;
+        use NodeKind::*;
+        match self {
+            BinaryOr(_, _) => ExpressionBinaryOr,
+            BinaryAnd(_, _) => ExpressionBinaryAnd,
+            LeftShift(_, _) => ExpressionLeftShift,
+            RightShift(_, _) => ExpressionRightShift,
+            Sum(_, _) => ExpressionSum,
+            Substract(_, _) => ExpressionSubstract,
+            Multiply(_, _) => ExpressionMultiply,
+            Divide(_, _) => ExpressionDivide,
+            Invert(_) => ExpressionInvert,
+            BinaryNot(_) => ExpressionBinaryNot,
+            Literal(_) => ExpressionLiteral,
+            Variable(_) => ExpressionVariable,
+        }
+    }
+
+    fn content(&self) -> Option<String> {
+        use Node::*;
+        match self {
+            Literal(l) => Some(format!("{}", l)),
+            Variable(v) => Some(v.clone()),
+            _ => None,
+        }
+    }
 }
 
 impl<L> std::fmt::Display for Node<L> {
