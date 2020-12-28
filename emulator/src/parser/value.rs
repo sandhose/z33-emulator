@@ -229,15 +229,15 @@ where
 
 /// Represents a directive argument
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) enum DirectiveArgument {
+pub(crate) enum DirectiveArgument<L> {
     /// A string literal (`.string` directive)
     StringLiteral(String),
 
     /// An expression (`.addr`, `.word`, `.space` directives)
-    Expression(Node<RelativeLocation>),
+    Expression(Node<L>),
 }
 
-impl std::fmt::Display for DirectiveArgument {
+impl<L> std::fmt::Display for DirectiveArgument<L> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use DirectiveArgument::*;
 
@@ -249,20 +249,22 @@ impl std::fmt::Display for DirectiveArgument {
 }
 
 /// Parse a directive argument
-pub(crate) fn parse_directive_argument(input: &str) -> IResult<&str, DirectiveArgument> {
+pub(crate) fn parse_directive_argument(
+    input: &str,
+) -> IResult<&str, DirectiveArgument<RelativeLocation>> {
     alt((
         map(parse_string_literal, DirectiveArgument::StringLiteral),
         map(parse_expression, DirectiveArgument::Expression),
     ))(input)
 }
 
-impl From<&str> for DirectiveArgument {
+impl<L> From<&str> for DirectiveArgument<L> {
     fn from(literal: &str) -> Self {
         Self::StringLiteral(literal.to_string())
     }
 }
 
-impl From<i128> for DirectiveArgument {
+impl<L> From<i128> for DirectiveArgument<L> {
     fn from(value: i128) -> Self {
         Self::Expression(Node::Literal(value))
     }

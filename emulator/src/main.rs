@@ -80,7 +80,8 @@ fn run(
 
     debug!("Parsing program");
     // TODO: proper error handling & wrap those steps
-    let (_, lines) = all_consuming(parse_program)(source).finish().unwrap();
+    let (_, program) = all_consuming(parse_program)(source).finish().unwrap();
+    let lines: Vec<_> = program.lines.into_iter().map(|l| l.inner).collect(); // TODO: do not strip location information
     let layout = crate::compiler::layout::layout_memory(&lines).unwrap();
     let memory = crate::compiler::memory::fill_memory(&layout).unwrap();
 
@@ -121,10 +122,10 @@ fn print(input: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
 
     debug!("Parsing program");
     // TODO: proper error handling & wrap those steps
-    let (_, lines) = all_consuming(parse_program)(source).finish().unwrap();
+    let (_, program) = all_consuming(parse_program)(source).finish().unwrap();
 
-    for line in lines {
-        println!("{}", line);
+    for line in program.lines {
+        println!("{}", line.inner);
     }
 
     Ok(())

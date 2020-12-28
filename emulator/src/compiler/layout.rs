@@ -3,13 +3,16 @@ use std::collections::HashMap;
 use thiserror::Error;
 use tracing::debug;
 
-use crate::constants::*;
-use crate::parser::expression::{
-    Context as ExpressionContext, EmptyContext as EmptyExpressionContext,
-    EvaluationError as ExpressionEvaluationError,
+use crate::parser::{
+    expression::{
+        Context as ExpressionContext, EmptyContext as EmptyExpressionContext,
+        EvaluationError as ExpressionEvaluationError,
+    },
+    line::{Line, LineContent},
+    location::RelativeLocation,
+    value::{DirectiveArgument, DirectiveKind},
 };
-use crate::parser::line::{Line, LineContent};
-use crate::parser::value::{DirectiveArgument, DirectiveKind};
+use crate::{constants::*, parser::location::Located};
 
 pub(crate) type Labels = HashMap<String, u64>;
 
@@ -27,7 +30,7 @@ pub(crate) enum Placement {
     Char(char),
 
     /// A instruction or a .word directive
-    Line(LineContent),
+    Line(LineContent<RelativeLocation>),
 }
 
 #[derive(Default)]
@@ -66,10 +69,7 @@ pub(crate) enum MemoryLayoutError {
     DuplicateLabel { label: String },
 
     #[error("invalid argument for directive .{kind}")]
-    InvalidDirectiveArgument {
-        kind: DirectiveKind,
-        argument: DirectiveArgument,
-    },
+    InvalidDirectiveArgument { kind: DirectiveKind },
 
     #[error("failed to evaluate argument for directive .{kind}: {inner}")]
     DirectiveArgumentEvaluation {
@@ -85,7 +85,9 @@ pub(crate) enum MemoryLayoutError {
 ///
 /// It places the labels & prepare a hashmap of cells to be filled.
 #[tracing::instrument(skip(program))]
-pub(crate) fn layout_memory(program: &[Line]) -> Result<Layout, MemoryLayoutError> {
+pub(crate) fn layout_memory(
+    program: &[Line<RelativeLocation>],
+) -> Result<Layout, MemoryLayoutError> {
     use DirectiveKind::*;
     use MemoryLayoutError::*;
 
@@ -95,21 +97,29 @@ pub(crate) fn layout_memory(program: &[Line]) -> Result<Layout, MemoryLayoutErro
 
     for line in program {
         for key in line.symbols.clone().into_iter() {
-            debug!(key = %key, position, "Inserting label");
-            layout.insert_label(key, position)?;
+            debug!(key = %key.inner, position, "Inserting label");
+            layout.insert_label(key.inner, position)?;
         }
 
         if let Some(ref content) = line.content {
-            match content {
-                LineContent::Directive { kind: Word, .. } | LineContent::Instruction { .. } => {
-                    layout.insert_placement(position, Placement::Line(content.clone()))?;
-                    debug!(position, content = %content, "Inserting line");
+            match &content.inner {
+                LineContent::Directive {
+                    kind: Located { inner: Word, .. },
+                    ..
+                }
+                | LineContent::Instruction { .. } => {
+                    layout.insert_placement(position, Placement::Line(content.inner.clone()))?;
+                    debug!(position, content = %content.inner, "Inserting line");
                     position += 1; // Instructions and word directives take one memory cell
                 }
 
                 LineContent::Directive {
-                    kind: Space,
-                    argument: DirectiveArgument::Expression(e),
+                    kind: Located { inner: Space, .. },
+                    argument:
+                        Located {
+                            inner: DirectiveArgument::Expression(e),
+                            ..
+                        },
                 } => {
                     let size = e
                         .evaluate(&EmptyExpressionContext)
@@ -124,8 +134,12 @@ pub(crate) fn layout_memory(program: &[Line]) -> Result<Layout, MemoryLayoutErro
                 }
 
                 LineContent::Directive {
-                    kind: Addr,
-                    argument: DirectiveArgument::Expression(e),
+                    kind: Located { inner: Addr, .. },
+                    argument:
+                        Located {
+                            inner: DirectiveArgument::Expression(e),
+                            ..
+                        },
                 } => {
                     let addr = e
                         .evaluate(&EmptyExpressionContext)
@@ -138,8 +152,12 @@ pub(crate) fn layout_memory(program: &[Line]) -> Result<Layout, MemoryLayoutErro
                 }
 
                 LineContent::Directive {
-                    kind: String,
-                    argument: DirectiveArgument::StringLiteral(string),
+                    kind: Located { inner: String, .. },
+                    argument:
+                        Located {
+                            inner: DirectiveArgument::StringLiteral(string),
+                            ..
+                        },
                 } => {
                     debug!(position, string = string.as_str(), "Inserting string");
                     // Fill the memory with the chars of the string
@@ -149,11 +167,8 @@ pub(crate) fn layout_memory(program: &[Line]) -> Result<Layout, MemoryLayoutErro
                     }
                 }
 
-                LineContent::Directive { kind, argument } => {
-                    return Err(InvalidDirectiveArgument {
-                        kind: *kind,
-                        argument: argument.clone(),
-                    });
+                LineContent::Directive { kind, .. } => {
+                    return Err(InvalidDirectiveArgument { kind: kind.inner });
                 }
             }
         }
@@ -165,9 +180,12 @@ pub(crate) fn layout_memory(program: &[Line]) -> Result<Layout, MemoryLayoutErro
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parser::line::Line;
-    use crate::parser::value::{InstructionArgument, InstructionKind};
-    use crate::{parser::expression::Node, runtime::Reg};
+    use crate::parser::{
+        expression::Node,
+        line::Line,
+        value::{InstructionArgument, InstructionKind},
+    };
+    use crate::runtime::Reg;
 
     use InstructionKind::*;
 
@@ -320,7 +338,7 @@ mod tests {
             layout_memory(&program).err(),
             Some(MemoryLayoutError::InvalidDirectiveArgument {
                 kind: DirectiveKind::String,
-                argument: 3.into(),
+                // argument: 3.into(),
             })
         );
 
@@ -330,7 +348,7 @@ mod tests {
             layout_memory(&program).err(),
             Some(MemoryLayoutError::InvalidDirectiveArgument {
                 kind: DirectiveKind::Space,
-                argument: "hello".into(),
+                // argument: "hello".into(),
             })
         );
 
@@ -340,7 +358,7 @@ mod tests {
             layout_memory(&program).err(),
             Some(MemoryLayoutError::InvalidDirectiveArgument {
                 kind: DirectiveKind::Addr,
-                argument: "hello".into(),
+                // argument: "hello".into(),
             })
         );
     }

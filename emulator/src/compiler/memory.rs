@@ -6,7 +6,10 @@ use tracing::debug;
 use crate::{
     parser::expression::EvaluationError as ExpressionEvaluationError,
     parser::line::LineContent,
-    parser::value::{ComputeError, DirectiveArgument, DirectiveKind, InstructionKind},
+    parser::{
+        location::Located,
+        value::{ComputeError, DirectiveArgument, DirectiveKind, InstructionKind},
+    },
     runtime::{Arg, ArgConversionError, Cell, Instruction, Memory, TryFromArg},
 };
 
@@ -287,8 +290,12 @@ fn compile_placement(labels: &Labels, placement: &Placement) -> Result<Cell, Com
         Placement::Char(c) => Ok(Cell::Char(*c)),
 
         Placement::Line(LineContent::Directive {
-            kind: Word,
-            argument: DirectiveArgument::Expression(expression),
+            kind: Located { inner: Word, .. },
+            argument:
+                Located {
+                    inner: DirectiveArgument::Expression(expression),
+                    ..
+                },
         }) => {
             let value = expression.evaluate(labels)?;
             Ok(Cell::Word(value))
@@ -302,10 +309,10 @@ fn compile_placement(labels: &Labels, placement: &Placement) -> Result<Cell, Com
         Placement::Line(LineContent::Instruction { kind, arguments }) => {
             let arguments: Result<Vec<_>, _> = arguments
                 .iter()
-                .map(|argument| argument.evaluate(labels))
+                .map(|argument| argument.inner.evaluate(labels))
                 .collect();
             let arguments = arguments?;
-            let instruction = compile_instruction(kind, arguments)?;
+            let instruction = compile_instruction(&kind.inner, arguments)?;
             Ok(Cell::Instruction(Box::new(instruction)))
         }
     }

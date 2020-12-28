@@ -13,12 +13,13 @@ use nom::{
     bytes::complete::{escaped, tag},
     character::complete::{char, line_ending, none_of, not_line_ending, one_of, space0, space1},
     combinator::{all_consuming, eof, opt, peek, value},
-    multi::{many0, separated_list1},
-    sequence::{delimited, preceded, terminated},
+    multi::separated_list1,
+    sequence::delimited,
     IResult,
 };
 
 use super::{
+    location::{Locatable, Located, RelativeLocation},
     parse_identifier,
     value::{
         parse_directive_argument, parse_directive_kind, parse_instruction_argument,
@@ -29,32 +30,32 @@ use super::{
 
 /// Holds the content of a line
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) enum LineContent {
+pub(crate) enum LineContent<L> {
     /// Represents an instruction, with its opcode and list of arguments
     Instruction {
-        kind: InstructionKind,
-        arguments: Vec<InstructionArgument>,
+        kind: Located<InstructionKind, L>,
+        arguments: Vec<Located<InstructionArgument, L>>,
     },
     /// Represents a directive, with its type and argument
     Directive {
-        kind: DirectiveKind,
-        argument: DirectiveArgument,
+        kind: Located<DirectiveKind, L>,
+        argument: Located<DirectiveArgument<L>, L>,
     },
 }
 
-impl LineContent {
+impl<L> LineContent<L> {
     /// Check if the line is a directive
     pub(crate) fn is_directive(&self) -> bool {
         matches!(self, Self::Directive { .. })
     }
 }
 
-impl std::fmt::Display for LineContent {
+impl<L> std::fmt::Display for LineContent<L> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             LineContent::Instruction { kind, arguments } => {
                 // First write the opcode
-                write!(f, "{:4}", kind)?;
+                write!(f, "{:4}", kind.inner)?;
 
                 // then the list of arguments
                 let mut first = true; // This is to properly show comma between arguments
@@ -62,16 +63,13 @@ impl std::fmt::Display for LineContent {
                     if !first {
                         write!(f, ",")?;
                     }
-                    write!(f, " {}", arg)?;
+                    write!(f, " {}", arg.inner)?;
                     first = false;
                 }
                 Ok(())
             }
-            LineContent::Directive {
-                kind: directive,
-                argument,
-            } => {
-                write!(f, ".{}: {}", directive, argument)
+            LineContent::Directive { kind, argument } => {
+                write!(f, ".{}: {}", kind.inner, argument.inner)
             }
         }
     }
@@ -82,33 +80,33 @@ impl std::fmt::Display for LineContent {
 ///
 /// Note that the `Default::default()` implementation represents an empty line.
 #[derive(Debug, PartialEq, Default)]
-pub(crate) struct Line {
-    pub symbols: Vec<String>,
-    pub content: Option<LineContent>,
-    comment: Option<String>,
+pub(crate) struct Line<L> {
+    pub symbols: Vec<Located<String, L>>,
+    pub content: Option<Located<LineContent<L>, L>>,
+    comment: Option<Located<String, L>>,
 }
 
-impl std::fmt::Display for Line {
+impl<L> std::fmt::Display for Line<L> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut had_something = false;
         for symbol in self.symbols.iter() {
-            write!(f, "{}: ", symbol)?;
+            write!(f, "{}: ", symbol.inner)?;
             had_something = true;
         }
 
         if let Some(ref c) = self.content {
-            if !c.is_directive() && !had_something {
+            if !c.inner.is_directive() && !had_something {
                 write!(f, "    ")?;
             }
-            write!(f, "{}", c)?;
+            write!(f, "{}", c.inner)?;
             had_something = true;
         }
 
         if let Some(ref c) = self.comment {
             if had_something {
-                write!(f, "\t{}", c)?;
+                write!(f, "\t{}", c.inner)?;
             } else {
-                write!(f, "{}", c)?;
+                write!(f, "{}", c.inner)?;
             }
         }
 
@@ -116,29 +114,29 @@ impl std::fmt::Display for Line {
     }
 }
 
-impl Line {
-    #[cfg(test)] // Only used in tests for now
-    pub(crate) fn comment(mut self, comment: &str) -> Self {
-        self.comment = Some(comment.into());
-        self
-    }
-
+impl<L> Line<L>
+where
+    L: From<()>,
+{
     #[cfg(test)] // Only used in tests for now
     pub(crate) fn symbol(mut self, symbol: &str) -> Self {
-        self.symbols.push(symbol.into());
+        self.symbols.push(symbol.to_string().with_location(()));
         self
     }
 
     #[cfg(test)] // Only used in tests for now
-    pub(crate) fn directive<T: Into<DirectiveArgument>>(
+    pub(crate) fn directive<T: Into<DirectiveArgument<L>>>(
         mut self,
         kind: DirectiveKind,
         argument: T,
     ) -> Self {
-        self.content = Some(LineContent::Directive {
-            kind,
-            argument: argument.into(),
-        });
+        self.content = Some(
+            LineContent::Directive {
+                kind: kind.with_location(()),
+                argument: argument.into().with_location(()),
+            }
+            .with_location(()),
+        );
         self
     }
 
@@ -148,36 +146,80 @@ impl Line {
         kind: InstructionKind,
         arguments: Vec<InstructionArgument>,
     ) -> Self {
-        self.content = Some(LineContent::Instruction { kind, arguments });
+        self.content = Some(
+            LineContent::Instruction {
+                kind: kind.with_location(()),
+                arguments: arguments.into_iter().map(|a| a.with_location(())).collect(),
+            }
+            .with_location(()),
+        );
         self
     }
 }
 
+#[derive(Debug, PartialEq)]
+pub(crate) struct Program<L> {
+    pub(crate) lines: Vec<Located<Line<L>, L>>,
+}
+
 /// Parses a directive
-fn parse_directive_line(input: &str) -> IResult<&str, LineContent> {
-    let (input, _) = char('.')(input)?;
-    let (input, kind) = parse_directive_kind(input)?;
-    let (input, _) = space1(input)?;
-    let (input, argument) = parse_directive_argument(input)?;
-    Ok((input, LineContent::Directive { kind, argument }))
+fn parse_directive_line(input: &str) -> IResult<&str, LineContent<RelativeLocation>> {
+    let (rest, _) = char('.')(input)?;
+    let start = rest;
+    let (rest, kind) = parse_directive_kind(rest)?;
+    let kind = kind.with_location((input, start, rest));
+
+    let (rest, _) = space1(rest)?;
+
+    let start = rest;
+    let (rest, argument) = parse_directive_argument(rest)?;
+    let argument = argument.with_location((input, start, rest));
+
+    Ok((rest, LineContent::Directive { kind, argument }))
 }
 
 /// Parses an instruction
-fn parse_instruction_line(input: &str) -> IResult<&str, LineContent> {
-    let (input, kind) = parse_instruction_kind(input)?;
-    let (input, arguments) = opt(preceded(
-        space1,
-        separated_list1(
-            delimited(space0, char(','), space0),
-            parse_instruction_argument,
-        ),
-    ))(input)?;
-    let arguments = arguments.unwrap_or_default();
-    Ok((input, LineContent::Instruction { kind, arguments }))
+fn parse_instruction_line(input: &str) -> IResult<&str, LineContent<RelativeLocation>> {
+    // First parse the opcode
+    let (rest, kind) = parse_instruction_kind(input)?;
+    let kind = kind.with_location((input, input, rest));
+
+    // Then loop to parse the list of arguments
+    let mut cursor = rest;
+    let mut arguments = Vec::with_capacity(2); // Instructions usually have <= 2 arguments
+    loop {
+        // Check if we already parsed an argument or not
+        // Explicit typing is necessary here
+        let res: IResult<&str, (), ()> = if arguments.is_empty() {
+            // The first argument needs at least one space before it
+            // This is not done before to avoid eating spaces if the instruction takes no argument
+            value((), space1)(cursor)
+        } else {
+            // Later arguments are separated by a comma. This also eats the spaces around the comma
+            value((), delimited(space0, char(','), space0))(cursor)
+        };
+
+        // First check it has the right prefix
+        if let Ok((rest, _)) = res {
+            let start = rest; // Save the start of the argument for location information
+
+            // Then continue parsing the argument
+            if let Ok((rest, argument)) = parse_instruction_argument(rest) {
+                let argument = argument.with_location((input, start, rest));
+                arguments.push(argument);
+                // Only update the cursor here, in case it fails earlier
+                cursor = rest;
+                continue; // Restart the loop to parse another argument
+            }
+        }
+        break; // We could not parse another argument, get out of the loop
+    }
+
+    Ok((cursor, LineContent::Instruction { kind, arguments }))
 }
 
 /// Parses the content of a line: an instruction or a directive
-fn parse_line_content(input: &str) -> IResult<&str, LineContent> {
+fn parse_line_content(input: &str) -> IResult<&str, LineContent<RelativeLocation>> {
     alt((parse_directive_line, parse_instruction_line))(input)
 }
 
@@ -197,23 +239,35 @@ fn parse_symbol_definition(input: &str) -> IResult<&str, String> {
 }
 
 /// Parses a whole line
-fn parse_line(input: &str) -> IResult<&str, Line> {
-    let (input, _) = space0(input)?;
+fn parse_line(input: &str) -> IResult<&str, Line<RelativeLocation>> {
+    let (rest, _) = space0(input)?;
 
     // Extract the list of symbol definitions
-    let (input, symbols) = many0(terminated(parse_symbol_definition, space0))(input)?;
-    let (input, _) = space0(input)?;
+    let mut cursor = rest;
+    let mut symbols = Vec::new();
+    while let Ok((rest, symbol)) = parse_symbol_definition(cursor) {
+        // TODO: symbol location includes the colon, maybe we don't want that
+        let symbol = symbol.with_location((input, cursor, rest));
+        let (rest, _) = space0(rest)?;
+        symbols.push(symbol);
+        cursor = rest;
+    }
+    let rest = cursor;
 
     // Extract the line content
-    let (input, content) = opt(parse_line_content)(input)?;
-    let (input, _) = space0(input)?;
+    let start = rest;
+    let (rest, content) = opt(parse_line_content)(rest)?;
+    let content = content.map(|line| line.with_location((input, start, rest))); // Save location information
+    let (rest, _) = space0(rest)?;
 
     // Extract the comment
-    let (input, comment) = opt(parse_comment)(input)?;
+    let start = rest;
+    let (rest, comment) = opt(parse_comment)(rest)?;
+    let comment = comment.map(|comment| comment.with_location((input, start, rest))); // Save location information
 
     // Build the line
     Ok((
-        input,
+        rest,
         Line {
             symbols,
             content,
@@ -222,19 +276,23 @@ fn parse_line(input: &str) -> IResult<&str, Line> {
     ))
 }
 
-fn split_lines(input: &str) -> IResult<&str, Vec<&str>> {
+fn split_lines<'a>(input: &'a str) -> IResult<&'a str, Vec<&'a str>> {
     let line_parser = escaped(none_of("\\\r\n"), '\\', one_of("\\\r\nrnt\""));
-    let line_parser = alt((line_parser, eof, value("", peek(line_ending))));
+    let line_parser = alt((line_parser, eof, value(&input[..0], peek(line_ending))));
     separated_list1(line_ending, line_parser)(input)
 }
 
-pub(crate) fn parse_program(input: &str) -> IResult<&str, Vec<Line>> {
-    let (input, lines) = split_lines(input)?;
+pub(crate) fn parse_program(input: &str) -> IResult<&str, Program<RelativeLocation>> {
+    let (rest, lines) = split_lines(input)?;
     let lines: Result<_, _> = lines
         .into_iter()
-        .map(|line| all_consuming(parse_line)(line).map(|(_, line)| line))
+        .map(|start| {
+            all_consuming(parse_line)(start)
+                .map(|(end, line)| line.with_location((input, start, end)))
+        })
         .collect();
-    Ok((input, lines?))
+    let lines = lines?;
+    Ok((rest, Program { lines }))
 }
 
 #[cfg(test)]
@@ -263,7 +321,7 @@ mod tests {
         assert_eq!(
             line,
             Line {
-                comment: Some("# hello".into()),
+                comment: Some("# hello".to_string().with_location((0, 7))),
                 ..Default::default()
             }
         );
@@ -271,15 +329,16 @@ mod tests {
 
     #[test]
     fn parse_symbol_line_test() {
-        let line = fully_parsed(parse_line("hello:world: duplicate: duplicate:  "));
+        let line = fully_parsed(parse_line("hello:world : duplicate: duplicate:  "));
         assert_eq!(
             line,
             Line {
-                symbols: ["hello", "world", "duplicate", "duplicate"]
-                    .iter()
-                    .cloned()
-                    .map(Into::into)
-                    .collect(),
+                symbols: vec![
+                    "hello".to_string().with_location((0, 6)),
+                    "world".to_string().with_location((6, 7)),
+                    "duplicate".to_string().with_location((14, 10)),
+                    "duplicate".to_string().with_location((25, 10))
+                ],
                 ..Default::default()
             }
         );
@@ -292,15 +351,22 @@ mod tests {
         assert_eq!(
             line,
             Line {
-                symbols: ["foo", "bar"].iter().cloned().map(Into::into).collect(),
-                content: Some(LineContent::Directive {
-                    kind: DirectiveKind::Space,
-                    argument: DirectiveArgument::Expression(Node::Sum(
-                        Box::new(Node::Literal(30)).with_location(()),
-                        Box::new(Node::Literal(5)).with_location(())
-                    )),
-                }),
-                comment: Some("# comment".into()),
+                symbols: vec![
+                    "foo".to_string().with_location((0, 4)),
+                    "bar".to_string().with_location((5, 4)),
+                ],
+                content: Some(
+                    LineContent::Directive {
+                        kind: DirectiveKind::Space.with_location((1, 5)),
+                        argument: DirectiveArgument::Expression(Node::Sum(
+                            Box::new(Node::Literal(30)).with_location((0, 2)),
+                            Box::new(Node::Literal(5)).with_location((5, 1))
+                        ))
+                        .with_location((7, 6)),
+                    }
+                    .with_location((10, 13))
+                ),
+                comment: Some("# comment".to_string().with_location((24, 9))),
             }
         );
     }
@@ -325,36 +391,71 @@ this has escaped chars: \r \n \t \""#;
     #[test]
     fn parse_program_test() {
         use DirectiveKind::Space;
-        use InstructionKind::Add;
+        use InstructionKind::{Add, Reset};
 
         let input = r#"
-            str: .space "some multiline \
+str: .space "some multiline \
 string"
-            main: # beginning of program
-                add %a, %b
+main: # beginning of program
+    add %a, %b
+    reset
         "#;
 
-        let lines = fully_parsed(parse_program(input));
+        let program = fully_parsed(parse_program(input));
         assert_eq!(
-            lines,
-            vec![
-                Line::default(),
-                Line::default().symbol("str").directive(
-                    Space,
-                    DirectiveArgument::StringLiteral("some multiline string".into())
-                ),
-                Line::default()
-                    .symbol("main")
-                    .comment("# beginning of program"),
-                Line::default().instruction(
-                    Add,
-                    vec![
-                        InstructionArgument::Register(Reg::A),
-                        InstructionArgument::Register(Reg::B)
-                    ]
-                ),
-                Line::default(),
-            ]
+            program,
+            Program {
+                lines: vec![
+                    Line::default().with_location((0, 0)),
+                    Line {
+                        symbols: vec!["str".to_string().with_location((0, 4))],
+                        content: Some(
+                            LineContent::Directive {
+                                kind: Space.with_location((1, 5)),
+                                argument: DirectiveArgument::StringLiteral(
+                                    "some multiline string".to_string()
+                                )
+                                .with_location((7, 25))
+                            }
+                            .with_location((5, 32))
+                        ),
+                        ..Default::default()
+                    }
+                    .with_location((1, 37)),
+                    Line {
+                        symbols: vec!["main".to_string().with_location((0, 5))],
+                        comment: Some("# beginning of program".to_string().with_location((6, 22))),
+                        ..Default::default()
+                    }
+                    .with_location((39, 28)),
+                    Line {
+                        content: Some(
+                            LineContent::Instruction {
+                                kind: Add.with_location((0, 3)),
+                                arguments: vec![
+                                    InstructionArgument::Register(Reg::A).with_location((4, 2)),
+                                    InstructionArgument::Register(Reg::B).with_location((8, 2)),
+                                ],
+                            }
+                            .with_location((4, 10))
+                        ),
+                        ..Default::default()
+                    }
+                    .with_location((68, 14)),
+                    Line {
+                        content: Some(
+                            LineContent::Instruction {
+                                kind: Reset.with_location((0, 5)),
+                                arguments: vec![],
+                            }
+                            .with_location((4, 5))
+                        ),
+                        ..Default::default()
+                    }
+                    .with_location((83, 9)),
+                    Line::default().with_location((93, 8)),
+                ]
+            }
         );
     }
 }

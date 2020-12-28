@@ -24,10 +24,8 @@ use nom::{
     branch::alt,
     bytes::complete::tag,
     character::complete::{char, space0},
-    combinator::{map, opt, value},
-    multi::fold_many0,
-    sequence::preceded,
-    IResult,
+    combinator::{map, value},
+    IResult, Offset,
 };
 use thiserror::Error;
 
@@ -327,41 +325,65 @@ impl<L> Node<L> {
 pub type Value = i128;
 
 #[doc(hidden)]
-fn parse_or_rec(input: &str) -> IResult<&str, Node<RelativeLocation>> {
-    let (input, _) = space0(input)?;
-    let (input, _) = char('|')(input)?;
-    let (input, _) = space0(input)?;
-    parse_and(input)
+fn parse_or_rec(input: &str) -> IResult<&str, ChildNode<RelativeLocation>> {
+    let (rest, _) = space0(input)?;
+    let (rest, _) = char('|')(rest)?;
+    let (rest, _) = space0(rest)?;
+    let start = rest;
+    let (rest, node) = parse_and(rest)?;
+    let node = Box::new(node).with_location((input.offset(start), start.offset(rest)));
+    Ok((rest, node))
 }
 
 /// Parse a bitwise "or" operation
 fn parse_or(input: &str) -> IResult<&str, Node<RelativeLocation>> {
-    let (input, value) = parse_and(input)?;
-    fold_many0(parse_or_rec, value, |value, arg| {
-        Node::BinaryOr(
-            Box::new(value).with_location(()),
-            Box::new(arg).with_location(()),
-        )
-    })(input)
+    let (mut cursor, mut node) = parse_and(input)?;
+
+    while let Ok((rest, right)) = parse_or_rec(cursor) {
+        let offset = input.offset(cursor);
+        // Wrap the "left" node with location information
+        let left = Box::new(node).with_location((0, offset));
+
+        // The location embed in the `right` node is relative to the cursor, so we need to offset
+        // it by the offset between the input and the cursor
+        let right = right.offset(offset);
+
+        node = Node::BinaryOr(left, right);
+        cursor = rest;
+    }
+
+    Ok((cursor, node))
 }
 
 #[doc(hidden)]
-fn parse_and_rec(input: &str) -> IResult<&str, Node<RelativeLocation>> {
-    let (input, _) = space0(input)?;
-    let (input, _) = char('&')(input)?;
-    let (input, _) = space0(input)?;
-    parse_shift(input)
+fn parse_and_rec(input: &str) -> IResult<&str, ChildNode<RelativeLocation>> {
+    let (rest, _) = space0(input)?;
+    let (rest, _) = char('&')(rest)?;
+    let (rest, _) = space0(rest)?;
+    let start = rest;
+    let (rest, node) = parse_shift(rest)?;
+    let node = Box::new(node).with_location((input.offset(start), start.offset(rest)));
+    Ok((rest, node))
 }
 
 /// Parse a bitwise "and" operation
 fn parse_and(input: &str) -> IResult<&str, Node<RelativeLocation>> {
-    let (input, value) = parse_shift(input)?;
-    fold_many0(parse_and_rec, value, |value, arg| {
-        Node::BinaryAnd(
-            Box::new(value).with_location(()),
-            Box::new(arg).with_location(()),
-        )
-    })(input)
+    let (mut cursor, mut node) = parse_shift(input)?;
+
+    while let Ok((rest, right)) = parse_and_rec(cursor) {
+        let offset = input.offset(cursor);
+        // Wrap the "left" node with location information
+        let left = Box::new(node).with_location((0, offset));
+
+        // The location embed in the `right` node is relative to the cursor, so we need to offset
+        // it by the offset between the input and the cursor
+        let right = right.offset(offset);
+
+        node = Node::BinaryAnd(left, right);
+        cursor = rest;
+    }
+
+    Ok((cursor, node))
 }
 
 /// Represents a bit-shift operation direction
@@ -374,35 +396,41 @@ enum ShiftOp {
 }
 
 #[doc(hidden)]
-fn parse_shift_rec(input: &str) -> IResult<&str, (ShiftOp, Node<RelativeLocation>)> {
-    let (input, _) = space0(input)?;
-    let (input, op) = alt((
+fn parse_shift_rec(input: &str) -> IResult<&str, (ShiftOp, ChildNode<RelativeLocation>)> {
+    let (rest, _) = space0(input)?;
+    let (rest, op) = alt((
         value(ShiftOp::Right, tag(">>")),
         value(ShiftOp::Left, tag("<<")),
-    ))(input)?;
-    let (input, _) = space0(input)?;
-    let (input, value) = parse_sum(input)?;
-    Ok((input, (op, value)))
+    ))(rest)?;
+    let (rest, _) = space0(rest)?;
+    let start = rest;
+    let (rest, node) = parse_sum(rest)?;
+    let node = Box::new(node).with_location((input, start, rest));
+    Ok((rest, (op, node)))
 }
 
 /// Parse a bitshift operation
 fn parse_shift(input: &str) -> IResult<&str, Node<RelativeLocation>> {
-    let (input, value) = parse_sum(input)?;
-    let (input, op) = opt(parse_shift_rec)(input)?;
+    let (mut cursor, mut node) = parse_sum(input)?;
 
-    let value = match op {
-        Some((ShiftOp::Right, arg)) => Node::RightShift(
-            Box::new(value).with_location(()),
-            Box::new(arg).with_location(()),
-        ),
-        Some((ShiftOp::Left, arg)) => Node::LeftShift(
-            Box::new(value).with_location(()),
-            Box::new(arg).with_location(()),
-        ),
-        None => value,
-    };
+    if let Ok((rest, (op, right))) = parse_shift_rec(cursor) {
+        let offset = input.offset(cursor);
+        // Wrap the "left" node with location information
+        let left = Box::new(node).with_location((0, offset));
 
-    Ok((input, value))
+        // The location embed in the `right` node is relative to the cursor, so we need to offset
+        // it by the offset between the input and the cursor
+        let right = right.offset(offset);
+
+        node = match op {
+            ShiftOp::Left => Node::LeftShift(left, right),
+            ShiftOp::Right => Node::RightShift(left, right),
+        };
+
+        cursor = rest;
+    }
+
+    Ok((cursor, node))
 }
 
 /// Represents a sum/sub operation
@@ -413,30 +441,41 @@ enum SumOp {
 }
 
 #[doc(hidden)]
-fn parse_sum_rec(input: &str) -> IResult<&str, (SumOp, Node<RelativeLocation>)> {
-    let (input, _) = space0(input)?;
-    let (input, op) = alt((
+fn parse_sum_rec(input: &str) -> IResult<&str, (SumOp, ChildNode<RelativeLocation>)> {
+    let (rest, _) = space0(input)?;
+    let (rest, op) = alt((
         value(SumOp::Sum, char('+')), // Add
         value(SumOp::Sub, char('-')), // Substract
-    ))(input)?;
-    let (input, _) = space0(input)?;
-    let (input, value) = parse_mul(input)?;
-    Ok((input, (op, value)))
+    ))(rest)?;
+    let (rest, _) = space0(rest)?;
+    let start = rest;
+    let (rest, node) = parse_mul(rest)?;
+    let node = Box::new(node).with_location((input, start, rest));
+    Ok((rest, (op, node)))
 }
 
 /// Parse a sum/sub operation
 fn parse_sum(input: &str) -> IResult<&str, Node<RelativeLocation>> {
-    let (input, value) = parse_mul(input)?;
-    fold_many0(parse_sum_rec, value, |value, (op, arg)| match op {
-        SumOp::Sum => Node::Sum(
-            Box::new(value).with_location(()),
-            Box::new(arg).with_location(()),
-        ),
-        SumOp::Sub => Node::Substract(
-            Box::new(value).with_location(()),
-            Box::new(arg).with_location(()),
-        ),
-    })(input)
+    let (mut cursor, mut node) = parse_mul(input)?;
+
+    while let Ok((rest, (op, right))) = parse_sum_rec(cursor) {
+        let offset = input.offset(cursor);
+        // Wrap the "left" node with location information
+        let left = Box::new(node).with_location((0, offset));
+
+        // The location embed in the `right` node is relative to the cursor, so we need to offset
+        // it by the offset between the input and the cursor
+        let right = right.offset(offset);
+
+        node = match op {
+            SumOp::Sum => Node::Sum(left, right),
+            SumOp::Sub => Node::Substract(left, right),
+        };
+
+        cursor = rest;
+    }
+
+    Ok((cursor, node))
 }
 
 /// Represents a multiply/divide operation
@@ -447,49 +486,68 @@ enum MulOp {
 }
 
 #[doc(hidden)]
-fn parse_mul_rec(input: &str) -> IResult<&str, (MulOp, Node<RelativeLocation>)> {
-    let (input, _) = space0(input)?;
-    let (input, op) = alt((
+fn parse_mul_rec(input: &str) -> IResult<&str, (MulOp, ChildNode<RelativeLocation>)> {
+    let (rest, _) = space0(input)?;
+    let (rest, op) = alt((
         value(MulOp::Mul, char('*')), // Multiply
         value(MulOp::Div, char('/')), // Divide
-    ))(input)?;
-    let (input, _) = space0(input)?;
-    let (input, value) = parse_unary(input)?;
-    Ok((input, (op, value)))
+    ))(rest)?;
+    let (rest, _) = space0(rest)?;
+    let start = rest;
+    let (rest, node) = parse_unary(rest)?;
+    let node = Box::new(node).with_location((input, start, rest));
+    Ok((rest, (op, node)))
 }
 
 /// Parse a multiply/divide operation
 fn parse_mul(input: &str) -> IResult<&str, Node<RelativeLocation>> {
-    let (input, value) = parse_unary(input)?;
-    fold_many0(parse_mul_rec, value, |value, (op, arg)| match op {
-        MulOp::Mul => Node::Multiply(
-            Box::new(value).with_location(()),
-            Box::new(arg).with_location(()),
-        ),
-        MulOp::Div => Node::Divide(
-            Box::new(value).with_location(()),
-            Box::new(arg).with_location(()),
-        ),
-    })(input)
+    let (mut cursor, mut node) = parse_unary(input)?;
+
+    while let Ok((rest, (op, right))) = parse_mul_rec(cursor) {
+        let offset = input.offset(cursor);
+        // Wrap the "left" node with location information
+        let left = Box::new(node).with_location((0, offset));
+
+        // The location embed in the `right` node is relative to the cursor, so we need to offset
+        // it by the offset between the input and the cursor
+        let right = right.offset(offset);
+
+        node = match op {
+            MulOp::Mul => Node::Multiply(left, right),
+            MulOp::Div => Node::Divide(left, right),
+        };
+
+        cursor = rest;
+    }
+
+    Ok((cursor, node))
+}
+
+fn parse_invert(input: &str) -> IResult<&str, Node<RelativeLocation>> {
+    let (rest, _) = char('-')(input)?;
+    let (rest, _) = space0(rest)?;
+    let start = rest;
+    let (rest, node) = parse_atom(rest)?;
+    let node = Box::new(node).with_location((input, start, rest));
+    Ok((rest, Node::Invert(node)))
+}
+
+fn parse_binary_not(input: &str) -> IResult<&str, Node<RelativeLocation>> {
+    let (rest, _) = char('~')(input)?;
+    let (rest, _) = space0(rest)?;
+    let start = rest;
+    let (rest, node) = parse_atom(rest)?;
+    let node = Box::new(node).with_location((input, start, rest));
+    Ok((rest, Node::BinaryNot(node)))
 }
 
 /// Parse unary operations (negation and bit inversion)
 fn parse_unary(input: &str) -> IResult<&str, Node<RelativeLocation>> {
-    let (input, _) = space0(input)?;
-    alt((
-        map(preceded(char('-'), parse_atom), |n| {
-            Node::Invert(Box::new(n).with_location(()))
-        }),
-        map(preceded(char('~'), parse_atom), |n| {
-            Node::BinaryNot(Box::new(n).with_location(()))
-        }),
-        parse_atom,
-    ))(input)
+    alt((parse_invert, parse_binary_not, parse_atom))(input)
 }
 
 /// Parse an atom of an expression: either a literal or a full expression within parenthesis
 fn parse_atom(input: &str) -> IResult<&str, Node<RelativeLocation>> {
-    let (input, _) = space0(input)?;
     alt((
         map(parse_number_literal, |v| Node::Literal(v as Value)),
         map(parse_identifier, |i| Node::Variable(i.into())),
@@ -499,12 +557,17 @@ fn parse_atom(input: &str) -> IResult<&str, Node<RelativeLocation>> {
 
 /// Parse an expression surrounded by parenthesis
 fn parse_parenthesis(input: &str) -> IResult<&str, Node<RelativeLocation>> {
-    let (input, _) = char('(')(input)?;
-    let (input, _) = space0(input)?;
-    let (input, value) = parse_or(input)?;
-    let (input, _) = space0(input)?;
-    let (input, _) = char(')')(input)?;
-    Ok((input, value))
+    let (rest, _) = char('(')(input)?;
+    let (rest, _) = space0(rest)?;
+
+    let offset = input.offset(rest);
+    let (rest, value) = parse_expression(rest)?;
+    // This offsets the child nodes location to compensate the parenthesis
+    let value = value.offset(offset);
+
+    let (rest, _) = space0(rest)?;
+    let (rest, _) = char(')')(rest)?;
+    Ok((rest, value))
 }
 
 /// Parse an expression, returning its AST

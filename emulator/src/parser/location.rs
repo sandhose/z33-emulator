@@ -1,3 +1,5 @@
+use nom::Offset;
+
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Located<T, L> {
     pub inner: T,
@@ -41,6 +43,14 @@ impl From<()> for RelativeLocation {
 
 impl From<(usize, usize)> for RelativeLocation {
     fn from((offset, length): (usize, usize)) -> Self {
+        RelativeLocation { offset, length }
+    }
+}
+
+impl<'a> From<(&'a str, &'a str, &'a str)> for RelativeLocation {
+    fn from((full, start, end): (&'a str, &'a str, &'a str)) -> Self {
+        let offset = full.offset(start);
+        let length = start.offset(end);
         RelativeLocation { offset, length }
     }
 }

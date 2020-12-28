@@ -311,7 +311,6 @@ impl<L> Node<L> {
 }
 
 pub(crate) fn parse_condition(input: &str) -> IResult<&str, Node<RelativeLocation>> {
-    let (input, _) = space0(input)?;
     parse_logical_or(input)
 }
 
@@ -391,7 +390,7 @@ fn parse_logical_expression(input: &str) -> IResult<&str, Node<RelativeLocation>
 }
 
 fn parse_atom(input: &str) -> IResult<&str, Node<RelativeLocation>> {
-    let (input, _) = space0(input)?;
+    let (input, _) = space0(input)?; // TODO: why does this eat leading spaces
     alt((
         parse_number_comparison,
         parse_parenthesis,
