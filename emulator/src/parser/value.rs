@@ -158,7 +158,6 @@ where
     ))(input)
 }
 
-// TODO: save and embed location informations
 /// Represents an instruction argument
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum InstructionArgument<L> {
@@ -224,8 +223,6 @@ impl<L> AstNode<L> for DirectiveKind {
     fn content(&self) -> Option<String> {
         Some(format!("{}", self))
     }
-
-    // TODO: implement children
 }
 
 impl std::fmt::Display for DirectiveKind {

@@ -86,6 +86,26 @@ impl<L> Node<L> {
         self
     }
 
+    pub(crate) fn map_location<O, M>(self, mapper: &M) -> Node<O>
+    where
+        M: Fn(L) -> O,
+    {
+        let location = mapper(self.location);
+        let children = self
+            .children
+            .into_iter()
+            .map(|n| n.map_location(mapper))
+            .collect();
+        let kind = self.kind;
+        let content = self.content;
+        Node {
+            kind,
+            children,
+            content,
+            location,
+        }
+    }
+
     pub(crate) fn transform_location<O, M>(self, parent: &O, mapper: &M) -> Node<O>
     where
         M: Fn(L, &O) -> O,

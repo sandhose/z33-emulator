@@ -4,7 +4,6 @@ use std::path::PathBuf;
 
 use clap::Clap;
 use nom::{combinator::all_consuming, Finish};
-use parser::location::{AbsoluteLocation, Locatable, RelativeLocation};
 use tracing::{debug, info};
 use tracing_subscriber::filter::{EnvFilter, LevelFilter};
 
@@ -20,7 +19,10 @@ mod util;
 use crate::compiler::DebugInfo;
 use crate::constants::STACK_START;
 use crate::interactive::run_interactive;
-use crate::parser::line::parse_program;
+use crate::parser::{
+    line::parse_program,
+    location::{AbsoluteLocation, Locatable, RelativeLocation},
+};
 use crate::preprocessor::preprocess;
 use crate::runtime::{Computer, Registers};
 
@@ -151,12 +153,20 @@ fn dump(input: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     // TODO: proper error handling & wrap those steps
     let (_, program) = all_consuming(parse_program)(source).finish().unwrap();
     let program = program.with_location((0, source.len()));
+
+    debug!("Transforming AST");
     let ast = program.to_node();
+
     // Transform the AST relative locations to absolute ones
     let ast = ast.transform_location(
         &AbsoluteLocation::default(),
         &RelativeLocation::into_absolute,
     );
+
+    // Map the AST absolute offsets to line/col locations
+    let lines = crate::parser::location::Lines::new(source);
+    let ast = ast.map_location(&|l| l.to_line_aware(&lines));
+
     println!("{}", ast);
 
     Ok(())

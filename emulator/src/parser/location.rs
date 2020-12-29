@@ -106,3 +106,77 @@ impl std::fmt::Display for AbsoluteLocation {
         write!(f, "{}..{}", self.offset, self.offset + self.length)
     }
 }
+
+impl AbsoluteLocation {
+    pub(crate) fn to_line_aware(&self, lines: &Lines) -> LineAwareLocation {
+        // TODO: this is very inefficient
+        // TODO: this can also crash, it should return a Result instead
+        let start = self.offset;
+        let end = self.offset + self.length;
+        let (line, (offset, _content)) = lines
+            .0
+            .iter()
+            .filter(|(offset, _)| *offset <= start)
+            .enumerate()
+            .last()
+            .unwrap();
+        let start_line = line + 1;
+        let start_col = start - offset + 1; // TODO: make this relative to chars, not bytes
+
+        let (line, (offset, _content)) = lines
+            .0
+            .iter()
+            .filter(|(offset, _)| *offset <= end)
+            .enumerate()
+            .last()
+            .unwrap();
+        let end_line = line + 1;
+        let end_col = end - offset + 1; // TODO: make this relative to chars, not bytes
+
+        LineAwareLocation {
+            start_line,
+            start_col,
+            end_line,
+            end_col,
+        }
+    }
+}
+
+pub(crate) struct Lines(Vec<(usize, String)>);
+
+impl Lines {
+    pub(crate) fn new(input: &str) -> Self {
+        Self(
+            input
+                .lines()
+                .map(|line| (input.offset(line), line.to_string()))
+                .collect(),
+        )
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Default)]
+pub(crate) struct LineAwareLocation {
+    start_line: usize,
+    start_col: usize,
+    end_line: usize,
+    end_col: usize,
+}
+
+impl std::fmt::Display for LineAwareLocation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.start_line == self.end_line {
+            write!(
+                f,
+                "{}:{}..{}",
+                self.start_line, self.start_col, self.end_col
+            )
+        } else {
+            write!(
+                f,
+                "{}:{}..{}:{}",
+                self.start_line, self.start_col, self.end_line, self.end_col,
+            )
+        }
+    }
+}
