@@ -1,13 +1,9 @@
 use nom::{
     branch::alt,
-    bytes::complete::tag,
     bytes::complete::tag_no_case,
-    character::complete::one_of,
-    character::complete::space0,
-    combinator::map,
-    combinator::value,
+    character::complete::{char, space0},
+    combinator::{map, value},
     error::ParseError,
-    sequence::{delimited, preceded, terminated},
     Compare, IResult, InputTake,
 };
 use thiserror::Error;
@@ -16,7 +12,7 @@ use super::{
     expression::{parse_expression, Context, EvaluationError, Node},
     literal::parse_string_literal,
     location::Locatable,
-    location::RelativeLocation,
+    location::{Located, RelativeLocation},
 };
 use crate::{
     ast::{AstNode, NodeKind},
@@ -165,43 +161,51 @@ where
 // TODO: save and embed location informations
 /// Represents an instruction argument
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) enum InstructionArgument {
+pub(crate) enum InstructionArgument<L> {
     /// An immediate value
-    Value(Node<RelativeLocation>),
+    Value(Node<L>),
 
     /// The content of a register
     Register(Reg),
 
     /// A direct memory access
-    Direct(Node<RelativeLocation>),
+    Direct(Located<Node<L>, L>),
 
     /// An indirect memory access (register)
-    Indirect(Reg),
+    Indirect(Located<Reg, L>),
 
     /// An indexed memory access (register + offset)
     Indexed {
-        register: Reg,
-        value: Node<RelativeLocation>,
+        register: Located<Reg, L>,
+        value: Located<Node<L>, L>,
     },
 }
 
-impl std::fmt::Display for InstructionArgument {
+impl<L> std::fmt::Display for InstructionArgument<L> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use InstructionArgument::*;
 
         match self {
             Value(v) => write!(f, "{}", v),
             Register(r) => write!(f, "{}", r),
-            Direct(v) => write!(f, "[{}]", v),
-            Indirect(r) => write!(f, "[{}]", r),
-            Indexed { register, value } => write!(f, "[{} {:+}]", register, value),
+            Direct(v) => write!(f, "[{}]", v.inner),
+            Indirect(r) => write!(f, "[{}]", r.inner),
+            Indexed { register, value } => write!(f, "[{} {:+}]", register.inner, value.inner),
         }
     }
 }
 
 /// Parse an instruction argument
-pub(crate) fn parse_instruction_argument(input: &str) -> IResult<&str, InstructionArgument> {
-    alt((parse_direct, parse_indirect))(input)
+pub(crate) fn parse_instruction_argument(
+    input: &str,
+) -> IResult<&str, InstructionArgument<RelativeLocation>> {
+    alt((
+        map(parse_expression, InstructionArgument::Value),
+        map(parse_register, InstructionArgument::Register),
+        parse_indexed,
+        parse_direct,
+        parse_indirect,
+    ))(input)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -331,7 +335,7 @@ impl From<EvaluationError> for ComputeError {
     }
 }
 
-impl InstructionArgument {
+impl<L> InstructionArgument<L> {
     pub(crate) fn evaluate<C: Context>(&self, context: &C) -> Result<Arg, ComputeError> {
         match self {
             Self::Value(v) => {
@@ -340,26 +344,54 @@ impl InstructionArgument {
             }
             Self::Register(register) => Ok(Arg::Value(Value::Reg(*register))),
             Self::Direct(v) => {
-                let value = v.evaluate(context)?;
+                let value = v.inner.evaluate(context)?;
                 Ok(Arg::Address(Address::Dir(value)))
             }
-            Self::Indirect(register) => Ok(Arg::Address(Address::Ind(*register))),
+            Self::Indirect(register) => Ok(Arg::Address(Address::Ind(register.inner))),
             Self::Indexed { register, value } => {
-                let value = value.evaluate(context)?;
-                Ok(Arg::Address(Address::Idx(*register, value)))
+                let value = value.inner.evaluate(context)?;
+                Ok(Arg::Address(Address::Idx(register.inner, value)))
             }
         }
     }
 }
 
-impl<L> AstNode<L> for InstructionArgument {
+impl<L: Clone> AstNode<L> for InstructionArgument<L> {
     fn kind(&self) -> NodeKind {
-        NodeKind::InstructionArgument
+        match self {
+            InstructionArgument::Value(e) => e.kind(),
+            InstructionArgument::Register(_) => NodeKind::Register,
+            InstructionArgument::Direct(_) => NodeKind::Direct,
+            InstructionArgument::Indirect(_) => NodeKind::Indirect,
+            InstructionArgument::Indexed { .. } => NodeKind::Indexed,
+        }
     }
 
     fn content(&self) -> Option<String> {
-        Some(format!("{}", self))
+        match self {
+            InstructionArgument::Register(r) => Some(format!("{}", r)),
+            _ => None,
+        }
     }
+
+    fn children(&self) -> Vec<crate::ast::Node<L>> {
+        match self {
+            InstructionArgument::Value(e) => e.children(),
+            InstructionArgument::Register(_) => Vec::new(),
+            InstructionArgument::Direct(e) => vec![e.to_node()],
+            InstructionArgument::Indirect(r) => vec![r.to_node()],
+            InstructionArgument::Indexed { register, value } => {
+                vec![register.to_node(), value.to_node()]
+            }
+        }
+    }
+}
+
+// TODO: get rid of this
+pub(crate) fn parse_indirect_inner(
+    _input: &str,
+) -> IResult<&str, InstructionArgument<RelativeLocation>> {
+    todo!()
 }
 
 fn parse_register(input: &str) -> IResult<&str, Reg> {
@@ -374,43 +406,61 @@ fn parse_register(input: &str) -> IResult<&str, Reg> {
     ))(input)
 }
 
-fn parse_indirect_indexed_inner(input: &str) -> IResult<&str, InstructionArgument> {
-    let (input, register) = parse_register(input)?;
-    let (input, _) = space0(input)?;
-    let (input, sign) = one_of("+-")(input)?;
-    let (input, _) = space0(input)?;
-    let (input, value) = parse_expression(input)?;
+fn parse_indexed(input: &str) -> IResult<&str, InstructionArgument<RelativeLocation>> {
+    #[derive(Clone)]
+    enum Sign {
+        Plus,
+        Minus,
+    };
+    use Sign::*;
+
+    let (rest, _) = char('[')(input)?;
+    let (rest, _) = space0(rest)?;
+
+    let start = rest;
+    let (rest, register) = parse_register(rest)?;
+    let register = register.with_location((input, start, rest));
+    let (rest, _) = space0(rest)?;
+
+    let sign_start = rest;
+    let (rest, sign) = alt((value(Plus, char('+')), value(Minus, char('-'))))(rest)?;
+    let (rest, _) = space0(rest)?;
+
+    let expression_start = rest;
+    let (rest, value) = parse_expression(rest)?;
 
     let value = match sign {
-        '+' => value,
-        '-' => Node::Invert(Box::new(value).with_location(())),
-        _ => unreachable!(),
+        Plus => value,
+        Minus => Node::Invert(Box::new(value).with_location((input, expression_start, rest))),
     };
+    let value = value.with_location((input, sign_start, rest));
 
-    Ok((input, InstructionArgument::Indexed { register, value }))
+    let (rest, _) = space0(rest)?;
+    let (rest, _) = char(']')(rest)?;
+
+    Ok((rest, InstructionArgument::Indexed { register, value }))
 }
 
-pub(crate) fn parse_indirect_inner(input: &str) -> IResult<&str, InstructionArgument> {
-    alt((
-        parse_indirect_indexed_inner,
-        map(parse_register, InstructionArgument::Indirect),
-        map(parse_expression, InstructionArgument::Direct),
-    ))(input)
+fn parse_direct(input: &str) -> IResult<&str, InstructionArgument<RelativeLocation>> {
+    let (rest, _) = char('[')(input)?;
+    let (rest, _) = space0(rest)?;
+    let start = rest;
+    let (rest, value) = parse_expression(rest)?;
+    let value = value.with_location((input, start, rest));
+    let (rest, _) = space0(rest)?;
+    let (rest, _) = char(']')(rest)?;
+    Ok((rest, InstructionArgument::Direct(value)))
 }
 
-fn parse_indirect(input: &str) -> IResult<&str, InstructionArgument> {
-    delimited(
-        terminated(tag("["), space0),
-        parse_indirect_inner,
-        preceded(space0, tag("]")),
-    )(input)
-}
-
-fn parse_direct(input: &str) -> IResult<&str, InstructionArgument> {
-    alt((
-        map(parse_register, InstructionArgument::Register),
-        map(parse_expression, InstructionArgument::Value),
-    ))(input)
+fn parse_indirect(input: &str) -> IResult<&str, InstructionArgument<RelativeLocation>> {
+    let (rest, _) = char('[')(input)?;
+    let (rest, _) = space0(rest)?;
+    let start = rest;
+    let (rest, register) = parse_register(rest)?;
+    let register = register.with_location((input, start, rest));
+    let (rest, _) = space0(rest)?;
+    let (rest, _) = char(']')(rest)?;
+    Ok((rest, InstructionArgument::Indirect(register)))
 }
 
 #[cfg(test)]
@@ -422,5 +472,38 @@ mod tests {
         let (input, register) = parse_register("%a").unwrap();
         assert_eq!(input, "");
         assert_eq!(register, Reg::A);
+    }
+
+    #[test]
+    fn parse_direct_test() {
+        let (input, node) = parse_direct("[3]").unwrap();
+        assert_eq!(input, "");
+        assert_eq!(
+            node,
+            InstructionArgument::Direct(Node::Literal(3).with_location((1, 1)))
+        );
+    }
+
+    #[test]
+    fn parse_indirect_test() {
+        let (input, node) = parse_indirect("[%a]").unwrap();
+        assert_eq!(input, "");
+        assert_eq!(
+            node,
+            InstructionArgument::Indirect(Reg::A.with_location((1, 2)))
+        );
+    }
+
+    #[test]
+    fn parse_indexed_test() {
+        let (input, node) = parse_indexed("[%a+2]").unwrap();
+        assert_eq!(input, "");
+        assert_eq!(
+            node,
+            InstructionArgument::Indexed {
+                register: Reg::A.with_location((1, 2)),
+                value: Node::Literal(2).with_location((3, 2)),
+            }
+        );
     }
 }

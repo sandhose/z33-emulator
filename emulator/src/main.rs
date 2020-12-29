@@ -157,7 +157,7 @@ fn dump(input: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
         &AbsoluteLocation::default(),
         &RelativeLocation::into_absolute,
     );
-    ast.print();
+    println!("{}", ast);
 
     Ok(())
 }

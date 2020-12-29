@@ -12,7 +12,7 @@ use nom::{
     branch::alt,
     bytes::complete::{escaped, tag},
     character::complete::{char, line_ending, none_of, not_line_ending, one_of, space0, space1},
-    combinator::{all_consuming, eof, opt, peek, value},
+    combinator::{all_consuming, eof, map, opt, peek, value},
     multi::separated_list1,
     sequence::delimited,
     IResult,
@@ -36,7 +36,7 @@ pub(crate) enum LineContent<L> {
     /// Represents an instruction, with its opcode and list of arguments
     Instruction {
         kind: Located<InstructionKind, L>,
-        arguments: Vec<Located<InstructionArgument, L>>,
+        arguments: Vec<Located<InstructionArgument<L>, L>>,
     },
     /// Represents a directive, with its type and argument
     Directive {
@@ -190,7 +190,7 @@ where
     pub(crate) fn instruction(
         mut self,
         kind: InstructionKind,
-        arguments: Vec<InstructionArgument>,
+        arguments: Vec<InstructionArgument<L>>,
     ) -> Self {
         self.content = Some(
             LineContent::Instruction {
@@ -332,9 +332,16 @@ fn parse_line(input: &str) -> IResult<&str, Line<RelativeLocation>> {
     ))
 }
 
-fn split_lines<'a>(input: &'a str) -> IResult<&'a str, Vec<&'a str>> {
+fn split_lines(input: &str) -> IResult<&str, Vec<&str>> {
     let line_parser = escaped(none_of("\\\r\n"), '\\', one_of("\\\r\nrnt\""));
-    let line_parser = alt((line_parser, eof, value(&input[..0], peek(line_ending))));
+    let line_parser = alt((
+        // either we have an escaped line
+        line_parser,
+        // or an EOF
+        eof,
+        // or an empty line (just peek for the line ending & make the result zero-length)
+        map(peek(line_ending), |i: &str| &i[..0]),
+    ));
     separated_list1(line_ending, line_parser)(input)
 }
 

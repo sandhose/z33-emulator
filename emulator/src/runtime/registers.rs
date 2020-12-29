@@ -1,7 +1,10 @@
 use bitflags::bitflags;
 use thiserror::Error;
 
-use crate::constants::Word;
+use crate::{
+    ast::{AstNode, NodeKind},
+    constants::Word,
+};
 
 use super::memory::{Cell, CellError, TryFromCell};
 
@@ -83,6 +86,16 @@ impl Reg {
     pub(crate) const fn cost(&self) -> usize {
         // Accessing a register does not take any CPU cycle
         0
+    }
+}
+
+impl<L> AstNode<L> for Reg {
+    fn kind(&self) -> NodeKind {
+        NodeKind::Register
+    }
+
+    fn content(&self) -> Option<String> {
+        Some(format!("{}", self))
     }
 }
 

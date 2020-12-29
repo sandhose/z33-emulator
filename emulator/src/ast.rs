@@ -40,8 +40,13 @@ pub(crate) enum NodeKind {
 
     // Children of LineContent
     InstructionKind,
-    InstructionArgument,
     DirectiveKind,
+
+    // Children of InstructionArgument
+    Register,
+    Direct,
+    Indirect,
+    Indexed,
 
     // Children of DirectiveArgument
     StringLiteral,
@@ -102,14 +107,16 @@ impl<L> Node<L> {
     }
 }
 
-impl<L: std::fmt::Display> Node<L> {
-    pub(crate) fn print(&self) {
-        self.print_indent(0);
+impl<L: std::fmt::Display> std::fmt::Display for Node<L> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.fmt_indent(f, 0)
     }
+}
 
-    fn print_indent(&self, level: usize) {
+impl<L: std::fmt::Display> Node<L> {
+    fn fmt_indent(&self, f: &mut std::fmt::Formatter<'_>, level: usize) -> std::fmt::Result {
         for _ in 0..level {
-            print!("  ");
+            write!(f, "  ")?;
         }
 
         if let Some(ref content) = self.content {
@@ -123,13 +130,15 @@ impl<L: std::fmt::Display> Node<L> {
                 content.clone()
             };
 
-            println!("{:?}({:?}) @ {}", self.kind, content, self.location);
+            writeln!(f, "{:?}({:?}) @ {}", self.kind, content, self.location)?;
         } else {
-            println!("{:?} @ {}", self.kind, self.location);
+            writeln!(f, "{:?} @ {}", self.kind, self.location)?;
         }
 
         for child in self.children.iter() {
-            child.print_indent(level + 1);
+            child.fmt_indent(f, level + 1)?;
         }
+
+        Ok(())
     }
 }
