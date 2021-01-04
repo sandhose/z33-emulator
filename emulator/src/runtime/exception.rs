@@ -5,7 +5,7 @@ use crate::constants::Word;
 use super::memory::MemoryError;
 
 #[derive(Error, Debug)]
-pub(crate) enum Exception {
+pub enum Exception {
     #[error("hardware interrupt")]
     HardwareInterrupt,
 

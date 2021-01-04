@@ -208,7 +208,7 @@ pub(crate) fn parse_instruction_argument(
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) enum DirectiveKind {
+pub enum DirectiveKind {
     Addr,
     Space,
     String,
@@ -321,7 +321,7 @@ impl<L> From<i128> for DirectiveArgument<L> {
 }
 
 #[derive(Error, Debug)]
-pub(crate) enum ComputeError {
+pub enum ComputeError {
     #[error("could not evaluate argument: {0}")]
     Evaluation(EvaluationError),
 }

@@ -63,8 +63,6 @@ fn nom_err_offset(e: nom::Err<nom::error::Error<&str>>, input: &str) -> Option<u
     }
 }
 
-type Result<T> = std::result::Result<T, PreprocessorError>;
-
 #[derive(Clone, Debug)]
 pub enum DirectiveToken {
     If,
@@ -186,7 +184,7 @@ fn is_keyword(key: &str) -> bool {
 
 impl PreprocessorState {
     #[tracing::instrument]
-    fn define(&mut self, key: String, value: String) -> Result<()> {
+    fn define(&mut self, key: String, value: String) -> Result<(), PreprocessorError> {
         if is_keyword(key.as_str()) {
             return Err(PreprocessorError::Keyword(key));
         }
@@ -218,7 +216,7 @@ impl PreprocessorState {
         f.condition_stack.pop()
     }
 
-    fn current_file(&self) -> Result<&SourceFileState> {
+    fn current_file(&self) -> Result<&SourceFileState, PreprocessorError> {
         self.file_stack
             .last()
             .ok_or(PreprocessorError::InvalidState)
@@ -245,7 +243,7 @@ impl PreprocessorState {
     }
 
     #[tracing::instrument]
-    fn evaluate_condition(&self, input: &str) -> Result<bool> {
+    fn evaluate_condition(&self, input: &str) -> Result<bool, PreprocessorError> {
         let input = self.replace_definitions(input);
         let input = input.as_str();
         let (_, node) =
@@ -260,7 +258,11 @@ impl PreprocessorState {
     }
 
     #[tracing::instrument]
-    fn apply_directive(&mut self, directive: DirectiveToken, args: &str) -> Result<Option<String>> {
+    fn apply_directive(
+        &mut self,
+        directive: DirectiveToken,
+        args: &str,
+    ) -> Result<Option<String>, PreprocessorError> {
         let args = args.trim();
 
         match directive {
@@ -331,19 +333,19 @@ impl PreprocessorState {
                     }
                 })?;
                 let path = self.resolve_path(path)?;
-                self.read_file(path).map(Some)
+                self.read_file(&path).map(Some)
             }
         }
     }
 
     #[tracing::instrument]
-    fn resolve_path(&self, path: String) -> Result<PathBuf> {
+    fn resolve_path(&self, path: String) -> Result<PathBuf, PreprocessorError> {
         self.current_file()
             .map(|p| p.path.parent().unwrap().join(path))
     }
 
     #[tracing::instrument]
-    fn transform(&mut self, source: String) -> Result<String> {
+    fn transform(&mut self, source: String) -> Result<String, PreprocessorError> {
         let mut lines = Vec::new();
         for line in source.lines() {
             if let Ok((rest, directive)) = take_directive(line) {
@@ -366,7 +368,7 @@ impl PreprocessorState {
     }
 
     #[tracing::instrument]
-    fn read_file(&mut self, path: PathBuf) -> Result<String> {
+    fn read_file(&mut self, path: &PathBuf) -> Result<String, PreprocessorError> {
         debug!("Reading file {:?}", path);
         self.file_stack.push(SourceFileState::new(path.clone()));
         let mut file = File::open(path)?;
@@ -400,7 +402,7 @@ impl ConditionContext for PreprocessorState {
 }
 
 #[tracing::instrument]
-pub fn preprocess(path: PathBuf) -> Result<String> {
+pub fn preprocess(path: &PathBuf) -> Result<String, PreprocessorError> {
     let mut state = PreprocessorState::default();
 
     state.read_file(path)

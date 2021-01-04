@@ -2,6 +2,7 @@
 
 members = [
   "emulator",
+  "cli",
 ]
 
 [profile.release]

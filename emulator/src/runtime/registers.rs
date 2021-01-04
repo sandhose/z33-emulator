@@ -10,7 +10,7 @@ use super::memory::{Cell, CellError, TryFromCell};
 
 bitflags! {
     #[derive(Default)]
-    pub(crate) struct StatusRegister: Word {
+    pub struct StatusRegister: Word {
         const CARRY            = 0b000_0000_0001;
         const ZERO             = 0b000_0000_0010;
         const NEGATIVE         = 0b000_0000_0100;
@@ -21,7 +21,7 @@ bitflags! {
 }
 
 #[derive(Debug, Default, Clone, PartialEq)]
-pub(crate) struct Registers {
+pub struct Registers {
     pub a: Cell,
     pub b: Cell,
     pub pc: Word,
@@ -30,7 +30,7 @@ pub(crate) struct Registers {
 }
 
 impl Registers {
-    pub(crate) fn get(&self, reg: &Reg) -> Cell {
+    pub fn get(&self, reg: &Reg) -> Cell {
         match reg {
             Reg::A => self.a.clone(),
             Reg::B => self.b.clone(),
@@ -73,7 +73,7 @@ impl std::fmt::Display for Registers {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) enum Reg {
+pub enum Reg {
     A,
     B,
     PC,
@@ -113,7 +113,7 @@ impl std::fmt::Display for Reg {
 
 #[derive(Error, Debug)]
 #[error("could not parse register")]
-pub(crate) struct RegisterParseError;
+pub struct RegisterParseError;
 
 impl std::str::FromStr for Reg {
     type Err = RegisterParseError;

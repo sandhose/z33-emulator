@@ -12,7 +12,7 @@ use super::{
 };
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) enum Instruction {
+pub enum Instruction {
     /// Add a value to a register
     Add(Arg, Reg),
 

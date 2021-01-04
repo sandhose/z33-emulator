@@ -1,6 +1,6 @@
 use crate::parser::location::Located;
 
-pub(crate) trait AstNode<L> {
+pub trait AstNode<L> {
     fn kind(&self) -> NodeKind;
 
     fn content(&self) -> Option<String> {
@@ -13,7 +13,7 @@ pub(crate) trait AstNode<L> {
 }
 
 impl<N: AstNode<L>, L: Clone> Located<N, L> {
-    pub(crate) fn to_node(&self) -> Node<L> {
+    pub fn to_node(&self) -> Node<L> {
         let kind = self.inner.kind();
         let children = self.inner.children();
         let content = self.inner.content();
@@ -28,7 +28,7 @@ impl<N: AstNode<L>, L: Clone> Located<N, L> {
 }
 
 #[derive(Debug)]
-pub(crate) enum NodeKind {
+pub enum NodeKind {
     Program,
     Line,
 
@@ -64,7 +64,7 @@ pub(crate) enum NodeKind {
     ExpressionVariable,
 }
 
-pub(crate) struct Node<L> {
+pub struct Node<L> {
     pub(crate) kind: NodeKind,
     pub(crate) children: Vec<Node<L>>,
     pub(crate) content: Option<String>,
@@ -86,7 +86,8 @@ impl<L> Node<L> {
         self
     }
 
-    pub(crate) fn map_location<O, M>(self, mapper: &M) -> Node<O>
+    /// Map the locations of AST nodes
+    pub fn map_location<O, M>(self, mapper: &M) -> Node<O>
     where
         M: Fn(L) -> O,
     {
@@ -106,7 +107,8 @@ impl<L> Node<L> {
         }
     }
 
-    pub(crate) fn transform_location<O, M>(self, parent: &O, mapper: &M) -> Node<O>
+    /// Transforms the location of AST nodes relative to their parent
+    pub fn transform_location<O, M>(self, parent: &O, mapper: &M) -> Node<O>
     where
         M: Fn(L, &O) -> O,
     {

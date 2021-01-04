@@ -64,7 +64,7 @@ impl Layout {
 }
 
 #[derive(Debug, Error, PartialEq)]
-pub(crate) enum MemoryLayoutError {
+pub enum MemoryLayoutError {
     #[error("duplicate label {label}")]
     DuplicateLabel { label: String },
 

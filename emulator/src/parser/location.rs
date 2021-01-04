@@ -1,9 +1,15 @@
 use nom::Offset;
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct Located<T, L> {
+pub struct Located<T, L> {
     pub inner: T,
-    pub location: L,
+    pub(crate) location: L,
+}
+
+impl<T: std::fmt::Display, L> std::fmt::Display for Located<T, L> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.inner)
+    }
 }
 
 impl<T> Located<T, RelativeLocation> {
@@ -30,7 +36,7 @@ pub(crate) trait Locatable: Sized {
 impl<T> Locatable for T {}
 
 #[derive(Clone, Debug, PartialEq, Default)]
-pub(crate) struct RelativeLocation {
+pub struct RelativeLocation {
     offset: usize,
     length: usize,
 }
@@ -56,7 +62,7 @@ impl<'a> From<(&'a str, &'a str, &'a str)> for RelativeLocation {
 }
 
 impl RelativeLocation {
-    pub(crate) fn into_absolute(self, parent: &AbsoluteLocation) -> AbsoluteLocation {
+    pub fn into_absolute(self, parent: &AbsoluteLocation) -> AbsoluteLocation {
         self.to_absolute(parent)
     }
 
@@ -90,7 +96,7 @@ impl<T> Located<T, RelativeLocation> {
 }
 
 #[derive(Clone, Debug, PartialEq, Default)]
-pub(crate) struct AbsoluteLocation {
+pub struct AbsoluteLocation {
     offset: usize,
     length: usize,
 }
@@ -108,7 +114,7 @@ impl std::fmt::Display for AbsoluteLocation {
 }
 
 impl AbsoluteLocation {
-    pub(crate) fn to_line_aware(&self, lines: &Lines) -> LineAwareLocation {
+    pub fn to_line_aware(&self, lines: &Lines) -> LineAwareLocation {
         // TODO: this is very inefficient
         // TODO: this can also crash, it should return a Result instead
         let start = self.offset;
@@ -142,10 +148,10 @@ impl AbsoluteLocation {
     }
 }
 
-pub(crate) struct Lines(Vec<(usize, String)>);
+pub struct Lines(Vec<(usize, String)>);
 
 impl Lines {
-    pub(crate) fn new(input: &str) -> Self {
+    pub fn new(input: &str) -> Self {
         Self(
             input
                 .lines()
@@ -156,7 +162,7 @@ impl Lines {
 }
 
 #[derive(Clone, Debug, PartialEq, Default)]
-pub(crate) struct LineAwareLocation {
+pub struct LineAwareLocation {
     start_line: usize,
     start_col: usize,
     end_line: usize,

@@ -10,16 +10,16 @@ mod instructions;
 mod memory;
 mod registers;
 
-pub(crate) use self::exception::Exception;
+pub use self::exception::Exception;
 pub(crate) use self::instructions::Instruction;
 pub(crate) use self::memory::{Cell, Memory};
-pub(crate) use self::registers::{Reg, Registers};
+pub use self::registers::{Reg, Registers};
 
 use self::memory::{CellError, MemoryError, TryFromCell};
 use self::registers::StatusRegister;
 
 #[derive(Error, Debug)]
-pub(crate) enum ProcessorError {
+pub enum ProcessorError {
     #[error("CPU exception: {0}")]
     Exception(#[from] Exception),
 
@@ -49,7 +49,7 @@ impl From<MemoryError> for ProcessorError {
 type Result<T> = std::result::Result<T, ProcessorError>;
 
 #[derive(Default)]
-pub(crate) struct Computer {
+pub struct Computer {
     pub registers: Registers,
     pub memory: Memory,
     pub cycles: usize,
@@ -67,7 +67,7 @@ impl std::fmt::Debug for Computer {
 
 impl Computer {
     #[tracing::instrument(skip(self))]
-    pub(crate) fn resolve_address(&self, address: &Address) -> Result<u64> {
+    pub fn resolve_address(&self, address: &Address) -> Result<u64> {
         match address {
             Address::Dir(addr) => Ok(*addr),
             Address::Ind(reg) => u64::try_from_cell(&self.registers.get(reg)).map_err(|e| {
@@ -187,7 +187,7 @@ impl Computer {
     }
 
     #[tracing::instrument(skip(self), level = "debug")]
-    pub(crate) fn step(&mut self) -> Result<()> {
+    pub fn step(&mut self) -> Result<()> {
         let inst = self.decode_instruction()?;
         let cost = inst.cost();
         info!(cost, "Executing instruction \"{}\"", inst);
@@ -206,7 +206,7 @@ impl Computer {
         Ok(())
     }
 
-    pub(crate) fn recover_from_exception(
+    pub fn recover_from_exception(
         &mut self,
         exception: Exception,
     ) -> std::result::Result<(), Exception> {
@@ -232,7 +232,7 @@ impl Computer {
     }
 
     #[tracing::instrument(skip(self))]
-    pub(crate) fn run(&mut self) -> Result<()> {
+    pub fn run(&mut self) -> Result<()> {
         loop {
             match self.step() {
                 Ok(_) => {}
@@ -265,7 +265,7 @@ impl Computer {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) enum Address {
+pub enum Address {
     Dir(u64),
     Ind(Reg),
     Idx(Reg, i64),
@@ -289,7 +289,7 @@ impl Address {
 
 #[derive(Error, Debug)]
 #[error("could not parse address")]
-pub(crate) struct AddressParseError;
+pub struct AddressParseError;
 
 impl std::str::FromStr for Address {
     type Err = AddressParseError;
@@ -322,7 +322,7 @@ impl From<u64> for Address {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) enum Value {
+pub enum Value {
     Imm(u64),
     Reg(Reg),
 }
@@ -361,14 +361,14 @@ pub(crate) enum ArgKind {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) enum Arg {
+pub enum Arg {
     Address(Address),
     Value(Value),
 }
 
 #[derive(Error, Debug)]
 #[error("invalid argument type {got:?}, expected one of {expected:?}")]
-pub(crate) struct ArgConversionError {
+pub struct ArgConversionError {
     expected: Vec<ArgKind>,
     got: ArgKind,
 }

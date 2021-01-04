@@ -204,7 +204,7 @@ where
 }
 
 #[derive(Debug, PartialEq)]
-pub(crate) struct Program<L> {
+pub struct Program<L> {
     pub(crate) lines: Vec<Located<Line<L>, L>>,
 }
 
@@ -215,6 +215,16 @@ impl<L: Clone> AstNode<L> for Program<L> {
 
     fn children(&self) -> Vec<Node<L>> {
         self.lines.iter().map(|l| l.to_node()).collect()
+    }
+}
+
+impl<L> std::fmt::Display for Program<L> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for line in self.lines.iter() {
+            writeln!(f, "{}", line.inner)?;
+        }
+
+        Ok(())
     }
 }
 

@@ -10,7 +10,7 @@ use super::instructions::Instruction;
 ///
 /// There is a 1-1 mapping with the `Cell` type in this module.
 #[derive(Debug)]
-pub(crate) enum CellKind {
+pub enum CellKind {
     Instruction,
     Word,
     Char,
@@ -18,14 +18,14 @@ pub(crate) enum CellKind {
 }
 
 #[derive(Debug, Error)]
-pub(crate) enum CellError {
+pub enum CellError {
     #[error("invalid cell type {was:?} expected {expected:?}")]
     InvalidType { expected: CellKind, was: CellKind },
 }
 
 /// Represents a cell in memory and in general purpose registers
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) enum Cell {
+pub enum Cell {
     /// An instruction
     ///
     /// The instruction can be a big type, so only a reference is saved here.
@@ -84,7 +84,7 @@ impl Cell {
     /// Extract an instruction from the cell.
     ///
     /// Raises an error if it is any other type
-    pub(crate) fn extract_instruction(&self) -> Result<&Instruction, CellError> {
+    pub fn extract_instruction(&self) -> Result<&Instruction, CellError> {
         match self {
             Self::Instruction(i) => Ok(i),
             t => Err(CellError::InvalidType {
@@ -168,7 +168,7 @@ impl TryFromCell for Char {
 
 /// Represents errors related to memory manipulations
 #[derive(Debug, Error)]
-pub(crate) enum MemoryError {
+pub enum MemoryError {
     /// The given address was invalid
     #[error("invalid address {0}")]
     InvalidAddress(Address),
@@ -177,7 +177,7 @@ pub(crate) enum MemoryError {
 /// Holds the memory cells of the computer.
 ///
 /// It has 65536 cells by default.
-pub(crate) struct Memory {
+pub struct Memory {
     inner: Vec<Cell>,
 }
 
@@ -199,7 +199,7 @@ impl Memory {
     /// Get a cell at an address
     ///
     /// It fails if the address is invalid or out of bounds.
-    pub(crate) fn get(&self, address: Address) -> Result<&Cell, MemoryError> {
+    pub fn get(&self, address: Address) -> Result<&Cell, MemoryError> {
         let addr: usize = address
             .try_into()
             .map_err(|_e| MemoryError::InvalidAddress(address))?;

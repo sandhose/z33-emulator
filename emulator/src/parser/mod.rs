@@ -3,13 +3,20 @@
 //! This module is splitted in multiple submodules to make things easier to read. The parsing is
 //! handled by the `nom` library.
 
-use nom::{bytes::complete::take_while1, combinator::verify, IResult};
+use nom::{
+    bytes::complete::take_while1, combinator::all_consuming, combinator::verify, Finish, IResult,
+};
+
+use self::{
+    line::Program,
+    location::{Locatable, Located, RelativeLocation},
+};
 
 pub(crate) mod condition;
 pub(crate) mod expression;
 pub(crate) mod line;
 pub(crate) mod literal;
-pub(crate) mod location;
+pub mod location;
 mod precedence;
 pub(crate) mod value;
 
@@ -29,6 +36,16 @@ pub(crate) fn parse_identifier(input: &str) -> IResult<&str, &str> {
             .filter(|&c| is_start_identifier_char(c))
             .is_some()
     })(input)
+}
+
+pub fn parse(
+    input: &str,
+) -> Result<Located<Program<RelativeLocation>, RelativeLocation>, nom::error::Error<&str>> {
+    // TODO: proper error handling & wrap those steps
+    let (_, program) = all_consuming(self::line::parse_program)(input).finish()?;
+    let program = program.with_location((0, input.len()));
+
+    Ok(program)
 }
 
 #[cfg(test)]

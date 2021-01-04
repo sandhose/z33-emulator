@@ -852,16 +852,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "85e60b0d1b5f99db2556934e21937020776a5d31520bf169e851ac44e6420214"
 
 [[package]]
-name = "z33-emulator"
+name = "z33-cli"
 version = "0.1.0"
 dependencies = [
  "ansi_term",
- "bitflags",
  "clap",
- "nom",
  "rustyline",
  "rustyline-derive",
  "shell-words",
+ "tracing",
+ "tracing-subscriber",
+ "z33-emulator",
+]
+
+[[package]]
+name = "z33-emulator"
+version = "0.1.0"
+dependencies = [
+ "bitflags",
+ "nom",
  "thiserror",
  "tracing",
  "tracing-subscriber",

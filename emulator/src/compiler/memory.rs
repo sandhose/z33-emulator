@@ -16,19 +16,7 @@ use crate::{
 use super::layout::{Labels, Layout, Placement};
 
 #[derive(Debug, Error)]
-pub(crate) enum MemoryFillError {
-    #[error("could not compile: {0}")]
-    CompilationError(CompilationError),
-}
-
-impl From<CompilationError> for MemoryFillError {
-    fn from(inner: CompilationError) -> Self {
-        Self::CompilationError(inner)
-    }
-}
-
-#[derive(Debug, Error)]
-pub(crate) enum CompilationError {
+pub enum MemoryFillError {
     #[error("could not evaluate expression: {0}")]
     Evaluation(ExpressionEvaluationError),
 
@@ -39,26 +27,26 @@ pub(crate) enum CompilationError {
     InstructionCompilation(InstructionCompilationError),
 }
 
-impl From<ExpressionEvaluationError> for CompilationError {
+impl From<ExpressionEvaluationError> for MemoryFillError {
     fn from(e: ExpressionEvaluationError) -> Self {
         Self::Evaluation(e)
     }
 }
 
-impl From<ComputeError> for CompilationError {
+impl From<ComputeError> for MemoryFillError {
     fn from(e: ComputeError) -> Self {
         Self::Compute(e)
     }
 }
 
-impl From<InstructionCompilationError> for CompilationError {
+impl From<InstructionCompilationError> for MemoryFillError {
     fn from(e: InstructionCompilationError) -> Self {
         Self::InstructionCompilation(e)
     }
 }
 
 #[derive(Debug, Error)]
-pub(crate) enum InstructionCompilationError {
+pub enum InstructionCompilationError {
     #[error("invalid number of arguments: expected {expected}, got {got}")]
     InvalidArgumentNumber { expected: usize, got: usize },
 
@@ -281,7 +269,7 @@ fn compile_instruction(
     }
 }
 
-fn compile_placement(labels: &Labels, placement: &Placement) -> Result<Cell, CompilationError> {
+fn compile_placement(labels: &Labels, placement: &Placement) -> Result<Cell, MemoryFillError> {
     use DirectiveKind::*;
 
     match placement {
@@ -319,11 +307,11 @@ fn compile_placement(labels: &Labels, placement: &Placement) -> Result<Cell, Com
 }
 
 #[tracing::instrument(skip(layout))]
-pub(crate) fn fill_memory(layout: &Layout) -> Result<Memory, CompilationError> {
+pub(crate) fn fill_memory(layout: &Layout) -> Result<Memory, MemoryFillError> {
     debug!("Filling memory");
     let mut memory = Memory::default();
 
-    let cells: Result<HashMap<u64, Cell>, CompilationError> = layout
+    let cells: Result<HashMap<u64, Cell>, MemoryFillError> = layout
         .memory
         .iter()
         .map(|(index, placement)| Ok((*index, compile_placement(&layout.labels, placement)?)))

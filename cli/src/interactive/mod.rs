@@ -13,8 +13,8 @@ use clap::{AppSettings, Clap};
 use rustyline::{config::OutputStreamType, CompletionType, Config, EditMode, Editor};
 use tracing::{debug, info, warn};
 
-use crate::compiler::DebugInfo;
-use crate::runtime::{Address, Computer, Exception, Reg};
+use z33_emulator::compiler::DebugInfo;
+use z33_emulator::runtime::{Address, Computer, Exception, Reg};
 
 mod helper;
 use self::helper::RunHelper;
