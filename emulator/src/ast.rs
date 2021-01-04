@@ -12,6 +12,20 @@ pub trait AstNode<L> {
     }
 }
 
+impl<L, T: AstNode<L>> AstNode<L> for Box<T> {
+    fn kind(&self) -> NodeKind {
+        self.as_ref().kind()
+    }
+
+    fn content(&self) -> Option<String> {
+        self.as_ref().content()
+    }
+
+    fn children(&self) -> Vec<Node<L>> {
+        self.as_ref().children()
+    }
+}
+
 impl<N: AstNode<L>, L: Clone> Located<N, L> {
     pub fn to_node(&self) -> Node<L> {
         let kind = self.inner.kind();

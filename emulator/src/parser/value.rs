@@ -264,7 +264,7 @@ pub(crate) enum DirectiveArgument<L> {
     Expression(Node<L>),
 }
 
-impl<L> AstNode<L> for DirectiveArgument<L> {
+impl<L: Clone> AstNode<L> for DirectiveArgument<L> {
     fn kind(&self) -> NodeKind {
         match self {
             DirectiveArgument::StringLiteral(_) => NodeKind::StringLiteral,

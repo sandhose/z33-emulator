@@ -1,0 +1,11 @@
+{
+  "name": "z33-web",
+  "private": true,
+  "scripts": {
+    "build": "rollup --config"
+  },
+  "devDependencies": {
+    "@wasm-tool/rollup-plugin-rust": "^1.0.5",
+    "rollup": "^2.35.1"
+  }
+}

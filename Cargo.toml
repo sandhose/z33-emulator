@@ -3,6 +3,7 @@
 members = [
   "emulator",
   "cli",
+  "web",
 ]
 
 [profile.release]

@@ -79,7 +79,7 @@ pub(crate) enum Node<L> {
     Variable(String),
 }
 
-impl<L> AstNode<L> for Node<L> {
+impl<L: Clone> AstNode<L> for Node<L> {
     fn kind(&self) -> crate::ast::NodeKind {
         use Node::*;
         use NodeKind::*;
@@ -96,6 +96,24 @@ impl<L> AstNode<L> for Node<L> {
             BinaryNot(_) => ExpressionBinaryNot,
             Literal(_) => ExpressionLiteral,
             Variable(_) => ExpressionVariable,
+        }
+    }
+
+    fn children(&self) -> Vec<crate::ast::Node<L>> {
+        use Node::*;
+
+        match self {
+            BinaryOr(a, b) => vec![a.to_node(), b.to_node()],
+            BinaryAnd(a, b) => vec![a.to_node(), b.to_node()],
+            LeftShift(a, b) => vec![a.to_node(), b.to_node()],
+            RightShift(a, b) => vec![a.to_node(), b.to_node()],
+            Sum(a, b) => vec![a.to_node(), b.to_node()],
+            Substract(a, b) => vec![a.to_node(), b.to_node()],
+            Multiply(a, b) => vec![a.to_node(), b.to_node()],
+            Divide(a, b) => vec![a.to_node(), b.to_node()],
+            Invert(a) => vec![a.to_node()],
+            BinaryNot(a) => vec![a.to_node()],
+            Variable(_) | Literal(_) => Vec::new(),
         }
     }
 

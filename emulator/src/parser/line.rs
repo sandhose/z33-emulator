@@ -357,6 +357,7 @@ fn split_lines(input: &str) -> IResult<&str, Vec<&str>> {
 
 pub(crate) fn parse_program(input: &str) -> IResult<&str, Program<RelativeLocation>> {
     let (rest, lines) = split_lines(input)?;
+    // TODO: bubble up more detailed errors here
     let lines: Result<_, _> = lines
         .into_iter()
         .map(|start| {

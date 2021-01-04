@@ -1,0 +1,14 @@
+[package]
+name = "z33-web"
+version = "0.1.0"
+edition = "2018"
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ["-Oz", "--enable-mutable-globals"]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+z33-emulator = { path = "../emulator" }
+wasm-bindgen = "0.2.69"
