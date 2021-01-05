@@ -11,11 +11,9 @@ declare module "web-worker:*" {
   export default WorkerFactory;
 }
 
-declare module "*/Cargo.toml" {
-  type Module = {
-    dump(string): string;
-  };
-  const Loader: () => Promise<Module>;
+declare module "z33-web-bindings" {
+  type Exports = typeof import("./target/wasm-pack/z33-web/index");
+  const Loader: () => Promise<Exports>;
   export default Loader;
 }
 

@@ -1,4 +1,5 @@
 import "./style.css";
+import bindings from "z33-web-bindings";
 
 const samples = {
   directives: () => import("../../samples/directives.S"),
@@ -23,8 +24,7 @@ const samples = {
 
   document.body.appendChild(root);
 
-  const wasm = await import("../Cargo.toml");
-  const { dump } = await wasm.default();
+  const { dump } = await bindings();
 
   const monaco = await import("./monaco");
   editorContainer.classList.remove("loading");
@@ -39,10 +39,11 @@ const samples = {
   Object.entries(samples).forEach(([key, load]) => {
     const button = document.createElement("button");
     button.appendChild(document.createTextNode(key));
-    button.addEventListener("click", async (e) => {
+    button.addEventListener("click", async () => {
       const program = await load();
       model.setValue(program.default);
     });
+    button.addEventListener("mouseover", () => load()); // Preload on mouseover
     selector.appendChild(button);
   });
 
