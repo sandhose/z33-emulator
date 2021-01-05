@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "ESNEXT",
+    "module": "ESNext",
+    "lib": ["esnext", "dom"],
+    "allowJs": false,
+    "sourceMap": true,
+    "isolatedModules": true,
+    "strict": true,
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "files": ["global.d.ts"],
+  "exclude": ["node_modules", "dist", "src", "target"]
+}

@@ -119,23 +119,25 @@ impl AbsoluteLocation {
         // TODO: this can also crash, it should return a Result instead
         let start = self.offset;
         let end = self.offset + self.length;
-        let (line, (offset, _content)) = lines
+        let (line, offset) = lines
             .0
             .iter()
-            .filter(|(offset, _)| *offset <= start)
+            .map(|(offset, _)| *offset)
+            .filter(|offset| *offset <= start)
             .enumerate()
             .last()
-            .unwrap();
+            .unwrap_or((0, 0));
         let start_line = line + 1;
         let start_col = start - offset + 1; // TODO: make this relative to chars, not bytes
 
-        let (line, (offset, _content)) = lines
+        let (line, offset) = lines
             .0
             .iter()
-            .filter(|(offset, _)| *offset <= end)
+            .map(|(offset, _)| *offset)
+            .filter(|offset| *offset <= end)
             .enumerate()
             .last()
-            .unwrap();
+            .unwrap_or((0, 0));
         let end_line = line + 1;
         let end_col = end - offset + 1; // TODO: make this relative to chars, not bytes
 

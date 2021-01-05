@@ -2,55 +2,6 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <style>
-      * { box-sizing: border-box; }
-      html, body { margin: 0; }
-
-      main { 
-        display: flex;
-        height: 100vh;
-        max-height: 100vh;
-      }
-
-      main > * {
-        padding: 1rem;
-        margin: 0;
-        border: solid 3px #CCC;
-        flex: 1;
-        font-family: monospace;
-        height: 100%;
-        overflow-y: auto;
-      }
-
-      .editor {
-        display: flex;
-        flex-direction: column;
-      }
-
-      .editor > .selector {
-        padding-bottom: 1rem;
-      }
-
-      button {
-        padding: 0.2rem 0.5rem;
-        margin: 0 0.5rem;
-      }
-
-      .editor > textarea {
-        border: none;
-        flex: 1;
-      }
-
-      .editor > textarea:focus {
-        outline: none;
-      }
-
-      pre {
-        white-space: pre-wrap;
-        word-wrap: break-word;
-        background-color: #EEE;
-      }
-    </style>
   </head>
   <body>
     <script type="module" src="js/index.js"></script>

@@ -532,4 +532,15 @@ main: # beginning of program
             }
         );
     }
+
+    #[test]
+    fn parse_empty_program_test() {
+        let program = fully_parsed(parse_program(""));
+        assert_eq!(
+            program,
+            Program {
+                lines: vec![Line::default().with_location((0, 0))]
+            }
+        );
+    }
 }
