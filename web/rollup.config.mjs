@@ -1,4 +1,5 @@
 import rust from "@wasm-tool/rollup-plugin-rust";
+import { string } from "rollup-plugin-string";
 
 export default {
   input: "index.mjs",
@@ -10,6 +11,9 @@ export default {
   plugins: [
     rust({
       serverPath: "js/",
+    }),
+    string({
+      include: "../samples/*.S",
     }),
   ],
 };
