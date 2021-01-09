@@ -18,6 +18,7 @@ pub(crate) mod line;
 pub(crate) mod literal;
 pub mod location;
 mod precedence;
+mod preprocessor;
 pub(crate) mod value;
 
 fn is_identifier_char(c: char) -> bool {

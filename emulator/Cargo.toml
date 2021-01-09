@@ -15,3 +15,6 @@ nom = "6.0.1"
 tracing = "0.1.22"
 tracing-subscriber = "0.2.15"
 unicode-segmentation = "1.7.1"
+
+[dev-dependencies]
+indoc = "1.0.3"

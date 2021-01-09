@@ -21,6 +21,8 @@ use crate::parser::{
     parse_identifier,
 };
 
+mod fs;
+
 #[derive(Error, Debug)]
 pub enum PreprocessorError {
     #[error("i/o error: {0}")]
