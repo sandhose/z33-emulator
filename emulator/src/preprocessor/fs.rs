@@ -4,7 +4,7 @@ use std::{
     path::PathBuf,
 };
 
-pub(crate) trait Filesystem {
+pub trait Filesystem {
     type File: Read;
 
     fn open(&self, path: &PathBuf) -> std::io::Result<Self::File>;
@@ -22,12 +22,12 @@ pub(crate) trait Filesystem {
     }
 }
 
-pub(crate) struct InMemoryFilesystem {
+pub struct InMemoryFilesystem {
     files: HashMap<PathBuf, String>,
 }
 
 impl InMemoryFilesystem {
-    pub(crate) const fn new(files: HashMap<PathBuf, String>) -> Self {
+    pub const fn new(files: HashMap<PathBuf, String>) -> Self {
         InMemoryFilesystem { files }
     }
 }
@@ -43,12 +43,12 @@ impl Filesystem for InMemoryFilesystem {
     }
 }
 
-struct NativeFilesystem {
+pub struct NativeFilesystem {
     root: PathBuf,
 }
 
 impl NativeFilesystem {
-    pub(crate) fn from_env() -> std::io::Result<Self> {
+    pub fn from_env() -> std::io::Result<Self> {
         Ok(NativeFilesystem {
             root: std::env::current_dir()?,
         })

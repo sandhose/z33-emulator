@@ -17,8 +17,8 @@ type Children<L> = Vec<Located<Node<L>, L>>;
 
 #[derive(Debug, PartialEq)]
 pub(crate) struct ConditionBranch<L> {
-    condition: Located<String, L>,
-    body: Located<Children<L>, L>,
+    pub condition: Located<String, L>,
+    pub body: Located<Children<L>, L>,
 }
 
 impl ConditionBranch<RelativeLocation> {
@@ -320,11 +320,16 @@ fn parse_raw(input: &str) -> IResult<&str, Node<RelativeLocation>> {
     let mut cursor = input;
     // Let's start eating
     loop {
+        if cursor == "" {
+            // Exit early if the input is empty
+            break;
+        }
+
         let (rest, line) = not_line_ending(cursor)?;
 
         match line.chars().next() {
-            Some('#') | None => break,
-            Some(_) => {}
+            Some('#') => break,
+            Some(_) | None => {}
         }
 
         let (rest, _) = line_ending(rest)?;
@@ -506,6 +511,8 @@ mod tests {
             #   error    "deprecated"
             # undefine  bar //comment
             #   define  test // comment
+
+            empty line
         "#})
         .unwrap();
         assert_eq!(rest, "");
@@ -543,6 +550,10 @@ mod tests {
                     content: None,
                 }
                 .with_location((125, 28)),
+                Raw {
+                    content: "\nempty line\n".to_string()
+                }
+                .with_location((153, 12)),
             ]
         );
     }

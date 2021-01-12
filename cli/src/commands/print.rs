@@ -2,7 +2,10 @@ use std::path::PathBuf;
 
 use clap::Clap;
 use tracing::{debug, info};
-use z33_emulator::{parse, preprocess};
+use z33_emulator::{
+    parse,
+    preprocessor::{preprocess, NativeFilesystem},
+};
 
 #[derive(Clap, Debug)]
 pub struct PrintOpt {
@@ -13,8 +16,9 @@ pub struct PrintOpt {
 
 impl PrintOpt {
     pub fn exec(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let fs = NativeFilesystem::from_env()?;
         info!(path = ?self.input, "Reading program");
-        let source = preprocess(&self.input)?;
+        let source = preprocess(&fs, &self.input)?;
         let source = source.as_str();
 
         debug!("Parsing program");

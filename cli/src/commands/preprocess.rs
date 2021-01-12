@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use clap::Clap;
 use tracing::info;
 
-use z33_emulator::preprocess;
+use z33_emulator::preprocessor::{preprocess, NativeFilesystem};
 
 #[derive(Clap, Debug)]
 pub struct PreprocessOpt {
@@ -14,8 +14,9 @@ pub struct PreprocessOpt {
 
 impl PreprocessOpt {
     pub fn exec(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let fs = NativeFilesystem::from_env()?;
         info!(path = ?self.input, "Reading program");
-        let source = preprocess(&self.input)?;
+        let source = preprocess(&fs, &self.input)?;
         println!("{}", source);
         Ok(())
     }

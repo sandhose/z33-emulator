@@ -1,463 +1,452 @@
-use std::collections::HashMap;
-use std::fs::File;
-use std::io::Read;
-use std::path::PathBuf;
+use std::{collections::HashMap, io::Read, path::PathBuf};
 
-use nom::{
-    branch::alt,
-    bytes::complete::tag_no_case,
-    character::complete::char,
-    combinator::{all_consuming, value},
-    IResult, Offset,
-};
+use nom::Finish;
 use thiserror::Error;
-use tracing::debug;
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::parser::{
-    condition::{parse_condition, Context as ConditionContext},
+    condition::{
+        parse_condition, Context as ConditionContext, EvaluationError as ConditionEvaluationError,
+    },
     expression::EmptyContext as EmptyExpressionContext,
-    literal::parse_string_literal,
-    parse_identifier,
+    location::{AbsoluteLocation, Located, RelativeLocation},
+    preprocessor::{parse, Node},
 };
 
 mod fs;
-mod new;
+
+pub use fs::{Filesystem, InMemoryFilesystem, NativeFilesystem};
+
+#[derive(Debug, Error, Clone)]
+pub enum GetFileError {
+    /// An error from the underlying filesystem
+    ///
+    /// The inner error is wrapped around a std::rc::Rc because std::io::Error does not implement
+    /// Clone, but this error needs to be clonable, since it is stored in the parser cache and
+    /// might be returned multiple times.
+    #[error("i/o error: {0}")]
+    IO(#[from] std::rc::Rc<std::io::Error>),
+
+    #[error("parse error")]
+    ParseError,
+}
+
+struct ParsedFile<L> {
+    chunks: Vec<Located<Node<L>, L>>,
+}
+
+impl ParsedFile<RelativeLocation> {
+    fn into_absolute(self) -> ParsedFile<AbsoluteLocation> {
+        let root = AbsoluteLocation::default();
+        let chunks = self
+            .chunks
+            .into_iter()
+            .map(|located_chunk| {
+                located_chunk.into_absolute(&root, Node::<RelativeLocation>::into_absolute)
+            })
+            .collect();
+
+        ParsedFile { chunks }
+    }
+}
+
+impl<L> ParsedFile<L> {
+    fn walk<F>(&self, mut f: F)
+    where
+        F: FnMut(&Node<L>),
+    {
+        for chunk in self.chunks.iter() {
+            chunk.inner.walk(&mut f);
+        }
+    }
+}
+
+struct ParserCache {
+    files: HashMap<PathBuf, Result<ParsedFile<AbsoluteLocation>, GetFileError>>,
+}
+
+impl ParserCache {
+    fn new() -> Self {
+        Self {
+            files: Default::default(),
+        }
+    }
+}
+
+impl ParserCache {
+    fn get_file(&self, path: &PathBuf) -> &Result<ParsedFile<AbsoluteLocation>, GetFileError> {
+        self.files.get(path).expect("file not in cache")
+    }
+
+    fn fill<FS: Filesystem>(&mut self, path: &PathBuf, fs: &FS) {
+        if self.files.contains_key(path) {
+            return;
+        }
+
+        let res = (|| {
+            let content = {
+                let mut f = fs.open(&path).map_err(std::rc::Rc::new)?;
+                let mut buf = String::new();
+                f.read_to_string(&mut buf).map_err(std::rc::Rc::new)?;
+                buf
+            };
+
+            let (_, chunks) = parse(content.as_str())
+                .finish()
+                .map_err(|_| GetFileError::ParseError)?;
+
+            Ok(ParsedFile { chunks }.into_absolute())
+        })();
+
+        let mut paths: Vec<PathBuf> = Vec::new();
+        if let Ok(ref file) = res {
+            file.walk(|node| {
+                if let Node::Inclusion { path: inclusion } = node {
+                    paths.push(inclusion.inner.clone().into());
+                }
+            });
+        }
+
+        self.files.insert(path.clone(), res);
+
+        let parent = path;
+        for path in paths {
+            let path = fs.relative(Some(parent), &path);
+            self.fill(&path, fs);
+        }
+    }
+}
 
 #[derive(Error, Debug)]
 pub enum PreprocessorError {
-    #[error("i/o error: {0}")]
-    IO(#[from] std::io::Error),
+    #[error("could not get file {path}: {inner}")]
+    GetFile { path: PathBuf, inner: GetFileError },
 
-    #[error("can't use keyword {0:?}")]
-    Keyword(String),
+    #[error("user error: {0}")]
+    UserError(String),
 
-    #[error("invalid directive {0}")]
-    InvalidDirective(DirectiveToken),
+    #[error("invalid syntax in condition")]
+    ConditionParse,
 
-    #[error("invalid argument {args:?} for directive {directive}")]
-    InvalidArgument {
-        directive: DirectiveToken,
-        args: String,
-    },
-
-    #[error("invalid preprocessor state")]
-    InvalidState,
-
-    #[error("file not in a clean state {0:?}")]
-    FileNotClean(SourceFileState),
-
-    #[error("parse error")]
-    ParseError {
-        line: Option<usize>,
-        col: Option<usize>,
-        path: Option<PathBuf>,
-    },
-
-    // TODO
-    #[error("condition evaluation error")]
-    ConditionEvaluation,
+    #[error("could not evaluate condition: {0}")]
+    ConditionEvaluation(#[from] ConditionEvaluationError),
 }
 
-fn nom_err_offset(e: nom::Err<nom::error::Error<&str>>, input: &str) -> Option<usize> {
-    match e {
-        nom::Err::Incomplete(_) => None,
-        nom::Err::Error(e) | nom::Err::Failure(e) => Some(input.offset(e.input)),
-    }
+#[derive(Default)]
+struct Context {
+    definitions: HashMap<String, Option<String>>,
 }
 
-#[derive(Clone, Debug)]
-pub enum DirectiveToken {
-    If,
-    Else,
-    Elif,
-    EndIf,
-    Define,
-    Include,
-}
-
-impl std::fmt::Display for DirectiveToken {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::If => write!(f, "if"),
-            Self::Else => write!(f, "else"),
-            Self::Elif => write!(f, "elif"),
-            Self::EndIf => write!(f, "endif"),
-            Self::Define => write!(f, "define"),
-            Self::Include => write!(f, "include"),
-        }
-    }
-}
-
-fn parse_directive_token(input: &str) -> IResult<&str, DirectiveToken> {
-    alt((
-        value(DirectiveToken::If, tag_no_case("if")),
-        value(DirectiveToken::Else, tag_no_case("else")),
-        value(DirectiveToken::Elif, tag_no_case("elif")),
-        value(DirectiveToken::EndIf, tag_no_case("endif")),
-        value(DirectiveToken::Define, tag_no_case("define")),
-        value(DirectiveToken::Include, tag_no_case("include")),
-    ))(input)
-}
-
-fn take_directive(input: &str) -> IResult<&str, DirectiveToken> {
-    let (input, _) = char('#')(input)?;
-    parse_directive_token(input)
-}
-
-// TODO: filesystem abstraction to support virtual fs (like in the browser)
-
-#[derive(Debug, Clone, Copy)]
-enum ConditionState {
-    /// The current condition evaluated to "true"
-    Active,
-    /// The current condition block already had a condition evaluated to "true"
-    Passed,
-    /// The current condition evaluated to "false" and no other condition evaluated to true yet
-    Missed,
-    /// This is in the `else` branch and is active
-    ElseActive,
-    /// This is in the `else` branch but inactive
-    Else,
-}
-
-impl Default for ConditionState {
-    fn default() -> Self {
-        Self::Missed
-    }
-}
-
-impl ConditionState {
-    fn new(value: bool) -> Self {
-        Self::default().transition(value).unwrap()
-    }
-
-    #[inline]
-    fn transition(self, value: bool) -> Option<Self> {
-        match (self, value) {
-            (Self::Active, _) | (Self::Passed, _) => Some(Self::Passed),
-            (Self::Missed, true) => Some(Self::Active),
-            (Self::Missed, false) => Some(Self::Missed),
-            (Self::ElseActive, _) | (Self::Else, _) => None, // Invalid transition
-        }
-    }
-
-    fn transition_else(self) -> Option<Self> {
-        match self {
-            Self::Active | Self::Passed => Some(Self::Else),
-            Self::Missed => Some(Self::ElseActive),
-            Self::ElseActive | Self::Else => None, // Invalid transition
-        }
-    }
-
-    fn is_active(&self) -> bool {
-        matches!(self, ConditionState::Active | ConditionState::ElseActive)
-    }
-}
-
-#[derive(Default, Debug)]
-pub struct SourceFileState {
-    condition_stack: Vec<ConditionState>,
-    path: PathBuf,
-}
-
-impl SourceFileState {
-    fn new(path: PathBuf) -> Self {
-        Self {
-            path,
-            ..Default::default()
-        }
-    }
-
-    /// Check if the file is in a clean state, e.g. all conditions ended
-    fn is_clean(&self) -> bool {
-        self.condition_stack.is_empty()
-    }
-}
-
-#[derive(Default, Debug)]
-struct PreprocessorState {
-    definitions: HashMap<String, String>,
-    file_stack: Vec<SourceFileState>,
-}
-
-fn is_keyword(key: &str) -> bool {
-    key == "if" || key == "endif" || key == "else" || key == "define"
-}
-
-impl PreprocessorState {
-    #[tracing::instrument]
-    fn define(&mut self, key: String, value: String) -> Result<(), PreprocessorError> {
-        if is_keyword(key.as_str()) {
-            return Err(PreprocessorError::Keyword(key));
-        }
-
-        self.definitions.insert(key, value);
-
-        Ok(())
-    }
-
-    #[tracing::instrument]
-    fn is_active(&self) -> bool {
-        self.file_stack
-            .last()
-            .and_then(|file| file.condition_stack.last().map(ConditionState::is_active))
-            .unwrap_or(true)
-    }
-
-    #[tracing::instrument]
-    fn push_condition(&mut self, value: bool) {
-        // TODO: handle error
-        let f = self.file_stack.last_mut().unwrap();
-        f.condition_stack.push(ConditionState::new(value));
-    }
-
-    #[tracing::instrument]
-    fn pop_condition(&mut self) -> Option<ConditionState> {
-        // TODO: handle error
-        let f = self.file_stack.last_mut().unwrap();
-        f.condition_stack.pop()
-    }
-
-    fn current_file(&self) -> Result<&SourceFileState, PreprocessorError> {
-        self.file_stack
-            .last()
-            .ok_or(PreprocessorError::InvalidState)
-    }
-
-    #[tracing::instrument]
-    fn current_condition(&mut self) -> Option<&mut ConditionState> {
-        let f = self.file_stack.last_mut()?;
-        f.condition_stack.last_mut()
-    }
-
-    #[tracing::instrument]
-    fn replace_definitions(&self, source: &str) -> String {
-        let words: Vec<_> = source
-            .split_word_bounds()
-            .map(|word| {
-                self.definitions
-                    .get(word)
-                    .cloned()
-                    .unwrap_or_else(|| word.into())
-            })
-            .collect();
-        words.join("")
-    }
-
-    #[tracing::instrument]
-    fn evaluate_condition(&self, input: &str) -> Result<bool, PreprocessorError> {
-        let input = self.replace_definitions(input);
-        let input = input.as_str();
-        let (_, node) =
-            all_consuming(parse_condition)(input).map_err(|e| PreprocessorError::ParseError {
-                line: None,
-                col: nom_err_offset(e, input),
-                path: None,
-            })?;
-
-        node.evaluate(self) // TODO: capture the error
-            .map_err(|_| PreprocessorError::ConditionEvaluation)
-    }
-
-    #[tracing::instrument]
-    fn apply_directive(
-        &mut self,
-        directive: DirectiveToken,
-        args: &str,
-    ) -> Result<Option<String>, PreprocessorError> {
-        let args = args.trim();
-
-        match directive {
-            DirectiveToken::If => {
-                if !self.is_active() {
-                    self.push_condition(false);
-                } else {
-                    let cond = self.evaluate_condition(args)?;
-                    self.push_condition(cond);
-                }
-                Ok(None)
-            }
-            DirectiveToken::Else => {
-                if args != "" {
-                    // Else statements should not have arguments
-                    Err(PreprocessorError::InvalidArgument {
-                        directive: DirectiveToken::Else,
-                        args: args.into(),
-                    })
-                } else {
-                    self.current_condition()
-                        .and_then(|cond| {
-                            *cond = cond.transition_else()?;
-                            Some(())
-                        })
-                        .ok_or(PreprocessorError::InvalidDirective(DirectiveToken::Else))?;
-                    Ok(None)
-                }
-            }
-            DirectiveToken::Elif => {
-                let value = self.evaluate_condition(args)?;
-                self.current_condition()
-                    .and_then(|cond| {
-                        *cond = cond.transition(value)?;
-                        Some(())
-                    })
-                    .ok_or(PreprocessorError::InvalidDirective(DirectiveToken::Elif))?;
-                Ok(None)
-            }
-            DirectiveToken::EndIf => {
-                self.pop_condition()
-                    .ok_or(PreprocessorError::InvalidDirective(DirectiveToken::EndIf))?;
-                Ok(None)
-            }
-            DirectiveToken::Define => {
-                if !self.is_active() {
-                    Ok(None)
-                } else {
-                    let (args, identifier) = parse_identifier(args) // Parse the key
-                        .map_err(|_| {
-                            PreprocessorError::InvalidArgument {
-                                directive: DirectiveToken::Define,
-                                args: args.into()
-                            }
-                        })?;
-
-                    let args = args.trim(); // Remove unnecessary spaces
-                    let args = self.replace_definitions(args);
-                    self.define(identifier.into(), args).map(|_| None)
-                }
-            }
-            DirectiveToken::Include => {
-                let (_, path) = all_consuming(parse_string_literal)(args).map_err(|e| {
-                    PreprocessorError::ParseError {
-                        line: None,
-                        col: nom_err_offset(e, args),
-                        path: None,
-                    }
-                })?;
-                let path = self.resolve_path(path)?;
-                self.read_file(&path).map(Some)
-            }
-        }
-    }
-
-    #[tracing::instrument]
-    fn resolve_path(&self, path: String) -> Result<PathBuf, PreprocessorError> {
-        self.current_file()
-            .map(|p| p.path.parent().unwrap().join(path))
-    }
-
-    #[tracing::instrument]
-    fn transform(&mut self, source: String) -> Result<String, PreprocessorError> {
-        let mut lines = Vec::new();
-        for line in source.lines() {
-            if let Ok((rest, directive)) = take_directive(line) {
-                let line = self.apply_directive(directive, rest)?;
-                if let Some(line) = line {
-                    lines.push(line);
-                }
-            } else {
-                let line = self.replace_definitions(line);
-
-                if self.is_active() {
-                    lines.push(line);
-                }
-            }
-        }
-
-        let processed = lines.join("\n");
-
-        Ok(processed)
-    }
-
-    #[tracing::instrument]
-    fn read_file(&mut self, path: &PathBuf) -> Result<String, PreprocessorError> {
-        debug!("Reading file {:?}", path);
-        self.file_stack.push(SourceFileState::new(path.clone()));
-        let mut file = File::open(path)?;
-        let mut source = String::new();
-        file.read_to_string(&mut source)?;
-
-        let processed = self.transform(source)?;
-
-        let state = self
-            .file_stack
-            .pop()
-            .ok_or(PreprocessorError::InvalidState)?;
-        if !state.is_clean() {
-            return Err(PreprocessorError::FileNotClean(state));
-        }
-
-        Ok(processed)
-    }
-}
-
-impl ConditionContext for PreprocessorState {
+impl ConditionContext for Context {
     type ExpressionContext = EmptyExpressionContext;
-
-    fn is_defined(&self, variable: &str) -> bool {
-        self.definitions.contains_key(variable)
-    }
 
     fn get_expression_context(&self) -> &Self::ExpressionContext {
         &EmptyExpressionContext
     }
+
+    fn is_defined(&self, variable: &str) -> bool {
+        self.definitions.contains_key(variable)
+    }
 }
 
-#[tracing::instrument]
-pub fn preprocess(path: &PathBuf) -> Result<String, PreprocessorError> {
-    let mut state = PreprocessorState::default();
+impl Context {
+    fn define(&mut self, key: String, content: Option<String>) {
+        self.definitions.insert(key, content);
+    }
 
-    state.read_file(path)
+    fn undefine(&mut self, key: &str) {
+        self.definitions.remove(key);
+    }
+
+    fn replace(&self, input: &str) -> String {
+        let words: Vec<_> = input
+            .split_word_bounds()
+            .map(|word| match self.definitions.get(word) {
+                Some(Some(replacement)) => replacement.clone(),
+                Some(None) => String::new(),
+                None => word.to_string(),
+            })
+            .collect();
+
+        words.join("")
+    }
+}
+
+fn process_chunk<FS: Filesystem, L: Clone>(
+    chunk: &Node<L>,
+    context: &mut Context,
+    open_path: &PathBuf,
+    cache: &ParserCache,
+    fs: &FS,
+) -> Result<Option<String>, PreprocessorError> {
+    use PreprocessorError::*;
+
+    match chunk {
+        Node::Raw { ref content } => {
+            // Replace the definitions in the content
+            let replaced = context.replace(content);
+            Ok(Some(replaced))
+        }
+
+        Node::Error { ref message } => {
+            // Return the user-defined error
+            Err(UserError(message.inner.clone()))
+        }
+
+        Node::Undefine { ref key } => {
+            // Remove a definition
+            let key = &key.inner;
+            context.undefine(key);
+            Ok(None) // Generates no text
+        }
+
+        Node::Definition {
+            ref key,
+            ref content,
+        } => {
+            // Add a definition
+            let key = key.inner.clone();
+            let content = content.as_ref().map(|i| &i.inner);
+            // First replace existing definitions in the content
+            let content = content.map(|c| context.replace(c));
+            // Then add the definition
+            context.define(key, content);
+            Ok(None) // Generates no text
+        }
+
+        Node::Inclusion { path: ref include } => {
+            // Include a file
+            let include: PathBuf = include.inner.clone().into();
+            // First resolve its path
+            let path = fs.relative(Some(open_path), &include);
+            // Then process it
+            let content = preprocess_path(&path, context, cache, fs)?;
+            Ok(Some(content))
+        }
+
+        Node::Condition { branches, fallback } => {
+            for branch in branches.iter() {
+                let condition = context.replace(&branch.condition.inner);
+                let (_, expression) = parse_condition(&condition)
+                    .finish()
+                    .map_err(|_| ConditionParse)?; // TODO: wrap the error
+
+                if expression.evaluate(context)? {
+                    let mut buf = String::new();
+                    for chunk in branch.body.inner.iter() {
+                        if let Some(ref content) =
+                            process_chunk(&chunk.inner, context, open_path, cache, fs)?
+                        {
+                            buf += content;
+                        }
+                    }
+                    return Ok(Some(buf));
+                }
+            }
+
+            if let Some(ref body) = fallback {
+                let mut buf = String::new();
+                for chunk in body.inner.iter() {
+                    if let Some(ref content) =
+                        process_chunk(&chunk.inner, context, open_path, cache, fs)?
+                    {
+                        buf += content;
+                    }
+                }
+                return Ok(Some(buf));
+            }
+
+            Ok(None)
+        }
+    }
+}
+
+fn preprocess_path<FS: Filesystem>(
+    path: &PathBuf,
+    context: &mut Context,
+    cache: &ParserCache,
+    fs: &FS,
+) -> Result<String, PreprocessorError> {
+    use PreprocessorError::*;
+
+    let mut buf = String::new();
+    let file = cache.get_file(path).as_ref().map_err(|inner| GetFile {
+        path: path.clone(),
+        inner: inner.clone(),
+    })?;
+
+    for chunk in file.chunks.iter() {
+        if let Some(ref content) = process_chunk(&chunk.inner, context, path, cache, fs)? {
+            buf += &content;
+        }
+    }
+
+    Ok(buf)
+}
+
+pub fn preprocess<FS: Filesystem>(
+    fs: &FS,
+    entrypoint: &PathBuf,
+) -> Result<String, PreprocessorError> {
+    let path = fs.relative(None, entrypoint);
+    let mut context = Context::default();
+    let cache = {
+        let mut c = ParserCache::new();
+        c.fill(&path, fs);
+        c
+    };
+    preprocess_path(&path, &mut context, &cache, fs)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn fs() -> InMemoryFilesystem {
+        InMemoryFilesystem::new({
+            let mut t = HashMap::new();
+            t.insert(
+                "/inclusion.S".into(),
+                indoc::indoc! {r#"
+                    this is before foo.S
+                    #include "foo.S"
+                    this is after foo.S
+                "#}
+                .into(),
+            );
+            t.insert(
+                "/foo.S".into(),
+                indoc::indoc! {r#"
+                    this is foo.S
+                "#}
+                .into(),
+            );
+            t.insert(
+                "/error.S".into(),
+                indoc::indoc! {r#"
+                    #error "custom"
+                "#}
+                .into(),
+            );
+            t.insert(
+                "/define.S".into(),
+                indoc::indoc! {r#"
+                    #define FOO world
+                    hello FOO
+                    helloFOO
+                    #undefine FOO
+                    hello FOO
+                "#}
+                .into(),
+            );
+            t.insert(
+                "/double-define.S".into(),
+                indoc::indoc! {r#"
+                    #define FOO world
+                    #define WHAT hello FOO
+                    #define FOO toto
+                    WHAT
+                "#}
+                .into(),
+            );
+            t.insert(
+                "/condition.S".into(),
+                indoc::indoc! {r#"
+                    #if true
+                    simple
+                    #endif
+
+                    #if false
+                    no fallback
+                    #endif
+                    
+                    #if false
+                    nothing
+                    #else
+                    fallback
+                    #endif
+
+                    #define FOO true
+                    #if FOO
+                    definition
+                    #endif
+
+                    #if true
+                    #if true
+                    nested
+                    #endif
+                    #endif
+                "#}
+                .into(),
+            );
+            t
+        })
+    }
+
     #[test]
-    fn replace_definitions_test() {
-        let mut preprocessor = PreprocessorState::default();
-        preprocessor.define("HELLO".into(), "WORLD".into()).unwrap();
-        preprocessor.define("WORLD".into(), "42".into()).unwrap();
+    fn inclusion_test() {
+        let fs = fs();
+        let res = preprocess(&fs, &"/inclusion.S".into()).unwrap();
         assert_eq!(
-            preprocessor.replace_definitions("HELLO WORLD"),
-            "WORLD 42".to_string()
+            res,
+            indoc::indoc! {r#"
+                this is before foo.S
+                this is foo.S
+                this is after foo.S
+            "#}
         );
     }
 
     #[test]
-    fn define_test() {
-        let source = r#"
-#define FOO world
-hello FOO
-        "#
-        .trim()
-        .to_string();
-        let mut preprocessor = PreprocessorState::default();
-        let transformed = preprocessor.transform(source).unwrap();
-        assert_eq!(transformed, "hello world".to_string());
+    fn condition_test() {
+        let fs = fs();
+        let res = preprocess(&fs, &"/condition.S".into()).unwrap();
+        assert_eq!(
+            res,
+            indoc::indoc! {r#"
+                simple
+
+
+                fallback
+
+                definition
+
+                nested
+            "#}
+        );
     }
 
     #[test]
-    fn if_defined_test() {
-        let source = r#"
-#define FOO FOO
-#if defined(FOO)
-FOO is defined
-#endif
-#if !defined(BAR)
-BAR is not defined
-#endif
-        "#
-        .trim()
-        .to_string();
-        let mut preprocessor = PreprocessorState::default();
-        // Conditions need a file stack
-        preprocessor
-            .file_stack
-            .push(SourceFileState::new("hello.S".into()));
-        let transformed = preprocessor.transform(source).unwrap();
-        assert_eq!(transformed, "FOO is defined\nBAR is not defined");
+    fn definition_test() {
+        let fs = fs();
+        let res = preprocess(&fs, &"/define.S".into()).unwrap();
+        assert_eq!(
+            res,
+            indoc::indoc! {r#"
+                hello world
+                helloFOO
+                hello FOO
+            "#}
+        );
+
+        let res = preprocess(&fs, &"/double-define.S".into()).unwrap();
+        assert_eq!(
+            res,
+            indoc::indoc! {r#"
+                hello world
+            "#}
+        );
+    }
+
+    #[test]
+    fn user_error_test() {
+        let fs = fs();
+        let res = preprocess(&fs, &"/error.S".into());
+        assert!(res.is_err());
+        if let Err(PreprocessorError::UserError(c)) = res {
+            assert_eq!(c, "custom".to_string());
+        } else {
+            panic!("not a UserError");
+        }
     }
 }
