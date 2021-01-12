@@ -1,34 +1,48 @@
 use nom::{
     branch::alt,
-    bytes::complete::{tag, take_till1},
-    character::complete::not_line_ending,
-    character::complete::{char, line_ending, space0, space1},
-    combinator::map,
+    bytes::complete::{tag, take_till},
+    character::complete::{char, line_ending, not_line_ending, space0, space1},
+    combinator::{map, opt},
+    sequence::preceded,
     IResult, Offset,
 };
 
 use super::{
-    condition::{parse_condition as parse_condition_expression, Node as ConditionNode},
     literal::parse_string_literal,
-    location::{Locatable, Located, RelativeLocation},
+    location::{AbsoluteLocation, Locatable, Located, RelativeLocation},
     parse_identifier,
 };
 
 type Children<L> = Vec<Located<Node<L>, L>>;
 
 #[derive(Debug, PartialEq)]
-struct ConditionBranch<L> {
-    condition: Located<ConditionNode<L>, L>,
+pub(crate) struct ConditionBranch<L> {
+    condition: Located<String, L>,
     body: Located<Children<L>, L>,
 }
 
+impl ConditionBranch<RelativeLocation> {
+    fn into_absolute(self, parent: &AbsoluteLocation) -> ConditionBranch<AbsoluteLocation> {
+        let condition = self.condition.into_absolute(parent, |c, _| c);
+        let body = self.body.into_absolute(parent, |c, p| {
+            c.into_iter()
+                .map(|c| c.into_absolute(p, |c, p| c.into_absolute(p)))
+                .collect()
+        });
+        ConditionBranch { condition, body }
+    }
+}
+
 #[derive(Debug, PartialEq)]
-enum Node<L> {
+pub(crate) enum Node<L> {
     Raw {
         content: String,
     },
     Error {
         message: Located<String, L>,
+    },
+    Undefine {
+        key: Located<String, L>,
     },
     Definition {
         key: Located<String, L>,
@@ -43,6 +57,108 @@ enum Node<L> {
     },
 }
 
+impl<L> Node<L> {
+    pub(crate) fn walk<F>(&self, f: &mut F)
+    where
+        F: FnMut(&Self),
+    {
+        f(self);
+
+        if let Node::Condition { branches, fallback } = self {
+            for branch in branches.iter() {
+                for chunk in branch.body.inner.iter() {
+                    chunk.inner.walk(f)
+                }
+            }
+
+            if let Some(fallback) = fallback {
+                for chunk in fallback.inner.iter() {
+                    chunk.inner.walk(f)
+                }
+            }
+        }
+    }
+}
+
+impl Node<RelativeLocation> {
+    pub(crate) fn into_absolute(self, parent: &AbsoluteLocation) -> Node<AbsoluteLocation> {
+        use Node::*;
+        match self {
+            Raw { content } => Raw { content },
+            Error { message } => Error {
+                message: message.into_absolute(&parent, |c, _| c),
+            },
+            Undefine { key } => Undefine {
+                key: key.into_absolute(&parent, |k, _| k),
+            },
+            Definition { key, content } => Definition {
+                key: key.into_absolute(&parent, |k, _| k),
+                content: content.map(|c| c.into_absolute(&parent, |c, _| c)),
+            },
+            Inclusion { path } => Inclusion {
+                path: path.into_absolute(&parent, |p, _| p),
+            },
+            Condition { branches, fallback } => Condition {
+                branches: branches
+                    .into_iter()
+                    .map(|b| b.into_absolute(&parent))
+                    .collect(),
+                fallback: fallback.map(
+                    |l: Located<Children<RelativeLocation>, RelativeLocation>| {
+                        l.into_absolute(&parent, |c, p| {
+                            c.into_iter()
+                                .map(|c| c.into_absolute(p, |c, p| c.into_absolute(p)))
+                                .collect()
+                        })
+                    },
+                ),
+            },
+        }
+    }
+}
+
+/// Eats the end of a line, including trailing spaces, inline comments and the line ending
+fn eat_end_of_line(input: &str) -> IResult<&str, ()> {
+    let (rest, _) = space0(input)?;
+    let (rest, _) = opt(preceded(tag("//"), not_line_ending))(rest)?;
+    let (rest, _) = line_ending(rest)?;
+    Ok((rest, ()))
+}
+
+/// Extracts the argument of a directive
+/// It tries to stop before any trailing whitespace or comment
+fn parse_directive_argument(input: &str) -> IResult<&str, &str> {
+    let mut cursor = input;
+    loop {
+        let (rest, _) = space0(cursor)?;
+
+        // peek at the next thing after the spaces
+        match rest.get(..2) {
+            Some("//") | Some("\r\n") => break,
+            _ => {}
+        }
+
+        if let Some("\n") = rest.get(..1) {
+            break;
+        }
+
+        let (rest, _) =
+            take_till(|c| c == ' ' || c == '\t' || c == '\r' || c == '\n' || c == '/')(rest)?;
+        cursor = rest;
+    }
+
+    let index = input.offset(cursor);
+    if index == 0 {
+        return Err(nom::Err::Error(nom::error::ParseError::from_error_kind(
+            input,
+            nom::error::ErrorKind::Eof, // TODO: maybe not the best kind
+        )));
+    }
+
+    let content = &input[..index];
+    Ok((cursor, content))
+}
+
 fn parse_definition(input: &str) -> IResult<&str, Node<RelativeLocation>> {
     let (rest, _) = char('#')(input)?;
     let (rest, _) = space0(rest)?;
@@ -52,22 +168,32 @@ fn parse_definition(input: &str) -> IResult<&str, Node<RelativeLocation>> {
     let (rest, key) = parse_identifier(rest)?;
     let key = key.to_owned().with_location((input, start, rest));
 
-    // TODO: define without content
-    let (rest, _) = space1(rest)?;
-    let start = rest;
-    let (rest, content) = take_till1(|c| c == '\n')(rest)?;
-    let content = content.to_owned().with_location((input, start, rest));
+    let (rest, content) = opt(|rest| {
+        let (rest, _) = space1(rest)?;
+        let start = rest;
+        let (rest, content) = parse_directive_argument(rest)?;
+        let content = content.to_owned().with_location((input, start, rest));
+        Ok((rest, content))
+    })(rest)?;
 
+    let (rest, _) = eat_end_of_line(rest)?;
+
+    Ok((rest, Node::Definition { key, content }))
+}
+
+fn parse_undefine(input: &str) -> IResult<&str, Node<RelativeLocation>> {
+    let (rest, _) = char('#')(input)?;
     let (rest, _) = space0(rest)?;
-    let (rest, _) = line_ending(rest)?;
+    let (rest, _) = tag("undefine")(rest)?;
+    let (rest, _) = space1(rest)?;
 
-    Ok((
-        rest,
-        Node::Definition {
-            key,
-            content: Some(content),
-        },
-    ))
+    let start = rest;
+    let (rest, key) = parse_identifier(rest)?;
+    let key = key.to_owned().with_location((input, start, rest));
+
+    let (rest, _) = eat_end_of_line(rest)?;
+
+    Ok((rest, Node::Undefine { key }))
 }
 
 fn parse_inclusion(input: &str) -> IResult<&str, Node<RelativeLocation>> {
@@ -82,9 +208,7 @@ fn parse_inclusion(input: &str) -> IResult<&str, Node<RelativeLocation>> {
     let (rest, path) = parse_string_literal(rest)?;
     let path = path.with_location((input, start, rest));
 
-    // Eat the newline
-    let (rest, _) = space0(rest)?;
-    let (rest, _) = line_ending(rest)?;
+    let (rest, _) = eat_end_of_line(rest)?;
 
     Ok((rest, Node::Inclusion { path }))
 }
@@ -101,9 +225,7 @@ fn parse_error(input: &str) -> IResult<&str, Node<RelativeLocation>> {
     let (rest, message) = parse_string_literal(rest)?;
     let message = message.with_location((input, start, rest));
 
-    // Eat the newline
-    let (rest, _) = space0(rest)?;
-    let (rest, _) = line_ending(rest)?;
+    let (rest, _) = eat_end_of_line(rest)?;
 
     Ok((rest, Node::Error { message }))
 }
@@ -117,11 +239,10 @@ fn parse_condition(input: &str) -> IResult<&str, Node<RelativeLocation>> {
 
     // Then parse the first condition
     let start = rest;
-    let (rest, condition) = parse_condition_expression(rest)?;
-    let condition = condition.with_location((input, start, rest));
+    let (rest, condition) = parse_directive_argument(rest)?;
+    let condition = condition.to_string().with_location((input, start, rest));
 
-    let (rest, _) = space0(rest)?;
-    let (rest, _) = line_ending(rest)?;
+    let (rest, _) = eat_end_of_line(rest)?;
 
     // Parse its body
     let start = rest;
@@ -134,7 +255,7 @@ fn parse_condition(input: &str) -> IResult<&str, Node<RelativeLocation>> {
     // This structure helps parsing the else/elif/end directives
     enum BranchDirective {
         Else,
-        ElseIf(Located<ConditionNode<RelativeLocation>, RelativeLocation>),
+        ElseIf(Located<String, RelativeLocation>),
         EndIf,
     };
     use BranchDirective::*;
@@ -154,15 +275,14 @@ fn parse_condition(input: &str) -> IResult<&str, Node<RelativeLocation>> {
                 let (rest, _) = tag("elif")(rest)?;
                 let (rest, _) = space1(rest)?;
                 let start = rest;
-                let (rest, condition) = parse_condition_expression(rest)?;
-                let condition = condition.with_location((input, start, rest));
+                let (rest, condition) = parse_directive_argument(rest)?;
+                let condition = condition.to_string().with_location((input, start, rest));
                 Ok((rest, ElseIf(condition)))
             },
             map(tag("else"), |_| Else),
         ))(rest)?;
 
-        let (rest, _) = space0(rest)?;
-        let (rest, _) = line_ending(rest)?;
+        let (rest, _) = eat_end_of_line(rest)?;
 
         // We've got an "#end" directive, get out of the loop
         // We don't update the cursor here since we will be re-parsing the #end directive afterward
@@ -188,13 +308,15 @@ fn parse_condition(input: &str) -> IResult<&str, Node<RelativeLocation>> {
     let (rest, _) = space0(rest)?;
     let (rest, _) = tag("endif")(rest)?;
 
-    let (rest, _) = space0(rest)?;
-    let (rest, _) = line_ending(rest)?;
+    let (rest, _) = eat_end_of_line(rest)?;
 
     Ok((rest, Node::Condition { branches, fallback }))
 }
 
 fn parse_raw(input: &str) -> IResult<&str, Node<RelativeLocation>> {
+    // TODO: this should eat (multiline) comments
+    // This is harder than it sounds because we still need to map back to the original source
+
     let mut cursor = input;
     // Let's start eating
     loop {
@@ -212,7 +334,7 @@ fn parse_raw(input: &str) -> IResult<&str, Node<RelativeLocation>> {
     // We've stopped eating, check the offset between the input and the cursor
     let index = input.offset(cursor);
     if index == 0 {
-        return Err(nom::Err::Failure(nom::error::ParseError::from_error_kind(
+        return Err(nom::Err::Error(nom::error::ParseError::from_error_kind(
             input,
             nom::error::ErrorKind::Eof, // TODO: maybe not the best kind
         )));
@@ -224,16 +346,16 @@ fn parse_raw(input: &str) -> IResult<&str, Node<RelativeLocation>> {
 
 fn parse_chunk(input: &str) -> IResult<&str, Node<RelativeLocation>> {
     alt((
-        parse_definition,
-        parse_inclusion,
-        parse_condition,
-        parse_error,
-        parse_raw,
+        parse_definition, // #define X [Y]
+        parse_undefine,   // #undefine X
+        parse_inclusion,  // #include "X"
+        parse_condition,  // #if X ... [#elif Y ...] [#else Z ...] #endif
+        parse_error,      // #error "X"
+        parse_raw,        // anything else
     ))(input)
 }
 
-#[allow(dead_code)]
-fn parse(input: &str) -> IResult<&str, Children<RelativeLocation>> {
+pub(crate) fn parse(input: &str) -> IResult<&str, Children<RelativeLocation>> {
     let mut chunks = Vec::new();
     let mut cursor = input;
 
@@ -330,6 +452,8 @@ mod tests {
             #define bar baz
             world
             #error "deprecated"
+            #undefine bar
+            #define test
         "#})
         .unwrap();
         assert_eq!(rest, "");
@@ -357,7 +481,68 @@ mod tests {
                 Error {
                     message: "deprecated".to_string().with_location((7, 12))
                 }
-                .with_location((43, 20))
+                .with_location((43, 20)),
+                Undefine {
+                    key: "bar".to_string().with_location((10, 3)),
+                }
+                .with_location((63, 14)),
+                Definition {
+                    key: "test".to_string().with_location((8, 4)),
+                    content: None,
+                }
+                .with_location((77, 13)),
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_weird_test() {
+        use Node::*;
+        let (rest, body) = parse(indoc::indoc! {r#"
+            hello
+            #  include   "foo"//comment
+            # define   bar   baz  // comment
+            world
+            #   error    "deprecated"
+            # undefine  bar //comment
+            #   define  test // comment
+        "#})
+        .unwrap();
+        assert_eq!(rest, "");
+
+        assert_eq!(
+            body,
+            vec![
+                Raw {
+                    content: "hello\n".to_string()
+                }
+                .with_location((0, 6)),
+                Inclusion {
+                    path: "foo".to_string().with_location((13, 5))
+                }
+                .with_location((6, 28)),
+                Definition {
+                    key: "bar".to_string().with_location((11, 3)),
+                    content: Some("baz".to_string().with_location((17, 3)))
+                }
+                .with_location((34, 33)),
+                Raw {
+                    content: "world\n".to_string()
+                }
+                .with_location((67, 6)),
+                Error {
+                    message: "deprecated".to_string().with_location((13, 12))
+                }
+                .with_location((73, 26)),
+                Undefine {
+                    key: "bar".to_string().with_location((12, 3)),
+                }
+                .with_location((99, 26)),
+                Definition {
+                    key: "test".to_string().with_location((12, 4)),
+                    content: None,
+                }
+                .with_location((125, 28)),
             ]
         );
     }
@@ -371,7 +556,7 @@ mod tests {
             #if false
             bar
             #endif
-            #elif true
+            #elif true // with a comment
             foobar
             #else
             baz
@@ -382,8 +567,8 @@ mod tests {
         assert_eq!(&input[4..8], "true"); // line 1
         assert_eq!(&input[9..13], "foo\n"); // line 2
         assert_eq!(&input[40..44], "true"); // line 6
-        assert_eq!(&input[45..52], "foobar\n"); // line 7
-        assert_eq!(&input[58..62], "baz\n"); // line 9
+        assert_eq!(&input[63..70], "foobar\n"); // line 7
+        assert_eq!(&input[76..80], "baz\n"); // line 9
 
         let (rest, condition) = parse_condition(input).unwrap();
 
@@ -393,7 +578,7 @@ mod tests {
             Condition {
                 branches: vec![
                     ConditionBranch {
-                        condition: ConditionNode::Literal(true).with_location((4, 4)),
+                        condition: "true".to_string().with_location((4, 4)),
                         body: vec![
                             Raw {
                                 content: "foo\n".to_string()
@@ -401,7 +586,7 @@ mod tests {
                             .with_location((0, 4)),
                             Condition {
                                 branches: vec![ConditionBranch {
-                                    condition: ConditionNode::Literal(false).with_location((4, 5)),
+                                    condition: "false".to_string().with_location((4, 5)),
                                     body: vec![Raw {
                                         content: "bar\n".to_string()
                                     }
@@ -415,12 +600,12 @@ mod tests {
                         .with_location((9, 25))
                     },
                     ConditionBranch {
-                        condition: ConditionNode::Literal(true).with_location((40, 4)),
+                        condition: "true".to_string().with_location((40, 4)),
                         body: vec![Raw {
                             content: "foobar\n".to_string()
                         }
                         .with_location((0, 7))]
-                        .with_location((45, 7))
+                        .with_location((63, 7))
                     }
                 ],
                 fallback: Some(
@@ -431,7 +616,7 @@ mod tests {
                         }
                         .with_location((0, 4))
                     ]
-                    .with_location((58, 4))
+                    .with_location((76, 4))
                 )
             }
         );

@@ -22,6 +22,7 @@ use crate::parser::{
 };
 
 mod fs;
+mod new;
 
 #[derive(Error, Debug)]
 pub enum PreprocessorError {
