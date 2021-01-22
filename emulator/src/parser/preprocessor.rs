@@ -2,7 +2,7 @@ use nom::{
     branch::alt,
     bytes::complete::{tag, take_till},
     character::complete::{char, line_ending, not_line_ending, space0, space1},
-    combinator::{map, opt},
+    combinator::{map, not, opt},
     sequence::preceded,
     IResult, Offset,
 };
@@ -121,7 +121,6 @@ impl Node<RelativeLocation> {
 fn eat_end_of_line(input: &str) -> IResult<&str, ()> {
     let (rest, _) = space0(input)?;
     let (rest, _) = opt(preceded(tag("//"), not_line_ending))(rest)?;
-    let (rest, _) = line_ending(rest)?;
     Ok((rest, ()))
 }
 
@@ -139,6 +138,10 @@ fn parse_directive_argument(input: &str) -> IResult<&str, &str> {
         }
 
         if let Some("\n") = rest.get(..1) {
+            break;
+        }
+
+        if rest == "" {
             break;
         }
 
@@ -243,6 +246,7 @@ fn parse_condition(input: &str) -> IResult<&str, Node<RelativeLocation>> {
     let condition = condition.to_string().with_location((input, start, rest));
 
     let (rest, _) = eat_end_of_line(rest)?;
+    let (rest, _) = line_ending(rest)?;
 
     // Parse its body
     let start = rest;
@@ -290,6 +294,8 @@ fn parse_condition(input: &str) -> IResult<&str, Node<RelativeLocation>> {
             break;
         }
 
+        let (rest, _) = line_ending(rest)?;
+
         let start = rest;
         let (rest, body) = parse(rest)?;
         let body = body.with_location((input, start, rest));
@@ -314,39 +320,10 @@ fn parse_condition(input: &str) -> IResult<&str, Node<RelativeLocation>> {
 }
 
 fn parse_raw(input: &str) -> IResult<&str, Node<RelativeLocation>> {
-    // TODO: this should eat (multiline) comments
-    // This is harder than it sounds because we still need to map back to the original source
-
-    let mut cursor = input;
-    // Let's start eating
-    loop {
-        if cursor == "" {
-            // Exit early if the input is empty
-            break;
-        }
-
-        let (rest, line) = not_line_ending(cursor)?;
-
-        match line.chars().next() {
-            Some('#') => break,
-            Some(_) | None => {}
-        }
-
-        let (rest, _) = line_ending(rest)?;
-        cursor = rest;
-    }
-
-    // We've stopped eating, check the offset between the input and the cursor
-    let index = input.offset(cursor);
-    if index == 0 {
-        return Err(nom::Err::Error(nom::error::ParseError::from_error_kind(
-            input,
-            nom::error::ErrorKind::Eof, // TODO: maybe not the best kind
-        )));
-    }
-
-    let content = input[..index].to_string();
-    Ok((cursor, Node::Raw { content }))
+    let (rest, _) = not(char('#'))(input)?;
+    let (rest, content) = not_line_ending(rest)?;
+    let content = content.to_string();
+    Ok((rest, Node::Raw { content }))
 }
 
 fn parse_chunk(input: &str) -> IResult<&str, Node<RelativeLocation>> {
@@ -367,7 +344,14 @@ pub(crate) fn parse(input: &str) -> IResult<&str, Children<RelativeLocation>> {
     while let Ok((rest, chunk)) = parse_chunk(cursor) {
         let chunk = chunk.with_location((input, cursor, rest));
         chunks.push(chunk);
-        cursor = rest;
+
+        if let Ok((rest, _)) = line_ending::<_, nom::error::Error<_>>(rest) {
+            cursor = rest;
+        } else {
+            cursor = rest;
+            // Got no linebreak, get out of the loop
+            break;
+        }
     }
 
     Ok((cursor, chunks))
@@ -378,8 +362,14 @@ mod tests {
     use super::*;
 
     #[test]
+    fn parse_directive_argument_test() {
+        let res = parse_directive_argument("foo");
+        assert_eq!(res, Ok(("", "foo")));
+    }
+
+    #[test]
     fn parse_definition_test() {
-        let res = parse_definition("#define foo bar\n");
+        let res = parse_definition("#define foo bar");
         assert_eq!(
             res,
             Ok((
@@ -390,11 +380,35 @@ mod tests {
                 }
             ))
         );
+
+        let res = parse_definition("#define foo");
+        assert_eq!(
+            res,
+            Ok((
+                "",
+                Node::Definition {
+                    key: "foo".to_owned().with_location((8, 3)),
+                    content: None,
+                }
+            ))
+        );
+
+        let res = parse_definition("#define trailing ");
+        assert_eq!(
+            res,
+            Ok((
+                "",
+                Node::Definition {
+                    key: "trailing".to_owned().with_location((8, 8)),
+                    content: None,
+                }
+            ))
+        );
     }
 
     #[test]
     fn parse_inclusion_test() {
-        let res = parse_inclusion("#include \"foo\"\n");
+        let res = parse_inclusion("#include \"foo\"");
         assert_eq!(
             res,
             Ok((
@@ -408,44 +422,28 @@ mod tests {
 
     #[test]
     fn parse_raw_test() {
-        let (rest, body) = parse_raw(indoc::indoc! {"
-            hello
-            world
-            #define foo
-        "})
-        .unwrap();
-
-        // It stops before the next directive
-        assert_eq!(rest, "#define foo\n");
-        assert_eq!(
-            body,
-            Node::Raw {
-                content: indoc::indoc! {"
-                    hello
-                    world
-                "}
-                .to_string()
-            }
-        );
-
-        let (rest, body) = parse_raw(indoc::indoc! {"
-            hello
-            world
-        "})
-        .unwrap();
-
-        // Everything was eaten
+        // It extracts the line
+        let (rest, body) = parse_raw("line").unwrap();
         assert_eq!(rest, "");
         assert_eq!(
             body,
             Node::Raw {
-                content: indoc::indoc! {"
-                    hello
-                    world
-                "}
-                .to_string()
+                content: "line".to_string()
             }
         );
+
+        // Gets only one line
+        let (rest, body) = parse_raw("line\nline").unwrap();
+        assert_eq!(rest, "\nline");
+        assert_eq!(
+            body,
+            Node::Raw {
+                content: "line".to_string()
+            }
+        );
+
+        // Does not get directives
+        assert!(parse_raw("#directive").is_err());
     }
 
     #[test]
@@ -467,35 +465,39 @@ mod tests {
             body,
             vec![
                 Raw {
-                    content: "hello\n".to_string()
+                    content: "hello".to_string()
                 }
-                .with_location((0, 6)),
+                .with_location((0, 5)),
                 Inclusion {
                     path: "foo".to_string().with_location((9, 5))
                 }
-                .with_location((6, 15)),
+                .with_location((6, 14)),
                 Definition {
                     key: "bar".to_string().with_location((8, 3)),
                     content: Some("baz".to_string().with_location((12, 3)))
                 }
-                .with_location((21, 16)),
+                .with_location((21, 15)),
                 Raw {
-                    content: "world\n".to_string()
+                    content: "world".to_string()
                 }
-                .with_location((37, 6)),
+                .with_location((37, 5)),
                 Error {
                     message: "deprecated".to_string().with_location((7, 12))
                 }
-                .with_location((43, 20)),
+                .with_location((43, 19)),
                 Undefine {
                     key: "bar".to_string().with_location((10, 3)),
                 }
-                .with_location((63, 14)),
+                .with_location((63, 13)),
                 Definition {
                     key: "test".to_string().with_location((8, 4)),
                     content: None,
                 }
-                .with_location((77, 13)),
+                .with_location((77, 12)),
+                Raw {
+                    content: "".to_string(),
+                }
+                .with_location((90, 0))
             ]
         );
     }
@@ -521,39 +523,47 @@ mod tests {
             body,
             vec![
                 Raw {
-                    content: "hello\n".to_string()
+                    content: "hello".to_string()
                 }
-                .with_location((0, 6)),
+                .with_location((0, 5)),
                 Inclusion {
                     path: "foo".to_string().with_location((13, 5))
                 }
-                .with_location((6, 28)),
+                .with_location((6, 27)),
                 Definition {
                     key: "bar".to_string().with_location((11, 3)),
                     content: Some("baz".to_string().with_location((17, 3)))
                 }
-                .with_location((34, 33)),
+                .with_location((34, 32)),
                 Raw {
-                    content: "world\n".to_string()
+                    content: "world".to_string()
                 }
-                .with_location((67, 6)),
+                .with_location((67, 5)),
                 Error {
                     message: "deprecated".to_string().with_location((13, 12))
                 }
-                .with_location((73, 26)),
+                .with_location((73, 25)),
                 Undefine {
                     key: "bar".to_string().with_location((12, 3)),
                 }
-                .with_location((99, 26)),
+                .with_location((99, 25)),
                 Definition {
                     key: "test".to_string().with_location((12, 4)),
                     content: None,
                 }
-                .with_location((125, 28)),
+                .with_location((125, 27)),
                 Raw {
-                    content: "\nempty line\n".to_string()
+                    content: "".to_string()
                 }
-                .with_location((153, 12)),
+                .with_location((153, 0)),
+                Raw {
+                    content: "empty line".to_string()
+                }
+                .with_location((154, 10)),
+                Raw {
+                    content: "".to_string()
+                }
+                .with_location((165, 0)),
             ]
         );
     }
@@ -572,14 +582,15 @@ mod tests {
             #else
             baz
             #endif
-        "#};
+        "#}
+        .trim_end(); // Remove the trailing linebreak
 
         // Check a few locations used bellow
         assert_eq!(&input[4..8], "true"); // line 1
-        assert_eq!(&input[9..13], "foo\n"); // line 2
+        assert_eq!(&input[9..12], "foo"); // line 2
         assert_eq!(&input[40..44], "true"); // line 6
-        assert_eq!(&input[63..70], "foobar\n"); // line 7
-        assert_eq!(&input[76..80], "baz\n"); // line 9
+        assert_eq!(&input[63..69], "foobar"); // line 7
+        assert_eq!(&input[76..79], "baz"); // line 9
 
         let (rest, condition) = parse_condition(input).unwrap();
 
@@ -592,30 +603,30 @@ mod tests {
                         condition: "true".to_string().with_location((4, 4)),
                         body: vec![
                             Raw {
-                                content: "foo\n".to_string()
+                                content: "foo".to_string()
                             }
-                            .with_location((0, 4)),
+                            .with_location((0, 3)),
                             Condition {
                                 branches: vec![ConditionBranch {
                                     condition: "false".to_string().with_location((4, 5)),
                                     body: vec![Raw {
-                                        content: "bar\n".to_string()
+                                        content: "bar".to_string()
                                     }
-                                    .with_location((0, 4))]
+                                    .with_location((0, 3))]
                                     .with_location((10, 4))
                                 },],
                                 fallback: None,
                             }
-                            .with_location((4, 21)),
+                            .with_location((4, 20)),
                         ]
                         .with_location((9, 25))
                     },
                     ConditionBranch {
                         condition: "true".to_string().with_location((40, 4)),
                         body: vec![Raw {
-                            content: "foobar\n".to_string()
+                            content: "foobar".to_string()
                         }
-                        .with_location((0, 7))]
+                        .with_location((0, 6))]
                         .with_location((63, 7))
                     }
                 ],
@@ -623,9 +634,9 @@ mod tests {
                     vec![
                         // "else" content
                         Raw {
-                            content: "baz\n".to_string()
+                            content: "baz".to_string()
                         }
-                        .with_location((0, 4))
+                        .with_location((0, 3))
                     ]
                     .with_location((76, 4))
                 )

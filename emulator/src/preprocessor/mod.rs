@@ -1,6 +1,6 @@
 use std::{collections::HashMap, io::Read, path::PathBuf};
 
-use nom::Finish;
+use nom::{combinator::all_consuming, Finish};
 use thiserror::Error;
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -27,8 +27,8 @@ pub enum GetFileError {
     #[error("i/o error: {0}")]
     IO(#[from] std::rc::Rc<std::io::Error>),
 
-    #[error("parse error")]
-    ParseError,
+    #[error("parse error: {kind:?}")]
+    ParseError { kind: nom::error::ErrorKind },
 }
 
 struct ParsedFile<L> {
@@ -91,9 +91,9 @@ impl ParserCache {
                 buf
             };
 
-            let (_, chunks) = parse(content.as_str())
+            let (_, chunks) = all_consuming(parse)(content.as_str())
                 .finish()
-                .map_err(|_| GetFileError::ParseError)?;
+                .map_err(|e| GetFileError::ParseError { kind: e.code })?;
 
             Ok(ParsedFile { chunks }.into_absolute())
         })();
@@ -178,14 +178,14 @@ fn process_chunk<FS: Filesystem, L: Clone>(
     open_path: &PathBuf,
     cache: &ParserCache,
     fs: &FS,
-) -> Result<Option<String>, PreprocessorError> {
+) -> Result<Vec<String>, PreprocessorError> {
     use PreprocessorError::*;
 
     match chunk {
         Node::Raw { ref content } => {
             // Replace the definitions in the content
             let replaced = context.replace(content);
-            Ok(Some(replaced))
+            Ok(vec![replaced])
         }
 
         Node::Error { ref message } => {
@@ -197,7 +197,7 @@ fn process_chunk<FS: Filesystem, L: Clone>(
             // Remove a definition
             let key = &key.inner;
             context.undefine(key);
-            Ok(None) // Generates no text
+            Ok(Vec::new()) // Generates no text
         }
 
         Node::Definition {
@@ -211,7 +211,7 @@ fn process_chunk<FS: Filesystem, L: Clone>(
             let content = content.map(|c| context.replace(c));
             // Then add the definition
             context.define(key, content);
-            Ok(None) // Generates no text
+            Ok(Vec::new()) // Generates no text
         }
 
         Node::Inclusion { path: ref include } => {
@@ -221,7 +221,7 @@ fn process_chunk<FS: Filesystem, L: Clone>(
             let path = fs.relative(Some(open_path), &include);
             // Then process it
             let content = preprocess_path(&path, context, cache, fs)?;
-            Ok(Some(content))
+            Ok(content)
         }
 
         Node::Condition { branches, fallback } => {
@@ -232,31 +232,25 @@ fn process_chunk<FS: Filesystem, L: Clone>(
                     .map_err(|_| ConditionParse)?; // TODO: wrap the error
 
                 if expression.evaluate(context)? {
-                    let mut buf = String::new();
+                    let mut buf = Vec::new();
                     for chunk in branch.body.inner.iter() {
-                        if let Some(ref content) =
-                            process_chunk(&chunk.inner, context, open_path, cache, fs)?
-                        {
-                            buf += content;
-                        }
+                        let chunks = process_chunk(&chunk.inner, context, open_path, cache, fs)?;
+                        buf.extend(chunks);
                     }
-                    return Ok(Some(buf));
+                    return Ok(buf);
                 }
             }
 
             if let Some(ref body) = fallback {
-                let mut buf = String::new();
+                let mut buf = Vec::new();
                 for chunk in body.inner.iter() {
-                    if let Some(ref content) =
-                        process_chunk(&chunk.inner, context, open_path, cache, fs)?
-                    {
-                        buf += content;
-                    }
+                    let chunks = process_chunk(&chunk.inner, context, open_path, cache, fs)?;
+                    buf.extend(chunks);
                 }
-                return Ok(Some(buf));
+                return Ok(buf);
             }
 
-            Ok(None)
+            Ok(Vec::new())
         }
     }
 }
@@ -266,19 +260,18 @@ fn preprocess_path<FS: Filesystem>(
     context: &mut Context,
     cache: &ParserCache,
     fs: &FS,
-) -> Result<String, PreprocessorError> {
+) -> Result<Vec<String>, PreprocessorError> {
     use PreprocessorError::*;
 
-    let mut buf = String::new();
+    let mut buf = Vec::new();
     let file = cache.get_file(path).as_ref().map_err(|inner| GetFile {
         path: path.clone(),
         inner: inner.clone(),
     })?;
 
     for chunk in file.chunks.iter() {
-        if let Some(ref content) = process_chunk(&chunk.inner, context, path, cache, fs)? {
-            buf += &content;
-        }
+        let content = process_chunk(&chunk.inner, context, path, cache, fs)?;
+        buf.extend(content);
     }
 
     Ok(buf)
@@ -295,7 +288,8 @@ pub fn preprocess<FS: Filesystem>(
         c.fill(&path, fs);
         c
     };
-    preprocess_path(&path, &mut context, &cache, fs)
+    let chunks = preprocess_path(&path, &mut context, &cache, fs)?;
+    Ok(chunks.join("\n"))
 }
 
 #[cfg(test)]
@@ -314,13 +308,7 @@ mod tests {
                 "#}
                 .into(),
             );
-            t.insert(
-                "/foo.S".into(),
-                indoc::indoc! {r#"
-                    this is foo.S
-                "#}
-                .into(),
-            );
+            t.insert("/foo.S".into(), "this is foo.S".into());
             t.insert(
                 "/error.S".into(),
                 indoc::indoc! {r#"
