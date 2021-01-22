@@ -25,7 +25,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
-          target: wasm-unknown-unknown
+          target: wasm32-unknown-unknown
           override: true
 
       - name: Install Node dependencies
