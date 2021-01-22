@@ -141,7 +141,7 @@ fn parse_directive_argument(input: &str) -> IResult<&str, &str> {
             break;
         }
 
-        if rest == "" {
+        if rest.is_empty() {
             break;
         }
 

@@ -254,7 +254,7 @@ pub(crate) fn run_interactive(
     loop {
         let readline = rl.readline(">> ")?;
 
-        let command = if readline == "" {
+        let command = if readline.is_empty() {
             if let Some(command) = last_command {
                 command
             } else {
