@@ -7,6 +7,23 @@ const samples = {
   handler: () => import("../../samples/handler.S"),
 };
 
+type Output = {
+  ast?: string;
+  preprocessed?: string;
+  error?: string;
+};
+
+const createSection = (title: string, parent: Element): HTMLOutputElement => {
+  const section = document.createElement("section");
+  const heading = document.createElement("h4");
+  heading.appendChild(document.createTextNode(title));
+  const output = document.createElement("output");
+  section.appendChild(heading);
+  section.appendChild(output);
+  parent.appendChild(section);
+  return output;
+};
+
 (async () => {
   const root = document.createElement("main");
 
@@ -18,9 +35,10 @@ const samples = {
   result.classList.add("result");
   root.appendChild(result);
 
-  const output = document.createElement("output");
-  output.value = "Loading compiler...";
-  result.appendChild(output);
+  const consoleOutput = createSection("Console", result);
+  const preprocessorOutput = createSection("Preprocessor", result);
+  const astOutput = createSection("AST", result);
+  consoleOutput.value = "Loading compiler...";
 
   document.body.appendChild(root);
 
@@ -60,8 +78,10 @@ const samples = {
 
   const update = () => {
     const value = model.getValue();
-    const ast = dump(value);
-    output.value = ast;
+    const output: Output = dump(value);
+    consoleOutput.value = output.error || "-";
+    astOutput.value = output.ast || "-";
+    preprocessorOutput.value = output.preprocessed || "-";
   };
 
   model.onDidChangeContent(() => update());

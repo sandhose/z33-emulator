@@ -186,6 +186,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "fnv"
+version = "1.0.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1"
+
+[[package]]
 name = "fs2"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -273,6 +279,15 @@ name = "itoa"
 version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dc6f3ad7b9d11a0c00842ff8de1b60ee58661048eb8049ed33c73594f359d7e6"
+
+[[package]]
+name = "js-sys"
+version = "0.3.46"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cf3d7383929f7c9c7c2d0fa596f325832df98c3704f2c60553080f7127a58175"
+dependencies = [
+ "wasm-bindgen",
+]
 
 [[package]]
 name = "lazy_static"
@@ -573,6 +588,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06c64263859d87aa2eb554587e2d23183398d617427327cf2b3d0ed8c69e4800"
 dependencies = [
  "serde_derive",
+]
+
+[[package]]
+name = "serde-wasm-bindgen"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7ee6f12f7ed0e7ad2e55200da37dbabc2cadeb942355c5b629aa3771f5ac5636"
+dependencies = [
+ "fnv",
+ "js-sys",
+ "serde",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -957,6 +984,8 @@ dependencies = [
 name = "z33-web"
 version = "0.1.0"
 dependencies = [
+ "serde",
+ "serde-wasm-bindgen",
  "wasm-bindgen",
  "z33-emulator",
 ]

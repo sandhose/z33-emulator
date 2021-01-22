@@ -27,6 +27,12 @@ main {
   margin: 0;
   padding: 1rem;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.result > section {
+  flex: 1;
 }
 
 .editor-container {
