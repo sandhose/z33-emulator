@@ -8,9 +8,9 @@ This is an emulator for the z33 architecture used in the _"Architecture des Syst
 
 Binaries for [the latest release](https://github.com/sandhose/z33-emulator/releases/latest) are available here:
 
-- [Linux](https://github.com/sandhose/z33-emulator/releases/latest/download/z33-emulator-x86_64-unknown-linux-musl.tar.gz) (x86 64bit)
-- [macOS](https://github.com/sandhose/z33-emulator/releases/latest/download/z33-emulator-x86_64-apple-darwin.tar.gz) (x86 64bit)
-- [Windows](https://github.com/sandhose/z33-emulator/releases/latest/download/z33-emulator-x86_64-pc-windows-msvc.exe) (x86 64bit)
+- [Linux](https://github.com/sandhose/z33-emulator/releases/latest/download/z33-cli-x86_64-unknown-linux-musl.tar.gz) (x86 64bit)
+- [macOS](https://github.com/sandhose/z33-emulator/releases/latest/download/z33-cli-x86_64-apple-darwin.tar.gz) (x86 64bit)
+- [Windows](https://github.com/sandhose/z33-emulator/releases/latest/download/z33-cli-x86_64-pc-windows-msvc.exe) (x86 64bit)
 
 ### Compiling
 
@@ -21,19 +21,19 @@ Check the official documentation on [how to install Rust](https://www.rust-lang.
 git clone https://github.com/sandhose/z33-emulator
 cd z33-emulator
 cargo build --release
-# Binary is available under `target/release/z33-emulator
+# Binary is available under `target/release/z33-cli'
 ```
 
 ## Running a program
 
 ```sh
-[path to]/z33-emulator run samples/fact.S main
+[path to]/z33-cli run samples/fact.S main
 ```
 
 ## Interactive mode
 
 ```sh
-[path to]/z33-emulator run -i samples/fact.S main
+[path to]/z33-cli run -i samples/fact.S main
 ```
 
 ### Available commands:

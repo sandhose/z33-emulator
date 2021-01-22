@@ -17,13 +17,13 @@ jobs:
         include:
           - target: x86_64-unknown-linux-musl
             os: ubuntu-20.04
-            exe: z33-emulator
+            exe: z33-cli
           - target: x86_64-apple-darwin
             os: macos-latest
-            exe: z33-emulator
+            exe: z33-cli
           - target: x86_64-pc-windows-msvc
             os: windows-latest
-            exe: z33-emulator.exe
+            exe: z33-cli.exe
 
     steps:
       - uses: actions/checkout@v2
@@ -47,7 +47,7 @@ jobs:
 
       - uses: actions/upload-artifact@v2
         with:
-          name: z33-emulator-${{ matrix.target }}
+          name: z33-cli-${{ matrix.target }}
           path: target/${{ matrix.target }}/release/${{ matrix.exe }}
 
   publish:
@@ -62,16 +62,16 @@ jobs:
           path: artifacts
 
       - name: Fix permissions (x86_64-apple-darwin)
-        run: chmod +x artifacts/z33-emulator-x86_64-apple-darwin/z33-emulator
+        run: chmod +x artifacts/z33-cli-x86_64-apple-darwin/z33-cli
 
       - name: Fix permissions (x86_64-unknown-linux-musl)
-        run: chmod +x artifacts/z33-emulator-x86_64-unknown-linux-musl/z33-emulator
+        run: chmod +x artifacts/z33-cli-x86_64-unknown-linux-musl/z33-cli
 
       - name: Create darwin archive
-        run: tar -czvf z33-emulator-x86_64-apple-darwin.tar.gz --owner=0 --group=0  -C artifacts/z33-emulator-x86_64-apple-darwin/ z33-emulator
+        run: tar -czvf z33-cli-x86_64-apple-darwin.tar.gz --owner=0 --group=0  -C artifacts/z33-cli-x86_64-apple-darwin/ z33-cli
 
       - name: Create linux archive
-        run: tar -czvf z33-emulator-x86_64-unknown-linux-musl.tar.gz --owner=0 --group=0  -C artifacts/z33-emulator-x86_64-unknown-linux-musl/ z33-emulator
+        run: tar -czvf z33-cli-x86_64-unknown-linux-musl.tar.gz --owner=0 --group=0  -C artifacts/z33-cli-x86_64-unknown-linux-musl/ z33-cli
 
       - name: Upload darwin archive
         id: upload-darwin-asset
@@ -80,8 +80,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./z33-emulator-x86_64-apple-darwin.tar.gz
-          asset_name: z33-emulator-x86_64-apple-darwin.tar.gz
+          asset_path: ./z33-cli-x86_64-apple-darwin.tar.gz
+          asset_name: z33-cli-x86_64-apple-darwin.tar.gz
           asset_content_type: application/tar+gzip
 
       - name: Upload linux archive
@@ -91,8 +91,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./z33-emulator-x86_64-unknown-linux-musl.tar.gz
-          asset_name: z33-emulator-x86_64-unknown-linux-musl.tar.gz
+          asset_path: ./z33-cli-x86_64-unknown-linux-musl.tar.gz
+          asset_name: z33-cli-x86_64-unknown-linux-musl.tar.gz
           asset_content_type: application/tar+gzip
 
       - name: Upload windows executable
@@ -102,6 +102,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./artifacts/z33-emulator-x86_64-pc-windows-msvc/z33-emulator.exe
-          asset_name: z33-emulator-x86_64-pc-windows-msvc.exe
+          asset_path: ./artifacts/z33-cli-x86_64-pc-windows-msvc/z33-cli.exe
+          asset_name: z33-cli-x86_64-pc-windows-msvc.exe
           asset_content_type: application/vnd.microsoft.portable-executable
