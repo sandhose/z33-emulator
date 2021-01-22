@@ -269,7 +269,10 @@ fn compile_instruction(
     }
 }
 
-fn compile_placement(labels: &Labels, placement: &Placement) -> Result<Cell, MemoryFillError> {
+fn compile_placement<L>(
+    labels: &Labels,
+    placement: &Placement<L>,
+) -> Result<Cell, MemoryFillError> {
     use DirectiveKind::*;
 
     match placement {
@@ -307,7 +310,7 @@ fn compile_placement(labels: &Labels, placement: &Placement) -> Result<Cell, Mem
 }
 
 #[tracing::instrument(skip(layout))]
-pub(crate) fn fill_memory(layout: &Layout) -> Result<Memory, MemoryFillError> {
+pub(crate) fn fill_memory<L>(layout: &Layout<L>) -> Result<Memory, MemoryFillError> {
     debug!("Filling memory");
     let mut memory = Memory::default();
 

@@ -11,6 +11,8 @@ type Output = {
   ast?: string;
   preprocessed?: string;
   error?: string;
+  memory?: Array<[number, string]>;
+  labels?: Record<string, number>;
 };
 
 const createSection = (title: string, parent: Element): HTMLOutputElement => {
@@ -36,6 +38,8 @@ const createSection = (title: string, parent: Element): HTMLOutputElement => {
   root.appendChild(result);
 
   const consoleOutput = createSection("Console", result);
+  const memoryOutput = createSection("Memory", result);
+  const labelsOutput = createSection("Labels", result);
   const preprocessorOutput = createSection("Preprocessor", result);
   const astOutput = createSection("AST", result);
   consoleOutput.value = "Loading compiler...";
@@ -82,6 +86,8 @@ const createSection = (title: string, parent: Element): HTMLOutputElement => {
     consoleOutput.value = output.error || "-";
     astOutput.value = output.ast || "-";
     preprocessorOutput.value = output.preprocessed || "-";
+    memoryOutput.value = output.memory.map(([k, v]) => `${k}\t${v}`).join("\n");
+    labelsOutput.value = JSON.stringify(Object.fromEntries([...output.labels]));
   };
 
   model.onDidChangeContent(() => update());

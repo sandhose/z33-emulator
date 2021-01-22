@@ -2,10 +2,7 @@ use std::collections::HashMap;
 
 use thiserror::Error;
 
-use crate::{
-    constants::STACK_START, parser::line::Program, parser::location::RelativeLocation,
-    runtime::Computer, runtime::Registers,
-};
+use crate::{constants::STACK_START, parser::line::Program, runtime::Computer, runtime::Registers};
 
 use self::{layout::MemoryLayoutError, memory::MemoryFillError};
 
@@ -32,8 +29,15 @@ pub enum CompilationError {
     UnknownEntrypoint(String),
 }
 
-pub fn compile(
-    program: Program<RelativeLocation>,
+pub fn layout<L: Clone + Default>(
+    program: Program<L>,
+) -> Result<layout::Layout<L>, MemoryLayoutError> {
+    let lines: Vec<_> = program.lines.into_iter().map(|l| l.inner).collect();
+    self::layout::layout_memory(&lines)
+}
+
+pub fn compile<L: Clone + Default>(
+    program: Program<L>,
     entrypoint: &str,
 ) -> Result<(Computer, DebugInfo), CompilationError> {
     let lines: Vec<_> = program.lines.into_iter().map(|l| l.inner).collect();

@@ -9,7 +9,6 @@ use crate::parser::{
         EvaluationError as ExpressionEvaluationError,
     },
     line::{Line, LineContent},
-    location::RelativeLocation,
     value::{DirectiveArgument, DirectiveKind},
 };
 use crate::{constants::*, parser::location::Located};
@@ -22,7 +21,7 @@ impl ExpressionContext for Labels {
     }
 }
 
-pub(crate) enum Placement {
+pub(crate) enum Placement<L> {
     /// A memory cell filled by .space
     Reserved,
 
@@ -30,20 +29,30 @@ pub(crate) enum Placement {
     Char(char),
 
     /// A instruction or a .word directive
-    Line(LineContent<RelativeLocation>),
+    Line(LineContent<L>),
+}
+
+impl<L> std::fmt::Display for Placement<L> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Placement::Reserved => write!(f, "SPACE"),
+            Placement::Char(c) => write!(f, "{:?}", c),
+            Placement::Line(l) => write!(f, "{}", l),
+        }
+    }
 }
 
 #[derive(Default)]
-pub(crate) struct Layout {
+pub struct Layout<L> {
     pub labels: Labels,
-    pub memory: HashMap<u64, Placement>,
+    pub(crate) memory: HashMap<u64, Placement<L>>,
 }
 
-impl Layout {
+impl<L> Layout<L> {
     fn insert_placement(
         &mut self,
         address: u64,
-        placement: Placement,
+        placement: Placement<L>,
     ) -> Result<(), MemoryLayoutError> {
         if self.memory.contains_key(&address) {
             return Err(MemoryLayoutError::MemoryOverlap { address });
@@ -60,6 +69,16 @@ impl Layout {
 
         self.labels.insert(label, address);
         Ok(())
+    }
+
+    pub fn memory_report(&self) -> Vec<(u64, String)> {
+        let mut v: Vec<_> = self
+            .memory
+            .iter()
+            .map(|(k, v)| (*k, format!("{}", v)))
+            .collect();
+        v.sort_by_key(|&(k, _)| k);
+        v
     }
 }
 
@@ -85,14 +104,14 @@ pub enum MemoryLayoutError {
 ///
 /// It places the labels & prepare a hashmap of cells to be filled.
 #[tracing::instrument(skip(program))]
-pub(crate) fn layout_memory(
-    program: &[Line<RelativeLocation>],
-) -> Result<Layout, MemoryLayoutError> {
+pub(crate) fn layout_memory<L: Clone + Default>(
+    program: &[Line<L>],
+) -> Result<Layout<L>, MemoryLayoutError> {
     use DirectiveKind::*;
     use MemoryLayoutError::*;
 
     debug!("Laying out memory");
-    let mut layout: Layout = Default::default();
+    let mut layout: Layout<L> = Default::default();
     let mut position = PROGRAM_START;
 
     for line in program {
@@ -183,6 +202,7 @@ mod tests {
     use crate::parser::{
         expression::Node,
         line::Line,
+        location::RelativeLocation,
         value::{InstructionArgument, InstructionKind},
     };
     use crate::runtime::Reg;
@@ -191,7 +211,7 @@ mod tests {
 
     #[test]
     fn place_labels_simple_test() {
-        let program = vec![
+        let program: Vec<Line<RelativeLocation>> = vec![
             Line::default().symbol("main").instruction(
                 Add,
                 vec![
@@ -217,7 +237,7 @@ mod tests {
 
     #[test]
     fn place_labels_addr_test() {
-        let program = vec![
+        let program: Vec<Line<RelativeLocation>> = vec![
             Line::default().directive(DirectiveKind::Addr, 10),
             Line::default().symbol("main").instruction(
                 Jmp,
@@ -236,7 +256,7 @@ mod tests {
 
     #[test]
     fn place_labels_space_test() {
-        let program = vec![
+        let program: Vec<Line<RelativeLocation>> = vec![
             Line::default()
                 .symbol("first")
                 .directive(DirectiveKind::Space, 10),
@@ -263,7 +283,7 @@ mod tests {
 
     #[test]
     fn place_labels_word_test() {
-        let program = vec![
+        let program: Vec<Line<RelativeLocation>> = vec![
             Line::default()
                 .symbol("first")
                 .directive(DirectiveKind::Word, 123),
@@ -290,7 +310,7 @@ mod tests {
 
     #[test]
     fn place_labels_string_test() {
-        let program = vec![
+        let program: Vec<Line<RelativeLocation>> = vec![
             Line::default()
                 .symbol("first")
                 .directive(DirectiveKind::String, "hello"),
@@ -317,7 +337,7 @@ mod tests {
 
     #[test]
     fn duplicate_label_test() {
-        let program = vec![
+        let program: Vec<Line<RelativeLocation>> = vec![
             Line::default().symbol("hello"),
             Line::default().symbol("hello"),
         ];
@@ -332,7 +352,8 @@ mod tests {
 
     #[test]
     fn invalid_directive_argument_test() {
-        let program = vec![Line::default().directive(DirectiveKind::String, 3)];
+        let program: Vec<Line<RelativeLocation>> =
+            vec![Line::default().directive(DirectiveKind::String, 3)];
 
         assert_eq!(
             layout_memory(&program).err(),
@@ -342,7 +363,8 @@ mod tests {
             })
         );
 
-        let program = vec![Line::default().directive(DirectiveKind::Space, "hello")];
+        let program: Vec<Line<RelativeLocation>> =
+            vec![Line::default().directive(DirectiveKind::Space, "hello")];
 
         assert_eq!(
             layout_memory(&program).err(),
@@ -352,7 +374,8 @@ mod tests {
             })
         );
 
-        let program = vec![Line::default().directive(DirectiveKind::Addr, "hello")];
+        let program: Vec<Line<RelativeLocation>> =
+            vec![Line::default().directive(DirectiveKind::Addr, "hello")];
 
         assert_eq!(
             layout_memory(&program).err(),
@@ -365,7 +388,7 @@ mod tests {
 
     #[test]
     fn memory_overlap_test() {
-        let program = vec![
+        let program: Vec<Line<RelativeLocation>> = vec![
             Line::default().directive(DirectiveKind::Addr, 10),
             Line::default().directive(DirectiveKind::String, "hello"), // This takes 5 chars, so fills cells 10 to 15
             Line::default().directive(DirectiveKind::Addr, 14),

@@ -4,6 +4,7 @@ use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
 use z33_emulator::{
+    compiler::layout,
     parse,
     parser::location::{AbsoluteLocation, Lines, RelativeLocation},
     preprocessor::{preprocess, InMemoryFilesystem},
@@ -13,6 +14,8 @@ use z33_emulator::{
 struct Output {
     ast: Option<String>,
     preprocessed: Option<String>,
+    memory: Vec<(u64, String)>,
+    labels: HashMap<String, u64>,
     error: Option<String>,
 }
 
@@ -56,5 +59,17 @@ pub fn dump(source: &str) -> Result<JsValue, JsValue> {
     let ast = ast.map_location(&|l| l.to_line_aware(&lines));
 
     output.ast = Some(format!("{}", ast));
+
+    let layout = layout(program.inner);
+
+    if let Err(e) = layout {
+        output.error = Some(format!("{}", e));
+        return Ok(serde_wasm_bindgen::to_value(&output)?);
+    }
+
+    let layout = layout.unwrap();
+    output.memory = layout.memory_report();
+    output.labels = layout.labels;
+
     Ok(serde_wasm_bindgen::to_value(&output)?)
 }
