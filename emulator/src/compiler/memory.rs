@@ -4,6 +4,7 @@ use thiserror::Error;
 use tracing::{debug, event, span, Level};
 
 use crate::{
+    constants as C,
     parser::expression::EvaluationError as ExpressionEvaluationError,
     parser::line::LineContent,
     parser::{
@@ -321,7 +322,7 @@ pub(crate) fn fill_memory<L>(layout: &Layout<L>) -> Result<Memory, MemoryFillErr
     debug!("Filling memory");
     let mut memory = Memory::default();
 
-    let cells: Result<HashMap<u64, Cell>, MemoryFillError> = layout
+    let cells: Result<HashMap<C::Address, Cell>, MemoryFillError> = layout
         .memory
         .iter()
         .map(|(index, placement)| Ok((*index, compile_placement(&layout.labels, placement)?)))

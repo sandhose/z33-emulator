@@ -3,7 +3,7 @@ use thiserror::Error;
 
 use crate::{
     ast::{AstNode, NodeKind},
-    constants::Word,
+    constants::{Address, Word},
 };
 
 use super::memory::{Cell, CellError, TryFromCell};
@@ -24,8 +24,8 @@ bitflags! {
 pub struct Registers {
     pub a: Cell,
     pub b: Cell,
-    pub pc: Word,
-    pub sp: Word,
+    pub pc: Address,
+    pub sp: Address,
     pub sr: StatusRegister,
 }
 
@@ -44,8 +44,8 @@ impl Registers {
         match reg {
             Reg::A => self.a.extract_word(),
             Reg::B => self.b.extract_word(),
-            Reg::PC => Ok(self.pc),
-            Reg::SP => Ok(self.sp),
+            Reg::PC => Ok(self.pc.into()),
+            Reg::SP => Ok(self.sp.into()),
             Reg::SR => Ok(self.sr.bits),
         }
     }
@@ -54,8 +54,12 @@ impl Registers {
         match reg {
             Reg::A => self.a = value,
             Reg::B => self.b = value,
-            Reg::PC => self.pc = Word::try_from_cell(&value)?,
-            Reg::SP => self.sp = Word::try_from_cell(&value)?,
+            Reg::PC => {
+                self.pc = Address::try_from_cell(&value)?;
+            }
+            Reg::SP => {
+                self.sp = Address::try_from_cell(&value)?;
+            }
             Reg::SR => self.sr.bits = Word::try_from_cell(&value)?,
         };
         Ok(())

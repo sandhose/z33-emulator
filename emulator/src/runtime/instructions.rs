@@ -144,7 +144,7 @@ impl Instruction {
                 computer.push(pc)?;
 
                 // Jump
-                let addr = computer.word_from_arg(arg)?;
+                let addr = computer.address_from_arg(arg)?;
                 computer.jump(&Address::Dir(addr))?;
             }
 
@@ -185,14 +185,14 @@ impl Instruction {
             }
 
             Jmp(arg) => {
-                let val = computer.word_from_arg(arg)?;
+                let val = computer.address_from_arg(arg)?;
                 debug!("Jumping to address {:#x}", val);
                 computer.registers.pc = val;
             }
 
             Jeq(arg) => {
                 if computer.registers.sr.contains(StatusRegister::ZERO) {
-                    let val = computer.word_from_arg(arg)?;
+                    let val = computer.address_from_arg(arg)?;
                     debug!("Jumping to address {:#x}", val);
                     computer.registers.pc = val;
                 }
@@ -200,7 +200,7 @@ impl Instruction {
 
             Jne(arg) => {
                 if !computer.registers.sr.contains(StatusRegister::ZERO) {
-                    let val = computer.word_from_arg(arg)?;
+                    let val = computer.address_from_arg(arg)?;
                     debug!("Jumping to address {:#x}", val);
                     computer.registers.pc = val;
                 }
@@ -210,7 +210,7 @@ impl Instruction {
                 if computer.registers.sr.contains(StatusRegister::ZERO)
                     || computer.registers.sr.contains(StatusRegister::NEGATIVE)
                 {
-                    let val = computer.word_from_arg(arg)?;
+                    let val = computer.address_from_arg(arg)?;
                     debug!("Jumping to address {:#x}", val);
                     computer.registers.pc = val;
                 }
@@ -220,7 +220,7 @@ impl Instruction {
                 if !computer.registers.sr.contains(StatusRegister::ZERO)
                     && computer.registers.sr.contains(StatusRegister::NEGATIVE)
                 {
-                    let val = computer.word_from_arg(arg)?;
+                    let val = computer.address_from_arg(arg)?;
                     debug!("Jumping to address {:#x}", val);
                     computer.registers.pc = val;
                 }
@@ -230,7 +230,7 @@ impl Instruction {
                 if computer.registers.sr.contains(StatusRegister::ZERO)
                     || !computer.registers.sr.contains(StatusRegister::NEGATIVE)
                 {
-                    let val = computer.word_from_arg(arg)?;
+                    let val = computer.address_from_arg(arg)?;
                     debug!("Jumping to address {:#x}", val);
                     computer.registers.pc = val;
                 }
@@ -240,7 +240,7 @@ impl Instruction {
                 if !computer.registers.sr.contains(StatusRegister::ZERO)
                     && !computer.registers.sr.contains(StatusRegister::NEGATIVE)
                 {
-                    let val = computer.word_from_arg(arg)?;
+                    let val = computer.address_from_arg(arg)?;
                     debug!("Jumping to address {:#x}", val);
                     computer.registers.pc = val;
                 }
@@ -310,7 +310,8 @@ impl Instruction {
 
             Rti => {
                 computer.check_privileged()?;
-                computer.registers.pc = computer.memory.get(INTERRUPT_PC_SAVE)?.extract_word()?;
+                computer.registers.pc =
+                    computer.memory.get(INTERRUPT_PC_SAVE)?.extract_address()?;
                 computer.registers.sr = StatusRegister::from_bits_truncate(
                     computer.memory.get(INTERRUPT_SR_SAVE)?.extract_word()?,
                 );
@@ -318,7 +319,7 @@ impl Instruction {
 
             Rtn => {
                 let ret = computer.pop()?; // Pop the return address
-                let ret = ret.extract_word()?; // Convert it to an address
+                let ret = ret.extract_address()?; // Convert it to an address
                 debug!("Returning to {}", ret);
                 computer.registers.pc = ret; // and jump to it
             }

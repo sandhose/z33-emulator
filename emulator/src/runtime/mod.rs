@@ -30,7 +30,7 @@ pub enum ProcessorError {
     InvalidRegister { reg: Reg, inner: CellError },
 
     #[error("invalid address {address}")]
-    InvalidAddress { address: i64 },
+    InvalidAddress { address: C::Word },
 
     #[error("computer reset")]
     Reset,
@@ -67,24 +67,25 @@ impl std::fmt::Debug for Computer {
 
 impl Computer {
     #[tracing::instrument(skip(self))]
-    pub fn resolve_address(&self, address: &Address) -> Result<u64> {
+    pub fn resolve_address(&self, address: &Address) -> Result<C::Address> {
         match address {
             Address::Dir(addr) => Ok(*addr),
-            Address::Ind(reg) => u64::try_from_cell(&self.registers.get(reg)).map_err(|e| {
+            Address::Ind(reg) => C::Address::try_from_cell(&self.registers.get(reg)).map_err(|e| {
                 ProcessorError::InvalidRegister {
                     reg: *reg,
                     inner: e,
                 }
             }),
 
-            Address::Idx(reg, off) => u64::try_from_cell(&self.registers.get(reg))
+            Address::Idx(reg, off) => C::Address::try_from_cell(&self.registers.get(reg))
                 .map_err(|e| ProcessorError::InvalidRegister {
                     reg: *reg,
                     inner: e,
                 })
                 .and_then(|address| {
                     let address = address as i64 + off;
-                    u64::try_from(address).map_err(|_| ProcessorError::InvalidAddress { address })
+                    C::Address::try_from(address)
+                        .map_err(|_| ProcessorError::InvalidAddress { address })
                 }),
         }
     }
@@ -134,6 +135,11 @@ impl Computer {
             }
             Arg::Value(val) => self.word_from_value(val),
         }
+    }
+
+    fn address_from_arg(&self, arg: &Arg) -> Result<C::Address> {
+        let word = self.word_from_arg(arg)?;
+        C::Address::try_from(word).map_err(|_err| ProcessorError::Todo)
     }
 
     #[tracing::instrument(skip(self))]
@@ -266,9 +272,9 @@ impl Computer {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Address {
-    Dir(u64),
+    Dir(C::Address),
     Ind(Reg),
-    Idx(Reg, i64),
+    Idx(Reg, C::Word),
 }
 
 impl Address {
@@ -315,15 +321,15 @@ impl std::fmt::Display for Address {
     }
 }
 
-impl From<u64> for Address {
-    fn from(val: u64) -> Self {
+impl From<C::Address> for Address {
+    fn from(val: C::Address) -> Self {
         Self::Dir(val)
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
-    Imm(u64),
+    Imm(C::Word),
     Reg(Reg),
 }
 
@@ -475,7 +481,7 @@ mod tests {
         assert_eq!(computer.registers.get(&Reg::A), Cell::Word(5));
 
         // Write some memory (with indirect access)
-        computer.write(&Address::Dir(0x42), 100 as u64).unwrap();
+        computer.write(&Address::Dir(0x42), 100 as C::Word).unwrap();
         computer.registers.set(&Reg::B, Cell::Word(0x32)).unwrap();
         let instruction = Instruction::Add(Arg::Address(Address::Idx(Reg::B, 0x10)), Reg::A);
         instruction.execute(&mut computer).unwrap();
@@ -485,7 +491,7 @@ mod tests {
     #[test]
     fn step_test() {
         let mut computer = Computer::default();
-        let start = 0x100;
+        let start: C::Address = 0x100;
         let program = vec![
             Instruction::Ld(Arg::Value(Value::Imm(0x42)), Reg::A),
             Instruction::Ld(Arg::Value(Value::Imm(0x24)), Reg::B),
@@ -494,7 +500,7 @@ mod tests {
 
         for (offset, instruction) in program.into_iter().enumerate() {
             computer
-                .write(&(start + offset as u64).into(), instruction)
+                .write(&(start + offset as C::Address).into(), instruction)
                 .unwrap();
         }
 
@@ -523,8 +529,8 @@ mod tests {
     #[test]
     fn call_test() {
         let mut computer = Computer::default();
-        let start = 100;
-        let subroutine = 200;
+        let start: C::Address = 100;
+        let subroutine: C::Address = 200;
         let stack = C::STACK_START;
         computer.registers.sp = stack; // Set the stack pointer somewhere
 
@@ -540,12 +546,12 @@ mod tests {
         //      rtn
 
         let start_inst = vec![
-            Instruction::Call(Arg::Value(Value::Imm(subroutine))),
+            Instruction::Call(Arg::Value(Value::Imm(subroutine as _))),
             Instruction::Add(Arg::Value(Value::Reg(Reg::A)), Reg::B),
         ]
         .into_iter()
         .enumerate()
-        .map(|(offset, instruction)| (start + offset as u64, instruction));
+        .map(|(offset, instruction)| (start + offset as C::Address, instruction));
 
         let subroutine_inst = vec![
             Instruction::Ld(Arg::Value(Value::Imm(42)), Reg::A),
@@ -554,7 +560,7 @@ mod tests {
         ]
         .into_iter()
         .enumerate()
-        .map(|(offset, instruction)| (subroutine + offset as u64, instruction));
+        .map(|(offset, instruction)| (subroutine + offset as C::Address, instruction));
 
         for (addr, inst) in start_inst.chain(subroutine_inst) {
             computer.write(&addr.into(), inst).unwrap();

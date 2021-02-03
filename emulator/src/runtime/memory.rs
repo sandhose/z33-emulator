@@ -21,6 +21,9 @@ pub enum CellKind {
 pub enum CellError {
     #[error("invalid cell type {was:?} expected {expected:?}")]
     InvalidType { expected: CellKind, was: CellKind },
+
+    #[error("could not downcast word to address: {word}")]
+    InvalidAddress { word: Word },
 }
 
 /// Represents a cell in memory and in general purpose registers
@@ -79,6 +82,16 @@ impl Cell {
                 was: t.cell_kind(),
             }),
         }
+    }
+
+    /// Extract an address from the cell.
+    ///
+    /// If the cell is empty, it extracts "0"
+    /// If it is a char, it tries to convert it to its ASCII code
+    pub(crate) fn extract_address(&self) -> Result<Address, CellError> {
+        let word = self.extract_word()?;
+        word.try_into()
+            .map_err(|_| CellError::InvalidAddress { word })
     }
 
     /// Extract an instruction from the cell.
@@ -151,6 +164,21 @@ impl From<Word> for Cell {
 impl TryFromCell for Word {
     fn try_from_cell(value: &Cell) -> Result<Self, CellError> {
         value.extract_word()
+    }
+}
+
+impl From<Address> for Cell {
+    fn from(addr: Address) -> Self {
+        Self::Word(addr.into())
+    }
+}
+
+impl TryFromCell for Address {
+    fn try_from_cell(value: &Cell) -> Result<Self, CellError> {
+        let word = value.extract_word()?;
+
+        word.try_into()
+            .map_err(|_| CellError::InvalidAddress { word })
     }
 }
 

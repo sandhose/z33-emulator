@@ -2,14 +2,14 @@ use std::collections::HashMap;
 
 use thiserror::Error;
 
-use crate::{constants::STACK_START, parser::line::Program, runtime::Computer, runtime::Registers};
+use crate::{constants as C, parser::line::Program, runtime::Computer, runtime::Registers};
 
 use self::{layout::MemoryLayoutError, memory::MemoryFillError};
 
 pub(crate) mod layout;
 pub(crate) mod memory;
 
-type Labels = HashMap<String, u64>;
+type Labels = HashMap<String, C::Address>;
 
 /// Holds informations about the compilation
 pub struct DebugInfo {
@@ -51,7 +51,7 @@ pub fn compile<L: Clone + Default>(
                 .labels
                 .get(entrypoint)
                 .ok_or_else(|| CompilationError::UnknownEntrypoint(entrypoint.to_string()))?,
-            sp: STACK_START,
+            sp: C::STACK_START,
             ..Default::default()
         },
         ..Default::default()

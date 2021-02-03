@@ -13,7 +13,7 @@ use crate::parser::{
 };
 use crate::{constants::*, parser::location::Located};
 
-pub(crate) type Labels = HashMap<String, u64>;
+pub(crate) type Labels = HashMap<String, Address>;
 
 impl ExpressionContext for Labels {
     fn resolve_variable(&self, variable: &str) -> Option<i128> {
@@ -45,13 +45,13 @@ impl<L> std::fmt::Display for Placement<L> {
 #[derive(Default)]
 pub struct Layout<L> {
     pub labels: Labels,
-    pub(crate) memory: HashMap<u64, Placement<L>>,
+    pub(crate) memory: HashMap<Address, Placement<L>>,
 }
 
 impl<L> Layout<L> {
     fn insert_placement(
         &mut self,
-        address: u64,
+        address: Address,
         placement: Placement<L>,
     ) -> Result<(), MemoryLayoutError> {
         if self.memory.contains_key(&address) {
@@ -62,7 +62,7 @@ impl<L> Layout<L> {
         Ok(())
     }
 
-    fn insert_label(&mut self, label: String, address: u64) -> Result<(), MemoryLayoutError> {
+    fn insert_label(&mut self, label: String, address: Address) -> Result<(), MemoryLayoutError> {
         if self.labels.contains_key(&label) {
             return Err(MemoryLayoutError::DuplicateLabel { label });
         }
@@ -71,7 +71,7 @@ impl<L> Layout<L> {
         Ok(())
     }
 
-    pub fn memory_report(&self) -> Vec<(u64, String)> {
+    pub fn memory_report(&self) -> Vec<(Address, String)> {
         let mut v: Vec<_> = self
             .memory
             .iter()
@@ -97,7 +97,7 @@ pub enum MemoryLayoutError {
     },
 
     #[error("address {address} is already filled")]
-    MemoryOverlap { address: u64 },
+    MemoryOverlap { address: Address },
 }
 
 /// Lays out the memory
