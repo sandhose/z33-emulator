@@ -137,6 +137,7 @@ impl Computer {
         }
     }
 
+    #[tracing::instrument(skip(self))]
     fn address_from_arg(&self, arg: &Arg) -> Result<C::Address> {
         let word = self.word_from_arg(arg)?;
         C::Address::try_from(word).map_err(|_err| ProcessorError::Todo)
@@ -194,6 +195,7 @@ impl Computer {
 
     #[tracing::instrument(skip(self), level = "debug")]
     pub fn step(&mut self) -> Result<()> {
+        // TODO: this should be recoverable
         let inst = self.decode_instruction()?;
         let cost = inst.cost();
         info!(cost, "Executing instruction \"{}\"", inst);
