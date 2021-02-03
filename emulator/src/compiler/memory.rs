@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use thiserror::Error;
-use tracing::debug;
+use tracing::{debug, event, span, Level};
 
 use crate::{
     parser::expression::EvaluationError as ExpressionEvaluationError,
@@ -269,6 +269,7 @@ fn compile_instruction(
     }
 }
 
+#[tracing::instrument(skip(placement, labels), err)]
 fn compile_placement<L>(
     labels: &Labels,
     placement: &Placement<L>,
@@ -288,6 +289,7 @@ fn compile_placement<L>(
                     ..
                 },
         }) => {
+            debug!(%expression, "Evaluating directive");
             let value = expression.evaluate(labels)?;
             Ok(Cell::Word(value))
         }
@@ -298,9 +300,14 @@ fn compile_placement<L>(
         }
 
         Placement::Line(LineContent::Instruction { kind, arguments }) => {
+            let span = span!(Level::TRACE, "line", %kind);
+            let _guard = span.enter();
             let arguments: Result<Vec<_>, _> = arguments
                 .iter()
-                .map(|argument| argument.inner.evaluate(labels))
+                .map(|argument| {
+                    event!(Level::TRACE, "argument evaluation: {}", argument);
+                    argument.inner.evaluate(labels)
+                })
                 .collect();
             let arguments = arguments?;
             let instruction = compile_instruction(&kind.inner, arguments)?;
