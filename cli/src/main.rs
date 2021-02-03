@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
 use clap::Clap;
-use tracing_subscriber::filter::{EnvFilter, LevelFilter};
+use tracing_subscriber::filter::EnvFilter;
 
 mod commands;
 mod interactive;
@@ -17,9 +17,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt()
         .with_env_filter(
             // Parse log level from env
-            EnvFilter::from_default_env()
-                // With INFO enabled by default
-                .add_directive(LevelFilter::INFO.into()),
+            EnvFilter::try_from_default_env()
+                // or default to "info"
+                .unwrap_or_else(|_| EnvFilter::new("info")),
         )
         .event_format(format)
         .init();

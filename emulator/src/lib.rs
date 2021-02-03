@@ -2,7 +2,7 @@
 
 mod ast;
 pub mod compiler;
-mod constants;
+pub mod constants;
 pub mod parser;
 pub mod preprocessor;
 pub mod runtime;

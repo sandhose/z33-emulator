@@ -14,6 +14,7 @@ use rustyline::{config::OutputStreamType, CompletionType, Config, EditMode, Edit
 use tracing::{debug, info, warn};
 
 use z33_emulator::compiler::DebugInfo;
+use z33_emulator::constants as C;
 use z33_emulator::runtime::{Address, Computer, Exception, Reg};
 
 mod helper;
@@ -67,7 +68,7 @@ enum Command {
     List {
         /// Number of instructions to show.
         #[clap(default_value = "10")]
-        number: u64,
+        number: u32,
     },
 
     /// Set a breakpoint
@@ -108,13 +109,13 @@ enum InfoCommand {
 #[derive(Debug, Default)]
 struct Session {
     /// List of active breakpoints
-    breakpoints: HashSet<u64>,
+    breakpoints: HashSet<C::Address>,
 
     /// Map of labels in program
-    labels: HashMap<String, u64>,
+    labels: HashMap<String, C::Address>,
 
     /// Current address for the `list` command
-    list_address: Option<u64>,
+    list_address: Option<C::Address>,
 }
 
 impl Session {
@@ -126,7 +127,7 @@ impl Session {
     }
 
     /// Add a breakpoint
-    fn add_breakpoint(&mut self, address: u64) {
+    fn add_breakpoint(&mut self, address: C::Address) {
         if !self.breakpoints.insert(address) {
             warn!(address, "A breakpoint was already set");
         } else {
@@ -135,7 +136,7 @@ impl Session {
     }
 
     /// Remove a breakpoint
-    fn remove_breakpoint(&mut self, address: u64) {
+    fn remove_breakpoint(&mut self, address: C::Address) {
         if !self.breakpoints.remove(&address) {
             warn!(address, "No breakpoint was set here");
         } else {
@@ -144,7 +145,7 @@ impl Session {
     }
 
     /// Checks if the given address has a breakpoint
-    fn has_breakpoint(&self, address: u64) -> bool {
+    fn has_breakpoint(&self, address: C::Address) -> bool {
         self.breakpoints.contains(&address)
     }
 
@@ -154,7 +155,7 @@ impl Session {
     }
 
     /// Offset the `list` command, returns the address to show
-    fn offset_list(&mut self, computer: &Computer, offset: u64) -> u64 {
+    fn offset_list(&mut self, computer: &Computer, offset: C::Address) -> C::Address {
         let addr = self.list_address.clone().unwrap_or(computer.registers.pc);
         self.list_address = Some(addr + offset);
         addr
@@ -178,7 +179,7 @@ impl Session {
     }
 
     /// Display an instruction at specified address
-    fn display_instruction(&self, computer: &Computer, address: u64) {
+    fn display_instruction(&self, computer: &Computer, address: C::Address) {
         // First, display the labels on the line if any
         self.labels
             .iter()
@@ -303,15 +304,15 @@ pub(crate) fn run_interactive(
                 // TODO: recover from error
                 let address = computer.resolve_address(address)?;
                 if number.is_positive() {
-                    for i in 0..(*number as u64) {
+                    for i in 0..(*number as C::Address) {
                         let address = address + i;
-                        let cell = computer.memory.get(address as u64)?;
+                        let cell = computer.memory.get(address)?;
                         info!(address, value = %cell);
                     }
                 } else {
-                    for i in 0..(number.abs() as u64) {
+                    for i in 0..(number.abs() as C::Address) {
                         let address = address - i;
-                        let cell = computer.memory.get(address as u64)?;
+                        let cell = computer.memory.get(address)?;
                         info!(address, value = %cell);
                     }
                 }

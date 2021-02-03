@@ -5,7 +5,7 @@ use wasm_bindgen::prelude::*;
 
 use z33_emulator::{
     compiler::layout,
-    parse,
+    constants as C, parse,
     parser::location::{AbsoluteLocation, Lines, RelativeLocation},
     preprocessor::{preprocess, InMemoryFilesystem},
 };
@@ -14,8 +14,8 @@ use z33_emulator::{
 struct Output {
     ast: Option<String>,
     preprocessed: Option<String>,
-    memory: Vec<(u64, String)>,
-    labels: HashMap<String, u64>,
+    memory: Vec<(C::Address, String)>,
+    labels: HashMap<String, C::Address>,
     error: Option<String>,
 }
 
