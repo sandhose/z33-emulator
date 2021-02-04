@@ -2,7 +2,7 @@
 name = "z33-cli"
 description = "An emulator for the Zorglub-33 architecture"
 homepage = "https://pdagog.gitlab.io/ens/z33refcard.pdf"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Quentin Gliech <gliech@unistra.fr>"]
 edition = "2018"
 readme = "../README.md"
