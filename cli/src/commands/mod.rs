@@ -6,8 +6,7 @@ mod print;
 mod run;
 
 #[derive(Clap)]
-#[clap(version, author, about)]
-pub enum Opt {
+pub enum Subcommand {
     /// Preprocess, compile and run a program
     Run(self::run::RunOpt),
 
@@ -21,14 +20,15 @@ pub enum Opt {
     Dump(self::dump::DumpOpt),
 }
 
-impl Opt {
+impl Subcommand {
     /// Run a subcommand
     pub fn exec(self) -> Result<(), Box<dyn std::error::Error>> {
+        use Subcommand::*;
         match self {
-            Opt::Run(opt) => opt.exec(),
-            Opt::Preprocess(opt) => opt.exec(),
-            Opt::Print(opt) => opt.exec(),
-            Opt::Dump(opt) => opt.exec(),
+            Run(opt) => opt.exec(),
+            Preprocess(opt) => opt.exec(),
+            Print(opt) => opt.exec(),
+            Dump(opt) => opt.exec(),
         }
     }
 }

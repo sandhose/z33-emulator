@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use clap::Clap;
+use clap::{Clap, ValueHint};
 
 use tracing::{debug, info};
 use z33_emulator::{
@@ -12,7 +12,7 @@ use z33_emulator::{
 #[derive(Clap, Debug)]
 pub struct DumpOpt {
     /// Input file
-    #[clap(parse(from_os_str))]
+    #[clap(parse(from_os_str), value_hint = ValueHint::FilePath)]
     input: PathBuf,
 }
 

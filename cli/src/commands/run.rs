@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use clap::Clap;
+use clap::{Clap, ValueHint};
 use tracing::{debug, info};
 use z33_emulator::{
     compile, parse,
@@ -12,12 +12,13 @@ use crate::interactive::run_interactive;
 #[derive(Clap, Debug)]
 pub struct RunOpt {
     /// Input file
-    #[clap(parse(from_os_str))]
+    #[clap(parse(from_os_str), value_hint = ValueHint::FilePath)]
     input: PathBuf,
 
     /// Start label
     entrypoint: String,
 
+    /// Run the program in interactive mode
     #[clap(short, long)]
     interactive: bool,
 }
