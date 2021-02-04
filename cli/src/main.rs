@@ -1,7 +1,6 @@
 #![forbid(unsafe_code)]
 
 use clap::Clap;
-use tracing::Level;
 use tracing_subscriber::filter::EnvFilter;
 
 mod commands;
@@ -21,11 +20,13 @@ struct Opt {
 }
 
 impl Opt {
-    fn log_level(&self) -> Level {
+    const fn log_filter(&self) -> &'static str {
         match self.verbose {
-            0 => Level::INFO,
-            1 => Level::DEBUG,
-            2..=u8::MAX => Level::TRACE,
+            0 => "info",
+            1 => "z33_emulator=debug,z33_cli=debug",
+            2 => "z33_emulator=trace,z33_emulator=trace",
+            3 => "z33_emulator=trace,z33_emulator=trace,debug",
+            4..=u8::MAX => "trace",
         }
     }
 
@@ -33,7 +34,8 @@ impl Opt {
         // Parse log level from env
         EnvFilter::try_from_default_env()
             // or infer from args
-            .unwrap_or_else(|_| EnvFilter::default().add_directive(self.log_level().into()))
+            .or_else(|_| EnvFilter::try_new(self.log_filter()))
+            .unwrap()
     }
 }
 
