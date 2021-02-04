@@ -1,5 +1,6 @@
 use clap::{AppSettings, Clap};
 
+mod completion;
 mod dump;
 mod preprocess;
 mod print;
@@ -19,6 +20,9 @@ pub enum Subcommand {
 
     /// Dump the AST of the program
     Dump(self::dump::DumpOpt),
+
+    /// Generate shell completion
+    Completion(self::completion::CompletionOpt),
 }
 
 impl Subcommand {
@@ -30,6 +34,7 @@ impl Subcommand {
             Preprocess(opt) => opt.exec(),
             Print(opt) => opt.exec(),
             Dump(opt) => opt.exec(),
+            Completion(opt) => opt.exec(),
         }
     }
 }
