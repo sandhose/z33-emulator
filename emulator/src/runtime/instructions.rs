@@ -172,7 +172,7 @@ impl Instruction {
             }
 
             Fas(addr, reg) => {
-                let addr = computer.resolve_address(addr)?;
+                let addr = computer.registers.resolve_address(addr)?;
                 let cell = computer.memory.get_mut(addr)?;
                 let val = cell.clone();
                 *cell = Cell::Word(1);

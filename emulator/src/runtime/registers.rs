@@ -3,14 +3,17 @@ use thiserror::Error;
 
 use crate::{
     ast::{AstNode, NodeKind},
-    constants::{Address, Word},
+    constants as C,
 };
 
-use super::memory::{Cell, CellError, TryFromCell};
+use super::{
+    memory::{Cell, CellError, TryFromCell},
+    Address,
+};
 
 bitflags! {
     #[derive(Default)]
-    pub struct StatusRegister: Word {
+    pub struct StatusRegister: C::Word {
         const CARRY            = 0b000_0000_0001;
         const ZERO             = 0b000_0000_0010;
         const NEGATIVE         = 0b000_0000_0100;
@@ -24,10 +27,14 @@ bitflags! {
 pub struct Registers {
     pub a: Cell,
     pub b: Cell,
-    pub pc: Address,
-    pub sp: Address,
+    pub pc: C::Address,
+    pub sp: C::Address,
     pub sr: StatusRegister,
 }
+
+#[derive(Error, Debug)]
+#[error("could not resolve address")]
+pub struct AddressResolutionError(#[from] CellError);
 
 impl Registers {
     pub fn get(&self, reg: &Reg) -> Cell {
@@ -40,7 +47,7 @@ impl Registers {
         }
     }
 
-    pub(crate) fn get_word(&self, reg: &Reg) -> Result<Word, CellError> {
+    pub(crate) fn get_word(&self, reg: &Reg) -> Result<C::Word, CellError> {
         match reg {
             Reg::A => self.a.extract_word(),
             Reg::B => self.b.extract_word(),
@@ -55,14 +62,43 @@ impl Registers {
             Reg::A => self.a = value,
             Reg::B => self.b = value,
             Reg::PC => {
-                self.pc = Address::try_from_cell(&value)?;
+                self.pc = C::Address::try_from_cell(&value)?;
             }
             Reg::SP => {
-                self.sp = Address::try_from_cell(&value)?;
+                self.sp = C::Address::try_from_cell(&value)?;
             }
-            Reg::SR => self.sr.bits = Word::try_from_cell(&value)?,
+            Reg::SR => self.sr.bits = C::Word::try_from_cell(&value)?,
         };
         Ok(())
+    }
+
+    pub fn resolve_address(&self, address: &Address) -> Result<C::Address, AddressResolutionError> {
+        use Address::*;
+        match address {
+            // A direct memory access
+            Dir(addr) => Ok(*addr),
+
+            // An indirect memory access
+            Ind(reg) => {
+                // Get the register value
+                let cell = self.get(reg);
+                // and try converting it to an address
+                let addr = C::Address::try_from_cell(&cell)?;
+                Ok(addr)
+            }
+
+            Idx(reg, off) => {
+                // Get the register value
+                let cell = self.get(reg);
+                // and try converting it to a word
+                let addr = C::Word::try_from_cell(&cell)?;
+                // add the offset
+                let addr = addr + off;
+                // and convert it to an address
+                let addr = C::Address::try_from_cell(&addr.into())?;
+                Ok(addr)
+            }
+        }
     }
 }
 

@@ -1,3 +1,5 @@
+//! Utility AST manipulation, mainly for reporting
+
 use crate::parser::location::Located;
 
 pub trait AstNode<L> {

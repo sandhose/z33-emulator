@@ -66,36 +66,12 @@ impl std::fmt::Debug for Computer {
 }
 
 impl Computer {
-    #[tracing::instrument(skip(self))]
-    pub fn resolve_address(&self, address: &Address) -> Result<C::Address> {
-        match address {
-            Address::Dir(addr) => Ok(*addr),
-            Address::Ind(reg) => C::Address::try_from_cell(&self.registers.get(reg)).map_err(|e| {
-                ProcessorError::InvalidRegister {
-                    reg: *reg,
-                    inner: e,
-                }
-            }),
-
-            Address::Idx(reg, off) => C::Address::try_from_cell(&self.registers.get(reg))
-                .map_err(|e| ProcessorError::InvalidRegister {
-                    reg: *reg,
-                    inner: e,
-                })
-                .and_then(|address| {
-                    let address = address as i64 + off;
-                    C::Address::try_from(address)
-                        .map_err(|_| ProcessorError::InvalidAddress { address })
-                }),
-        }
-    }
-
     pub(crate) fn write<T: Into<Cell> + Debug>(
         &mut self,
         address: &Address,
         value: T,
     ) -> Result<()> {
-        let address = self.resolve_address(address)?;
+        let address = self.registers.resolve_address(address)?;
         let cell = self.memory.get_mut(address)?;
         *cell = value.into();
         Ok(())
@@ -127,7 +103,7 @@ impl Computer {
     fn word_from_arg(&self, arg: &Arg) -> Result<C::Word> {
         match arg {
             Arg::Address(addr) => {
-                let addr = self.resolve_address(addr)?;
+                let addr = self.registers.resolve_address(addr)?;
                 self.memory
                     .get(addr)
                     .map_err(|err| err.into())
@@ -147,7 +123,7 @@ impl Computer {
     fn arg(&self, arg: &Arg) -> Result<Cell> {
         match arg {
             Arg::Address(addr) => {
-                let addr = self.resolve_address(addr)?;
+                let addr = self.registers.resolve_address(addr)?;
                 // TODO: better conversion
                 self.memory
                     .get(addr)
@@ -178,7 +154,7 @@ impl Computer {
     }
 
     fn jump(&mut self, address: &Address) -> Result<()> {
-        let address = self.resolve_address(address)?;
+        let address = self.registers.resolve_address(address)?;
         debug!("Jumping to address {}", address);
         self.registers.pc = address;
         Ok(())
@@ -186,7 +162,7 @@ impl Computer {
 
     #[tracing::instrument(skip(self), err)]
     fn decode_instruction(&mut self) -> Result<&Instruction> {
-        let address = self.resolve_address(&Address::Ind(Reg::PC))?;
+        let address = self.registers.resolve_address(&Address::Ind(Reg::PC))?;
         let cell = self.memory.get(address)?;
         self.registers.pc += 1;
         cell.extract_instruction()

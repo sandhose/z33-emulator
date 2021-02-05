@@ -302,7 +302,7 @@ pub(crate) fn run_interactive(
             }
             Command::Memory { address, number } => {
                 // TODO: recover from error
-                let address = computer.resolve_address(address)?;
+                let address = computer.registers.resolve_address(address)?;
                 if number.is_positive() {
                     for i in 0..(*number as C::Address) {
                         let address = address + i;
@@ -333,13 +333,13 @@ pub(crate) fn run_interactive(
 
             Command::Break { address } => {
                 // TODO: recover from error
-                let address = computer.resolve_address(address)?;
+                let address = computer.registers.resolve_address(address)?;
                 session.add_breakpoint(address);
             }
 
             Command::Unbreak { address } => {
                 // TODO: recover from error
-                let address = computer.resolve_address(address)?;
+                let address = computer.registers.resolve_address(address)?;
                 session.remove_breakpoint(address);
             }
 
