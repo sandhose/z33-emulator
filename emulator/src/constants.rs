@@ -1,12 +1,14 @@
+//! Various constants and type definitions used throughout the emulator
+
 pub type Address = u32;
 pub type Word = i64;
 pub type Char = char;
 
 /// Total size of the computer memory
-pub const MEMORY_SIZE: Address = 50000;
+pub const MEMORY_SIZE: Address = 10000;
 
 /// Start of the stack pointer
-pub const STACK_START: Address = 10000;
+pub const STACK_START: Address = MEMORY_SIZE;
 
 /// Default place to store the beginning of the program
 pub const PROGRAM_START: Address = 1000;
