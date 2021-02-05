@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use thiserror::Error;
+use tracing::debug;
 
 use crate::{constants as C, parser::line::Program, runtime::Computer, runtime::Registers};
 
@@ -36,7 +37,8 @@ pub fn layout<L: Clone + Default>(
     self::layout::layout_memory(&lines)
 }
 
-pub fn compile<L: Clone + Default>(
+#[tracing::instrument(skip(program))]
+pub fn compile<L: Clone + Default + std::fmt::Debug>(
     program: Program<L>,
     entrypoint: &str,
 ) -> Result<(Computer, DebugInfo), CompilationError> {
@@ -44,13 +46,17 @@ pub fn compile<L: Clone + Default>(
     let layout = self::layout::layout_memory(&lines)?;
     let memory = self::memory::fill_memory(&layout)?;
 
+    // Lookup the entrypoint
+    let pc = *layout
+        .labels
+        .get(entrypoint)
+        .ok_or_else(|| CompilationError::UnknownEntrypoint(entrypoint.to_string()))?;
+    debug!(pc, entrypoint, "Found entrypoint");
+
     let computer = Computer {
         memory,
         registers: Registers {
-            pc: *layout
-                .labels
-                .get(entrypoint)
-                .ok_or_else(|| CompilationError::UnknownEntrypoint(entrypoint.to_string()))?,
+            pc,
             sp: C::STACK_START,
             ..Default::default()
         },

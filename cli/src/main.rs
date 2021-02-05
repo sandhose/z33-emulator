@@ -1,7 +1,11 @@
 #![forbid(unsafe_code)]
 
+use std::process::exit;
+
 use clap::Clap;
+use tracing::error;
 use tracing_subscriber::filter::EnvFilter;
+use tracing_subscriber::prelude::*;
 
 mod commands;
 mod interactive;
@@ -30,7 +34,7 @@ impl Opt {
         }
     }
 
-    fn log_env_filter(&self) -> EnvFilter {
+    fn filter_layer(&self) -> EnvFilter {
         // Parse log level from env
         EnvFilter::try_from_default_env()
             // or infer from args
@@ -39,20 +43,24 @@ impl Opt {
     }
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() {
     // First, parse the arguments
     let opt = Opt::parse();
 
     // Then, setup the tracing formatter for logging and instrumentation
-    let format = tracing_subscriber::fmt::format()
+    let fmt_layer = tracing_subscriber::fmt::layer()
         .without_time()
         .with_target(false);
 
-    tracing_subscriber::fmt()
-        .with_env_filter(opt.log_env_filter())
-        .event_format(format)
+    tracing_subscriber::Registry::default()
+        .with(opt.filter_layer())
+        .with(fmt_layer)
         .init();
 
     // And run the command
-    opt.command.exec()
+    let res = opt.command.exec();
+    if let Err(e) = res {
+        error!("{}", e);
+        exit(1);
+    }
 }

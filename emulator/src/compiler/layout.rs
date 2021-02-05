@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use thiserror::Error;
-use tracing::debug;
+use tracing::{debug, trace};
 
 use crate::parser::{
     expression::{
@@ -110,13 +110,13 @@ pub(crate) fn layout_memory<L: Clone + Default>(
     use DirectiveKind::*;
     use MemoryLayoutError::*;
 
-    debug!("Laying out memory");
+    debug!(lines = program.len(), "Laying out memory");
     let mut layout: Layout<L> = Default::default();
     let mut position = PROGRAM_START;
 
     for line in program {
         for key in line.symbols.clone().into_iter() {
-            debug!(key = %key.inner, position, "Inserting label");
+            trace!(key = %key.inner, position, "Inserting label");
             layout.insert_label(key.inner, position)?;
         }
 
@@ -128,7 +128,7 @@ pub(crate) fn layout_memory<L: Clone + Default>(
                 }
                 | LineContent::Instruction { .. } => {
                     layout.insert_placement(position, Placement::Line(content.inner.clone()))?;
-                    debug!(position, content = %content.inner, "Inserting line");
+                    trace!(position, content = %content.inner, "Inserting line");
                     position += 1; // Instructions and word directives take one memory cell
                 }
 
@@ -144,7 +144,7 @@ pub(crate) fn layout_memory<L: Clone + Default>(
                         .evaluate(&EmptyExpressionContext)
                         .map_err(|inner| DirectiveArgumentEvaluation { kind: Space, inner })?;
 
-                    debug!(size, position, "Reserving space");
+                    trace!(size, position, "Reserving space");
 
                     for _ in 0..size {
                         layout.insert_placement(position, Placement::Reserved)?;
@@ -178,7 +178,7 @@ pub(crate) fn layout_memory<L: Clone + Default>(
                             ..
                         },
                 } => {
-                    debug!(position, string = string.as_str(), "Inserting string");
+                    trace!(position, string = string.as_str(), "Inserting string");
                     // Fill the memory with the chars of the string
                     for c in string.chars() {
                         layout.insert_placement(position, Placement::Char(c))?;

@@ -1,7 +1,9 @@
+//! The actual emulator runtime
+
 use std::convert::TryFrom;
 use std::fmt::Debug;
 use thiserror::Error;
-use tracing::{debug, info};
+use tracing::{debug, info, trace};
 
 use crate::constants as C;
 
@@ -15,7 +17,7 @@ pub(crate) use self::instructions::Instruction;
 pub(crate) use self::memory::{Cell, Memory};
 pub use self::registers::{Reg, Registers};
 
-use self::memory::{CellError, MemoryError, TryFromCell};
+use self::memory::{CellError, MemoryError};
 use self::registers::StatusRegister;
 
 #[derive(Error, Debug)]
@@ -43,6 +45,13 @@ pub enum ProcessorError {
 impl From<MemoryError> for ProcessorError {
     fn from(e: MemoryError) -> Self {
         Self::Exception(Exception::InvalidMemoryAccess(e))
+    }
+}
+
+// Temporary conversion
+impl From<registers::AddressResolutionError> for ProcessorError {
+    fn from(_: registers::AddressResolutionError) -> Self {
+        ProcessorError::Todo
     }
 }
 
@@ -169,12 +178,13 @@ impl Computer {
             .map_err(|_| Exception::InvalidInstruction.into())
     }
 
-    #[tracing::instrument(skip(self), level = "debug")]
+    #[tracing::instrument(skip(self), level = "debug", fields(cost))]
     pub fn step(&mut self) -> Result<()> {
         // TODO: this should be recoverable
         let inst = self.decode_instruction()?;
         let cost = inst.cost();
-        info!(cost, "Executing instruction \"{}\"", inst);
+        tracing::Span::current().record("cost", &cost);
+        info!("Executing instruction \"{}\"", inst);
         // This clone is necessary as `inst` is borrowed from `self`.
         // The computer might modify the cell where the instruction is stored when executing it.
         inst.clone().execute(self).or_else(|e| {
@@ -186,7 +196,7 @@ impl Computer {
             }
         })?;
         self.cycles += cost;
-        debug!("Register state {:?}", self.registers);
+        trace!("Register state {:?}", self.registers);
         Ok(())
     }
 

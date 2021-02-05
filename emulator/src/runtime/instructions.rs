@@ -112,6 +112,7 @@ pub enum Instruction {
 }
 
 impl Instruction {
+    /// Execute the instruction
     #[tracing::instrument(skip(computer))]
     pub(crate) fn execute(&self, computer: &mut Computer) -> Result<(), ProcessorError> {
         use Instruction::*;

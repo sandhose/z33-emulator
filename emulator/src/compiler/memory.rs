@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use thiserror::Error;
-use tracing::{debug, event, span, Level};
+use tracing::{debug, span, trace, Level};
 
 use crate::{
     constants as C,
@@ -99,6 +99,7 @@ fn get_none(args: Vec<Arg>) -> Result<(), InstructionCompilationError> {
     Ok(())
 }
 
+#[tracing::instrument]
 fn compile_instruction(
     kind: &InstructionKind,
     arguments: Vec<Arg>,
@@ -276,13 +277,17 @@ fn compile_placement<L>(
     placement: &Placement<L>,
 ) -> Result<Cell, MemoryFillError> {
     use DirectiveKind::*;
+    use Placement::*;
 
     match placement {
-        Placement::Reserved => Ok(Cell::Empty),
+        // Reserved placements are created by .space directives
+        Reserved => Ok(Cell::Empty),
 
-        Placement::Char(c) => Ok(Cell::Char(*c)),
+        // Char placements are create by .string directives
+        Char(c) => Ok(Cell::Char(*c)),
 
-        Placement::Line(LineContent::Directive {
+        // A .word directive (don't mind the weird destructuring)
+        Line(LineContent::Directive {
             kind: Located { inner: Word, .. },
             argument:
                 Located {
@@ -296,22 +301,24 @@ fn compile_placement<L>(
         }
 
         // We should not have any other directives other than "word" at this point
-        Placement::Line(LineContent::Directive { .. }) => {
+        Line(LineContent::Directive { .. }) => {
             unreachable!();
         }
 
-        Placement::Line(LineContent::Instruction { kind, arguments }) => {
+        Line(LineContent::Instruction { kind, arguments }) => {
             let span = span!(Level::TRACE, "line", %kind);
             let _guard = span.enter();
             let arguments: Result<Vec<_>, _> = arguments
                 .iter()
-                .map(|argument| {
-                    event!(Level::TRACE, "argument evaluation: {}", argument);
+                .enumerate()
+                .map(|(index, argument)| {
+                    trace!("argument {} evaluation: {}", index, argument);
                     argument.inner.evaluate(labels)
                 })
                 .collect();
             let arguments = arguments?;
-            let instruction = compile_instruction(&kind.inner, arguments)?;
+            let instruction = compile_instruction(&kind.inner, arguments)
+                .map_err(MemoryFillError::InstructionCompilation)?;
             Ok(Cell::Instruction(Box::new(instruction)))
         }
     }
@@ -319,17 +326,26 @@ fn compile_placement<L>(
 
 #[tracing::instrument(skip(layout))]
 pub(crate) fn fill_memory<L>(layout: &Layout<L>) -> Result<Memory, MemoryFillError> {
-    debug!("Filling memory");
+    debug!(
+        placements = layout.memory.len(),
+        labels = ?layout.labels,
+        "Filling memory"
+    );
     let mut memory = Memory::default();
 
     let cells: Result<HashMap<C::Address, Cell>, MemoryFillError> = layout
         .memory
         .iter()
-        .map(|(index, placement)| Ok((*index, compile_placement(&layout.labels, placement)?)))
+        .map(|(index, placement)| {
+            let span = span!(Level::TRACE, "placement", index);
+            let _guard = span.enter();
+            let cell = compile_placement(&layout.labels, placement)?;
+            Ok((*index, cell))
+        })
         .collect();
 
     for (address, content) in cells? {
-        debug!(address, content = %content, "Filling cell");
+        trace!(address, content = %content, "Filling cell");
         let cell = memory.get_mut(address).unwrap();
         *cell = content;
     }
