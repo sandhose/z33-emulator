@@ -10,7 +10,7 @@ license = "MIT"
 
 [dependencies]
 bitflags = "1.2.1"
-thiserror = "1.0.23"
+thiserror = "1.0.24"
 nom = "6.1.0"
 tracing = "0.1.22"
 tracing-subscriber = "0.2.15"
