@@ -13,7 +13,7 @@ bitflags = "1.2.1"
 thiserror = "1.0.23"
 nom = "6.1.0"
 tracing = "0.1.22"
-tracing-subscriber = "0.2.15"
+tracing-subscriber = "0.2.16"
 unicode-segmentation = "1.7.1"
 
 [dev-dependencies]
