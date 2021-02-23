@@ -850,6 +850,7 @@ name = "z33-cli"
 version = "0.3.0"
 dependencies = [
  "ansi_term",
+ "atty",
  "clap",
  "clap_generate",
  "rustyline",
