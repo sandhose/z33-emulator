@@ -3,19 +3,21 @@
 //! It parses base 10, base 16 (prefixed by `0x`), base 8 (prefixed by `0o`) and base 2 (prefixed
 //! by `01`) number literals.
 
-use std::str::FromStr;
+use std::{num::ParseIntError, str::FromStr};
 
 use nom::{
     branch::alt,
     bytes::complete::{escaped_transform, tag_no_case, take_while1},
     character::complete::{char, line_ending, none_of},
     combinator::{cut, map_res, value},
-    error::ParseError,
+    error::{FromExternalError, ParseError},
     AsChar, Compare, IResult, InputTake, InputTakeAtPosition,
 };
 
 /// Parse a string literal
-pub fn parse_string_literal(input: &str) -> IResult<&str, String> {
+pub fn parse_string_literal<'a, Error: ParseError<&'a str>>(
+    input: &'a str,
+) -> IResult<&'a str, String, Error> {
     let (input, _) = char('"')(input)?;
     let (input, string) = escaped_transform(none_of("\"\\"), '\\', |input| {
         alt((
@@ -30,11 +32,9 @@ pub fn parse_string_literal(input: &str) -> IResult<&str, String> {
 }
 
 /// Parse a bool literal (true or false)
-pub fn parse_bool_literal<Input, Error: ParseError<Input>>(
-    input: Input,
-) -> IResult<Input, bool, Error>
+pub fn parse_bool_literal<I, Error: ParseError<I>>(input: I) -> IResult<I, bool, Error>
 where
-    Input: InputTake + Compare<&'static str> + Clone,
+    I: InputTake + Compare<&'static str> + Clone,
 {
     alt((
         value(true, tag_no_case("true")),
@@ -43,9 +43,9 @@ where
 }
 
 /// Parse a decimal number
-fn from_decimal<T>(input: T) -> Result<u64, std::num::ParseIntError>
+fn from_decimal<I>(input: I) -> Result<u64, ParseIntError>
 where
-    T: ToString,
+    I: ToString,
 {
     u64::from_str(&input.to_string())
 }
@@ -56,9 +56,9 @@ fn is_digit<C: AsChar>(c: C) -> bool {
 }
 
 /// Parse a hexadecimal number
-fn from_hexadecimal<T>(input: T) -> Result<u64, std::num::ParseIntError>
+fn from_hexadecimal<I>(input: I) -> Result<u64, ParseIntError>
 where
-    T: ToString,
+    I: ToString,
 {
     u64::from_str_radix(&input.to_string(), 16)
 }
@@ -69,19 +69,20 @@ fn is_hex_digit<C: AsChar>(c: C) -> bool {
 }
 
 /// Extract a hexadecimal literal
-fn parse_hexadecimal_literal<T>(input: T) -> IResult<T, u64>
+fn parse_hexadecimal_literal<I, Error: ParseError<I>>(input: I) -> IResult<I, u64, Error>
 where
-    T: InputTakeAtPosition + InputTake + Compare<&'static str> + ToString + Clone,
-    <T as InputTakeAtPosition>::Item: AsChar,
+    I: InputTakeAtPosition + InputTake + Compare<&'static str> + ToString + Clone,
+    <I as InputTakeAtPosition>::Item: AsChar,
+    Error: FromExternalError<I, ParseIntError>,
 {
     let (input, _) = tag_no_case("0x")(input)?;
     cut(map_res(take_while1(is_hex_digit), from_hexadecimal))(input)
 }
 
 /// Parse an octal number
-fn from_octal<T>(input: T) -> Result<u64, std::num::ParseIntError>
+fn from_octal<I>(input: I) -> Result<u64, std::num::ParseIntError>
 where
-    T: ToString,
+    I: ToString,
 {
     u64::from_str_radix(&input.to_string(), 8)
 }
@@ -92,19 +93,20 @@ fn is_oct_digit<C: AsChar>(c: C) -> bool {
 }
 
 /// Extract an octal literal
-fn parse_octal_literal<T>(input: T) -> IResult<T, u64>
+fn parse_octal_literal<I, Error: ParseError<I>>(input: I) -> IResult<I, u64, Error>
 where
-    T: InputTakeAtPosition + InputTake + Compare<&'static str> + ToString + Clone,
-    <T as InputTakeAtPosition>::Item: AsChar,
+    I: InputTakeAtPosition + InputTake + Compare<&'static str> + ToString + Clone,
+    <I as InputTakeAtPosition>::Item: AsChar,
+    Error: FromExternalError<I, ParseIntError>,
 {
     let (input, _) = tag_no_case("0o")(input)?;
     cut(map_res(take_while1(is_oct_digit), from_octal))(input)
 }
 
 /// Parse a binary number
-fn from_binary<T>(input: T) -> Result<u64, std::num::ParseIntError>
+fn from_binary<I>(input: I) -> Result<u64, ParseIntError>
 where
-    T: ToString,
+    I: ToString,
 {
     u64::from_str_radix(&input.to_string(), 2)
 }
@@ -115,20 +117,22 @@ fn is_bin_digit<C: AsChar>(c: C) -> bool {
 }
 
 /// Extract a binary literal
-fn parse_binary_literal<T>(input: T) -> IResult<T, u64>
+fn parse_binary_literal<I, Error: ParseError<I>>(input: I) -> IResult<I, u64, Error>
 where
-    T: InputTakeAtPosition + InputTake + Compare<&'static str> + ToString + Clone,
-    <T as InputTakeAtPosition>::Item: AsChar,
+    I: InputTakeAtPosition + InputTake + Compare<&'static str> + ToString + Clone,
+    <I as InputTakeAtPosition>::Item: AsChar,
+    Error: FromExternalError<I, ParseIntError>,
 {
     let (input, _) = tag_no_case("0b")(input)?;
     cut(map_res(take_while1(is_bin_digit), from_binary))(input)
 }
 
 /// Parse a number literal
-pub fn parse_number_literal<T>(input: T) -> IResult<T, u64>
+pub fn parse_number_literal<I, Error: ParseError<I>>(input: I) -> IResult<I, u64, Error>
 where
-    T: InputTakeAtPosition + InputTake + Compare<&'static str> + ToString + Clone,
-    <T as InputTakeAtPosition>::Item: AsChar,
+    I: InputTakeAtPosition + InputTake + Compare<&'static str> + ToString + Clone,
+    <I as InputTakeAtPosition>::Item: AsChar,
+    Error: FromExternalError<I, ParseIntError>,
 {
     alt((
         parse_hexadecimal_literal,
@@ -181,12 +185,13 @@ mod tests {
 
     #[test]
     fn take_hexadecimal_literal_test() {
-        assert_eq!(parse_hexadecimal_literal("0x4F"), Ok(("", 0x4F)));
-        assert_eq!(parse_hexadecimal_literal("0X4f"), Ok(("", 0x4f)));
-        assert_eq!(parse_hexadecimal_literal("0xffff"), Ok(("", 0xffff)));
-        assert_eq!(parse_hexadecimal_literal("0x10000"), Ok(("", 0x10000)));
-        assert!(parse_hexadecimal_literal("0xinvalid").is_err()); // Invalid
-        assert!(parse_hexadecimal_literal("ffff").is_err()); // No prefix
+        type R<'a> = IResult<&'a str, u64, nom::error::Error<&'a str>>;
+        assert_eq!(parse_hexadecimal_literal("0x4F"), R::Ok(("", 0x4F)));
+        assert_eq!(parse_hexadecimal_literal("0X4f"), R::Ok(("", 0x4f)));
+        assert_eq!(parse_hexadecimal_literal("0xffff"), R::Ok(("", 0xffff)));
+        assert_eq!(parse_hexadecimal_literal("0x10000"), R::Ok(("", 0x10000)));
+        assert!(matches!(parse_hexadecimal_literal("0xinvalid"), R::Err(_))); // Invalid
+        assert!(matches!(parse_hexadecimal_literal("ffff"), R::Err(_))); // No prefix
     }
 
     #[test]
@@ -210,12 +215,13 @@ mod tests {
 
     #[test]
     fn take_octal_literal_test() {
-        assert_eq!(parse_octal_literal("0o77"), Ok(("", 0o77)));
-        assert_eq!(parse_octal_literal("0O77"), Ok(("", 0o77)));
-        assert_eq!(parse_octal_literal("0o177777"), Ok(("", 0o177777)));
-        assert_eq!(parse_octal_literal("0o200000"), Ok(("", 0o200000)));
-        assert!(parse_octal_literal("0oinvalid").is_err()); // Invalid
-        assert!(parse_octal_literal("77").is_err()); // No prefix
+        type R<'a> = IResult<&'a str, u64, nom::error::Error<&'a str>>;
+        assert_eq!(parse_octal_literal("0o77"), R::Ok(("", 0o77)));
+        assert_eq!(parse_octal_literal("0O77"), R::Ok(("", 0o77)));
+        assert_eq!(parse_octal_literal("0o177777"), R::Ok(("", 0o177777)));
+        assert_eq!(parse_octal_literal("0o200000"), R::Ok(("", 0o200000)));
+        assert!(matches!(parse_octal_literal("0oinvalid"), R::Ok(_))); // Invalid
+        assert!(matches!(parse_octal_literal("77"), R::Ok(_))); // No prefix
     }
 
     #[test]
@@ -239,41 +245,45 @@ mod tests {
 
     #[test]
     fn take_binary_literal_test() {
-        assert_eq!(parse_binary_literal("0b10"), Ok(("", 0b10)));
-        assert_eq!(parse_binary_literal("0B10"), Ok(("", 0b10)));
+        type R<'a> = IResult<&'a str, u64, nom::error::Error<&'a str>>;
+        assert_eq!(parse_binary_literal("0b10"), R::Ok(("", 0b10)));
+        assert_eq!(parse_binary_literal("0B10"), R::Ok(("", 0b10)));
         assert_eq!(
             parse_binary_literal("0b1111111111111111"),
-            Ok(("", 0b1111111111111111))
+            R::Ok(("", 0b1111111111111111))
         );
         assert_eq!(
             parse_binary_literal("0b10000000000000000"),
-            Ok(("", 0b10000000000000000))
+            R::Ok(("", 0b10000000000000000))
         );
-        assert!(parse_binary_literal("0binvalid").is_err()); // Invalid
-        assert!(parse_binary_literal("10").is_err()); // No prefix
+        assert!(matches!(parse_binary_literal("0binvalid"), R::Err(_))); // Invalid
+        assert!(matches!(parse_binary_literal("10"), R::Err(_))); // No prefix
     }
 
     #[test]
     fn parse_literal_test() {
+        type R<'a> = IResult<&'a str, u64, nom::error::Error<&'a str>>;
         // Decimal
-        assert_eq!(parse_number_literal("100"), Ok(("", 100)));
-        assert_eq!(parse_number_literal("42"), Ok(("", 42)));
-        assert_eq!(parse_number_literal("65535"), Ok(("", 0xffff)));
+        assert_eq!(parse_number_literal("100"), R::Ok(("", 100)));
+        assert_eq!(parse_number_literal("42"), R::Ok(("", 42)));
+        assert_eq!(parse_number_literal("65535"), R::Ok(("", 0xffff)));
 
         // Hexadecimal
-        assert_eq!(parse_number_literal("0x4f"), Ok(("", 0x4f)));
-        assert_eq!(parse_number_literal("0x42"), Ok(("", 0x42)));
-        assert_eq!(parse_number_literal("0xffff"), Ok(("", 0xffff)));
+        assert_eq!(parse_number_literal("0x4f"), R::Ok(("", 0x4f)));
+        assert_eq!(parse_number_literal("0x42"), R::Ok(("", 0x42)));
+        assert_eq!(parse_number_literal("0xffff"), R::Ok(("", 0xffff)));
 
         // Octal
-        assert_eq!(parse_number_literal("0o77"), Ok(("", 0o77)));
-        assert_eq!(parse_number_literal("0o42"), Ok(("", 0o42)));
-        assert_eq!(parse_number_literal("0o177777"), Ok(("", 0xffff))); // Upper bound
+        assert_eq!(parse_number_literal("0o77"), R::Ok(("", 0o77)));
+        assert_eq!(parse_number_literal("0o42"), R::Ok(("", 0o42)));
+        assert_eq!(parse_number_literal("0o177777"), R::Ok(("", 0xffff))); // Upper bound
 
         // Binary
-        assert_eq!(parse_number_literal("0b10"), Ok(("", 2)));
-        assert_eq!(parse_number_literal("0B10"), Ok(("", 2)));
-        assert_eq!(parse_number_literal("0b1111111111111111"), Ok(("", 0xffff)));
-        // Upper bound
+        assert_eq!(parse_number_literal("0b10"), R::Ok(("", 2)));
+        assert_eq!(parse_number_literal("0B10"), R::Ok(("", 2)));
+        assert_eq!(
+            parse_number_literal("0b1111111111111111"),
+            R::Ok(("", 0xffff))
+        ); // Upper bound
     }
 }
