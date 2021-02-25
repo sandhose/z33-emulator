@@ -1,7 +1,7 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, process::exit};
 
 use clap::{Clap, ValueHint};
-use tracing::{debug, info};
+use tracing::{debug, error, info};
 use z33_emulator::{
     compile, parse,
     preprocessor::{preprocess, NativeFilesystem},
@@ -31,7 +31,15 @@ impl RunOpt {
         let source = source.as_str();
 
         debug!("Parsing program");
-        let program = parse(source).unwrap(); // TODO: the error is tied to the input
+        let program = match parse(source) {
+            Ok(p) => p,
+            Err(e) => {
+                error!("{}", e);
+                let offset = crate::util::char_offset(source, e.input);
+                crate::util::display_error_offset(source, offset, &e.to_string());
+                exit(1);
+            }
+        };
 
         debug!(entrypoint = %self.entrypoint, "Building computer");
         let (mut computer, debug_info) = compile(program.inner, &self.entrypoint)?;

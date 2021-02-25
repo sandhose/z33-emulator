@@ -1,4 +1,3 @@
-use nom::Offset;
 use std::collections::VecDeque;
 
 const LINES_BEFORE: usize = 2;
@@ -8,6 +7,12 @@ fn display_line(line: (usize, &str)) {
     let (line, content) = line;
     let line = line + 1;
     eprintln!("{:>5}: {}", line, content);
+}
+
+pub fn char_offset(a: &str, b: &str) -> usize {
+    let a = a.as_ptr();
+    let b = b.as_ptr();
+    b as usize - a as usize
 }
 
 #[allow(dead_code)]
@@ -34,7 +39,7 @@ pub fn display_error_offset(input: &str, offset: usize, message: &str) {
     }
 
     let (_, line) = current;
-    let line_off = input.offset(line);
+    let line_off = char_offset(input, line);
     let col = offset - line_off + 1;
 
     previous.into_iter().for_each(display_line);

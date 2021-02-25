@@ -9,6 +9,7 @@ use tracing_subscriber::prelude::*;
 
 mod commands;
 mod interactive;
+mod util;
 
 use crate::commands::Subcommand;
 

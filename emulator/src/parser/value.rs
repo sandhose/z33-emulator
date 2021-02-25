@@ -54,6 +54,7 @@ pub(crate) enum InstructionKind {
     Swap,
     Trap,
     Xor,
+    DebugReg,
 }
 
 impl<L> AstNode<L> for InstructionKind {
@@ -104,6 +105,7 @@ impl std::fmt::Display for InstructionKind {
             Swap => write!(f, "swap"),
             Trap => write!(f, "trap"),
             Xor => write!(f, "xor"),
+            DebugReg => write!(f, "debugreg"),
         }
     }
 }
@@ -154,6 +156,7 @@ where
             value(Swap, tag_no_case("swap")),
             value(Trap, tag_no_case("trap")),
             value(Xor, tag_no_case("xor")),
+            value(DebugReg, tag_no_case("debugreg")),
         )),
     ))(input)
 }

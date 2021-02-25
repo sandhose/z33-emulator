@@ -268,6 +268,11 @@ fn compile_instruction(
             let (a, b) = get_tuple(arguments)?;
             Ok(Instruction::Xor(a, b))
         }
+
+        DebugReg => {
+            get_none(arguments)?;
+            Ok(Instruction::DebugReg)
+        }
     }
 }
 

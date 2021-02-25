@@ -1,6 +1,6 @@
 use std::convert::TryInto;
 
-use tracing::debug;
+use tracing::{debug, info};
 
 use crate::constants::*;
 
@@ -109,6 +109,9 @@ pub enum Instruction {
 
     /// Bitwise `xor` with a given value
     Xor(Arg, Reg),
+
+    /// Show registers content
+    DebugReg,
 }
 
 impl Instruction {
@@ -377,6 +380,10 @@ impl Instruction {
                 debug!("{} ^ {} = {}", a, b, res);
                 computer.set_register(reg, res.into())?;
             }
+
+            DebugReg => {
+                info!("debugreg: {}", computer.registers);
+            }
         };
 
         Ok(())
@@ -419,6 +426,7 @@ impl Instruction {
             Sub(a, b) => 1 + a.cost() + b.cost(),
             Trap => 1,
             Xor(a, b) => 1 + a.cost() + b.cost(),
+            DebugReg => 0,
         }
     }
 }
@@ -460,6 +468,7 @@ impl std::fmt::Display for Instruction {
             Sub(a, b) => write!(f, "sub  {}, {}", a, b),
             Trap => write!(f, "trap"),
             Xor(a, b) => write!(f, "xor  {}, {}", a, b),
+            DebugReg => write!(f, "debugreg"),
         }
     }
 }
