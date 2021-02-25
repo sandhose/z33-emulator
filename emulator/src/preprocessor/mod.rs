@@ -229,7 +229,7 @@ fn process_chunk<FS: Filesystem, L: Clone>(
                 let condition = context.replace(&branch.condition.inner);
                 let (_, expression) = parse_condition(&condition)
                     .finish()
-                    .map_err(|_| ConditionParse)?; // TODO: wrap the error
+                    .map_err(|_: ()| ConditionParse)?; // TODO: wrap the error
 
                 if expression.evaluate(context)? {
                     let mut buf = Vec::new();

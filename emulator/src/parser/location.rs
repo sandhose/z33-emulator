@@ -53,10 +53,13 @@ impl From<(usize, usize)> for RelativeLocation {
     }
 }
 
-impl<'a> From<(&'a str, &'a str, &'a str)> for RelativeLocation {
-    fn from((full, start, end): (&'a str, &'a str, &'a str)) -> Self {
-        let offset = full.offset(start);
-        let length = start.offset(end);
+impl<T> From<(T, T, T)> for RelativeLocation
+where
+    T: Offset,
+{
+    fn from((full, start, end): (T, T, T)) -> Self {
+        let offset = full.offset(&start);
+        let length = start.offset(&end);
         RelativeLocation { offset, length }
     }
 }

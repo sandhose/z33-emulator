@@ -853,6 +853,7 @@ dependencies = [
  "atty",
  "clap",
  "clap_generate",
+ "nom",
  "rustyline",
  "rustyline-derive",
  "shell-words",

@@ -3,7 +3,6 @@ use nom::{
     bytes::complete::tag_no_case,
     character::complete::{char, space0},
     combinator::{map, value},
-    error::ParseError,
     Compare, IResult, InputTake,
 };
 use thiserror::Error;
@@ -13,6 +12,7 @@ use super::{
     literal::parse_string_literal,
     location::Locatable,
     location::{Located, RelativeLocation},
+    ParseError,
 };
 use crate::{
     ast::{AstNode, NodeKind},
@@ -110,7 +110,7 @@ impl std::fmt::Display for InstructionKind {
     }
 }
 
-pub(crate) fn parse_instruction_kind<Input, Error: ParseError<Input>>(
+pub(crate) fn parse_instruction_kind<Input, Error: nom::error::ParseError<Input>>(
     input: Input,
 ) -> IResult<Input, InstructionKind, Error>
 where
@@ -241,7 +241,7 @@ impl std::fmt::Display for DirectiveKind {
     }
 }
 
-pub(crate) fn parse_directive_kind<Input, Error: ParseError<Input>>(
+pub(crate) fn parse_directive_kind<Input, Error: nom::error::ParseError<Input>>(
     input: Input,
 ) -> IResult<Input, DirectiveKind, Error>
 where
@@ -302,9 +302,9 @@ impl<L> std::fmt::Display for DirectiveArgument<L> {
 }
 
 /// Parse a directive argument
-pub(crate) fn parse_directive_argument(
-    input: &str,
-) -> IResult<&str, DirectiveArgument<RelativeLocation>> {
+pub(crate) fn parse_directive_argument<'a, Error: ParseError<&'a str>>(
+    input: &'a str,
+) -> IResult<&'a str, DirectiveArgument<RelativeLocation>, Error> {
     alt((
         map(parse_string_literal, DirectiveArgument::StringLiteral),
         map(parse_expression, DirectiveArgument::Expression),

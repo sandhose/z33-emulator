@@ -185,13 +185,19 @@ mod tests {
 
     #[test]
     fn take_hexadecimal_literal_test() {
-        type R<'a> = IResult<&'a str, u64, nom::error::Error<&'a str>>;
+        type R<'a> = IResult<&'a str, u64, ()>;
         assert_eq!(parse_hexadecimal_literal("0x4F"), R::Ok(("", 0x4F)));
         assert_eq!(parse_hexadecimal_literal("0X4f"), R::Ok(("", 0x4f)));
         assert_eq!(parse_hexadecimal_literal("0xffff"), R::Ok(("", 0xffff)));
         assert_eq!(parse_hexadecimal_literal("0x10000"), R::Ok(("", 0x10000)));
-        assert!(matches!(parse_hexadecimal_literal("0xinvalid"), R::Err(_))); // Invalid
-        assert!(matches!(parse_hexadecimal_literal("ffff"), R::Err(_))); // No prefix
+        assert_eq!(
+            parse_hexadecimal_literal("0xinvalid"),
+            R::Err(nom::Err::Failure(()))
+        ); // Invalid
+        assert_eq!(
+            parse_hexadecimal_literal("ffff"),
+            R::Err(nom::Err::Error(()))
+        ); // No prefix
     }
 
     #[test]
@@ -215,13 +221,16 @@ mod tests {
 
     #[test]
     fn take_octal_literal_test() {
-        type R<'a> = IResult<&'a str, u64, nom::error::Error<&'a str>>;
+        type R<'a> = IResult<&'a str, u64, ()>;
         assert_eq!(parse_octal_literal("0o77"), R::Ok(("", 0o77)));
         assert_eq!(parse_octal_literal("0O77"), R::Ok(("", 0o77)));
         assert_eq!(parse_octal_literal("0o177777"), R::Ok(("", 0o177777)));
         assert_eq!(parse_octal_literal("0o200000"), R::Ok(("", 0o200000)));
-        assert!(matches!(parse_octal_literal("0oinvalid"), R::Ok(_))); // Invalid
-        assert!(matches!(parse_octal_literal("77"), R::Ok(_))); // No prefix
+        assert_eq!(
+            parse_octal_literal("0oinvalid"),
+            R::Err(nom::Err::Failure(()))
+        ); // Invalid
+        assert_eq!(parse_octal_literal("77"), R::Err(nom::Err::Error(()))); // No prefix
     }
 
     #[test]
@@ -245,7 +254,7 @@ mod tests {
 
     #[test]
     fn take_binary_literal_test() {
-        type R<'a> = IResult<&'a str, u64, nom::error::Error<&'a str>>;
+        type R<'a> = IResult<&'a str, u64, ()>;
         assert_eq!(parse_binary_literal("0b10"), R::Ok(("", 0b10)));
         assert_eq!(parse_binary_literal("0B10"), R::Ok(("", 0b10)));
         assert_eq!(
@@ -256,13 +265,16 @@ mod tests {
             parse_binary_literal("0b10000000000000000"),
             R::Ok(("", 0b10000000000000000))
         );
-        assert!(matches!(parse_binary_literal("0binvalid"), R::Err(_))); // Invalid
-        assert!(matches!(parse_binary_literal("10"), R::Err(_))); // No prefix
+        assert_eq!(
+            parse_binary_literal("0binvalid"),
+            R::Err(nom::Err::Failure(()))
+        ); // Invalid
+        assert_eq!(parse_binary_literal("10"), R::Err(nom::Err::Error(()))); // No prefix
     }
 
     #[test]
     fn parse_literal_test() {
-        type R<'a> = IResult<&'a str, u64, nom::error::Error<&'a str>>;
+        type R<'a> = IResult<&'a str, u64, ()>;
         // Decimal
         assert_eq!(parse_number_literal("100"), R::Ok(("", 100)));
         assert_eq!(parse_number_literal("42"), R::Ok(("", 42)));

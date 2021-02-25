@@ -26,7 +26,6 @@ use nom::{
 };
 use thiserror::Error;
 
-use super::parse_identifier;
 use super::{
     expression::{
         parse_expression, Context as ExpressionContext, EmptyContext as EmptyExpressionContext,
@@ -36,6 +35,7 @@ use super::{
     precedence::Precedence,
 };
 use super::{literal::parse_bool_literal, location::AbsoluteLocation};
+use super::{parse_identifier, ParseError};
 
 type ChildNode<L> = Located<Box<Node<L>>, L>;
 type ExpressionNode<L> = Located<ENode<L>, L>;
@@ -310,12 +310,16 @@ impl<L> Node<L> {
     }
 }
 
-pub(crate) fn parse_condition(input: &str) -> IResult<&str, Node<RelativeLocation>> {
+pub(crate) fn parse_condition<'a, Error: ParseError<&'a str>>(
+    input: &'a str,
+) -> IResult<&'a str, Node<RelativeLocation>, Error> {
     parse_logical_or(input)
 }
 
 #[doc(hidden)]
-fn parse_logical_or_rec(input: &str) -> IResult<&str, ChildNode<RelativeLocation>> {
+fn parse_logical_or_rec<'a, Error: ParseError<&'a str>>(
+    input: &'a str,
+) -> IResult<&'a str, ChildNode<RelativeLocation>, Error> {
     let (rest, _) = space0(input)?;
     let (rest, _) = tag("||")(rest)?;
     let (rest, _) = space0(rest)?;
@@ -326,10 +330,12 @@ fn parse_logical_or_rec(input: &str) -> IResult<&str, ChildNode<RelativeLocation
 }
 
 /// Parse a logical "or" operation
-fn parse_logical_or(input: &str) -> IResult<&str, Node<RelativeLocation>> {
+fn parse_logical_or<'a, Error: ParseError<&'a str>>(
+    input: &'a str,
+) -> IResult<&'a str, Node<RelativeLocation>, Error> {
     let (mut cursor, mut node) = parse_logical_and(input)?;
 
-    while let Ok((rest, right)) = parse_logical_or_rec(cursor) {
+    while let Ok((rest, right)) = parse_logical_or_rec::<Error>(cursor) {
         let offset = input.offset(cursor);
         // Wrap the "left" node with location information
         let left = Box::new(node).with_location((0, offset));
@@ -346,7 +352,9 @@ fn parse_logical_or(input: &str) -> IResult<&str, Node<RelativeLocation>> {
 }
 
 #[doc(hidden)]
-fn parse_logical_and_rec(input: &str) -> IResult<&str, ChildNode<RelativeLocation>> {
+fn parse_logical_and_rec<'a, Error: ParseError<&'a str>>(
+    input: &'a str,
+) -> IResult<&'a str, ChildNode<RelativeLocation>, Error> {
     let (rest, _) = space0(input)?;
     let (rest, _) = tag("&&")(rest)?;
     let (rest, _) = space0(rest)?;
@@ -357,10 +365,12 @@ fn parse_logical_and_rec(input: &str) -> IResult<&str, ChildNode<RelativeLocatio
 }
 
 /// Parse a logical "and" operation
-fn parse_logical_and(input: &str) -> IResult<&str, Node<RelativeLocation>> {
+fn parse_logical_and<'a, Error: ParseError<&'a str>>(
+    input: &'a str,
+) -> IResult<&'a str, Node<RelativeLocation>, Error> {
     let (mut cursor, mut node) = parse_logical_expression(input)?;
 
-    while let Ok((rest, right)) = parse_logical_and_rec(cursor) {
+    while let Ok((rest, right)) = parse_logical_and_rec::<Error>(cursor) {
         let offset = input.offset(cursor);
         // Wrap the "left" node with location information
         let left = Box::new(node).with_location((0, offset));
@@ -376,7 +386,9 @@ fn parse_logical_and(input: &str) -> IResult<&str, Node<RelativeLocation>> {
     Ok((cursor, node))
 }
 
-fn parse_logical_not(input: &str) -> IResult<&str, Node<RelativeLocation>> {
+fn parse_logical_not<'a, Error: ParseError<&'a str>>(
+    input: &'a str,
+) -> IResult<&'a str, Node<RelativeLocation>, Error> {
     let (rest, _) = char('!')(input)?;
     let (rest, _) = space0(rest)?;
     let start = rest;
@@ -385,11 +397,15 @@ fn parse_logical_not(input: &str) -> IResult<&str, Node<RelativeLocation>> {
     Ok((rest, Node::Not(node)))
 }
 
-fn parse_logical_expression(input: &str) -> IResult<&str, Node<RelativeLocation>> {
+fn parse_logical_expression<'a, Error: ParseError<&'a str>>(
+    input: &'a str,
+) -> IResult<&'a str, Node<RelativeLocation>, Error> {
     alt((parse_logical_not, parse_atom))(input)
 }
 
-fn parse_atom(input: &str) -> IResult<&str, Node<RelativeLocation>> {
+fn parse_atom<'a, Error: ParseError<&'a str>>(
+    input: &'a str,
+) -> IResult<&'a str, Node<RelativeLocation>, Error> {
     let (input, _) = space0(input)?; // TODO: why does this eat leading spaces
     alt((
         parse_number_comparison,
@@ -399,7 +415,9 @@ fn parse_atom(input: &str) -> IResult<&str, Node<RelativeLocation>> {
     ))(input)
 }
 
-fn parse_number_comparison(input: &str) -> IResult<&str, Node<RelativeLocation>> {
+fn parse_number_comparison<'a, Error: ParseError<&'a str>>(
+    input: &'a str,
+) -> IResult<&'a str, Node<RelativeLocation>, Error> {
     #[derive(Clone)]
     enum Comparison {
         Equal,
@@ -444,7 +462,9 @@ fn parse_number_comparison(input: &str) -> IResult<&str, Node<RelativeLocation>>
     Ok((rest, node))
 }
 
-fn parse_defined(input: &str) -> IResult<&str, Located<String, RelativeLocation>> {
+fn parse_defined<'a, Error: ParseError<&'a str>>(
+    input: &'a str,
+) -> IResult<&'a str, Located<String, RelativeLocation>, Error> {
     let (rest, _) = tag_no_case("defined")(input)?;
     let (rest, _) = space0(rest)?;
     let (rest, _) = char('(')(rest)?;
@@ -459,7 +479,9 @@ fn parse_defined(input: &str) -> IResult<&str, Located<String, RelativeLocation>
     Ok((rest, identifier))
 }
 
-fn parse_parenthesis(input: &str) -> IResult<&str, Node<RelativeLocation>> {
+fn parse_parenthesis<'a, Error: ParseError<&'a str>>(
+    input: &'a str,
+) -> IResult<&'a str, Node<RelativeLocation>, Error> {
     let (rest, _) = char('(')(input)?;
     let (rest, _) = space0(rest)?;
 
@@ -479,6 +501,8 @@ mod tests {
 
     use super::*;
 
+    type R<T> = nom::IResult<&'static str, T, ()>;
+
     #[track_caller]
     fn evaluate<L>(res: IResult<&str, Node<L>>) -> bool {
         evaluate_with_context(res, &EmptyContext)
@@ -496,7 +520,7 @@ mod tests {
         use Node::*;
         assert_eq!(
             parse_condition("defined(HELLO)"),
-            Ok(("", Defined("HELLO".to_string().with_location((8, 5)))))
+            R::Ok(("", Defined("HELLO".to_string().with_location((8, 5)))))
         );
     }
 
@@ -504,7 +528,8 @@ mod tests {
     fn absolute_location_test() {
         use Node::*;
         // This tests that RelativeLocations are correctly transformed into AbsoluteLocations.
-        let tree: Node<RelativeLocation> = parse_condition("true && (false || true)").unwrap().1;
+        let tree: Node<RelativeLocation> =
+            parse_condition::<()>("true && (false || true)").unwrap().1;
         assert_eq!(
             tree,
             And(
@@ -578,7 +603,7 @@ mod tests {
         use Node::{Literal as CLiteral, *};
         assert_eq!(
             parse_condition("3 > 2 && true"),
-            Ok((
+            R::Ok((
                 "",
                 And(
                     Box::new(GreaterThan(

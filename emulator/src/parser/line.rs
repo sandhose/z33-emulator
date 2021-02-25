@@ -13,6 +13,7 @@ use nom::{
     bytes::complete::{escaped, tag},
     character::complete::{char, line_ending, none_of, not_line_ending, one_of, space0, space1},
     combinator::{all_consuming, eof, map, opt, peek, value},
+    error::context,
     multi::separated_list1,
     sequence::delimited,
     IResult,
@@ -28,6 +29,7 @@ use super::{
         parse_instruction_kind, DirectiveArgument, DirectiveKind, InstructionArgument,
         InstructionKind,
     },
+    ParseError,
 };
 
 /// Holds the content of a line
@@ -229,7 +231,9 @@ impl<L> std::fmt::Display for Program<L> {
 }
 
 /// Parses a directive
-fn parse_directive_line(input: &str) -> IResult<&str, LineContent<RelativeLocation>> {
+fn parse_directive_line<'a, Error: ParseError<&'a str>>(
+    input: &'a str,
+) -> IResult<&'a str, LineContent<RelativeLocation>, Error> {
     let (rest, _) = char('.')(input)?;
     let start = rest;
     let (rest, kind) = parse_directive_kind(rest)?;
@@ -245,7 +249,9 @@ fn parse_directive_line(input: &str) -> IResult<&str, LineContent<RelativeLocati
 }
 
 /// Parses an instruction
-fn parse_instruction_line(input: &str) -> IResult<&str, LineContent<RelativeLocation>> {
+fn parse_instruction_line<'a, Error: ParseError<&'a str>>(
+    input: &'a str,
+) -> IResult<&'a str, LineContent<RelativeLocation>, Error> {
     // First parse the opcode
     let (rest, kind) = parse_instruction_kind(input)?;
     let kind = kind.with_location((input, input, rest));
@@ -285,19 +291,28 @@ fn parse_instruction_line(input: &str) -> IResult<&str, LineContent<RelativeLoca
 }
 
 /// Parses the content of a line: an instruction or a directive
-fn parse_line_content(input: &str) -> IResult<&str, LineContent<RelativeLocation>> {
-    alt((parse_directive_line, parse_instruction_line))(input)
+fn parse_line_content<'a, Error: ParseError<&'a str>>(
+    input: &'a str,
+) -> IResult<&'a str, LineContent<RelativeLocation>, Error> {
+    alt((
+        context("parsing directive", parse_directive_line),
+        context("parsing instruction", parse_instruction_line),
+    ))(input)
 }
 
 /// Parses an inline comment
-fn parse_comment(input: &str) -> IResult<&str, String> {
+fn parse_comment<'a, Error: ParseError<&'a str>>(
+    input: &'a str,
+) -> IResult<&'a str, String, Error> {
     let (input, _) = peek(tag("#"))(input)?;
     let (input, comment) = not_line_ending(input)?;
     Ok((input, comment.into()))
 }
 
 /// Parses symbol definitions
-fn parse_symbol_definition(input: &str) -> IResult<&str, String> {
+fn parse_symbol_definition<'a, Error: ParseError<&'a str>>(
+    input: &'a str,
+) -> IResult<&'a str, String, Error> {
     let (input, symbol) = parse_identifier(input)?;
     let (input, _) = space0(input)?;
     let (input, _) = char(':')(input)?;
@@ -305,13 +320,15 @@ fn parse_symbol_definition(input: &str) -> IResult<&str, String> {
 }
 
 /// Parses a whole line
-fn parse_line(input: &str) -> IResult<&str, Line<RelativeLocation>> {
+fn parse_line<'a, Error: ParseError<&'a str>>(
+    input: &'a str,
+) -> IResult<&'a str, Line<RelativeLocation>, Error> {
     let (rest, _) = space0(input)?;
 
     // Extract the list of symbol definitions
     let mut cursor = rest;
     let mut symbols = Vec::new();
-    while let Ok((rest, symbol)) = parse_symbol_definition(cursor) {
+    while let Ok((rest, symbol)) = parse_symbol_definition::<Error>(cursor) {
         // TODO: symbol location includes the colon, maybe we don't want that
         let symbol = symbol.with_location((input, cursor, rest));
         let (rest, _) = space0(rest)?;
@@ -342,7 +359,9 @@ fn parse_line(input: &str) -> IResult<&str, Line<RelativeLocation>> {
     ))
 }
 
-fn split_lines(input: &str) -> IResult<&str, Vec<&str>> {
+fn split_lines<'a, Error: ParseError<&'a str>>(
+    input: &'a str,
+) -> IResult<&'a str, Vec<&str>, Error> {
     let line_parser = escaped(none_of("\\\r\n"), '\\', one_of("\\\r\nrnt\""));
     let line_parser = alt((
         // either we have an escaped line
@@ -355,13 +374,15 @@ fn split_lines(input: &str) -> IResult<&str, Vec<&str>> {
     separated_list1(line_ending, line_parser)(input)
 }
 
-pub(crate) fn parse_program(input: &str) -> IResult<&str, Program<RelativeLocation>> {
+pub(crate) fn parse_program<'a, Error: ParseError<&'a str>>(
+    input: &'a str,
+) -> IResult<&'a str, Program<RelativeLocation>, Error> {
     let (rest, lines) = split_lines(input)?;
     // TODO: bubble up more detailed errors here
     let lines: Result<_, _> = lines
         .into_iter()
         .map(|start| {
-            all_consuming(parse_line)(start)
+            context("parsing line", all_consuming(parse_line))(start)
                 .map(|(end, line)| line.with_location((input, start, end)))
         })
         .collect();

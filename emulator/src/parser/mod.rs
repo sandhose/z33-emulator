@@ -21,6 +21,20 @@ mod precedence;
 pub(crate) mod preprocessor;
 pub(crate) mod value;
 
+pub trait ParseError<I>:
+    nom::error::ParseError<I>
+    + nom::error::FromExternalError<I, std::num::ParseIntError>
+    + nom::error::ContextError<I>
+{
+}
+
+impl<I, E> ParseError<I> for E where
+    E: nom::error::ParseError<I>
+        + nom::error::FromExternalError<I, std::num::ParseIntError>
+        + nom::error::ContextError<I>
+{
+}
+
 fn is_identifier_char(c: char) -> bool {
     is_start_identifier_char(c) || ('0'..'9').contains(&c)
 }
@@ -30,7 +44,9 @@ fn is_start_identifier_char(c: char) -> bool {
 }
 
 /// Parse a C-like identifier
-pub(crate) fn parse_identifier(input: &str) -> IResult<&str, &str> {
+pub(crate) fn parse_identifier<'a, Error: ParseError<&'a str>>(
+    input: &'a str,
+) -> IResult<&'a str, &'a str, Error> {
     verify(take_while1(is_identifier_char), |f: &str| {
         f.chars()
             .next()
@@ -41,7 +57,7 @@ pub(crate) fn parse_identifier(input: &str) -> IResult<&str, &str> {
 
 pub fn parse(
     input: &str,
-) -> Result<Located<Program<RelativeLocation>, RelativeLocation>, nom::error::Error<&str>> {
+) -> Result<Located<Program<RelativeLocation>, RelativeLocation>, nom::error::VerboseError<&str>> {
     // TODO: proper error handling & wrap those steps
     let (_, program) = all_consuming(self::line::parse_program)(input).finish()?;
     let program = program.with_location((0, input.len()));
@@ -55,10 +71,11 @@ mod tests {
 
     #[test]
     fn parse_identifier_test() {
-        assert_eq!(parse_identifier("hello"), Ok(("", "hello")));
-        assert_eq!(parse_identifier("abc123"), Ok(("", "abc123")));
-        assert!(parse_identifier("123abc").is_err());
-        assert_eq!(parse_identifier("abc_123"), Ok(("", "abc_123")));
-        assert_eq!(parse_identifier("abc-123"), Ok(("-123", "abc")));
+        type R<'a> = IResult<&'a str, &'a str, ()>;
+        assert_eq!(parse_identifier("hello"), R::Ok(("", "hello")));
+        assert_eq!(parse_identifier("abc123"), R::Ok(("", "abc123")));
+        assert_eq!(parse_identifier("123abc"), R::Err(nom::Err::Error(())));
+        assert_eq!(parse_identifier("abc_123"), R::Ok(("", "abc_123")));
+        assert_eq!(parse_identifier("abc-123"), R::Ok(("-123", "abc")));
     }
 }

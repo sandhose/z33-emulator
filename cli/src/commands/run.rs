@@ -35,8 +35,16 @@ impl RunOpt {
             Ok(p) => p,
             Err(e) => {
                 error!("{}", e);
-                let offset = crate::util::char_offset(source, e.input);
-                crate::util::display_error_offset(source, offset, &e.to_string());
+                for (location, kind) in e.errors.iter() {
+                    eprintln!("---");
+                    let offset = crate::util::char_offset(source, location);
+                    let message = match kind {
+                        nom::error::VerboseErrorKind::Context(s) => format!("{}", s),
+                        nom::error::VerboseErrorKind::Char(c) => format!("expected '{}'", c),
+                        nom::error::VerboseErrorKind::Nom(code) => format!("{:?}", code),
+                    };
+                    crate::util::display_error_offset(source, offset, &message);
+                }
                 exit(1);
             }
         };
