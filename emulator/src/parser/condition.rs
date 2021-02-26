@@ -21,7 +21,7 @@ use nom::{
     bytes::complete::tag,
     bytes::complete::tag_no_case,
     character::complete::{char, space0},
-    combinator::{map, value},
+    combinator::{map, opt, value},
     IResult, Offset,
 };
 use thiserror::Error;
@@ -335,7 +335,7 @@ fn parse_logical_or<'a, Error: ParseError<&'a str>>(
 ) -> IResult<&'a str, Node<RelativeLocation>, Error> {
     let (mut cursor, mut node) = parse_logical_and(input)?;
 
-    while let Ok((rest, right)) = parse_logical_or_rec::<Error>(cursor) {
+    while let (rest, Some(right)) = opt(parse_logical_or_rec)(cursor)? {
         let offset = input.offset(cursor);
         // Wrap the "left" node with location information
         let left = Box::new(node).with_location((0, offset));
@@ -370,7 +370,7 @@ fn parse_logical_and<'a, Error: ParseError<&'a str>>(
 ) -> IResult<&'a str, Node<RelativeLocation>, Error> {
     let (mut cursor, mut node) = parse_logical_expression(input)?;
 
-    while let Ok((rest, right)) = parse_logical_and_rec::<Error>(cursor) {
+    while let (rest, Some(right)) = opt(parse_logical_and_rec)(cursor)? {
         let offset = input.offset(cursor);
         // Wrap the "left" node with location information
         let left = Box::new(node).with_location((0, offset));

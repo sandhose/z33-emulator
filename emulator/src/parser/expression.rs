@@ -24,7 +24,7 @@ use nom::{
     branch::alt,
     bytes::complete::tag,
     character::complete::{char, space0},
-    combinator::{map, value},
+    combinator::{map, opt, value},
     IResult, Offset,
 };
 use thiserror::Error;
@@ -394,7 +394,7 @@ fn parse_or<'a, Error: ParseError<&'a str>>(
 ) -> IResult<&'a str, Node<RelativeLocation>, Error> {
     let (mut cursor, mut node) = parse_and(input)?;
 
-    while let Ok((rest, right)) = parse_or_rec::<Error>(cursor) {
+    while let (rest, Some(right)) = opt(parse_or_rec)(cursor)? {
         let offset = input.offset(&cursor);
         // Wrap the "left" node with location information
         let left = Box::new(node).with_location((0, offset));
@@ -429,7 +429,7 @@ fn parse_and<'a, Error: ParseError<&'a str>>(
 ) -> IResult<&'a str, Node<RelativeLocation>, Error> {
     let (mut cursor, mut node) = parse_shift(input)?;
 
-    while let Ok((rest, right)) = parse_and_rec::<Error>(cursor) {
+    while let (rest, Some(right)) = opt(parse_and_rec)(cursor)? {
         let offset = input.offset(&cursor);
         // Wrap the "left" node with location information
         let left = Box::new(node).with_location((0, offset));
@@ -476,7 +476,7 @@ fn parse_shift<'a, Error: ParseError<&'a str>>(
 ) -> IResult<&'a str, Node<RelativeLocation>, Error> {
     let (mut cursor, mut node) = parse_sum(input)?;
 
-    if let Ok((rest, (op, right))) = parse_shift_rec::<Error>(cursor) {
+    if let (rest, Some((op, right))) = opt(parse_shift_rec)(cursor)? {
         let offset = input.offset(&cursor);
         // Wrap the "left" node with location information
         let left = Box::new(node).with_location((0, offset));
@@ -525,7 +525,7 @@ fn parse_sum<'a, Error: ParseError<&'a str>>(
 ) -> IResult<&'a str, Node<RelativeLocation>, Error> {
     let (mut cursor, mut node) = parse_mul(input)?;
 
-    while let Ok((rest, (op, right))) = parse_sum_rec::<Error>(cursor) {
+    while let (rest, Some((op, right))) = opt(parse_sum_rec)(cursor)? {
         let offset = input.offset(&cursor);
         // Wrap the "left" node with location information
         let left = Box::new(node).with_location((0, offset));
@@ -574,7 +574,7 @@ fn parse_mul<'a, Error: ParseError<&'a str>>(
 ) -> IResult<&'a str, Node<RelativeLocation>, Error> {
     let (mut cursor, mut node) = parse_unary(input)?;
 
-    while let Ok((rest, (op, right))) = parse_mul_rec::<Error>(cursor) {
+    while let (rest, Some((op, right))) = opt(parse_mul_rec)(cursor)? {
         let offset = input.offset(&cursor);
         // Wrap the "left" node with location information
         let left = Box::new(node).with_location((0, offset));

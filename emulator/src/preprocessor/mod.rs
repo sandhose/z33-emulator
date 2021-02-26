@@ -1,6 +1,6 @@
 use std::{collections::HashMap, io::Read, path::PathBuf};
 
-use nom::{combinator::all_consuming, Finish};
+use nom::{combinator::all_consuming, error::convert_error, Finish};
 use thiserror::Error;
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -27,8 +27,8 @@ pub enum GetFileError {
     #[error("i/o error: {0}")]
     IO(#[from] std::rc::Rc<std::io::Error>),
 
-    #[error("parse error: {kind:?}")]
-    ParseError { kind: nom::error::ErrorKind },
+    #[error("parse error: {message}")]
+    ParseError { message: String },
 }
 
 struct ParsedFile<L> {
@@ -93,7 +93,9 @@ impl ParserCache {
 
             let (_, chunks) = all_consuming(parse)(content.as_str())
                 .finish()
-                .map_err(|e| GetFileError::ParseError { kind: e.code })?;
+                .map_err(|e| GetFileError::ParseError {
+                    message: convert_error(content.as_str(), e),
+                })?;
 
             Ok(ParsedFile { chunks }.into_absolute())
         })();

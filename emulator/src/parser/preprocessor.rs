@@ -10,7 +10,7 @@ use nom::{
 use super::{
     literal::parse_string_literal,
     location::{AbsoluteLocation, Locatable, Located, RelativeLocation},
-    parse_identifier,
+    parse_identifier, ParseError,
 };
 
 type Children<L> = Vec<Located<Node<L>, L>>;
@@ -118,7 +118,7 @@ impl Node<RelativeLocation> {
 }
 
 /// Eats the end of a line, including trailing spaces, inline comments and the line ending
-fn eat_end_of_line(input: &str) -> IResult<&str, ()> {
+fn eat_end_of_line<'a, Error: ParseError<&'a str>>(input: &'a str) -> IResult<&'a str, (), Error> {
     let (rest, _) = space0(input)?;
     let (rest, _) = opt(preceded(tag("//"), not_line_ending))(rest)?;
     Ok((rest, ()))
@@ -126,7 +126,9 @@ fn eat_end_of_line(input: &str) -> IResult<&str, ()> {
 
 /// Extracts the argument of a directive
 /// It tries to stop before any trailing whitespace or comment
-fn parse_directive_argument(input: &str) -> IResult<&str, &str> {
+fn parse_directive_argument<'a, Error: ParseError<&'a str>>(
+    input: &'a str,
+) -> IResult<&'a str, &'a str, Error> {
     let mut cursor = input;
     loop {
         let (rest, _) = space0(cursor)?;
@@ -162,7 +164,9 @@ fn parse_directive_argument(input: &str) -> IResult<&str, &str> {
     Ok((cursor, content))
 }
 
-fn parse_definition(input: &str) -> IResult<&str, Node<RelativeLocation>> {
+fn parse_definition<'a, Error: ParseError<&'a str>>(
+    input: &'a str,
+) -> IResult<&'a str, Node<RelativeLocation>, Error> {
     let (rest, _) = char('#')(input)?;
     let (rest, _) = space0(rest)?;
     let (rest, _) = tag("define")(rest)?;
@@ -184,7 +188,9 @@ fn parse_definition(input: &str) -> IResult<&str, Node<RelativeLocation>> {
     Ok((rest, Node::Definition { key, content }))
 }
 
-fn parse_undefine(input: &str) -> IResult<&str, Node<RelativeLocation>> {
+fn parse_undefine<'a, Error: ParseError<&'a str>>(
+    input: &'a str,
+) -> IResult<&'a str, Node<RelativeLocation>, Error> {
     let (rest, _) = char('#')(input)?;
     let (rest, _) = space0(rest)?;
     let (rest, _) = tag("undefine")(rest)?;
@@ -199,7 +205,9 @@ fn parse_undefine(input: &str) -> IResult<&str, Node<RelativeLocation>> {
     Ok((rest, Node::Undefine { key }))
 }
 
-fn parse_inclusion(input: &str) -> IResult<&str, Node<RelativeLocation>> {
+fn parse_inclusion<'a, Error: ParseError<&'a str>>(
+    input: &'a str,
+) -> IResult<&'a str, Node<RelativeLocation>, Error> {
     // Parse "#include"
     let (rest, _) = char('#')(input)?;
     let (rest, _) = space0(rest)?;
@@ -216,7 +224,9 @@ fn parse_inclusion(input: &str) -> IResult<&str, Node<RelativeLocation>> {
     Ok((rest, Node::Inclusion { path }))
 }
 
-fn parse_error(input: &str) -> IResult<&str, Node<RelativeLocation>> {
+fn parse_error<'a, Error: ParseError<&'a str>>(
+    input: &'a str,
+) -> IResult<&'a str, Node<RelativeLocation>, Error> {
     // Parse "#error"
     let (rest, _) = char('#')(input)?;
     let (rest, _) = space0(rest)?;
@@ -233,7 +243,9 @@ fn parse_error(input: &str) -> IResult<&str, Node<RelativeLocation>> {
     Ok((rest, Node::Error { message }))
 }
 
-fn parse_condition(input: &str) -> IResult<&str, Node<RelativeLocation>> {
+fn parse_condition<'a, Error: ParseError<&'a str>>(
+    input: &'a str,
+) -> IResult<&'a str, Node<RelativeLocation>, Error> {
     // First, get the "#if"
     let (rest, _) = char('#')(input)?;
     let (rest, _) = space0(rest)?;
@@ -319,14 +331,18 @@ fn parse_condition(input: &str) -> IResult<&str, Node<RelativeLocation>> {
     Ok((rest, Node::Condition { branches, fallback }))
 }
 
-fn parse_raw(input: &str) -> IResult<&str, Node<RelativeLocation>> {
+fn parse_raw<'a, Error: ParseError<&'a str>>(
+    input: &'a str,
+) -> IResult<&'a str, Node<RelativeLocation>, Error> {
     let (rest, _) = not(char('#'))(input)?;
     let (rest, content) = not_line_ending(rest)?;
     let content = content.to_string();
     Ok((rest, Node::Raw { content }))
 }
 
-fn parse_chunk(input: &str) -> IResult<&str, Node<RelativeLocation>> {
+fn parse_chunk<'a, Error: ParseError<&'a str>>(
+    input: &'a str,
+) -> IResult<&'a str, Node<RelativeLocation>, Error> {
     alt((
         parse_definition, // #define X [Y]
         parse_undefine,   // #undefine X
@@ -337,11 +353,13 @@ fn parse_chunk(input: &str) -> IResult<&str, Node<RelativeLocation>> {
     ))(input)
 }
 
-pub(crate) fn parse(input: &str) -> IResult<&str, Children<RelativeLocation>> {
+pub(crate) fn parse<'a, Error: ParseError<&'a str>>(
+    input: &'a str,
+) -> IResult<&'a str, Children<RelativeLocation>, Error> {
     let mut chunks = Vec::new();
     let mut cursor = input;
 
-    while let Ok((rest, chunk)) = parse_chunk(cursor) {
+    while let (rest, Some(chunk)) = opt(parse_chunk)(cursor)? {
         let chunk = chunk.with_location((input, cursor, rest));
         chunks.push(chunk);
 
@@ -363,67 +381,67 @@ mod tests {
 
     #[test]
     fn parse_directive_argument_test() {
-        let res = parse_directive_argument("foo");
-        assert_eq!(res, Ok(("", "foo")));
+        let res = parse_directive_argument::<()>("foo").unwrap();
+        assert_eq!(res, ("", "foo"));
     }
 
     #[test]
     fn parse_definition_test() {
-        let res = parse_definition("#define foo bar");
+        let res = parse_definition::<()>("#define foo bar").unwrap();
         assert_eq!(
             res,
-            Ok((
+            (
                 "",
                 Node::Definition {
                     key: "foo".to_owned().with_location((8, 3)),
                     content: Some("bar".to_owned().with_location((12, 3))),
                 }
-            ))
+            )
         );
 
-        let res = parse_definition("#define foo");
+        let res = parse_definition::<()>("#define foo").unwrap();
         assert_eq!(
             res,
-            Ok((
+            (
                 "",
                 Node::Definition {
                     key: "foo".to_owned().with_location((8, 3)),
                     content: None,
                 }
-            ))
+            )
         );
 
-        let res = parse_definition("#define trailing ");
+        let res = parse_definition::<()>("#define trailing ").unwrap();
         assert_eq!(
             res,
-            Ok((
+            (
                 "",
                 Node::Definition {
                     key: "trailing".to_owned().with_location((8, 8)),
                     content: None,
                 }
-            ))
+            )
         );
     }
 
     #[test]
     fn parse_inclusion_test() {
-        let res = parse_inclusion("#include \"foo\"");
+        let res = parse_inclusion::<()>("#include \"foo\"").unwrap();
         assert_eq!(
             res,
-            Ok((
+            (
                 "",
                 Node::Inclusion {
                     path: "foo".to_string().with_location((9, 5))
                 }
-            ))
+            )
         );
     }
 
     #[test]
     fn parse_raw_test() {
         // It extracts the line
-        let (rest, body) = parse_raw("line").unwrap();
+        let (rest, body) = parse_raw::<()>("line").unwrap();
         assert_eq!(rest, "");
         assert_eq!(
             body,
@@ -433,7 +451,7 @@ mod tests {
         );
 
         // Gets only one line
-        let (rest, body) = parse_raw("line\nline").unwrap();
+        let (rest, body) = parse_raw::<()>("line\nline").unwrap();
         assert_eq!(rest, "\nline");
         assert_eq!(
             body,
@@ -443,13 +461,13 @@ mod tests {
         );
 
         // Does not get directives
-        assert!(parse_raw("#directive").is_err());
+        assert!(parse_raw::<()>("#directive").is_err());
     }
 
     #[test]
     fn parse_simple_test() {
         use Node::*;
-        let (rest, body) = parse(indoc::indoc! {r#"
+        let (rest, body) = parse::<()>(indoc::indoc! {r#"
             hello
             #include "foo"
             #define bar baz
@@ -505,7 +523,7 @@ mod tests {
     #[test]
     fn parse_weird_test() {
         use Node::*;
-        let (rest, body) = parse(indoc::indoc! {r#"
+        let (rest, body) = parse::<()>(indoc::indoc! {r#"
             hello
             #  include   "foo"//comment
             # define   bar   baz  // comment
@@ -592,7 +610,7 @@ mod tests {
         assert_eq!(&input[63..69], "foobar"); // line 7
         assert_eq!(&input[76..79], "baz"); // line 9
 
-        let (rest, condition) = parse_condition(input).unwrap();
+        let (rest, condition) = parse_condition::<()>(input).unwrap();
 
         assert_eq!(rest, "");
         assert_eq!(

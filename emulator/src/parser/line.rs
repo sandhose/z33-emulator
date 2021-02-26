@@ -262,21 +262,21 @@ fn parse_instruction_line<'a, Error: ParseError<&'a str>>(
     loop {
         // Check if we already parsed an argument or not
         // Explicit typing is necessary here
-        let res: IResult<&str, (), ()> = if arguments.is_empty() {
+        let (rest, succeded) = if arguments.is_empty() {
             // The first argument needs at least one space before it
             // This is not done before to avoid eating spaces if the instruction takes no argument
-            value((), space1)(cursor)
+            opt(value((), space1))(cursor)?
         } else {
             // Later arguments are separated by a comma. This also eats the spaces around the comma
-            value((), delimited(space0, char(','), space0))(cursor)
+            opt(value((), delimited(space0, char(','), space0)))(cursor)?
         };
 
         // First check it has the right prefix
-        if let Ok((rest, _)) = res {
+        if succeded.is_some() {
             let start = rest; // Save the start of the argument for location information
 
             // Then continue parsing the argument
-            if let Ok((rest, argument)) = parse_instruction_argument(rest) {
+            if let (rest, Some(argument)) = opt(parse_instruction_argument)(rest)? {
                 let argument = argument.with_location((input, start, rest));
                 arguments.push(argument);
                 // Only update the cursor here, in case it fails earlier
@@ -328,7 +328,7 @@ fn parse_line<'a, Error: ParseError<&'a str>>(
     // Extract the list of symbol definitions
     let mut cursor = rest;
     let mut symbols = Vec::new();
-    while let Ok((rest, symbol)) = parse_symbol_definition::<Error>(cursor) {
+    while let (rest, Some(symbol)) = opt(parse_symbol_definition)(cursor)? {
         // TODO: symbol location includes the colon, maybe we don't want that
         let symbol = symbol.with_location((input, cursor, rest));
         let (rest, _) = space0(rest)?;

@@ -198,9 +198,9 @@ impl<L> std::fmt::Display for InstructionArgument<L> {
 }
 
 /// Parse an instruction argument
-pub(crate) fn parse_instruction_argument(
-    input: &str,
-) -> IResult<&str, InstructionArgument<RelativeLocation>> {
+pub(crate) fn parse_instruction_argument<'a, Error: ParseError<&'a str>>(
+    input: &'a str,
+) -> IResult<&'a str, InstructionArgument<RelativeLocation>, Error> {
     alt((
         map(parse_expression, InstructionArgument::Value),
         map(parse_register, InstructionArgument::Register),
@@ -394,7 +394,7 @@ pub(crate) fn parse_indirect_inner(
     todo!()
 }
 
-fn parse_register(input: &str) -> IResult<&str, Reg> {
+fn parse_register<'a, Error: ParseError<&'a str>>(input: &'a str) -> IResult<&'a str, Reg, Error> {
     use Reg::*;
 
     alt((
@@ -406,7 +406,9 @@ fn parse_register(input: &str) -> IResult<&str, Reg> {
     ))(input)
 }
 
-fn parse_indexed(input: &str) -> IResult<&str, InstructionArgument<RelativeLocation>> {
+fn parse_indexed<'a, Error: ParseError<&'a str>>(
+    input: &'a str,
+) -> IResult<&'a str, InstructionArgument<RelativeLocation>, Error> {
     #[derive(Clone)]
     enum Sign {
         Plus,
@@ -441,7 +443,9 @@ fn parse_indexed(input: &str) -> IResult<&str, InstructionArgument<RelativeLocat
     Ok((rest, InstructionArgument::Indexed { register, value }))
 }
 
-fn parse_direct(input: &str) -> IResult<&str, InstructionArgument<RelativeLocation>> {
+fn parse_direct<'a, Error: ParseError<&'a str>>(
+    input: &'a str,
+) -> IResult<&'a str, InstructionArgument<RelativeLocation>, Error> {
     let (rest, _) = char('[')(input)?;
     let (rest, _) = space0(rest)?;
     let start = rest;
@@ -452,7 +456,9 @@ fn parse_direct(input: &str) -> IResult<&str, InstructionArgument<RelativeLocati
     Ok((rest, InstructionArgument::Direct(value)))
 }
 
-fn parse_indirect(input: &str) -> IResult<&str, InstructionArgument<RelativeLocation>> {
+fn parse_indirect<'a, Error: ParseError<&'a str>>(
+    input: &'a str,
+) -> IResult<&'a str, InstructionArgument<RelativeLocation>, Error> {
     let (rest, _) = char('[')(input)?;
     let (rest, _) = space0(rest)?;
     let start = rest;
@@ -469,14 +475,14 @@ mod tests {
 
     #[test]
     fn parse_register_test() {
-        let (input, register) = parse_register("%a").unwrap();
+        let (input, register) = parse_register::<()>("%a").unwrap();
         assert_eq!(input, "");
         assert_eq!(register, Reg::A);
     }
 
     #[test]
     fn parse_direct_test() {
-        let (input, node) = parse_direct("[3]").unwrap();
+        let (input, node) = parse_direct::<()>("[3]").unwrap();
         assert_eq!(input, "");
         assert_eq!(
             node,
@@ -486,7 +492,7 @@ mod tests {
 
     #[test]
     fn parse_indirect_test() {
-        let (input, node) = parse_indirect("[%a]").unwrap();
+        let (input, node) = parse_indirect::<()>("[%a]").unwrap();
         assert_eq!(input, "");
         assert_eq!(
             node,
@@ -496,7 +502,7 @@ mod tests {
 
     #[test]
     fn parse_indexed_test() {
-        let (input, node) = parse_indexed("[%a+2]").unwrap();
+        let (input, node) = parse_indexed::<()>("[%a+2]").unwrap();
         assert_eq!(input, "");
         assert_eq!(
             node,
