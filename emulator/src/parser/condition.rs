@@ -21,7 +21,7 @@ use nom::{
     bytes::complete::tag,
     bytes::complete::tag_no_case,
     character::complete::{char, space0},
-    combinator::{map, opt, value},
+    combinator::{cut, map, opt, value},
     IResult, Offset,
 };
 use thiserror::Error;
@@ -323,10 +323,13 @@ fn parse_logical_or_rec<'a, Error: ParseError<&'a str>>(
     let (rest, _) = space0(input)?;
     let (rest, _) = tag("||")(rest)?;
     let (rest, _) = space0(rest)?;
-    let start = rest;
-    let (rest, node) = parse_logical_and(rest)?;
-    let node = Box::new(node).with_location((input.offset(start), start.offset(rest)));
-    Ok((rest, node))
+
+    cut(move |rest: &'a str| {
+        let start = rest;
+        let (rest, node) = parse_logical_and(rest)?;
+        let node = Box::new(node).with_location((input.offset(start), start.offset(rest)));
+        Ok((rest, node))
+    })(rest)
 }
 
 /// Parse a logical "or" operation
@@ -358,10 +361,13 @@ fn parse_logical_and_rec<'a, Error: ParseError<&'a str>>(
     let (rest, _) = space0(input)?;
     let (rest, _) = tag("&&")(rest)?;
     let (rest, _) = space0(rest)?;
-    let start = rest;
-    let (rest, node) = parse_logical_expression(rest)?;
-    let node = Box::new(node).with_location((input.offset(start), start.offset(rest)));
-    Ok((rest, node))
+
+    cut(move |rest: &'a str| {
+        let start = rest;
+        let (rest, node) = parse_logical_expression(rest)?;
+        let node = Box::new(node).with_location((input.offset(start), start.offset(rest)));
+        Ok((rest, node))
+    })(rest)
 }
 
 /// Parse a logical "and" operation
@@ -391,10 +397,13 @@ fn parse_logical_not<'a, Error: ParseError<&'a str>>(
 ) -> IResult<&'a str, Node<RelativeLocation>, Error> {
     let (rest, _) = char('!')(input)?;
     let (rest, _) = space0(rest)?;
-    let start = rest;
-    let (rest, node) = parse_atom(rest)?;
-    let node = Box::new(node).with_location((input.offset(start), start.offset(rest)));
-    Ok((rest, Node::Not(node)))
+
+    cut(move |rest: &'a str| {
+        let start = rest;
+        let (rest, node) = parse_atom(rest)?;
+        let node = Box::new(node).with_location((input.offset(start), start.offset(rest)));
+        Ok((rest, Node::Not(node)))
+    })(rest)
 }
 
 fn parse_logical_expression<'a, Error: ParseError<&'a str>>(
@@ -407,18 +416,21 @@ fn parse_atom<'a, Error: ParseError<&'a str>>(
     input: &'a str,
 ) -> IResult<&'a str, Node<RelativeLocation>, Error> {
     let (input, _) = space0(input)?; // TODO: why does this eat leading spaces
+
+    // Order is important here. Since in numerical expressions, opening parenthesis, bool literals
+    // and the `defined` keyword would get parsed, number comparison need to be last
     alt((
-        parse_number_comparison,
         parse_parenthesis,
         map(parse_defined, Node::Defined),
         map(parse_bool_literal, Node::Literal),
+        parse_number_comparison,
     ))(input)
 }
 
 fn parse_number_comparison<'a, Error: ParseError<&'a str>>(
     input: &'a str,
 ) -> IResult<&'a str, Node<RelativeLocation>, Error> {
-    #[derive(Clone)]
+    #[derive(Clone, Copy)]
     enum Comparison {
         Equal,
         NotEqual,
@@ -443,23 +455,26 @@ fn parse_number_comparison<'a, Error: ParseError<&'a str>>(
         value(LesserOrEqual, tag("<=")),
         value(LesserThan, tag("<")),
     ))(rest)?;
-
     let (rest, _) = space0(rest)?;
-    let start = rest;
-    let (rest, b) = parse_expression(rest)?; // Parse the second operand
-    let b = b.with_location((input.offset(start), start.offset(rest)));
 
-    // Create the node out of the two operands and the operator
-    let node = match op {
-        Equal => Node::Equal(a, b),
-        NotEqual => Node::NotEqual(a, b),
-        GreaterOrEqual => Node::GreaterOrEqual(a, b),
-        GreaterThan => Node::GreaterThan(a, b),
-        LesserOrEqual => Node::LesserOrEqual(a, b),
-        LesserThan => Node::LesserThan(a, b),
-    };
+    cut(move |rest: &'a str| {
+        let start = rest;
+        let a = a.clone(); // Clone the first node to keep the closure FnMut
+        let (rest, b) = parse_expression(rest)?; // Parse the second operand
+        let b = b.with_location((input.offset(start), start.offset(rest)));
 
-    Ok((rest, node))
+        // Create the node out of the two operands and the operator
+        let node = match op {
+            Equal => Node::Equal(a, b),
+            NotEqual => Node::NotEqual(a, b),
+            GreaterOrEqual => Node::GreaterOrEqual(a, b),
+            GreaterThan => Node::GreaterThan(a, b),
+            LesserOrEqual => Node::LesserOrEqual(a, b),
+            LesserThan => Node::LesserThan(a, b),
+        };
+
+        Ok((rest, node))
+    })(rest)
 }
 
 fn parse_defined<'a, Error: ParseError<&'a str>>(
@@ -467,16 +482,19 @@ fn parse_defined<'a, Error: ParseError<&'a str>>(
 ) -> IResult<&'a str, Located<String, RelativeLocation>, Error> {
     let (rest, _) = tag_no_case("defined")(input)?;
     let (rest, _) = space0(rest)?;
-    let (rest, _) = char('(')(rest)?;
-    let (rest, _) = space0(rest)?;
-    let start = rest;
-    let (rest, identifier) = parse_identifier(rest)?;
-    let identifier = identifier
-        .to_string()
-        .with_location((input.offset(start), start.offset(rest)));
-    let (rest, _) = space0(rest)?;
-    let (rest, _) = char(')')(rest)?;
-    Ok((rest, identifier))
+
+    cut(move |rest: &'a str| {
+        let (rest, _) = char('(')(rest)?;
+        let (rest, _) = space0(rest)?;
+        let start = rest;
+        let (rest, identifier) = parse_identifier(rest)?;
+        let identifier = identifier
+            .to_string()
+            .with_location((input.offset(start), start.offset(rest)));
+        let (rest, _) = space0(rest)?;
+        let (rest, _) = char(')')(rest)?;
+        Ok((rest, identifier))
+    })(rest)
 }
 
 fn parse_parenthesis<'a, Error: ParseError<&'a str>>(
@@ -485,14 +503,16 @@ fn parse_parenthesis<'a, Error: ParseError<&'a str>>(
     let (rest, _) = char('(')(input)?;
     let (rest, _) = space0(rest)?;
 
-    let offset = input.offset(rest);
-    let (rest, value) = parse_condition(rest)?;
-    // This offsets the child nodes location to compensate the parenthesis
-    let value = value.offset(offset);
+    cut(move |rest: &'a str| {
+        let offset = input.offset(rest);
+        let (rest, value) = parse_condition(rest)?;
+        // This offsets the child nodes location to compensate the parenthesis
+        let value = value.offset(offset);
 
-    let (rest, _) = space0(rest)?;
-    let (rest, _) = char(')')(rest)?;
-    Ok((rest, value))
+        let (rest, _) = space0(rest)?;
+        let (rest, _) = char(')')(rest)?;
+        Ok((rest, value))
+    })(rest)
 }
 
 #[cfg(test)]

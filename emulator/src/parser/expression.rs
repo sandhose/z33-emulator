@@ -24,7 +24,8 @@ use nom::{
     branch::alt,
     bytes::complete::tag,
     character::complete::{char, space0},
-    combinator::{map, opt, value},
+    combinator::{cut, map, not, opt, value},
+    error::context,
     IResult, Offset,
 };
 use thiserror::Error;
@@ -381,11 +382,16 @@ fn parse_or_rec<'a, Error: ParseError<&'a str>>(
 ) -> IResult<&'a str, ChildNode<RelativeLocation>, Error> {
     let (rest, _) = space0(input)?;
     let (rest, _) = char('|')(rest)?;
+    // Check if it's not a "||" to avoid conflict with boolean operations
+    let (rest, _) = not(char('|'))(rest)?;
     let (rest, _) = space0(rest)?;
-    let start = rest;
-    let (rest, node) = parse_and(rest)?;
-    let node = Box::new(node).with_location((input.offset(&start), start.offset(&rest)));
-    Ok((rest, node))
+
+    cut(move |rest: &'a str| {
+        let start = rest;
+        let (rest, node) = parse_and(rest)?;
+        let node = Box::new(node).with_location((input.offset(&start), start.offset(&rest)));
+        Ok((rest, node))
+    })(rest)
 }
 
 /// Parse a bitwise "or" operation
@@ -416,11 +422,16 @@ fn parse_and_rec<'a, Error: ParseError<&'a str>>(
 ) -> IResult<&'a str, ChildNode<RelativeLocation>, Error> {
     let (rest, _) = space0(input)?;
     let (rest, _) = char('&')(rest)?;
+    // Check if it's not a "&&" to avoid conflict with boolean operations
+    let (rest, _) = not(char('&'))(rest)?;
     let (rest, _) = space0(rest)?;
-    let start = rest;
-    let (rest, node) = parse_shift(rest)?;
-    let node = Box::new(node).with_location((input.offset(&start), start.offset(&rest)));
-    Ok((rest, node))
+
+    cut(move |rest: &'a str| {
+        let start = rest;
+        let (rest, node) = parse_shift(rest)?;
+        let node = Box::new(node).with_location((input.offset(&start), start.offset(&rest)));
+        Ok((rest, node))
+    })(rest)
 }
 
 /// Parse a bitwise "and" operation
@@ -446,7 +457,7 @@ fn parse_and<'a, Error: ParseError<&'a str>>(
 }
 
 /// Represents a bit-shift operation direction
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 enum ShiftOp {
     /// Shift to the right (`>>`)
     Right,
@@ -464,10 +475,13 @@ fn parse_shift_rec<'a, Error: ParseError<&'a str>>(
         value(ShiftOp::Left, tag("<<")),
     ))(rest)?;
     let (rest, _) = space0(rest)?;
-    let start = rest;
-    let (rest, node) = parse_sum(rest)?;
-    let node = Box::new(node).with_location((input, start, rest));
-    Ok((rest, (op, node)))
+
+    cut(move |rest: &'a str| {
+        let start = rest;
+        let (rest, node) = parse_sum(rest)?;
+        let node = Box::new(node).with_location((input, start, rest));
+        Ok((rest, (op, node)))
+    })(rest)
 }
 
 /// Parse a bitshift operation
@@ -497,7 +511,7 @@ fn parse_shift<'a, Error: ParseError<&'a str>>(
 }
 
 /// Represents a sum/sub operation
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 enum SumOp {
     Sum,
     Sub,
@@ -513,10 +527,13 @@ fn parse_sum_rec<'a, Error: ParseError<&'a str>>(
         value(SumOp::Sub, char('-')), // Substract
     ))(rest)?;
     let (rest, _) = space0(rest)?;
-    let start = rest;
-    let (rest, node) = parse_mul(rest)?;
-    let node = Box::new(node).with_location((input, start, rest));
-    Ok((rest, (op, node)))
+
+    cut(move |rest: &'a str| {
+        let start = rest;
+        let (rest, node) = parse_mul(rest)?;
+        let node = Box::new(node).with_location((input, start, rest));
+        Ok((rest, (op, node)))
+    })(rest)
 }
 
 /// Parse a sum/sub operation
@@ -546,7 +563,7 @@ fn parse_sum<'a, Error: ParseError<&'a str>>(
 }
 
 /// Represents a multiply/divide operation
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 enum MulOp {
     Mul,
     Div,
@@ -562,10 +579,13 @@ fn parse_mul_rec<'a, Error: ParseError<&'a str>>(
         value(MulOp::Div, char('/')), // Divide
     ))(rest)?;
     let (rest, _) = space0(rest)?;
-    let start = rest;
-    let (rest, node) = parse_unary(rest)?;
-    let node = Box::new(node).with_location((input, start, rest));
-    Ok((rest, (op, node)))
+
+    cut(move |rest: &'a str| {
+        let start = rest;
+        let (rest, node) = parse_unary(rest)?;
+        let node = Box::new(node).with_location((input, start, rest));
+        Ok((rest, (op, node)))
+    })(rest)
 }
 
 /// Parse a multiply/divide operation
@@ -599,10 +619,13 @@ fn parse_invert<'a, Error: ParseError<&'a str>>(
 ) -> IResult<&'a str, Node<RelativeLocation>, Error> {
     let (rest, _) = char('-')(input)?;
     let (rest, _) = space0(rest)?;
-    let start = rest;
-    let (rest, node) = parse_atom(rest)?;
-    let node = Box::new(node).with_location((input, start, rest));
-    Ok((rest, Node::Invert(node)))
+
+    cut(move |rest: &'a str| {
+        let start = rest;
+        let (rest, node) = parse_atom(rest)?;
+        let node = Box::new(node).with_location((input, start, rest));
+        Ok((rest, Node::Invert(node)))
+    })(rest)
 }
 
 fn parse_binary_not<'a, Error: ParseError<&'a str>>(
@@ -610,10 +633,13 @@ fn parse_binary_not<'a, Error: ParseError<&'a str>>(
 ) -> IResult<&'a str, Node<RelativeLocation>, Error> {
     let (rest, _) = char('~')(input)?;
     let (rest, _) = space0(rest)?;
-    let start = rest;
-    let (rest, node) = parse_atom(rest)?;
-    let node = Box::new(node).with_location((input, start, rest));
-    Ok((rest, Node::BinaryNot(node)))
+
+    cut(move |rest: &'a str| {
+        let start = rest;
+        let (rest, node) = parse_atom(rest)?;
+        let node = Box::new(node).with_location((input, start, rest));
+        Ok((rest, Node::BinaryNot(node)))
+    })(rest)
 }
 
 /// Parse unary operations (negation and bit inversion)
@@ -628,8 +654,14 @@ fn parse_atom<'a, Error: ParseError<&'a str>>(
     input: &'a str,
 ) -> IResult<&'a str, Node<RelativeLocation>, Error> {
     alt((
-        map(parse_number_literal, |v| Node::Literal(v as Value)),
-        map(parse_identifier, |i| Node::Variable(i.into())),
+        context(
+            "number literal",
+            map(parse_number_literal, |v| Node::Literal(v as Value)),
+        ),
+        context(
+            "identifier",
+            map(parse_identifier, |i| Node::Variable(i.into())),
+        ),
         parse_parenthesis,
     ))(input)
 }
@@ -641,14 +673,16 @@ fn parse_parenthesis<'a, Error: ParseError<&'a str>>(
     let (rest, _) = char('(')(input)?;
     let (rest, _) = space0(rest)?;
 
-    let offset = input.offset(rest);
-    let (rest, value) = parse_expression(rest)?;
-    // This offsets the child nodes location to compensate the parenthesis
-    let value = value.offset(offset);
+    cut(move |rest: &'a str| {
+        let offset = input.offset(rest);
+        let (rest, value) = parse_expression(rest)?;
+        // This offsets the child nodes location to compensate the parenthesis
+        let value = value.offset(offset);
 
-    let (rest, _) = space0(rest)?;
-    let (rest, _) = char(')')(rest)?;
-    Ok((rest, value))
+        let (rest, _) = space0(rest)?;
+        let (rest, _) = char(')')(rest)?;
+        Ok((rest, value))
+    })(rest)
 }
 
 /// Parse an expression, returning its AST

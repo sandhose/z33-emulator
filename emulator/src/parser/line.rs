@@ -295,8 +295,8 @@ fn parse_line_content<'a, Error: ParseError<&'a str>>(
     input: &'a str,
 ) -> IResult<&'a str, LineContent<RelativeLocation>, Error> {
     alt((
-        context("parsing directive", parse_directive_line),
-        context("parsing instruction", parse_instruction_line),
+        context("directive", parse_directive_line),
+        context("instruction", parse_instruction_line),
     ))(input)
 }
 
