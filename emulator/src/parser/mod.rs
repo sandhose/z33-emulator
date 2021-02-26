@@ -13,6 +13,7 @@ use self::{
 };
 
 pub(crate) mod condition;
+mod errors;
 pub(crate) mod expression;
 pub(crate) mod line;
 pub(crate) mod literal;
@@ -21,19 +22,7 @@ mod precedence;
 pub(crate) mod preprocessor;
 pub(crate) mod value;
 
-pub trait ParseError<I>:
-    nom::error::ParseError<I>
-    + nom::error::FromExternalError<I, std::num::ParseIntError>
-    + nom::error::ContextError<I>
-{
-}
-
-impl<I, E> ParseError<I> for E where
-    E: nom::error::ParseError<I>
-        + nom::error::FromExternalError<I, std::num::ParseIntError>
-        + nom::error::ContextError<I>
-{
-}
+pub use errors::{Error, ParseError};
 
 fn is_identifier_char(c: char) -> bool {
     is_start_identifier_char(c) || ('0'..'9').contains(&c)
