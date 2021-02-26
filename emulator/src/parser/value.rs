@@ -3,6 +3,7 @@ use nom::{
     bytes::complete::tag_no_case,
     character::complete::{char, space0},
     combinator::{map, value},
+    error::context,
     Compare, IResult, InputTake,
 };
 use thiserror::Error;
@@ -110,53 +111,54 @@ impl std::fmt::Display for InstructionKind {
     }
 }
 
-pub(crate) fn parse_instruction_kind<Input, Error: nom::error::ParseError<Input>>(
+pub(crate) fn parse_instruction_kind<Input, Error>(
     input: Input,
 ) -> IResult<Input, InstructionKind, Error>
 where
     Input: InputTake + Compare<&'static str> + Clone,
+    Error: nom::error::ParseError<Input> + nom::error::ContextError<Input>,
 {
     use InstructionKind::*;
 
     // `alt` only allows for 21-member tuples so we need to trick a bit by nesting them
     alt((
         alt((
-            value(Add, tag_no_case("add")),
-            value(And, tag_no_case("and")),
-            value(Call, tag_no_case("call")),
-            value(Cmp, tag_no_case("cmp")),
-            value(Div, tag_no_case("div")),
-            value(Fas, tag_no_case("fas")),
-            value(In, tag_no_case("in")),
-            value(Jmp, tag_no_case("jmp")),
-            value(Jeq, tag_no_case("jeq")),
-            value(Jne, tag_no_case("jne")),
-            value(Jle, tag_no_case("jle")),
-            value(Jlt, tag_no_case("jlt")),
-            value(Jge, tag_no_case("jge")),
-            value(Jgt, tag_no_case("jgt")),
-            value(Ld, tag_no_case("ld")),
-            value(Mul, tag_no_case("mul")),
-            value(Neg, tag_no_case("neg")),
-            value(Nop, tag_no_case("nop")),
-            value(Not, tag_no_case("not")),
-            value(Or, tag_no_case("or")),
-            value(Out, tag_no_case("out")),
+            context("add", value(Add, tag_no_case("add"))),
+            context("and", value(And, tag_no_case("and"))),
+            context("call", value(Call, tag_no_case("call"))),
+            context("cmp", value(Cmp, tag_no_case("cmp"))),
+            context("div", value(Div, tag_no_case("div"))),
+            context("fas", value(Fas, tag_no_case("fas"))),
+            context("in", value(In, tag_no_case("in"))),
+            context("jmp", value(Jmp, tag_no_case("jmp"))),
+            context("jeq", value(Jeq, tag_no_case("jeq"))),
+            context("jne", value(Jne, tag_no_case("jne"))),
+            context("jle", value(Jle, tag_no_case("jle"))),
+            context("jlt", value(Jlt, tag_no_case("jlt"))),
+            context("jge", value(Jge, tag_no_case("jge"))),
+            context("jgt", value(Jgt, tag_no_case("jgt"))),
+            context("ld", value(Ld, tag_no_case("ld"))),
+            context("mul", value(Mul, tag_no_case("mul"))),
+            context("neg", value(Neg, tag_no_case("neg"))),
+            context("nop", value(Nop, tag_no_case("nop"))),
+            context("not", value(Not, tag_no_case("not"))),
+            context("or", value(Or, tag_no_case("or"))),
+            context("out", value(Out, tag_no_case("out"))),
         )),
         alt((
-            value(Pop, tag_no_case("pop")),
-            value(Push, tag_no_case("push")),
-            value(Reset, tag_no_case("reset")),
-            value(Rti, tag_no_case("rti")),
-            value(Rtn, tag_no_case("rtn")),
-            value(Shl, tag_no_case("shl")),
-            value(Shr, tag_no_case("shr")),
-            value(St, tag_no_case("st")),
-            value(Sub, tag_no_case("sub")),
-            value(Swap, tag_no_case("swap")),
-            value(Trap, tag_no_case("trap")),
-            value(Xor, tag_no_case("xor")),
-            value(DebugReg, tag_no_case("debugreg")),
+            context("pop", value(Pop, tag_no_case("pop"))),
+            context("push", value(Push, tag_no_case("push"))),
+            context("reset", value(Reset, tag_no_case("reset"))),
+            context("rti", value(Rti, tag_no_case("rti"))),
+            context("rtn", value(Rtn, tag_no_case("rtn"))),
+            context("shl", value(Shl, tag_no_case("shl"))),
+            context("shr", value(Shr, tag_no_case("shr"))),
+            context("st", value(St, tag_no_case("st"))),
+            context("sub", value(Sub, tag_no_case("sub"))),
+            context("swap", value(Swap, tag_no_case("swap"))),
+            context("trap", value(Trap, tag_no_case("trap"))),
+            context("xor", value(Xor, tag_no_case("xor"))),
+            context("debugreg", value(DebugReg, tag_no_case("debugreg"))),
         )),
     ))(input)
 }
@@ -201,12 +203,15 @@ impl<L> std::fmt::Display for InstructionArgument<L> {
 pub(crate) fn parse_instruction_argument<'a, Error: ParseError<&'a str>>(
     input: &'a str,
 ) -> IResult<&'a str, InstructionArgument<RelativeLocation>, Error> {
+    use InstructionArgument::*;
     alt((
-        map(parse_expression, InstructionArgument::Value),
-        map(parse_register, InstructionArgument::Register),
-        parse_indexed,
-        parse_direct,
-        parse_indirect,
+        context("immediate value", map(parse_expression, Value)),
+        context("register", map(parse_register, Register)),
+        // Order is important here: indexed must be before direct because the indirect one cuts
+        // directly after square bracket
+        context("indexed memory access", parse_indexed),
+        context("indirect memory access", parse_indirect),
+        context("direct memory access", parse_direct),
     ))(input)
 }
 
@@ -241,19 +246,20 @@ impl std::fmt::Display for DirectiveKind {
     }
 }
 
-pub(crate) fn parse_directive_kind<Input, Error: nom::error::ParseError<Input>>(
+pub(crate) fn parse_directive_kind<Input, Error>(
     input: Input,
 ) -> IResult<Input, DirectiveKind, Error>
 where
     Input: InputTake + Compare<&'static str> + Clone,
+    Error: nom::error::ParseError<Input> + nom::error::ContextError<Input>,
 {
     use DirectiveKind::*;
 
     alt((
-        value(Addr, tag_no_case("addr")),
-        value(Space, tag_no_case("space")),
-        value(String, tag_no_case("string")),
-        value(Word, tag_no_case("word")),
+        context("addr", value(Addr, tag_no_case("addr"))),
+        context("space", value(Space, tag_no_case("space"))),
+        context("string", value(String, tag_no_case("string"))),
+        context("word", value(Word, tag_no_case("word"))),
     ))(input)
 }
 
@@ -306,8 +312,14 @@ pub(crate) fn parse_directive_argument<'a, Error: ParseError<&'a str>>(
     input: &'a str,
 ) -> IResult<&'a str, DirectiveArgument<RelativeLocation>, Error> {
     alt((
-        map(parse_string_literal, DirectiveArgument::StringLiteral),
-        map(parse_expression, DirectiveArgument::Expression),
+        context(
+            "string literal",
+            map(parse_string_literal, DirectiveArgument::StringLiteral),
+        ),
+        context(
+            "expression",
+            map(parse_expression, DirectiveArgument::Expression),
+        ),
     ))(input)
 }
 
@@ -398,18 +410,18 @@ fn parse_register<'a, Error: ParseError<&'a str>>(input: &'a str) -> IResult<&'a
     use Reg::*;
 
     alt((
-        value(A, tag_no_case("%a")),
-        value(B, tag_no_case("%b")),
-        value(PC, tag_no_case("%pc")),
-        value(SP, tag_no_case("%sp")),
-        value(SR, tag_no_case("%sr")),
+        context("%a", value(A, tag_no_case("%a"))),
+        context("%b", value(B, tag_no_case("%b"))),
+        context("%pc", value(PC, tag_no_case("%pc"))),
+        context("%sp", value(SP, tag_no_case("%sp"))),
+        context("%sr", value(SR, tag_no_case("%sr"))),
     ))(input)
 }
 
 fn parse_indexed<'a, Error: ParseError<&'a str>>(
     input: &'a str,
 ) -> IResult<&'a str, InstructionArgument<RelativeLocation>, Error> {
-    #[derive(Clone)]
+    #[derive(Clone, Copy)]
     enum Sign {
         Plus,
         Minus,

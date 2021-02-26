@@ -5,7 +5,7 @@ use wasm_bindgen::prelude::*;
 
 use z33_emulator::{
     compiler::layout,
-    constants as C, parse,
+    constants as C,
     parser::location::{AbsoluteLocation, Lines, RelativeLocation},
     preprocessor::{preprocess, InMemoryFilesystem},
 };
@@ -37,10 +37,10 @@ pub fn dump(source: &str) -> Result<JsValue, JsValue> {
 
     output.preprocessed = Some(source.clone());
 
-    let program = parse(source); // TODO: the error is tied to the input
+    let program = z33_emulator::parser::parse_new::<z33_emulator::parser::Error<_>>(source); // TODO: the error is tied to the input
 
     if let Err(e) = program {
-        output.error = Some(format!("{}", e));
+        output.error = Some(format!("{:#?}", e));
         return Ok(serde_wasm_bindgen::to_value(&output)?);
     }
 

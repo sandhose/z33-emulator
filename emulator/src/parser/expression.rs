@@ -471,8 +471,8 @@ fn parse_shift_rec<'a, Error: ParseError<&'a str>>(
 ) -> IResult<&'a str, (ShiftOp, ChildNode<RelativeLocation>), Error> {
     let (rest, _) = space0(input)?;
     let (rest, op) = alt((
-        value(ShiftOp::Right, tag(">>")),
-        value(ShiftOp::Left, tag("<<")),
+        context(">>", value(ShiftOp::Right, tag(">>"))),
+        context("<<", value(ShiftOp::Left, tag("<<"))),
     ))(rest)?;
     let (rest, _) = space0(rest)?;
 

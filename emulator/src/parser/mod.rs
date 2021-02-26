@@ -47,6 +47,12 @@ pub(crate) fn parse_identifier<'a, Error: ParseError<&'a str>>(
 pub fn parse(
     input: &str,
 ) -> Result<Located<Program<RelativeLocation>, RelativeLocation>, nom::error::VerboseError<&str>> {
+    parse_new(input)
+}
+
+pub fn parse_new<'a, Error: ParseError<&'a str>>(
+    input: &'a str,
+) -> Result<Located<Program<RelativeLocation>, RelativeLocation>, Error> {
     // TODO: proper error handling & wrap those steps
     let (_, program) = all_consuming(self::line::parse_program)(input).finish()?;
     let program = program.with_location((0, input.len()));

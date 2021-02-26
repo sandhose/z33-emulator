@@ -86,12 +86,12 @@ impl<I> nom::error::FromExternalError<I, ParseIntError> for Error<I> {
     }
 }
 
-impl<I> Error<I> {
+impl<I: std::fmt::Debug> Error<I> {
     pub fn display<'a>(
         &'a self,
         _input: &'a str,
-        _f: &mut std::fmt::Formatter<'_>,
+        f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
-        todo!()
+        write!(f, "{:#?}", self)
     }
 }

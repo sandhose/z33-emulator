@@ -12,7 +12,7 @@ use nom::{
     branch::alt,
     bytes::complete::{escaped, tag},
     character::complete::{char, line_ending, none_of, not_line_ending, one_of, space0, space1},
-    combinator::{all_consuming, eof, map, opt, peek, value},
+    combinator::{all_consuming, cut, eof, map, opt, peek, value},
     error::context,
     multi::separated_list1,
     sequence::delimited,
@@ -235,17 +235,20 @@ fn parse_directive_line<'a, Error: ParseError<&'a str>>(
     input: &'a str,
 ) -> IResult<&'a str, LineContent<RelativeLocation>, Error> {
     let (rest, _) = char('.')(input)?;
-    let start = rest;
-    let (rest, kind) = parse_directive_kind(rest)?;
-    let kind = kind.with_location((input, start, rest));
 
-    let (rest, _) = space1(rest)?;
+    cut(|rest: &'a str| {
+        let start = rest;
+        let (rest, kind) = parse_directive_kind(rest)?;
+        let kind = kind.with_location((input, start, rest));
 
-    let start = rest;
-    let (rest, argument) = parse_directive_argument(rest)?;
-    let argument = argument.with_location((input, start, rest));
+        let (rest, _) = space1(rest)?;
 
-    Ok((rest, LineContent::Directive { kind, argument }))
+        let start = rest;
+        let (rest, argument) = parse_directive_argument(rest)?;
+        let argument = argument.with_location((input, start, rest));
+
+        Ok((rest, LineContent::Directive { kind, argument }))
+    })(rest)
 }
 
 /// Parses an instruction
@@ -254,40 +257,42 @@ fn parse_instruction_line<'a, Error: ParseError<&'a str>>(
 ) -> IResult<&'a str, LineContent<RelativeLocation>, Error> {
     // First parse the opcode
     let (rest, kind) = parse_instruction_kind(input)?;
-    let kind = kind.with_location((input, input, rest));
 
-    // Then loop to parse the list of arguments
-    let mut cursor = rest;
-    let mut arguments = Vec::with_capacity(2); // Instructions usually have <= 2 arguments
-    loop {
-        // Check if we already parsed an argument or not
-        // Explicit typing is necessary here
-        let (rest, succeded) = if arguments.is_empty() {
-            // The first argument needs at least one space before it
-            // This is not done before to avoid eating spaces if the instruction takes no argument
-            opt(value((), space1))(cursor)?
-        } else {
-            // Later arguments are separated by a comma. This also eats the spaces around the comma
-            opt(value((), delimited(space0, char(','), space0)))(cursor)?
-        };
+    cut(move |rest: &'a str| {
+        let kind = kind.with_location((input, input, rest));
+        // Then loop to parse the list of arguments
+        let mut cursor = rest;
+        let mut arguments = Vec::with_capacity(2); // Instructions usually have <= 2 arguments
+        loop {
+            // Check if we already parsed an argument or not
+            // Explicit typing is necessary here
+            let (rest, succeded) = if arguments.is_empty() {
+                // The first argument needs at least one space before it
+                // This is not done before to avoid eating spaces if the instruction takes no argument
+                opt(value((), space1))(cursor)?
+            } else {
+                // Later arguments are separated by a comma. This also eats the spaces around the comma
+                opt(value((), delimited(space0, char(','), space0)))(cursor)?
+            };
 
-        // First check it has the right prefix
-        if succeded.is_some() {
-            let start = rest; // Save the start of the argument for location information
+            // First check it has the right prefix
+            if succeded.is_some() {
+                let start = rest; // Save the start of the argument for location information
 
-            // Then continue parsing the argument
-            if let (rest, Some(argument)) = opt(parse_instruction_argument)(rest)? {
-                let argument = argument.with_location((input, start, rest));
-                arguments.push(argument);
-                // Only update the cursor here, in case it fails earlier
-                cursor = rest;
-                continue; // Restart the loop to parse another argument
+                // Then continue parsing the argument
+                if let (rest, Some(argument)) = opt(parse_instruction_argument)(rest)? {
+                    let argument = argument.with_location((input, start, rest));
+                    arguments.push(argument);
+                    // Only update the cursor here, in case it fails earlier
+                    cursor = rest;
+                    continue; // Restart the loop to parse another argument
+                }
             }
+            break; // We could not parse another argument, get out of the loop
         }
-        break; // We could not parse another argument, get out of the loop
-    }
 
-    Ok((cursor, LineContent::Instruction { kind, arguments }))
+        Ok((cursor, LineContent::Instruction { kind, arguments }))
+    })(rest)
 }
 
 /// Parses the content of a line: an instruction or a directive
@@ -382,7 +387,7 @@ pub(crate) fn parse_program<'a, Error: ParseError<&'a str>>(
     let lines: Result<_, _> = lines
         .into_iter()
         .map(|start| {
-            context("parsing line", all_consuming(parse_line))(start)
+            context("line", all_consuming(parse_line))(start)
                 .map(|(end, line)| line.with_location((input, start, end)))
         })
         .collect();
