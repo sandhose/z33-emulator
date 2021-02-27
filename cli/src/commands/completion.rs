@@ -10,11 +10,11 @@ use crate::Opt;
 #[derive(Clap, Debug)]
 pub struct CompletionOpt {
     #[clap(arg_enum)]
-    shell: Shell,
+    shell: ShellKind,
 }
 
 #[derive(Clap, Debug)]
-enum Shell {
+enum ShellKind {
     Bash,
     Elvish,
     Fish,
@@ -32,11 +32,11 @@ fn print_completions<G: Generator, A: IntoApp>() {
 impl CompletionOpt {
     pub fn exec(&self) -> Result<(), Box<dyn std::error::Error>> {
         match self.shell {
-            Shell::Bash => print_completions::<Bash, Opt>(),
-            Shell::Elvish => print_completions::<Elvish, Opt>(),
-            Shell::Fish => print_completions::<Fish, Opt>(),
-            Shell::PowerShell => print_completions::<PowerShell, Opt>(),
-            Shell::Zsh => print_completions::<Zsh, Opt>(),
+            ShellKind::Bash => print_completions::<Bash, Opt>(),
+            ShellKind::Elvish => print_completions::<Elvish, Opt>(),
+            ShellKind::Fish => print_completions::<Fish, Opt>(),
+            ShellKind::PowerShell => print_completions::<PowerShell, Opt>(),
+            ShellKind::Zsh => print_completions::<Zsh, Opt>(),
         }
 
         Ok(())

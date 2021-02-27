@@ -39,7 +39,7 @@ impl RunOpt {
                     eprintln!("---");
                     let offset = crate::util::char_offset(source, location);
                     let message = match kind {
-                        nom::error::VerboseErrorKind::Context(s) => format!("{}", s),
+                        nom::error::VerboseErrorKind::Context(s) => s.to_string(),
                         nom::error::VerboseErrorKind::Char(c) => format!("expected '{}'", c),
                         nom::error::VerboseErrorKind::Nom(code) => format!("{:?}", code),
                     };

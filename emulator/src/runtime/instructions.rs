@@ -6,77 +6,78 @@ use tracing::{debug, info};
 use crate::constants::*;
 
 use super::{
+    arguments::{DirIndIdx, ExtractValue, ImmReg, ImmRegDirIndIdx, RegDirIndIdx, ResolveAddress},
     exception::Exception,
     memory::Cell,
     registers::{Reg, StatusRegister},
-    Address, Arg, Computer, ProcessorError, Value,
+    Computer, ProcessorError,
 };
 
 #[derive(Debug, Clone, PartialEq, Display)]
 pub enum Instruction {
     /// Add a value to a register
     #[display("add  {0}, {1}")]
-    Add(Arg, Reg),
+    Add(ImmRegDirIndIdx, Reg),
 
     /// Bitwise `and` with a given value
     #[display("and  {0}, {1}")]
-    And(Arg, Reg),
+    And(ImmRegDirIndIdx, Reg),
 
     /// Push `%pc` and go to the given address
     #[display("call {0}")]
-    Call(Arg),
+    Call(ImmRegDirIndIdx),
 
     /// Compare a value with a register
     #[display("cmp  {0}, {1}")]
-    Cmp(Arg, Reg),
+    Cmp(ImmRegDirIndIdx, Reg),
 
     /// Divide a register by a value
     #[display("div  {0}, {1}")]
-    Div(Arg, Reg),
+    Div(ImmRegDirIndIdx, Reg),
 
     /// Load a memory cell to a register and set this cell to 1
     #[display("fas  {0}, {1}")]
-    Fas(Address, Reg),
+    Fas(DirIndIdx, Reg),
 
     /// Read a value from an I/O controller
     #[display("in   {0}, {1}")]
-    In(Address, Reg),
+    In(DirIndIdx, Reg),
 
     /// Unconditional jump
     #[display("jmp  {0}")]
-    Jmp(Arg),
+    Jmp(ImmRegDirIndIdx),
 
     /// Jump if equal
     #[display("jeq  {0}")]
-    Jeq(Arg),
+    Jeq(ImmRegDirIndIdx),
 
     /// Jump if not equal
     #[display("jne  {0}")]
-    Jne(Arg),
+    Jne(ImmRegDirIndIdx),
 
     /// Jump if less or equal
     #[display("jle  {0}")]
-    Jle(Arg),
+    Jle(ImmRegDirIndIdx),
 
     /// Jump if strictly less
     #[display("jlt  {0}")]
-    Jlt(Arg),
+    Jlt(ImmRegDirIndIdx),
 
     /// Jump if greater of equal
     #[display("jge  {0}")]
-    Jge(Arg),
+    Jge(ImmRegDirIndIdx),
 
     /// Jump if strictly greater
     #[display("jgt  {0}")]
-    Jgt(Arg),
+    Jgt(ImmRegDirIndIdx),
 
     /// Load a register with a value
     #[display("ld   {0}, {1}")]
-    Ld(Arg, Reg),
+    Ld(ImmRegDirIndIdx, Reg),
 
     /// Multiply a value to a register
     #[display("mul  {0}, {1}")]
-    Mul(Arg, Reg),
+    Mul(ImmRegDirIndIdx, Reg),
 
     #[display("neg  {0}")]
     Neg(Reg),
@@ -91,11 +92,11 @@ pub enum Instruction {
 
     /// Bitwise `or` with a given value
     #[display("or   {0}, {1}")]
-    Or(Arg, Reg),
+    Or(ImmRegDirIndIdx, Reg),
 
     /// Write a value to an I/O controller
     #[display("out  {0}, {1}")]
-    Out(Value, Address),
+    Out(ImmReg, DirIndIdx),
 
     /// Pop a value from the stack
     #[display("pop  {0}")]
@@ -103,7 +104,7 @@ pub enum Instruction {
 
     /// Push a value into the stack
     #[display("push {0}")]
-    Push(Value),
+    Push(ImmReg),
 
     /// Reset the computer
     #[display("reset")]
@@ -119,29 +120,31 @@ pub enum Instruction {
 
     /// Bitshift to the left
     #[display("shl  {0}, {1}")]
-    Shl(Arg, Reg),
+    Shl(ImmRegDirIndIdx, Reg),
 
     /// Bitshift to the right
     #[display("shr  {0}, {1}")]
-    Shr(Arg, Reg),
+    Shr(ImmRegDirIndIdx, Reg),
 
     /// Store a register value in memory
     #[display("st   {0}, {1}")]
-    St(Reg, Address),
+    St(Reg, DirIndIdx),
 
     /// Substract a value from a register
     #[display("sub  {0}, {1}")]
-    Sub(Arg, Reg),
+    Sub(ImmRegDirIndIdx, Reg),
 
-    // /// Swap a value and a register
-    // Swap(ArgSwap, Reg),
+    /// Swap a value and a register
+    #[display("swap {0}, {1}")]
+    Swap(RegDirIndIdx, Reg),
+
     /// Start a `trap` exception
     #[display("trap")]
     Trap,
 
     /// Bitwise `xor` with a given value
     #[display("xor  {0}, {1}")]
-    Xor(Arg, Reg),
+    Xor(ImmRegDirIndIdx, Reg),
 
     /// Show registers content
     #[display("debugreg")]
@@ -156,8 +159,8 @@ impl Instruction {
 
         match self {
             Add(arg, reg) => {
-                let a = computer.word_from_arg(arg)?;
-                let b = computer.word_from_reg(reg)?;
+                let a = arg.extract_word(computer)?;
+                let b = reg.extract_word(computer)?;
                 let (res, overflow) = a.overflowing_add(b);
                 debug!("{} + {} = {}", a, b, res);
                 computer.set_register(reg, res.into())?;
@@ -169,8 +172,8 @@ impl Instruction {
             }
 
             And(arg, reg) => {
-                let a = computer.word_from_arg(arg)?;
-                let b = computer.word_from_reg(reg)?;
+                let a = arg.extract_word(computer)?;
+                let b = reg.extract_word(computer)?;
                 let res = a & b;
                 debug!("{} & {} = {}", a, b, res);
                 computer.set_register(reg, res.into())?;
@@ -182,13 +185,13 @@ impl Instruction {
                 computer.push(pc)?;
 
                 // Jump
-                let addr = computer.address_from_arg(arg)?;
-                computer.jump(&Address::Dir(addr))?;
+                let addr = arg.extract_address(computer)?;
+                computer.jump(addr);
             }
 
             Cmp(arg, reg) => {
-                let a = computer.word_from_arg(arg)?;
-                let b = computer.word_from_reg(reg)?;
+                let a = arg.extract_word(computer)?;
+                let b = reg.extract_word(computer)?;
 
                 computer.registers.sr.set(StatusRegister::ZERO, a == b);
                 computer.registers.sr.set(StatusRegister::NEGATIVE, a < b);
@@ -202,15 +205,15 @@ impl Instruction {
             }
 
             Div(arg, reg) => {
-                let a = computer.word_from_arg(arg)?;
-                let b = computer.word_from_reg(reg)?;
+                let a = arg.extract_word(computer)?;
+                let b = reg.extract_word(computer)?;
                 let res = b.checked_div(a).ok_or(Exception::DivByZero)?;
                 debug!("{} / {} = {}", b, a, res);
                 computer.set_register(reg, res.into())?;
             }
 
             Fas(addr, reg) => {
-                let addr = computer.registers.resolve_address(addr)?;
+                let addr = addr.resolve_address(&computer.registers)?;
                 let cell = computer.memory.get_mut(addr)?;
                 let val = cell.clone();
                 *cell = Cell::Word(1);
@@ -223,14 +226,14 @@ impl Instruction {
             }
 
             Jmp(arg) => {
-                let val = computer.address_from_arg(arg)?;
+                let val = arg.extract_address(computer)?;
                 debug!("Jumping to address {:#x}", val);
                 computer.registers.pc = val;
             }
 
             Jeq(arg) => {
                 if computer.registers.sr.contains(StatusRegister::ZERO) {
-                    let val = computer.address_from_arg(arg)?;
+                    let val = arg.extract_address(computer)?;
                     debug!("Jumping to address {:#x}", val);
                     computer.registers.pc = val;
                 }
@@ -238,7 +241,7 @@ impl Instruction {
 
             Jne(arg) => {
                 if !computer.registers.sr.contains(StatusRegister::ZERO) {
-                    let val = computer.address_from_arg(arg)?;
+                    let val = arg.extract_address(computer)?;
                     debug!("Jumping to address {:#x}", val);
                     computer.registers.pc = val;
                 }
@@ -248,7 +251,7 @@ impl Instruction {
                 if computer.registers.sr.contains(StatusRegister::ZERO)
                     || computer.registers.sr.contains(StatusRegister::NEGATIVE)
                 {
-                    let val = computer.address_from_arg(arg)?;
+                    let val = arg.extract_address(computer)?;
                     debug!("Jumping to address {:#x}", val);
                     computer.registers.pc = val;
                 }
@@ -258,7 +261,7 @@ impl Instruction {
                 if !computer.registers.sr.contains(StatusRegister::ZERO)
                     && computer.registers.sr.contains(StatusRegister::NEGATIVE)
                 {
-                    let val = computer.address_from_arg(arg)?;
+                    let val = arg.extract_address(computer)?;
                     debug!("Jumping to address {:#x}", val);
                     computer.registers.pc = val;
                 }
@@ -268,7 +271,7 @@ impl Instruction {
                 if computer.registers.sr.contains(StatusRegister::ZERO)
                     || !computer.registers.sr.contains(StatusRegister::NEGATIVE)
                 {
-                    let val = computer.address_from_arg(arg)?;
+                    let val = arg.extract_address(computer)?;
                     debug!("Jumping to address {:#x}", val);
                     computer.registers.pc = val;
                 }
@@ -278,20 +281,20 @@ impl Instruction {
                 if !computer.registers.sr.contains(StatusRegister::ZERO)
                     && !computer.registers.sr.contains(StatusRegister::NEGATIVE)
                 {
-                    let val = computer.address_from_arg(arg)?;
+                    let val = arg.extract_address(computer)?;
                     debug!("Jumping to address {:#x}", val);
                     computer.registers.pc = val;
                 }
             }
 
             Ld(arg, reg) => {
-                let val = computer.arg(arg)?;
+                let val = arg.extract_cell(computer)?;
                 computer.set_register(reg, val)?;
             }
 
             Mul(arg, reg) => {
-                let a = computer.word_from_arg(arg)?;
-                let b = computer.word_from_reg(reg)?;
+                let a = arg.extract_word(computer)?;
+                let b = reg.extract_word(computer)?;
                 let (res, overflow) = a.overflowing_mul(b);
                 debug!("{} * {} = {}", a, b, res);
                 computer.set_register(reg, res.into())?;
@@ -303,7 +306,7 @@ impl Instruction {
             }
 
             Neg(reg) => {
-                let val = computer.word_from_reg(reg)?;
+                let val = reg.extract_word(computer)?;
                 let res = -(val as i64);
                 let res = res as Word;
                 debug!("-{} = {}", val, res);
@@ -313,15 +316,15 @@ impl Instruction {
             Nop => {}
 
             Not(reg) => {
-                let val = computer.word_from_reg(reg)?;
+                let val = reg.extract_word(computer)?;
                 let res = !val;
                 debug!("!{} = {}", val, res);
                 computer.set_register(reg, res.into())?;
             }
 
             Or(arg, reg) => {
-                let a = computer.word_from_arg(arg)?;
-                let b = computer.word_from_reg(reg)?;
+                let a = arg.extract_word(computer)?;
+                let b = reg.extract_word(computer)?;
                 let res = a | b;
                 debug!("{} | {} = {}", a, b, res);
                 computer.set_register(reg, res.into())?;
@@ -339,7 +342,7 @@ impl Instruction {
             }
 
             Push(val) => {
-                let val = computer.value(val);
+                let val = val.extract_cell(computer)?;
                 debug!("push({:?})", val);
                 computer.push(val)?;
             }
@@ -363,8 +366,8 @@ impl Instruction {
             }
 
             Shl(arg, reg) => {
-                let a = computer.word_from_arg(arg)?;
-                let b = computer.word_from_reg(reg)?;
+                let a = arg.extract_word(computer)?;
+                let b = reg.extract_word(computer)?;
 
                 let b: u32 = b.try_into().map_err(|_| Exception::InvalidInstruction)?;
                 let res = a.checked_shl(b).ok_or(Exception::InvalidInstruction)?;
@@ -374,8 +377,8 @@ impl Instruction {
             }
 
             Shr(arg, reg) => {
-                let a = computer.word_from_arg(arg)?;
-                let b = computer.word_from_reg(reg)?;
+                let a = arg.extract_word(computer)?;
+                let b = reg.extract_word(computer)?;
 
                 let b: u32 = b.try_into().map_err(|_| Exception::InvalidInstruction)?;
                 let res = a.checked_shr(b).ok_or(Exception::InvalidInstruction)?;
@@ -385,13 +388,14 @@ impl Instruction {
             }
 
             St(reg, address) => {
-                let val = computer.registers.get(reg);
+                let val = reg.extract_word(computer)?;
+                let address = address.resolve_address(&computer.registers)?;
                 computer.write(address, val)?;
             }
 
             Sub(arg, reg) => {
-                let a = computer.word_from_arg(arg)?;
-                let b = computer.word_from_reg(reg)?;
+                let a = arg.extract_word(computer)?;
+                let b = reg.extract_word(computer)?;
                 let (res, overflow) = b.overflowing_sub(a);
                 computer.set_register(reg, res.into())?;
 
@@ -403,13 +407,17 @@ impl Instruction {
                     .set(StatusRegister::OVERFLOW, overflow);
             }
 
+            Swap(_, _) => {
+                todo!();
+            }
+
             Trap => {
                 return Err(Exception::Trap.into());
             }
 
             Xor(arg, reg) => {
-                let a = computer.word_from_arg(arg)?;
-                let b = computer.word_from_reg(reg)?;
+                let a = arg.extract_word(computer)?;
+                let b = reg.extract_word(computer)?;
                 let res = a ^ b;
                 debug!("{} ^ {} = {}", a, b, res);
                 computer.set_register(reg, res.into())?;
@@ -458,6 +466,7 @@ impl Instruction {
             Shr(a, b) => 1 + a.cost() + b.cost(),
             St(a, b) => 1 + a.cost() + b.cost(),
             Sub(a, b) => 1 + a.cost() + b.cost(),
+            Swap(a, b) => 1 + a.cost() + b.cost(),
             Trap => 1,
             Xor(a, b) => 1 + a.cost() + b.cost(),
             DebugReg => 0,

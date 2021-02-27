@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::convert::TryFrom;
 
 use thiserror::Error;
 use tracing::{debug, span, trace, Level};
@@ -11,7 +12,10 @@ use crate::{
         location::Located,
         value::{ComputeError, DirectiveArgument, DirectiveKind, InstructionKind},
     },
-    runtime::{Arg, ArgConversionError, Cell, Instruction, Memory, TryFromArg},
+    runtime::{
+        arguments::{ArgConversionError, ImmRegDirIndIdx},
+        Cell, Instruction, Memory,
+    },
 };
 
 use super::layout::{Labels, Layout, Placement};
@@ -55,10 +59,18 @@ pub enum InstructionCompilationError {
     ArgumentConversion(#[from] ArgConversionError),
 }
 
-fn get_tuple<X, Y>(mut args: Vec<Arg>) -> Result<(X, Y), InstructionCompilationError>
+impl From<std::convert::Infallible> for InstructionCompilationError {
+    fn from(_: std::convert::Infallible) -> Self {
+        unreachable!()
+    }
+}
+
+fn get_tuple<X, Y>(mut args: Vec<ImmRegDirIndIdx>) -> Result<(X, Y), InstructionCompilationError>
 where
-    X: TryFromArg,
-    Y: TryFromArg,
+    X: TryFrom<ImmRegDirIndIdx>,
+    Y: TryFrom<ImmRegDirIndIdx>,
+    X::Error: Into<InstructionCompilationError>,
+    Y::Error: Into<InstructionCompilationError>,
 {
     if args.len() != 2 {
         return Err(InstructionCompilationError::InvalidArgumentNumber {
@@ -70,12 +82,16 @@ where
     let x = args.remove(0);
     let y = args.remove(0);
 
-    Ok((X::try_from_arg(x)?, Y::try_from_arg(y)?))
+    Ok((
+        X::try_from(x).map_err(Into::into)?,
+        Y::try_from(y).map_err(Into::into)?,
+    ))
 }
 
-fn get_singleton<X>(mut args: Vec<Arg>) -> Result<X, InstructionCompilationError>
+fn get_singleton<X>(mut args: Vec<ImmRegDirIndIdx>) -> Result<X, InstructionCompilationError>
 where
-    X: TryFromArg,
+    X: TryFrom<ImmRegDirIndIdx>,
+    X::Error: Into<InstructionCompilationError>,
 {
     if args.len() != 1 {
         return Err(InstructionCompilationError::InvalidArgumentNumber {
@@ -85,13 +101,13 @@ where
     }
 
     let x = args.remove(0);
-    Ok(X::try_from_arg(x)?)
+    Ok(X::try_from(x).map_err(Into::into)?)
 }
 
-fn get_none(args: Vec<Arg>) -> Result<(), InstructionCompilationError> {
+fn get_none(args: Vec<ImmRegDirIndIdx>) -> Result<(), InstructionCompilationError> {
     if !args.is_empty() {
         return Err(InstructionCompilationError::InvalidArgumentNumber {
-            expected: 2,
+            expected: 0,
             got: args.len(),
         });
     }
@@ -102,7 +118,7 @@ fn get_none(args: Vec<Arg>) -> Result<(), InstructionCompilationError> {
 #[tracing::instrument]
 fn compile_instruction(
     kind: &InstructionKind,
-    arguments: Vec<Arg>,
+    arguments: Vec<ImmRegDirIndIdx>,
 ) -> Result<Instruction, InstructionCompilationError> {
     use InstructionKind::*;
 
@@ -257,7 +273,10 @@ fn compile_instruction(
             Ok(Instruction::Sub(a, b))
         }
 
-        Swap => todo!(),
+        Swap => {
+            let (a, b) = get_tuple(arguments)?;
+            Ok(Instruction::Swap(a, b))
+        }
 
         Trap => {
             get_none(arguments)?;

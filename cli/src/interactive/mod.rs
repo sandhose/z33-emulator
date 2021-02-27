@@ -15,7 +15,7 @@ use tracing::{debug, info, warn};
 
 use z33_emulator::compiler::DebugInfo;
 use z33_emulator::constants as C;
-use z33_emulator::runtime::{Address, Computer, Exception, Reg};
+use z33_emulator::runtime::{Computer, Exception, Reg};
 
 mod helper;
 use self::helper::RunHelper;
@@ -54,7 +54,7 @@ enum Command {
     Memory {
         /// The address to show. Can be a direct address (number literal) or an indirect one
         /// (register with an optional offset).
-        address: Address,
+        address: C::Address, // TODO
 
         /// Number of memory cells to show.
         #[clap(default_value = "1")]
@@ -74,13 +74,13 @@ enum Command {
     /// Set a breakpoint
     Break {
         /// The address where to set the breakpoint
-        address: Address,
+        address: C::Address, // TODO
     },
 
     /// Remove a breakpoint
     Unbreak {
         /// The address of the breakpoint to remove
-        address: Address,
+        address: C::Address, // TODO
     },
 
     /// Continue the program until the next breakpoint or reset
@@ -302,7 +302,7 @@ pub(crate) fn run_interactive(
             }
             Command::Memory { address, number } => {
                 // TODO: recover from error
-                let address = computer.registers.resolve_address(address)?;
+                // let address = computer.registers.resolve_address(address)?;
                 if number.is_positive() {
                     for i in 0..(*number as C::Address) {
                         let address = address + i;
@@ -333,14 +333,14 @@ pub(crate) fn run_interactive(
 
             Command::Break { address } => {
                 // TODO: recover from error
-                let address = computer.registers.resolve_address(address)?;
-                session.add_breakpoint(address);
+                // let address = computer.registers.resolve_address(address)?;
+                session.add_breakpoint(*address);
             }
 
             Command::Unbreak { address } => {
                 // TODO: recover from error
-                let address = computer.registers.resolve_address(address)?;
-                session.remove_breakpoint(address);
+                // let address = computer.registers.resolve_address(address)?;
+                session.remove_breakpoint(*address);
             }
 
             Command::Continue => {

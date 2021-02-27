@@ -18,7 +18,10 @@ use super::{
 };
 use crate::{
     ast::{AstNode, NodeKind},
-    runtime::{Address, Arg, Reg, Value},
+    runtime::{
+        arguments::{Dir, Idx, Imm, ImmRegDirIndIdx, Ind},
+        Reg,
+    },
 };
 
 #[derive(Display, FromStr, Clone, Copy, Debug, PartialEq)]
@@ -277,21 +280,24 @@ impl From<EvaluationError> for ComputeError {
 }
 
 impl<L> InstructionArgument<L> {
-    pub(crate) fn evaluate<C: Context>(&self, context: &C) -> Result<Arg, ComputeError> {
+    pub(crate) fn evaluate<C: Context>(
+        &self,
+        context: &C,
+    ) -> Result<ImmRegDirIndIdx, ComputeError> {
         match self {
             Self::Value(v) => {
                 let value = v.evaluate(context)?;
-                Ok(Arg::Value(Value::Imm(value)))
+                Ok(ImmRegDirIndIdx::Imm(Imm(value)))
             }
-            Self::Register(register) => Ok(Arg::Value(Value::Reg(*register))),
+            Self::Register(register) => Ok(ImmRegDirIndIdx::Reg(*register)),
             Self::Direct(v) => {
                 let value = v.inner.evaluate(context)?;
-                Ok(Arg::Address(Address::Dir(value)))
+                Ok(ImmRegDirIndIdx::Dir(Dir(value)))
             }
-            Self::Indirect(register) => Ok(Arg::Address(Address::Ind(register.inner))),
+            Self::Indirect(register) => Ok(ImmRegDirIndIdx::Ind(Ind(register.inner))),
             Self::Indexed { register, value } => {
                 let value = value.inner.evaluate(context)?;
-                Ok(Arg::Address(Address::Idx(register.inner, value)))
+                Ok(ImmRegDirIndIdx::Idx(Idx(register.inner, value)))
             }
         }
     }
@@ -326,13 +332,6 @@ impl<L: Clone> AstNode<L> for InstructionArgument<L> {
             }
         }
     }
-}
-
-// TODO: get rid of this
-pub(crate) fn parse_indirect_inner(
-    _input: &str,
-) -> IResult<&str, InstructionArgument<RelativeLocation>> {
-    todo!()
 }
 
 fn parse_register<'a, Error: ParseError<&'a str>>(input: &'a str) -> IResult<&'a str, Reg, Error> {

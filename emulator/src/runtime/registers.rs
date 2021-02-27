@@ -7,10 +7,7 @@ use crate::{
     constants as C,
 };
 
-use super::{
-    memory::{Cell, CellError, TryFromCell},
-    Address,
-};
+use super::memory::{Cell, CellError, TryFromCell};
 
 bitflags! {
     #[derive(Default)]
@@ -41,10 +38,6 @@ pub struct Registers {
     /// Status register
     pub sr: StatusRegister,
 }
-
-#[derive(Error, Debug)]
-#[error("could not resolve address")]
-pub struct AddressResolutionError(#[from] CellError);
 
 impl Registers {
     pub fn get(&self, reg: &Reg) -> Cell {
@@ -80,35 +73,6 @@ impl Registers {
             Reg::SR => self.sr.bits = C::Word::try_from_cell(&value)?,
         };
         Ok(())
-    }
-
-    pub fn resolve_address(&self, address: &Address) -> Result<C::Address, AddressResolutionError> {
-        use Address::*;
-        match address {
-            // A direct memory access
-            Dir(addr) => Ok(*addr),
-
-            // An indirect memory access
-            Ind(reg) => {
-                // Get the register value
-                let cell = self.get(reg);
-                // and try converting it to an address
-                let addr = C::Address::try_from_cell(&cell)?;
-                Ok(addr)
-            }
-
-            Idx(reg, off) => {
-                // Get the register value
-                let cell = self.get(reg);
-                // and try converting it to a word
-                let addr = C::Word::try_from_cell(&cell)?;
-                // add the offset
-                let addr = addr + off;
-                // and convert it to an address
-                let addr = C::Address::try_from_cell(&addr.into())?;
-                Ok(addr)
-            }
-        }
     }
 }
 
