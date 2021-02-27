@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use parse_display::Display;
 use thiserror::Error;
 use tracing::{debug, trace};
 
@@ -21,25 +22,19 @@ impl ExpressionContext for Labels {
     }
 }
 
+#[derive(Display)]
 pub(crate) enum Placement<L> {
     /// A memory cell filled by .space
+    #[display("SPACE")]
     Reserved,
 
     /// A memory cell filled by .string
+    #[display("{0:?}")]
     Char(char),
 
     /// A instruction or a .word directive
+    #[display("{0}")]
     Line(LineContent<L>),
-}
-
-impl<L> std::fmt::Display for Placement<L> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Placement::Reserved => write!(f, "SPACE"),
-            Placement::Char(c) => write!(f, "{:?}", c),
-            Placement::Line(l) => write!(f, "{}", l),
-        }
-    }
 }
 
 #[derive(Default)]

@@ -1,15 +1,11 @@
 use nom::Offset;
+use parse_display::Display;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Display)]
+#[display("{inner}", bound(T))]
 pub struct Located<T, L> {
     pub inner: T,
     pub(crate) location: L,
-}
-
-impl<T: std::fmt::Display, L> std::fmt::Display for Located<T, L> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.inner)
-    }
 }
 
 impl<T> Located<T, RelativeLocation> {

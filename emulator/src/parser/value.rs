@@ -6,6 +6,7 @@ use nom::{
     error::context,
     Compare, IResult, InputTake,
 };
+use parse_display::{Display, FromStr};
 use thiserror::Error;
 
 use super::{
@@ -20,7 +21,8 @@ use crate::{
     runtime::{Address, Arg, Reg, Value},
 };
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Display, FromStr, Clone, Copy, Debug, PartialEq)]
+#[display(style = "lowercase")]
 pub(crate) enum InstructionKind {
     Add,
     And,
@@ -65,49 +67,6 @@ impl<L> AstNode<L> for InstructionKind {
 
     fn content(&self) -> Option<String> {
         Some(format!("{}", self))
-    }
-}
-
-impl std::fmt::Display for InstructionKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use InstructionKind::*;
-
-        match self {
-            Add => write!(f, "add"),
-            And => write!(f, "and"),
-            Call => write!(f, "call"),
-            Cmp => write!(f, "cmp"),
-            Div => write!(f, "div"),
-            Fas => write!(f, "fas"),
-            In => write!(f, "in"),
-            Jmp => write!(f, "jmp"),
-            Jeq => write!(f, "jeq"),
-            Jne => write!(f, "jne"),
-            Jle => write!(f, "jle"),
-            Jlt => write!(f, "jlt"),
-            Jge => write!(f, "jge"),
-            Jgt => write!(f, "jgt"),
-            Ld => write!(f, "ld"),
-            Mul => write!(f, "mul"),
-            Neg => write!(f, "neg"),
-            Nop => write!(f, "nop"),
-            Not => write!(f, "not"),
-            Or => write!(f, "or"),
-            Out => write!(f, "out"),
-            Pop => write!(f, "pop"),
-            Push => write!(f, "push"),
-            Reset => write!(f, "reset"),
-            Rti => write!(f, "rti"),
-            Rtn => write!(f, "rtn"),
-            Shl => write!(f, "shl"),
-            Shr => write!(f, "shr"),
-            St => write!(f, "st"),
-            Sub => write!(f, "sub"),
-            Swap => write!(f, "swap"),
-            Trap => write!(f, "trap"),
-            Xor => write!(f, "xor"),
-            DebugReg => write!(f, "debugreg"),
-        }
     }
 }
 
@@ -164,39 +123,30 @@ where
 }
 
 /// Represents an instruction argument
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Display)]
 pub(crate) enum InstructionArgument<L> {
     /// An immediate value
+    #[display("{0}")]
     Value(Node<L>),
 
     /// The content of a register
+    #[display("{0}")]
     Register(Reg),
 
     /// A direct memory access
+    #[display("[{0.inner}]")]
     Direct(Located<Node<L>, L>),
 
     /// An indirect memory access (register)
+    #[display("[{0.inner}]")]
     Indirect(Located<Reg, L>),
 
     /// An indexed memory access (register + offset)
+    #[display("[{register.inner} {value.inner:+}]")]
     Indexed {
         register: Located<Reg, L>,
         value: Located<Node<L>, L>,
     },
-}
-
-impl<L> std::fmt::Display for InstructionArgument<L> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use InstructionArgument::*;
-
-        match self {
-            Value(v) => write!(f, "{}", v),
-            Register(r) => write!(f, "{}", r),
-            Direct(v) => write!(f, "[{}]", v.inner),
-            Indirect(r) => write!(f, "[{}]", r.inner),
-            Indexed { register, value } => write!(f, "[{} {:+}]", register.inner, value.inner),
-        }
-    }
 }
 
 /// Parse an instruction argument
@@ -215,7 +165,8 @@ pub(crate) fn parse_instruction_argument<'a, Error: ParseError<&'a str>>(
     ))(input)
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Display, FromStr, Clone, Copy, Debug, PartialEq)]
+#[display(style = "lowercase")]
 pub enum DirectiveKind {
     Addr,
     Space,
@@ -230,19 +181,6 @@ impl<L> AstNode<L> for DirectiveKind {
 
     fn content(&self) -> Option<String> {
         Some(format!("{}", self))
-    }
-}
-
-impl std::fmt::Display for DirectiveKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use DirectiveKind::*;
-
-        match self {
-            Addr => write!(f, "addr"),
-            Space => write!(f, "space"),
-            String => write!(f, "string"),
-            Word => write!(f, "word"),
-        }
     }
 }
 
@@ -264,12 +202,14 @@ where
 }
 
 /// Represents a directive argument
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Display)]
 pub(crate) enum DirectiveArgument<L> {
     /// A string literal (`.string` directive)
+    #[display("{0:?}")]
     StringLiteral(String),
 
     /// An expression (`.addr`, `.word`, `.space` directives)
+    #[display("{0}")]
     Expression(Node<L>),
 }
 
@@ -292,17 +232,6 @@ impl<L: Clone> AstNode<L> for DirectiveArgument<L> {
         match self {
             DirectiveArgument::StringLiteral(_) => Vec::new(),
             DirectiveArgument::Expression(e) => e.children(),
-        }
-    }
-}
-
-impl<L> std::fmt::Display for DirectiveArgument<L> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use DirectiveArgument::*;
-
-        match self {
-            StringLiteral(l) => write!(f, "{:?}", l),
-            Expression(e) => write!(f, "{}", e),
         }
     }
 }

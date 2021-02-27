@@ -1,5 +1,6 @@
 use std::convert::TryInto;
 
+use parse_display::Display;
 use tracing::{debug, info};
 
 use crate::constants::*;
@@ -11,106 +12,139 @@ use super::{
     Address, Arg, Computer, ProcessorError, Value,
 };
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Display)]
 pub enum Instruction {
     /// Add a value to a register
+    #[display("add  {0}, {1}")]
     Add(Arg, Reg),
 
     /// Bitwise `and` with a given value
+    #[display("and  {0}, {1}")]
     And(Arg, Reg),
 
     /// Push `%pc` and go to the given address
+    #[display("call {0}")]
     Call(Arg),
 
     /// Compare a value with a register
+    #[display("cmp  {0}, {1}")]
     Cmp(Arg, Reg),
 
     /// Divide a register by a value
+    #[display("div  {0}, {1}")]
     Div(Arg, Reg),
 
     /// Load a memory cell to a register and set this cell to 1
+    #[display("fas  {0}, {1}")]
     Fas(Address, Reg),
 
     /// Read a value from an I/O controller
+    #[display("in   {0}, {1}")]
     In(Address, Reg),
 
     /// Unconditional jump
+    #[display("jmp  {0}")]
     Jmp(Arg),
 
     /// Jump if equal
+    #[display("jeq  {0}")]
     Jeq(Arg),
 
     /// Jump if not equal
+    #[display("jne  {0}")]
     Jne(Arg),
 
     /// Jump if less or equal
+    #[display("jle  {0}")]
     Jle(Arg),
 
     /// Jump if strictly less
+    #[display("jlt  {0}")]
     Jlt(Arg),
 
     /// Jump if greater of equal
+    #[display("jge  {0}")]
     Jge(Arg),
 
     /// Jump if strictly greater
+    #[display("jgt  {0}")]
     Jgt(Arg),
 
     /// Load a register with a value
+    #[display("ld   {0}, {1}")]
     Ld(Arg, Reg),
 
     /// Multiply a value to a register
+    #[display("mul  {0}, {1}")]
     Mul(Arg, Reg),
 
+    #[display("neg  {0}")]
     Neg(Reg),
 
     /// No-op
+    #[display("nop")]
     Nop,
 
     /// Bitwise negation of a register
+    #[display("not  {0}")]
     Not(Reg),
 
     /// Bitwise `or` with a given value
+    #[display("or   {0}, {1}")]
     Or(Arg, Reg),
 
     /// Write a value to an I/O controller
+    #[display("out  {0}, {1}")]
     Out(Value, Address),
 
     /// Pop a value from the stack
+    #[display("pop  {0}")]
     Pop(Reg),
 
     /// Push a value into the stack
+    #[display("push {0}")]
     Push(Value),
 
     /// Reset the computer
+    #[display("reset")]
     Reset,
 
     /// Return from an interrupt or an exception
+    #[display("rti")]
     Rti,
 
     /// Return from a `call`
+    #[display("rtn")]
     Rtn,
 
     /// Bitshift to the left
+    #[display("shl  {0}, {1}")]
     Shl(Arg, Reg),
 
     /// Bitshift to the right
+    #[display("shr  {0}, {1}")]
     Shr(Arg, Reg),
 
     /// Store a register value in memory
+    #[display("st   {0}, {1}")]
     St(Reg, Address),
 
     /// Substract a value from a register
+    #[display("sub  {0}, {1}")]
     Sub(Arg, Reg),
 
     // /// Swap a value and a register
     // Swap(ArgSwap, Reg),
     /// Start a `trap` exception
+    #[display("trap")]
     Trap,
 
     /// Bitwise `xor` with a given value
+    #[display("xor  {0}, {1}")]
     Xor(Arg, Reg),
 
     /// Show registers content
+    #[display("debugreg")]
     DebugReg,
 }
 
@@ -427,48 +461,6 @@ impl Instruction {
             Trap => 1,
             Xor(a, b) => 1 + a.cost() + b.cost(),
             DebugReg => 0,
-        }
-    }
-}
-
-impl std::fmt::Display for Instruction {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use Instruction::*;
-
-        match self {
-            Add(a, b) => write!(f, "add  {}, {}", a, b),
-            And(a, b) => write!(f, "and  {}, {}", a, b),
-            Call(a) => write!(f, "call {}", a),
-            Cmp(a, b) => write!(f, "cmp  {}, {}", a, b),
-            Div(a, b) => write!(f, "div  {}, {}", a, b),
-            Fas(a, b) => write!(f, "fas  {}, {}", a, b),
-            In(a, b) => write!(f, "in   {}, {}", a, b),
-            Jmp(a) => write!(f, "jmp  {}", a),
-            Jeq(a) => write!(f, "jeq  {}", a),
-            Jne(a) => write!(f, "jne  {}", a),
-            Jle(a) => write!(f, "jle  {}", a),
-            Jlt(a) => write!(f, "jlt  {}", a),
-            Jge(a) => write!(f, "jge  {}", a),
-            Jgt(a) => write!(f, "jgt  {}", a),
-            Ld(a, b) => write!(f, "ld   {}, {}", a, b),
-            Mul(a, b) => write!(f, "mul  {}, {}", a, b),
-            Neg(a) => write!(f, "neg  {}", a),
-            Nop => write!(f, "nop"),
-            Not(a) => write!(f, "not  {}", a),
-            Or(a, b) => write!(f, "or   {}, {}", a, b),
-            Out(a, b) => write!(f, "out  {}, {}", a, b),
-            Pop(a) => write!(f, "pop  {}", a),
-            Push(a) => write!(f, "push {}", a),
-            Reset => write!(f, "reset"),
-            Rti => write!(f, "rti"),
-            Rtn => write!(f, "rtn"),
-            Shl(a, b) => write!(f, "shl  {}, {}", a, b),
-            Shr(a, b) => write!(f, "shr  {}, {}", a, b),
-            St(a, b) => write!(f, "st   {}, {}", a, b),
-            Sub(a, b) => write!(f, "sub  {}, {}", a, b),
-            Trap => write!(f, "trap"),
-            Xor(a, b) => write!(f, "xor  {}, {}", a, b),
-            DebugReg => write!(f, "debugreg"),
         }
     }
 }

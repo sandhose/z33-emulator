@@ -1,4 +1,5 @@
 use bitflags::bitflags;
+use parse_display::Display;
 use thiserror::Error;
 
 use crate::{
@@ -25,10 +26,19 @@ bitflags! {
 
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct Registers {
+    /// General purpose
     pub a: Cell,
+
+    /// General purpose
     pub b: Cell,
+
+    /// Program counter
     pub pc: C::Address,
+
+    /// Stack pointer
     pub sp: C::Address,
+
+    /// Status register
     pub sr: StatusRegister,
 }
 
@@ -112,12 +122,22 @@ impl std::fmt::Display for Registers {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Display)]
+#[display("%{}", style = "lowercase")]
 pub enum Reg {
+    /// General purpose
     A,
+
+    /// General purpose
     B,
+
+    /// Program counter
     PC,
+
+    /// Stack pointer
     SP,
+
+    /// Status register
     SR,
 }
 
@@ -136,18 +156,6 @@ impl<L> AstNode<L> for Reg {
 
     fn content(&self) -> Option<String> {
         Some(format!("{}", self))
-    }
-}
-
-impl std::fmt::Display for Reg {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::A => write!(f, "%a"),
-            Self::B => write!(f, "%b"),
-            Self::PC => write!(f, "%pc"),
-            Self::SP => write!(f, "%sp"),
-            Self::SR => write!(f, "%sr"),
-        }
     }
 }
 

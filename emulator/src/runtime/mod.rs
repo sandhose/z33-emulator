@@ -1,5 +1,6 @@
 //! The actual emulator runtime
 
+use parse_display::Display;
 use std::convert::TryFrom;
 use std::fmt::Debug;
 use thiserror::Error;
@@ -354,7 +355,8 @@ pub(crate) enum ArgKind {
     Idx,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Display)]
+#[display("{}")]
 pub enum Arg {
     Address(Address),
     Value(Value),
@@ -426,15 +428,6 @@ impl Arg {
         match self {
             Arg::Address(a) => a.kind(),
             Arg::Value(v) => v.kind(),
-        }
-    }
-}
-
-impl std::fmt::Display for Arg {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Address(a) => write!(f, "{}", a),
-            Self::Value(v) => write!(f, "{}", v),
         }
     }
 }
