@@ -23,6 +23,8 @@ pub(crate) mod preprocessor;
 pub(crate) mod value;
 
 pub use errors::{Error, ParseError};
+pub use expression::{parse_expression, Context as ExpressionContext, Node as ExpressionNode};
+pub use value::parse_register;
 
 fn is_identifier_char(c: char) -> bool {
     is_start_identifier_char(c) || ('0'..'9').contains(&c)

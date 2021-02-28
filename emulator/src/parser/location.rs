@@ -20,7 +20,7 @@ impl<T> Located<T, RelativeLocation> {
     }
 }
 
-pub(crate) trait Locatable: Sized {
+pub trait Locatable: Sized {
     fn with_location<L, L1: Into<L>>(self, location: L1) -> Located<Self, L> {
         Located {
             inner: self,

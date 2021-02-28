@@ -18,6 +18,7 @@ use z33_emulator::constants as C;
 use z33_emulator::runtime::{Computer, Exception, Reg};
 
 mod helper;
+mod parse;
 use self::helper::RunHelper;
 
 static HELP: &str = r#"
@@ -54,7 +55,7 @@ enum Command {
     Memory {
         /// The address to show. Can be a direct address (number literal) or an indirect one
         /// (register with an optional offset).
-        address: C::Address, // TODO
+        address: parse::Address,
 
         /// Number of memory cells to show.
         #[clap(default_value = "1")]
@@ -74,13 +75,13 @@ enum Command {
     /// Set a breakpoint
     Break {
         /// The address where to set the breakpoint
-        address: C::Address, // TODO
+        address: parse::Address,
     },
 
     /// Remove a breakpoint
     Unbreak {
         /// The address of the breakpoint to remove
-        address: C::Address, // TODO
+        address: parse::Address,
     },
 
     /// Continue the program until the next breakpoint or reset
@@ -301,8 +302,8 @@ pub(crate) fn run_interactive(
                 }
             }
             Command::Memory { address, number } => {
-                // TODO: recover from error
-                // let address = computer.registers.resolve_address(address)?;
+                let address = address.clone().evaluate(computer, &session.labels)?;
+
                 if number.is_positive() {
                     for i in 0..(*number as C::Address) {
                         let address = address + i;
@@ -332,15 +333,13 @@ pub(crate) fn run_interactive(
             }
 
             Command::Break { address } => {
-                // TODO: recover from error
-                // let address = computer.registers.resolve_address(address)?;
-                session.add_breakpoint(*address);
+                let address = address.clone().evaluate(computer, &session.labels)?;
+                session.add_breakpoint(address);
             }
 
             Command::Unbreak { address } => {
-                // TODO: recover from error
-                // let address = computer.registers.resolve_address(address)?;
-                session.remove_breakpoint(*address);
+                let address = address.clone().evaluate(computer, &session.labels)?;
+                session.remove_breakpoint(address);
             }
 
             Command::Continue => {

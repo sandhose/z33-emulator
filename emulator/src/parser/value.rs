@@ -334,7 +334,9 @@ impl<L: Clone> AstNode<L> for InstructionArgument<L> {
     }
 }
 
-fn parse_register<'a, Error: ParseError<&'a str>>(input: &'a str) -> IResult<&'a str, Reg, Error> {
+pub fn parse_register<'a, Error: ParseError<&'a str>>(
+    input: &'a str,
+) -> IResult<&'a str, Reg, Error> {
     use Reg::*;
 
     alt((

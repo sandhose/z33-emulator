@@ -43,7 +43,7 @@ use super::{
 type ChildNode<L> = Located<Box<Node<L>>, L>;
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) enum Node<L> {
+pub enum Node<L = RelativeLocation> {
     /// a | b
     BinaryOr(ChildNode<L>, ChildNode<L>),
 
@@ -686,7 +686,7 @@ fn parse_parenthesis<'a, Error: ParseError<&'a str>>(
 }
 
 /// Parse an expression, returning its AST
-pub(crate) fn parse_expression<'a, Error: ParseError<&'a str>>(
+pub fn parse_expression<'a, Error: ParseError<&'a str>>(
     input: &'a str,
 ) -> IResult<&'a str, Node<RelativeLocation>, Error> {
     parse_or(input)
