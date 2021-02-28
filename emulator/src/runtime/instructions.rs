@@ -454,7 +454,10 @@ impl Instruction {
     pub(crate) const fn cost(&self) -> usize {
         use Instruction::*;
 
+        // All instruction cost one CPU cycle itself, plus the cost of each of its arguments
         match self {
+            DebugReg => 0, // The only exception being `debugreg`, which costs nothing
+
             Add(a, b) => 1 + a.cost() + b.cost(),
             And(a, b) => 1 + a.cost() + b.cost(),
             Call(a) => 1 + a.cost(),
@@ -488,7 +491,6 @@ impl Instruction {
             Swap(a, b) => 1 + a.cost() + b.cost(),
             Trap => 1,
             Xor(a, b) => 1 + a.cost() + b.cost(),
-            DebugReg => 0,
         }
     }
 }
