@@ -407,8 +407,27 @@ impl Instruction {
                     .set(StatusRegister::OVERFLOW, overflow);
             }
 
-            Swap(_, _) => {
-                todo!();
+            Swap(arg, reg) => {
+                // First we extract the value from both arguments
+                let value = arg.extract_cell(computer)?;
+                let value2 = reg.extract_cell(computer)?;
+
+                // And set the value of the register specified by the second argument
+                computer.set_register(reg, value)?;
+
+                // Then handle the two kind of cases: a register and a memory address
+                if let RegDirIndIdx::Reg(arg) = arg {
+                    // Set the value of the register by the first argument
+                    computer.set_register(arg, value2)?;
+                } else {
+                    // Convert the reg/dir/ind/idx arg to only dir/ind/idx, since we already
+                    // handled the reg case. Despite the unwrap, this should never fail.
+                    let arg: DirIndIdx = arg.clone().try_into().unwrap();
+
+                    // Resolve the address and write the second value
+                    let addr = arg.resolve_address(&computer.registers)?;
+                    computer.write(addr, value2)?;
+                }
             }
 
             Trap => {

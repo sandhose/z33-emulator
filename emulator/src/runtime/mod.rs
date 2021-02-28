@@ -108,20 +108,21 @@ impl Computer {
             .map_err(|_| Exception::InvalidInstruction.into())
     }
 
-    fn inner_step(&mut self) -> Result<usize> {
-        let inst = self.decode_instruction()?;
-        let cost = inst.cost();
-        tracing::Span::current().record("cost", &cost);
-        info!("Executing instruction \"{}\"", inst);
-        // This clone is necessary as `inst` is borrowed from `self`.
-        // The computer might modify the cell where the instruction is stored when executing it.
-        inst.clone().execute(self)?;
-        Ok(cost)
-    }
-
     #[tracing::instrument(skip(self), level = "debug", fields(cost))]
     pub fn step(&mut self) -> Result<()> {
-        let cost = self.inner_step().or_else(|e| {
+        // Wrapping the part that can be recovered from in another function
+        fn inner(c: &mut Computer) -> Result<usize> {
+            let inst = c.decode_instruction()?;
+            let cost = inst.cost();
+            tracing::Span::current().record("cost", &cost);
+            info!("Executing instruction \"{}\"", inst);
+            // This clone is necessary as `inst` is borrowed from `self`.
+            // The computer might modify the cell where the instruction is stored when executing it.
+            inst.clone().execute(c)?;
+            Ok(cost)
+        }
+
+        let cost = inner(self).or_else(|e| {
             if let ProcessorError::Exception(e) = e {
                 self.recover_from_exception(e)
                     .map_err(ProcessorError::Exception)

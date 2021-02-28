@@ -358,6 +358,17 @@ impl RegDirIndIdx {
     }
 }
 
+impl ExtractValue for RegDirIndIdx {
+    fn extract_cell(&self, c: &Computer) -> Result<Cell, ExtractError> {
+        match self {
+            RegDirIndIdx::Reg(a) => a.extract_cell(c),
+            RegDirIndIdx::Dir(a) => a.extract_cell(c),
+            RegDirIndIdx::Ind(a) => a.extract_cell(c),
+            RegDirIndIdx::Idx(a) => a.extract_cell(c),
+        }
+    }
+}
+
 impl TryFrom<ImmRegDirIndIdx> for RegDirIndIdx {
     type Error = ArgConversionError;
 
@@ -370,6 +381,22 @@ impl TryFrom<ImmRegDirIndIdx> for RegDirIndIdx {
             other => Err(ArgConversionError {
                 expected: Self::kinds(),
                 got: other.kind(),
+            }),
+        }
+    }
+}
+
+impl TryFrom<RegDirIndIdx> for DirIndIdx {
+    type Error = ArgConversionError;
+
+    fn try_from(value: RegDirIndIdx) -> Result<Self, Self::Error> {
+        match value {
+            RegDirIndIdx::Dir(a) => Ok(Self::Dir(a)),
+            RegDirIndIdx::Ind(a) => Ok(Self::Ind(a)),
+            RegDirIndIdx::Idx(a) => Ok(Self::Idx(a)),
+            RegDirIndIdx::Reg(_) => Err(ArgConversionError {
+                expected: Self::kinds(),
+                got: ArgKind::Reg,
             }),
         }
     }
