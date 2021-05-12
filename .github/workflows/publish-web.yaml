@@ -22,7 +22,7 @@ jobs:
           node-version: "12"
 
       - name: Install Rust WASM toolchain
-        uses: actions-rs/toolchain@v1
+        uses: actions-rs/toolchain@v1.0.7
         with:
           toolchain: stable
           target: wasm32-unknown-unknown
