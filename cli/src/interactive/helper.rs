@@ -55,7 +55,7 @@ fn suggest(app: &App, input: &[String]) -> (usize, HashSet<String>) {
         suggestions.extend(additional.into_iter().map(String::from))
     }
 
-    match &input[..] {
+    match input {
         [last] => (
             last.len(),
             suggestions

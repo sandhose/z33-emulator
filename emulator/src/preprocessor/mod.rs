@@ -1,4 +1,8 @@
-use std::{collections::HashMap, io::Read, path::PathBuf};
+use std::{
+    collections::HashMap,
+    io::Read,
+    path::{Path, PathBuf},
+};
 
 use nom::{combinator::all_consuming, error::convert_error, Finish};
 use thiserror::Error;
@@ -74,11 +78,11 @@ impl ParserCache {
 }
 
 impl ParserCache {
-    fn get_file(&self, path: &PathBuf) -> &Result<ParsedFile<AbsoluteLocation>, GetFileError> {
+    fn get_file(&self, path: &Path) -> &Result<ParsedFile<AbsoluteLocation>, GetFileError> {
         self.files.get(path).expect("file not in cache")
     }
 
-    fn fill<FS: Filesystem>(&mut self, path: &PathBuf, fs: &FS) {
+    fn fill<FS: Filesystem>(&mut self, path: &Path, fs: &FS) {
         if self.files.contains_key(path) {
             return;
         }
@@ -109,7 +113,7 @@ impl ParserCache {
             });
         }
 
-        self.files.insert(path.clone(), res);
+        self.files.insert(path.to_path_buf(), res);
 
         let parent = path;
         for path in paths {
@@ -177,7 +181,7 @@ impl Context {
 fn process_chunk<FS: Filesystem, L: Clone>(
     chunk: &Node<L>,
     context: &mut Context,
-    open_path: &PathBuf,
+    open_path: &Path,
     cache: &ParserCache,
     fs: &FS,
 ) -> Result<Vec<String>, PreprocessorError> {
@@ -258,7 +262,7 @@ fn process_chunk<FS: Filesystem, L: Clone>(
 }
 
 fn preprocess_path<FS: Filesystem>(
-    path: &PathBuf,
+    path: &Path,
     context: &mut Context,
     cache: &ParserCache,
     fs: &FS,
@@ -267,7 +271,7 @@ fn preprocess_path<FS: Filesystem>(
 
     let mut buf = Vec::new();
     let file = cache.get_file(path).as_ref().map_err(|inner| GetFile {
-        path: path.clone(),
+        path: path.to_path_buf(),
         inner: inner.clone(),
     })?;
 
@@ -279,10 +283,7 @@ fn preprocess_path<FS: Filesystem>(
     Ok(buf)
 }
 
-pub fn preprocess<FS: Filesystem>(
-    fs: &FS,
-    entrypoint: &PathBuf,
-) -> Result<String, PreprocessorError> {
+pub fn preprocess<FS: Filesystem>(fs: &FS, entrypoint: &Path) -> Result<String, PreprocessorError> {
     let path = fs.relative(None, entrypoint);
     let mut context = Context::default();
     let cache = {
@@ -376,7 +377,7 @@ mod tests {
     #[test]
     fn inclusion_test() {
         let fs = fs();
-        let res = preprocess(&fs, &"/inclusion.S".into()).unwrap();
+        let res = preprocess(&fs, &PathBuf::from("/inclusion.S")).unwrap();
         assert_eq!(
             res,
             indoc::indoc! {r#"
@@ -390,7 +391,7 @@ mod tests {
     #[test]
     fn condition_test() {
         let fs = fs();
-        let res = preprocess(&fs, &"/condition.S".into()).unwrap();
+        let res = preprocess(&fs, &PathBuf::from("/condition.S")).unwrap();
         assert_eq!(
             res,
             indoc::indoc! {r#"
@@ -409,7 +410,7 @@ mod tests {
     #[test]
     fn definition_test() {
         let fs = fs();
-        let res = preprocess(&fs, &"/define.S".into()).unwrap();
+        let res = preprocess(&fs, &PathBuf::from("/define.S")).unwrap();
         assert_eq!(
             res,
             indoc::indoc! {r#"
@@ -419,7 +420,7 @@ mod tests {
             "#}
         );
 
-        let res = preprocess(&fs, &"/double-define.S".into()).unwrap();
+        let res = preprocess(&fs, &PathBuf::from("/double-define.S")).unwrap();
         assert_eq!(
             res,
             indoc::indoc! {r#"
@@ -431,7 +432,7 @@ mod tests {
     #[test]
     fn user_error_test() {
         let fs = fs();
-        let res = preprocess(&fs, &"/error.S".into());
+        let res = preprocess(&fs, &PathBuf::from("/error.S"));
         assert!(res.is_err());
         if let Err(PreprocessorError::UserError(c)) = res {
             assert_eq!(c, "custom".to_string());

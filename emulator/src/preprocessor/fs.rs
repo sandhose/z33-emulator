@@ -1,22 +1,22 @@
 use std::{
     collections::HashMap,
     io::{Cursor, Read},
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 
 pub trait Filesystem {
     type File: Read;
 
-    fn open(&self, path: &PathBuf) -> std::io::Result<Self::File>;
+    fn open(&self, path: &Path) -> std::io::Result<Self::File>;
 
     fn root(&self) -> PathBuf {
         PathBuf::new()
     }
 
-    fn relative(&self, sibling: Option<&PathBuf>, path: &PathBuf) -> PathBuf {
+    fn relative(&self, sibling: Option<&Path>, path: &Path) -> PathBuf {
         sibling
             .and_then(|s| s.parent()) // Get the parent of the sibling
-            .map(ToOwned::to_owned) // PathBuf::parent outputs a reference, make it owned again
+            .map(ToOwned::to_owned) // Path::parent outputs a reference, make it owned again
             .unwrap_or_else(|| self.root()) // Default to the "root" path
             .join(path) // And join relative to that
     }
@@ -35,7 +35,7 @@ impl InMemoryFilesystem {
 impl Filesystem for InMemoryFilesystem {
     type File = Cursor<String>;
 
-    fn open(&self, path: &PathBuf) -> std::io::Result<Self::File> {
+    fn open(&self, path: &Path) -> std::io::Result<Self::File> {
         self.files
             .get(path)
             .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "file not found"))
@@ -58,7 +58,7 @@ impl NativeFilesystem {
 impl Filesystem for NativeFilesystem {
     type File = std::fs::File;
 
-    fn open(&self, path: &PathBuf) -> std::io::Result<Self::File> {
+    fn open(&self, path: &Path) -> std::io::Result<Self::File> {
         std::fs::File::open(path)
     }
 

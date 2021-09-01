@@ -7,6 +7,9 @@
 //! Using Clap to do this is a bit of a hack, and requires some weird options to have it working
 //! but works nonetheless.
 
+// https://github.com/clap-rs/clap/pull/2713
+#![allow(unused_braces)]
+
 use std::collections::{HashMap, HashSet};
 
 use clap::{AppSettings, Clap};
