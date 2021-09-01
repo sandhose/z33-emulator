@@ -1,4 +1,4 @@
-use clap::{Clap, IntoApp};
+use clap::{ArgEnum, Clap, IntoApp};
 use clap_generate::{
     generate,
     generators::{Bash, Elvish, Fish, PowerShell, Zsh},
@@ -13,7 +13,7 @@ pub struct CompletionOpt {
     shell: ShellKind,
 }
 
-#[derive(Clap, Debug)]
+#[derive(ArgEnum, Debug)]
 enum ShellKind {
     Bash,
     Elvish,

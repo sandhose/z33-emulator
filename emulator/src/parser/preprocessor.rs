@@ -86,26 +86,26 @@ impl Node<RelativeLocation> {
         match self {
             Raw { content } => Raw { content },
             Error { message } => Error {
-                message: message.into_absolute(&parent, |c, _| c),
+                message: message.into_absolute(parent, |c, _| c),
             },
             Undefine { key } => Undefine {
-                key: key.into_absolute(&parent, |k, _| k),
+                key: key.into_absolute(parent, |k, _| k),
             },
             Definition { key, content } => Definition {
-                key: key.into_absolute(&parent, |k, _| k),
-                content: content.map(|c| c.into_absolute(&parent, |c, _| c)),
+                key: key.into_absolute(parent, |k, _| k),
+                content: content.map(|c| c.into_absolute(parent, |c, _| c)),
             },
             Inclusion { path } => Inclusion {
-                path: path.into_absolute(&parent, |p, _| p),
+                path: path.into_absolute(parent, |p, _| p),
             },
             Condition { branches, fallback } => Condition {
                 branches: branches
                     .into_iter()
-                    .map(|b| b.into_absolute(&parent))
+                    .map(|b| b.into_absolute(parent))
                     .collect(),
                 fallback: fallback.map(
                     |l: Located<Children<RelativeLocation>, RelativeLocation>| {
-                        l.into_absolute(&parent, |c, p| {
+                        l.into_absolute(parent, |c, p| {
                             c.into_iter()
                                 .map(|c| c.into_absolute(p, |c, p| c.into_absolute(p)))
                                 .collect()
@@ -273,7 +273,7 @@ fn parse_condition<'a, Error: ParseError<&'a str>>(
         Else,
         ElseIf(Located<String, RelativeLocation>),
         EndIf,
-    };
+    }
     use BranchDirective::*;
 
     let mut cursor = rest; // This saves current location in the input

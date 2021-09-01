@@ -101,7 +101,7 @@ where
     }
 
     let x = args.remove(0);
-    Ok(X::try_from(x).map_err(Into::into)?)
+    X::try_from(x).map_err(Into::into)
 }
 
 fn get_none(args: Vec<ImmRegDirIndIdx>) -> Result<(), InstructionCompilationError> {

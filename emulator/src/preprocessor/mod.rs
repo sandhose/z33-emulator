@@ -85,7 +85,7 @@ impl ParserCache {
 
         let res = (|| {
             let content = {
-                let mut f = fs.open(&path).map_err(std::rc::Rc::new)?;
+                let mut f = fs.open(path).map_err(std::rc::Rc::new)?;
                 let mut buf = String::new();
                 f.read_to_string(&mut buf).map_err(std::rc::Rc::new)?;
                 buf

@@ -355,7 +355,7 @@ fn parse_indexed<'a, Error: ParseError<&'a str>>(
     enum Sign {
         Plus,
         Minus,
-    };
+    }
     use Sign::*;
 
     let (rest, _) = char('[')(input)?;

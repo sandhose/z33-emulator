@@ -30,10 +30,10 @@ An empty line re-runs the last valid command."#;
     help_template = "{about}\n\nCOMMANDS:\n{subcommands}\n{after-help}",
     after_help = HELP,
     global_setting = AppSettings::ColoredHelp,
-    global_setting = AppSettings::DisableVersion,
+    global_setting = AppSettings::DisableVersionFlag,
     global_setting = AppSettings::InferSubcommands,
     global_setting = AppSettings::NoBinaryName,
-    global_setting = AppSettings::VersionlessSubcommands,
+    global_setting = AppSettings::DisableVersionForSubcommands,
     global_setting = AppSettings::AllowNegativeNumbers,
 )]
 /// Interactive mode commands
@@ -157,7 +157,7 @@ impl Session {
 
     /// Offset the `list` command, returns the address to show
     fn offset_list(&mut self, computer: &Computer, offset: C::Address) -> C::Address {
-        let addr = self.list_address.clone().unwrap_or(computer.registers.pc);
+        let addr = self.list_address.unwrap_or(computer.registers.pc);
         self.list_address = Some(addr + offset);
         addr
     }

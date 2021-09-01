@@ -63,7 +63,7 @@ fn parse_indexed(input: &str) -> IResult<&str, Address, VerboseError<&str>> {
     enum Sign {
         Plus,
         Minus,
-    };
+    }
     use Sign::*;
 
     let (rest, sign) = alt((

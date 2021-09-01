@@ -389,7 +389,7 @@ fn parse_or_rec<'a, Error: ParseError<&'a str>>(
     cut(move |rest: &'a str| {
         let start = rest;
         let (rest, node) = parse_and(rest)?;
-        let node = Box::new(node).with_location((input.offset(&start), start.offset(&rest)));
+        let node = Box::new(node).with_location((input.offset(start), start.offset(rest)));
         Ok((rest, node))
     })(rest)
 }
@@ -401,7 +401,7 @@ fn parse_or<'a, Error: ParseError<&'a str>>(
     let (mut cursor, mut node) = parse_and(input)?;
 
     while let (rest, Some(right)) = opt(parse_or_rec)(cursor)? {
-        let offset = input.offset(&cursor);
+        let offset = input.offset(cursor);
         // Wrap the "left" node with location information
         let left = Box::new(node).with_location((0, offset));
 
@@ -429,7 +429,7 @@ fn parse_and_rec<'a, Error: ParseError<&'a str>>(
     cut(move |rest: &'a str| {
         let start = rest;
         let (rest, node) = parse_shift(rest)?;
-        let node = Box::new(node).with_location((input.offset(&start), start.offset(&rest)));
+        let node = Box::new(node).with_location((input.offset(start), start.offset(rest)));
         Ok((rest, node))
     })(rest)
 }
@@ -441,7 +441,7 @@ fn parse_and<'a, Error: ParseError<&'a str>>(
     let (mut cursor, mut node) = parse_shift(input)?;
 
     while let (rest, Some(right)) = opt(parse_and_rec)(cursor)? {
-        let offset = input.offset(&cursor);
+        let offset = input.offset(cursor);
         // Wrap the "left" node with location information
         let left = Box::new(node).with_location((0, offset));
 
@@ -491,7 +491,7 @@ fn parse_shift<'a, Error: ParseError<&'a str>>(
     let (mut cursor, mut node) = parse_sum(input)?;
 
     if let (rest, Some((op, right))) = opt(parse_shift_rec)(cursor)? {
-        let offset = input.offset(&cursor);
+        let offset = input.offset(cursor);
         // Wrap the "left" node with location information
         let left = Box::new(node).with_location((0, offset));
 
@@ -543,7 +543,7 @@ fn parse_sum<'a, Error: ParseError<&'a str>>(
     let (mut cursor, mut node) = parse_mul(input)?;
 
     while let (rest, Some((op, right))) = opt(parse_sum_rec)(cursor)? {
-        let offset = input.offset(&cursor);
+        let offset = input.offset(cursor);
         // Wrap the "left" node with location information
         let left = Box::new(node).with_location((0, offset));
 
@@ -595,7 +595,7 @@ fn parse_mul<'a, Error: ParseError<&'a str>>(
     let (mut cursor, mut node) = parse_unary(input)?;
 
     while let (rest, Some((op, right))) = opt(parse_mul_rec)(cursor)? {
-        let offset = input.offset(&cursor);
+        let offset = input.offset(cursor);
         // Wrap the "left" node with location information
         let left = Box::new(node).with_location((0, offset));
 

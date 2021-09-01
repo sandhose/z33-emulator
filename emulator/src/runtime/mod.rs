@@ -100,7 +100,6 @@ impl Computer {
         self.registers.pc = address;
     }
 
-    #[tracing::instrument(skip(self))]
     fn decode_instruction(&mut self) -> Result<&Instruction> {
         let address = Ind(Reg::PC).resolve_address(&self.registers)?;
         let cell = self.memory.get(address)?;
