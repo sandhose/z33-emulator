@@ -413,6 +413,8 @@ fn parse_indirect<'a, Error: ParseError<&'a str>>(
 
 #[cfg(test)]
 mod tests {
+    use pretty_assertions::assert_eq;
+
     use super::*;
 
     #[test]

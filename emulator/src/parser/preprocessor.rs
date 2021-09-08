@@ -336,6 +336,12 @@ fn parse_raw<'a, Error: ParseError<&'a str>>(
 ) -> IResult<&'a str, Node<RelativeLocation>, Error> {
     let (rest, _) = not(char('#'))(input)?;
     let (rest, content) = not_line_ending(rest)?;
+    // Strip the comment from the content
+    let content = if let Some(i) = content.find("//") {
+        &content[..i]
+    } else {
+        content
+    };
     let content = content.to_string();
     Ok((rest, Node::Raw { content }))
 }
@@ -377,6 +383,8 @@ pub(crate) fn parse<'a, Error: ParseError<&'a str>>(
 
 #[cfg(test)]
 mod tests {
+    use pretty_assertions::assert_eq;
+
     use super::*;
 
     #[test]
@@ -447,6 +455,16 @@ mod tests {
             body,
             Node::Raw {
                 content: "line".to_string()
+            }
+        );
+
+        // It extracts the line and discard the comment
+        let (rest, body) = parse_raw::<()>("line // comment").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(
+            body,
+            Node::Raw {
+                content: "line ".to_string()
             }
         );
 

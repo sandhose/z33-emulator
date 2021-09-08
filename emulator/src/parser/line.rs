@@ -10,8 +10,8 @@
 
 use nom::{
     branch::alt,
-    bytes::complete::{escaped, tag},
-    character::complete::{char, line_ending, none_of, not_line_ending, one_of, space0, space1},
+    bytes::complete::escaped,
+    character::complete::{char, line_ending, none_of, one_of, space0, space1},
     combinator::{all_consuming, cut, eof, map, opt, peek, value},
     error::context,
     multi::separated_list1,
@@ -105,7 +105,6 @@ impl<L> std::fmt::Display for LineContent<L> {
 pub(crate) struct Line<L> {
     pub symbols: Vec<Located<String, L>>,
     pub content: Option<Located<LineContent<L>, L>>,
-    comment: Option<Located<String, L>>,
 }
 
 impl<L: Clone> AstNode<L> for Line<L> {
@@ -124,12 +123,6 @@ impl<L: Clone> AstNode<L> for Line<L> {
 
         children.extend(self.content.iter().map(|c| c.to_node()));
 
-        children.extend(
-            self.comment
-                .iter()
-                .map(|c| Node::new(NodeKind::Comment, c.location.clone()).content(c.inner.clone())),
-        );
-
         children
     }
 }
@@ -147,15 +140,6 @@ impl<L> std::fmt::Display for Line<L> {
                 write!(f, "    ")?;
             }
             write!(f, "{}", c.inner)?;
-            had_something = true;
-        }
-
-        if let Some(ref c) = self.comment {
-            if had_something {
-                write!(f, "\t{}", c.inner)?;
-            } else {
-                write!(f, "{}", c.inner)?;
-            }
         }
 
         Ok(())
@@ -305,15 +289,6 @@ fn parse_line_content<'a, Error: ParseError<&'a str>>(
     ))(input)
 }
 
-/// Parses an inline comment
-fn parse_comment<'a, Error: ParseError<&'a str>>(
-    input: &'a str,
-) -> IResult<&'a str, String, Error> {
-    let (input, _) = peek(tag("#"))(input)?;
-    let (input, comment) = not_line_ending(input)?;
-    Ok((input, comment.into()))
-}
-
 /// Parses symbol definitions
 fn parse_symbol_definition<'a, Error: ParseError<&'a str>>(
     input: &'a str,
@@ -348,20 +323,8 @@ fn parse_line<'a, Error: ParseError<&'a str>>(
     let content = content.map(|line| line.with_location((input, start, rest))); // Save location information
     let (rest, _) = space0(rest)?;
 
-    // Extract the comment
-    let start = rest;
-    let (rest, comment) = opt(parse_comment)(rest)?;
-    let comment = comment.map(|comment| comment.with_location((input, start, rest))); // Save location information
-
     // Build the line
-    Ok((
-        rest,
-        Line {
-            symbols,
-            content,
-            comment,
-        },
-    ))
+    Ok((rest, Line { symbols, content }))
 }
 
 fn split_lines<'a, Error: ParseError<&'a str>>(
@@ -397,6 +360,8 @@ pub(crate) fn parse_program<'a, Error: ParseError<&'a str>>(
 
 #[cfg(test)]
 mod tests {
+    use pretty_assertions::assert_eq;
+
     use crate::runtime::Reg;
 
     use super::super::location::Locatable;
@@ -413,18 +378,6 @@ mod tests {
     fn parse_empty_line_test() {
         let line = fully_parsed(parse_line(""));
         assert_eq!(line, Line::default());
-    }
-
-    #[test]
-    fn parse_comment_line_test() {
-        let line = fully_parsed(parse_line("# hello"));
-        assert_eq!(
-            line,
-            Line {
-                comment: Some("# hello".to_string().with_location((0, 7))),
-                ..Default::default()
-            }
-        );
     }
 
     #[test]
@@ -447,7 +400,7 @@ mod tests {
     #[test]
     fn parse_full_line_test() {
         use super::super::expression::Node;
-        let line = fully_parsed(parse_line("foo: bar: .space 30 + 5 # comment"));
+        let line = fully_parsed(parse_line("foo: bar: .space 30 + 5"));
         assert_eq!(
             line,
             Line {
@@ -466,7 +419,6 @@ mod tests {
                     }
                     .with_location((10, 13))
                 ),
-                comment: Some("# comment".to_string().with_location((24, 9))),
             }
         );
     }
@@ -496,7 +448,7 @@ this has escaped chars: \r \n \t \""#;
         let input = r#"
 str: .space "some multiline \
 string"
-main: # beginning of program
+main:
     add %a, %b
     reset
         "#;
@@ -519,15 +471,13 @@ main: # beginning of program
                             }
                             .with_location((5, 32))
                         ),
-                        ..Default::default()
                     }
                     .with_location((1, 37)),
                     Line {
                         symbols: vec!["main".to_string().with_location((0, 5))],
-                        comment: Some("# beginning of program".to_string().with_location((6, 22))),
                         ..Default::default()
                     }
-                    .with_location((39, 28)),
+                    .with_location((39, 5)),
                     Line {
                         content: Some(
                             LineContent::Instruction {
@@ -541,7 +491,7 @@ main: # beginning of program
                         ),
                         ..Default::default()
                     }
-                    .with_location((68, 14)),
+                    .with_location((45, 14)),
                     Line {
                         content: Some(
                             LineContent::Instruction {
@@ -552,8 +502,8 @@ main: # beginning of program
                         ),
                         ..Default::default()
                     }
-                    .with_location((83, 9)),
-                    Line::default().with_location((93, 8)),
+                    .with_location((60, 9)),
+                    Line::default().with_location((70, 8)),
                 ]
             }
         );

@@ -10,15 +10,15 @@ factorielle:
     cmp  1,%a
     jge  casparticulier
 
-    # cas général
-    sub  1,%a         # a ← n-1
+    // cas général
+    sub  1,%a         // a ← n-1
     push %a
-    call factorielle  # a ← (n-1) !
-    add  1,%sp        # dépile l’argument n-1
-    push %b           # sauvegarder b
-    ld   [%sp+2],%b   # b ← n (argument original)
-    mul  %b,%a        # a ← n * (n-1)!
-    pop  %b           # restaurer b
+    call factorielle  // a ← (n-1) !
+    add  1,%sp        // dépile l’argument n-1
+    push %b           // sauvegarder b
+    ld   [%sp+2],%b   // b ← n (argument original)
+    mul  %b,%a        // a ← n * (n-1)!
+    pop  %b           // restaurer b
     rtn
 
 .addr 300

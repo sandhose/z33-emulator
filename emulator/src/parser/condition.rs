@@ -518,6 +518,7 @@ fn parse_parenthesis<'a, Error: ParseError<&'a str>>(
 #[cfg(test)]
 mod tests {
     use nom::Finish;
+    use pretty_assertions::assert_eq;
 
     use super::*;
 
