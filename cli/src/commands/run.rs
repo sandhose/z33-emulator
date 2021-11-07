@@ -1,6 +1,6 @@
 use std::{path::PathBuf, process::exit};
 
-use clap::{Clap, ValueHint};
+use clap::{Parser, ValueHint};
 use tracing::{debug, error, info};
 use z33_emulator::{
     compile, parse,
@@ -9,7 +9,7 @@ use z33_emulator::{
 
 use crate::interactive::run_interactive;
 
-#[derive(Clap, Debug)]
+#[derive(Parser, Debug)]
 pub struct RunOpt {
     /// Input file
     #[clap(parse(from_os_str), value_hint = ValueHint::FilePath)]

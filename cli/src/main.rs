@@ -2,7 +2,7 @@
 
 use std::process::exit;
 
-use clap::{ArgGroup, Clap};
+use clap::{ArgGroup, Parser};
 use tracing::error;
 use tracing_subscriber::filter::EnvFilter;
 use tracing_subscriber::prelude::*;
@@ -13,7 +13,7 @@ mod util;
 
 use crate::commands::Subcommand;
 
-#[derive(Clap)]
+#[derive(Parser)]
 #[clap(version, author, about, group = ArgGroup::new("format"))]
 struct Opt {
     /// Increase the level of verbosity. Can be used multiple times.

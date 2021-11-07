@@ -1,11 +1,11 @@
 use std::path::PathBuf;
 
-use clap::{Clap, ValueHint};
+use clap::{Parser, ValueHint};
 use tracing::info;
 
 use z33_emulator::preprocessor::{preprocess, NativeFilesystem};
 
-#[derive(Clap, Debug)]
+#[derive(Parser, Debug)]
 pub struct PreprocessOpt {
     /// Input file
     #[clap(parse(from_os_str), value_hint = ValueHint::FilePath)]

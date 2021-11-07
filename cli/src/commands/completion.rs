@@ -1,4 +1,4 @@
-use clap::{ArgEnum, Clap, IntoApp};
+use clap::{App, ArgEnum, IntoApp, Parser};
 use clap_generate::{
     generate,
     generators::{Bash, Elvish, Fish, PowerShell, Zsh},
@@ -7,13 +7,13 @@ use clap_generate::{
 
 use crate::Opt;
 
-#[derive(Clap, Debug)]
+#[derive(Parser, Debug)]
 pub struct CompletionOpt {
     #[clap(arg_enum)]
     shell: ShellKind,
 }
 
-#[derive(ArgEnum, Debug)]
+#[derive(ArgEnum, Clone, Debug)]
 enum ShellKind {
     Bash,
     Elvish,
@@ -23,20 +23,20 @@ enum ShellKind {
     Zsh,
 }
 
-fn print_completions<G: Generator, A: IntoApp>() {
-    let mut app = A::into_app();
+fn print_completions<G: Generator>(generator: G, app: &mut App) {
     let name = app.get_name().to_string();
-    generate::<G, _>(&mut app, name, &mut std::io::stdout());
+    generate(generator, app, name, &mut std::io::stdout());
 }
 
 impl CompletionOpt {
     pub fn exec(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let mut app = Opt::into_app();
         match self.shell {
-            ShellKind::Bash => print_completions::<Bash, Opt>(),
-            ShellKind::Elvish => print_completions::<Elvish, Opt>(),
-            ShellKind::Fish => print_completions::<Fish, Opt>(),
-            ShellKind::PowerShell => print_completions::<PowerShell, Opt>(),
-            ShellKind::Zsh => print_completions::<Zsh, Opt>(),
+            ShellKind::Bash => print_completions(Bash, &mut app),
+            ShellKind::Elvish => print_completions(Elvish, &mut app),
+            ShellKind::Fish => print_completions(Fish, &mut app),
+            ShellKind::PowerShell => print_completions(PowerShell, &mut app),
+            ShellKind::Zsh => print_completions(Zsh, &mut app),
         }
 
         Ok(())

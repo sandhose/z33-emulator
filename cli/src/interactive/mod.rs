@@ -4,7 +4,7 @@
 //!   - rustyline, to handle the line-editting logic
 //!   - clap, to handle the parsing of those interactive commands
 //!
-//! Using Clap to do this is a bit of a hack, and requires some weird options to have it working
+//! Using Parser to do this is a bit of a hack, and requires some weird options to have it working
 //! but works nonetheless.
 
 // https://github.com/clap-rs/clap/pull/2713
@@ -12,7 +12,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use clap::{AppSettings, Clap};
+use clap::{AppSettings, Parser};
 use rustyline::{config::OutputStreamType, CompletionType, Config, EditMode, Editor};
 use tracing::{debug, info, warn};
 
@@ -28,15 +28,13 @@ static HELP: &str = r#"
 Run "help [command]" for command-specific help.
 An empty line re-runs the last valid command."#;
 
-#[derive(Clap, Clone, Debug)]
+#[derive(Parser, Clone, Debug)]
 #[clap(
     help_template = "{about}\n\nCOMMANDS:\n{subcommands}\n{after-help}",
     after_help = HELP,
-    global_setting = AppSettings::ColoredHelp,
     global_setting = AppSettings::DisableVersionFlag,
     global_setting = AppSettings::InferSubcommands,
     global_setting = AppSettings::NoBinaryName,
-    global_setting = AppSettings::DisableVersionForSubcommands,
     global_setting = AppSettings::AllowNegativeNumbers,
 )]
 /// Interactive mode commands
@@ -97,7 +95,7 @@ enum Command {
     },
 }
 
-#[derive(Clap, Clone, Debug)]
+#[derive(Parser, Clone, Debug)]
 enum InfoCommand {
     /// List active breakpoints
     Breakpoints,
