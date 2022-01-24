@@ -1,7 +1,6 @@
 on:
   push:
-    branches:
-      - master
+  pull_request:
 
 name: Publish the web app on GitHub Pages
 
@@ -19,7 +18,7 @@ jobs:
       - name: Install Node
         uses: actions/setup-node@v3.0.0
         with:
-          node-version: "12"
+          node-version: "14"
 
       - name: Install Rust WASM toolchain
         uses: actions-rs/toolchain@v1.0.7
@@ -38,6 +37,7 @@ jobs:
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3.8.0
+        if: github.ref == 'refs/heads/master'
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./web/dist
