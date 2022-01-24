@@ -31,8 +31,10 @@ fn suggest(app: &App, input: &[String]) -> (usize, HashSet<String>) {
     // the match bellow)
     let mut suggestions: HashSet<_> = app
         .get_subcommands()
-        .flat_map(|cmd| std::iter::once(cmd.get_name()).chain(cmd.get_visible_aliases()))
-        .map(|alias| alias.to_string())
+        .flat_map(|cmd| {
+            std::iter::once(cmd.get_name().to_string())
+                .chain(cmd.get_visible_aliases().map(ToString::to_string))
+        })
         .collect();
 
     // If the app has subcommands, it has a `help` command

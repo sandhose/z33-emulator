@@ -1,7 +1,7 @@
 use clap::{App, ArgEnum, IntoApp, Parser};
-use clap_generate::{
+use clap_complete::{
     generate,
-    generators::{Bash, Elvish, Fish, PowerShell, Zsh},
+    shells::{Bash, Elvish, Fish, PowerShell, Zsh},
     Generator,
 };
 
