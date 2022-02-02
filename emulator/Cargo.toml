@@ -19,4 +19,4 @@ parse-display = "0.5.3"
 
 [dev-dependencies]
 indoc = "1.0.3"
-pretty_assertions = "1.0.0"
+pretty_assertions = "1.1.0"
