@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use std::marker::PhantomData;
 
 use ansi_term::Style;
-use clap::{App, IntoApp};
+use clap::{Command, IntoApp};
 use rustyline::{
     completion::Completer,
     highlight::Highlighter,
@@ -25,11 +25,11 @@ impl<T: IntoApp> RunHelper<T> {
     }
 }
 
-fn suggest(app: &App, input: &[String]) -> (usize, HashSet<String>) {
+fn suggest(command: &Command, input: &[String]) -> (usize, HashSet<String>) {
     // We're building the suggestions here
     // The only downside is that it's wasted work if we're not on the first word (second pattern of
     // the match bellow)
-    let mut suggestions: HashSet<_> = app
+    let mut suggestions: HashSet<_> = command
         .get_subcommands()
         .flat_map(|cmd| {
             std::iter::once(cmd.get_name().to_string())
@@ -38,7 +38,7 @@ fn suggest(app: &App, input: &[String]) -> (usize, HashSet<String>) {
         .collect();
 
     // If the app has subcommands, it has a `help` command
-    if app.has_subcommands() {
+    if command.has_subcommands() {
         suggestions.insert("help".to_string());
     }
 
@@ -48,8 +48,8 @@ fn suggest(app: &App, input: &[String]) -> (usize, HashSet<String>) {
     }
 
     // Find the curresponding positional arg if it exists and add suggestions for it
-    if let Some(arg) = app.get_positionals().nth(index) {
-        let additional: Vec<&str> = match arg.get_name() {
+    if let Some(arg) = command.get_positionals().nth(index) {
+        let additional: Vec<&str> = match arg.get_id() {
             "register" | "address" => vec!["%a", "%b", "%sp", "%sr"],
             _ => Vec::new(),
         };
@@ -66,9 +66,9 @@ fn suggest(app: &App, input: &[String]) -> (usize, HashSet<String>) {
                 .collect(),
         ),
 
-        [head, tail @ ..] => app
+        [head, tail @ ..] => command
             .find_subcommand(head)
-            .map(|sub: &App| suggest(sub, tail))
+            .map(|sub: &Command| suggest(sub, tail))
             .unwrap_or_default(),
 
         [] => (0, suggestions),
@@ -91,7 +91,7 @@ impl<T: IntoApp> Completer for RunHelper<T> {
             .filter(|&c| c == b' ' || c == b'\t')
             .is_some(); // Line is considered "complete" if the last char is a space
         if let Ok(mut words) = shell_words::split(line) {
-            let app = T::into_app();
+            let app = T::command();
 
             // If the last char was a space, insert an empty word to autocomplete the next word
             if complete {
@@ -141,7 +141,7 @@ impl<T: IntoApp> Hinter for RunHelper<T> {
             words.push("".to_string());
         }
 
-        let app = T::into_app();
+        let app = T::command();
         let (offset, candidates) = suggest(&app, words.as_slice());
 
         if candidates.len() == 1 {

@@ -7,12 +7,9 @@
 //! Using Parser to do this is a bit of a hack, and requires some weird options to have it working
 //! but works nonetheless.
 
-// https://github.com/clap-rs/clap/pull/2713
-#![allow(unused_braces)]
-
 use std::collections::{HashMap, HashSet};
 
-use clap::{AppSettings, Parser};
+use clap::Parser;
 use rustyline::{config::OutputStreamType, CompletionType, Config, EditMode, Editor};
 use tracing::{debug, info, warn};
 
@@ -32,10 +29,10 @@ An empty line re-runs the last valid command."#;
 #[clap(
     help_template = "{about}\n\nCOMMANDS:\n{subcommands}\n{after-help}",
     after_help = HELP,
-    global_setting = AppSettings::DisableVersionFlag,
-    global_setting = AppSettings::InferSubcommands,
-    global_setting = AppSettings::NoBinaryName,
-    global_setting = AppSettings::AllowNegativeNumbers,
+    disable_version_flag = true,
+    infer_subcommands = true,
+    no_binary_name = true,
+    allow_negative_numbers = true,
 )]
 /// Interactive mode commands
 enum Command {
