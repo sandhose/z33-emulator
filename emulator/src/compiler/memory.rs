@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use std::convert::TryFrom;
+use std::{collections::HashMap, convert::TryInto};
 
 use thiserror::Error;
 use tracing::{debug, span, trace, Level};
@@ -21,32 +21,30 @@ use crate::{
 use super::layout::{Labels, Layout, Placement};
 
 #[derive(Debug, Error)]
-pub enum MemoryFillError {
-    #[error("could not evaluate expression: {0}")]
-    Evaluation(ExpressionEvaluationError),
+pub enum MemoryFillError<L> {
+    #[error("could not evaluate expression")]
+    Evaluation {
+        location: L,
+        source: ExpressionEvaluationError,
+    },
 
-    #[error("could not compute instruction argument: {0}")]
-    Compute(ComputeError),
+    #[error("could not compute instruction argument")]
+    Compute { location: L, source: ComputeError },
 
-    #[error("could not compile instruction: {0}")]
-    InstructionCompilation(InstructionCompilationError),
+    #[error("could not compile instruction")]
+    InstructionCompilation {
+        location: L,
+        source: InstructionCompilationError,
+    },
 }
 
-impl From<ExpressionEvaluationError> for MemoryFillError {
-    fn from(e: ExpressionEvaluationError) -> Self {
-        Self::Evaluation(e)
-    }
-}
-
-impl From<ComputeError> for MemoryFillError {
-    fn from(e: ComputeError) -> Self {
-        Self::Compute(e)
-    }
-}
-
-impl From<InstructionCompilationError> for MemoryFillError {
-    fn from(e: InstructionCompilationError) -> Self {
-        Self::InstructionCompilation(e)
+impl<L> MemoryFillError<L> {
+    pub fn location(&self) -> &L {
+        match self {
+            MemoryFillError::Evaluation { location, .. } => location,
+            MemoryFillError::Compute { location, .. } => location,
+            MemoryFillError::InstructionCompilation { location, .. } => location,
+        }
     }
 }
 
@@ -55,7 +53,7 @@ pub enum InstructionCompilationError {
     #[error("invalid number of arguments: expected {expected}, got {got}")]
     InvalidArgumentNumber { expected: usize, got: usize },
 
-    #[error("{0}")]
+    #[error(transparent)]
     ArgumentConversion(#[from] ArgConversionError),
 }
 
@@ -65,22 +63,19 @@ impl From<std::convert::Infallible> for InstructionCompilationError {
     }
 }
 
-fn get_tuple<X, Y>(mut args: Vec<ImmRegDirIndIdx>) -> Result<(X, Y), InstructionCompilationError>
+fn get_tuple<X, Y>(args: Vec<ImmRegDirIndIdx>) -> Result<(X, Y), InstructionCompilationError>
 where
     X: TryFrom<ImmRegDirIndIdx>,
     Y: TryFrom<ImmRegDirIndIdx>,
     X::Error: Into<InstructionCompilationError>,
     Y::Error: Into<InstructionCompilationError>,
 {
-    if args.len() != 2 {
-        return Err(InstructionCompilationError::InvalidArgumentNumber {
+    let [x, y]: [ImmRegDirIndIdx; 2] = args.try_into().map_err(|args: Vec<_>| {
+        InstructionCompilationError::InvalidArgumentNumber {
             expected: 2,
             got: args.len(),
-        });
-    }
-
-    let x = args.remove(0);
-    let y = args.remove(0);
+        }
+    })?;
 
     Ok((
         X::try_from(x).map_err(Into::into)?,
@@ -88,19 +83,18 @@ where
     ))
 }
 
-fn get_singleton<X>(mut args: Vec<ImmRegDirIndIdx>) -> Result<X, InstructionCompilationError>
+fn get_singleton<X>(args: Vec<ImmRegDirIndIdx>) -> Result<X, InstructionCompilationError>
 where
     X: TryFrom<ImmRegDirIndIdx>,
     X::Error: Into<InstructionCompilationError>,
 {
-    if args.len() != 1 {
-        return Err(InstructionCompilationError::InvalidArgumentNumber {
-            expected: 2,
+    let [x]: [ImmRegDirIndIdx; 1] = args.try_into().map_err(|args: Vec<_>| {
+        InstructionCompilationError::InvalidArgumentNumber {
+            expected: 1,
             got: args.len(),
-        });
-    }
+        }
+    })?;
 
-    let x = args.remove(0);
     X::try_from(x).map_err(Into::into)
 }
 
@@ -295,11 +289,11 @@ fn compile_instruction(
     }
 }
 
-#[tracing::instrument(skip(placement, labels), err)]
-fn compile_placement<L>(
+#[tracing::instrument(skip(placement, labels))]
+fn compile_placement<L: Clone>(
     labels: &Labels,
     placement: &Placement<L>,
-) -> Result<Cell, MemoryFillError> {
+) -> Result<Cell, MemoryFillError<L>> {
     use DirectiveKind::*;
     use Placement::*;
 
@@ -316,11 +310,17 @@ fn compile_placement<L>(
             argument:
                 Located {
                     inner: DirectiveArgument::Expression(expression),
-                    ..
+                    location,
                 },
         }) => {
             debug!(%expression, "Evaluating directive");
-            let value = expression.evaluate(labels)?;
+            let value =
+                expression
+                    .evaluate(labels)
+                    .map_err(|source| MemoryFillError::Evaluation {
+                        source,
+                        location: location.clone(),
+                    })?;
             Ok(Cell::Word(value))
         }
 
@@ -337,19 +337,29 @@ fn compile_placement<L>(
                 .enumerate()
                 .map(|(index, argument)| {
                     trace!("argument {} evaluation: {}", index, argument);
-                    argument.inner.evaluate(labels)
+                    argument
+                        .inner
+                        .evaluate(labels)
+                        .map_err(|source| MemoryFillError::Compute {
+                            location: argument.location.clone(),
+                            source,
+                        })
                 })
                 .collect();
             let arguments = arguments?;
-            let instruction = compile_instruction(&kind.inner, arguments)
-                .map_err(MemoryFillError::InstructionCompilation)?;
+            let instruction = compile_instruction(&kind.inner, arguments).map_err(|source| {
+                MemoryFillError::InstructionCompilation {
+                    location: kind.location.clone(),
+                    source,
+                }
+            })?;
             Ok(Cell::Instruction(Box::new(instruction)))
         }
     }
 }
 
 #[tracing::instrument(skip(layout))]
-pub(crate) fn fill_memory<L>(layout: &Layout<L>) -> Result<Memory, MemoryFillError> {
+pub(crate) fn fill_memory<L: Clone>(layout: &Layout<L>) -> Result<Memory, MemoryFillError<L>> {
     debug!(
         placements = layout.memory.len(),
         labels = ?layout.labels,
@@ -357,7 +367,7 @@ pub(crate) fn fill_memory<L>(layout: &Layout<L>) -> Result<Memory, MemoryFillErr
     );
     let mut memory = Memory::default();
 
-    let cells: Result<HashMap<C::Address, Cell>, MemoryFillError> = layout
+    let cells: Result<HashMap<C::Address, Cell>, MemoryFillError<L>> = layout
         .memory
         .iter()
         .map(|(index, placement)| {

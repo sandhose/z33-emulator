@@ -22,7 +22,7 @@ use nom::{
 use crate::ast::{AstNode, Node, NodeKind};
 
 use super::{
-    location::{Locatable, Located, RelativeLocation},
+    location::{Locatable, Located, MapLocation, RelativeLocation},
     parse_identifier,
     value::{
         parse_directive_argument, parse_directive_kind, parse_instruction_argument,
@@ -51,6 +51,33 @@ impl<L> LineContent<L> {
     /// Check if the line is a directive
     pub(crate) fn is_directive(&self) -> bool {
         matches!(self, Self::Directive { .. })
+    }
+}
+
+impl<L, P> MapLocation<P> for LineContent<L>
+where
+    L: MapLocation<P, Mapped = P>,
+{
+    type Mapped = LineContent<L::Mapped>;
+
+    fn map_location(self, parent: &P) -> Self::Mapped {
+        match self {
+            LineContent::Instruction { kind, arguments } => {
+                let kind = kind.map_location_only(parent);
+                let arguments = arguments
+                    .into_iter()
+                    .map(|a| a.map_location(parent))
+                    .collect();
+
+                LineContent::Instruction { kind, arguments }
+            }
+            LineContent::Directive { kind, argument } => {
+                let kind = kind.map_location_only(parent);
+                let argument = argument.map_location(parent);
+
+                LineContent::Directive { kind, argument }
+            }
+        }
     }
 }
 
@@ -105,6 +132,24 @@ impl<L> std::fmt::Display for LineContent<L> {
 pub(crate) struct Line<L> {
     pub symbols: Vec<Located<String, L>>,
     pub content: Option<Located<LineContent<L>, L>>,
+}
+
+impl<L, P> MapLocation<P> for Line<L>
+where
+    L: MapLocation<P, Mapped = P>,
+{
+    type Mapped = Line<L::Mapped>;
+
+    fn map_location(self, parent: &P) -> Self::Mapped {
+        let symbols = self
+            .symbols
+            .into_iter()
+            .map(|line| line.map_location_only(parent))
+            .collect();
+        let content = self.content.map(|c| c.map_location(parent));
+
+        Line { symbols, content }
+    }
 }
 
 impl<L: Clone> AstNode<L> for Line<L> {
@@ -192,6 +237,22 @@ where
 #[derive(Debug, PartialEq)]
 pub struct Program<L> {
     pub(crate) lines: Vec<Located<Line<L>, L>>,
+}
+
+impl<L, P> MapLocation<P> for Program<L>
+where
+    L: MapLocation<P, Mapped = P>,
+{
+    type Mapped = Program<L::Mapped>;
+    fn map_location(self, parent: &P) -> Self::Mapped {
+        let lines = self
+            .lines
+            .into_iter()
+            .map(|line| line.map_location(parent))
+            .collect();
+
+        Program { lines }
+    }
 }
 
 impl<L: Clone> AstNode<L> for Program<L> {

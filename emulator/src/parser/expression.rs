@@ -34,7 +34,7 @@ use crate::ast::{AstNode, NodeKind};
 
 use super::{
     literal::parse_number_literal,
-    location::{AbsoluteLocation, Locatable, Located, RelativeLocation},
+    location::{AbsoluteLocation, Locatable, Located, MapLocation, RelativeLocation},
     parse_identifier,
     precedence::Precedence,
     ParseError,
@@ -79,6 +79,38 @@ pub enum Node<L = RelativeLocation> {
 
     /// A reference to a variable
     Variable(String),
+}
+
+impl<P, L> MapLocation<P> for Node<L>
+where
+    L: MapLocation<P, Mapped = P>,
+{
+    type Mapped = Node<P>;
+
+    fn map_location(self, parent: &P) -> Self::Mapped {
+        match self {
+            Node::BinaryOr(a, b) => Node::BinaryOr(a.map_location(parent), b.map_location(parent)),
+            Node::BinaryAnd(a, b) => {
+                Node::BinaryAnd(a.map_location(parent), b.map_location(parent))
+            }
+            Node::LeftShift(a, b) => {
+                Node::LeftShift(a.map_location(parent), b.map_location(parent))
+            }
+            Node::RightShift(a, b) => {
+                Node::RightShift(a.map_location(parent), b.map_location(parent))
+            }
+            Node::Sum(a, b) => Node::Sum(a.map_location(parent), b.map_location(parent)),
+            Node::Substract(a, b) => {
+                Node::Substract(a.map_location(parent), b.map_location(parent))
+            }
+            Node::Multiply(a, b) => Node::Multiply(a.map_location(parent), b.map_location(parent)),
+            Node::Divide(a, b) => Node::Divide(a.map_location(parent), b.map_location(parent)),
+            Node::Invert(a) => Node::Invert(a.map_location(parent)),
+            Node::BinaryNot(a) => Node::BinaryNot(a.map_location(parent)),
+            Node::Literal(a) => Node::Literal(a),
+            Node::Variable(a) => Node::Variable(a),
+        }
+    }
 }
 
 impl<L: Clone> AstNode<L> for Node<L> {

@@ -80,7 +80,7 @@ impl std::fmt::Display for RelativeLocation {
 }
 
 impl<T> Located<T, RelativeLocation> {
-    pub(crate) fn into_absolute<O, M>(
+    pub fn into_absolute<O, M>(
         self,
         parent: &AbsoluteLocation,
         mapper: M,
@@ -96,8 +96,8 @@ impl<T> Located<T, RelativeLocation> {
 
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct AbsoluteLocation {
-    offset: usize,
-    length: usize,
+    pub offset: usize,
+    pub length: usize,
 }
 
 impl From<(usize, usize)> for AbsoluteLocation {
@@ -184,6 +184,62 @@ impl std::fmt::Display for LineAwareLocation {
                 "{}:{}..{}:{}",
                 self.start_line, self.start_col, self.end_line, self.end_col,
             )
+        }
+    }
+}
+
+pub trait MapLocation<Parent> {
+    type Mapped;
+
+    fn map_location(self, parent: &Parent) -> Self::Mapped;
+}
+
+impl<P, L, T> MapLocation<P> for Located<T, L>
+where
+    T: MapLocation<L::Mapped>,
+    L: MapLocation<P>,
+{
+    type Mapped = Located<T::Mapped, L::Mapped>;
+
+    fn map_location(self, parent: &P) -> Self::Mapped {
+        let location = self.location.map_location(parent);
+        let inner = self.inner.map_location(&location);
+
+        Located { inner, location }
+    }
+}
+
+impl<P, T> MapLocation<P> for Box<T>
+where
+    T: MapLocation<P>,
+{
+    type Mapped = Box<T::Mapped>;
+
+    fn map_location(self, parent: &P) -> Self::Mapped {
+        Box::new((*self).map_location(parent))
+    }
+}
+
+impl MapLocation<AbsoluteLocation> for RelativeLocation {
+    type Mapped = AbsoluteLocation;
+
+    fn map_location(self, parent: &AbsoluteLocation) -> Self::Mapped {
+        AbsoluteLocation {
+            offset: parent.offset + self.offset,
+            length: self.length,
+        }
+    }
+}
+
+impl<T, L> Located<T, L> {
+    pub fn map_location_only<P>(self, parent: &P) -> Located<T, L::Mapped>
+    where
+        L: MapLocation<P>,
+    {
+        let location = self.location.map_location(parent);
+        Located {
+            location,
+            inner: self.inner,
         }
     }
 }

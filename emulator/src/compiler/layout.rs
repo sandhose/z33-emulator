@@ -48,7 +48,7 @@ impl<L> Layout<L> {
         &mut self,
         address: Address,
         placement: Placement<L>,
-    ) -> Result<(), MemoryLayoutError> {
+    ) -> Result<(), MemoryLayoutError<L>> {
         if self.memory.contains_key(&address) {
             return Err(MemoryLayoutError::MemoryOverlap { address });
         }
@@ -57,12 +57,19 @@ impl<L> Layout<L> {
         Ok(())
     }
 
-    fn insert_label(&mut self, label: String, address: Address) -> Result<(), MemoryLayoutError> {
-        if self.labels.contains_key(&label) {
-            return Err(MemoryLayoutError::DuplicateLabel { label });
+    fn insert_label(
+        &mut self,
+        label: Located<String, L>,
+        address: Address,
+    ) -> Result<(), MemoryLayoutError<L>> {
+        if self.labels.contains_key(&label.inner) {
+            return Err(MemoryLayoutError::DuplicateLabel {
+                label: label.inner,
+                location: label.location,
+            });
         }
 
-        self.labels.insert(label, address);
+        self.labels.insert(label.inner, address);
         Ok(())
     }
 
@@ -78,12 +85,12 @@ impl<L> Layout<L> {
 }
 
 #[derive(Debug, Error, PartialEq)]
-pub enum MemoryLayoutError {
+pub enum MemoryLayoutError<L> {
     #[error("duplicate label {label}")]
-    DuplicateLabel { label: String },
+    DuplicateLabel { label: String, location: L },
 
     #[error("invalid argument for directive .{kind}")]
-    InvalidDirectiveArgument { kind: DirectiveKind },
+    InvalidDirectiveArgument { kind: DirectiveKind, location: L },
 
     #[error("failed to evaluate argument for directive .{kind}: {inner}")]
     DirectiveArgumentEvaluation {
@@ -95,13 +102,24 @@ pub enum MemoryLayoutError {
     MemoryOverlap { address: Address },
 }
 
+impl<L> MemoryLayoutError<L> {
+    pub fn location(&self) -> Option<&L> {
+        match self {
+            MemoryLayoutError::DuplicateLabel { location, .. } => Some(location),
+            MemoryLayoutError::InvalidDirectiveArgument { location, .. } => Some(location),
+            MemoryLayoutError::DirectiveArgumentEvaluation { .. } => None,
+            MemoryLayoutError::MemoryOverlap { .. } => None,
+        }
+    }
+}
+
 /// Lays out the memory
 ///
 /// It places the labels & prepare a hashmap of cells to be filled.
 #[tracing::instrument(skip(program))]
 pub(crate) fn layout_memory<L: Clone + Default>(
     program: &[Line<L>],
-) -> Result<Layout<L>, MemoryLayoutError> {
+) -> Result<Layout<L>, MemoryLayoutError<L>> {
     use DirectiveKind::*;
     use MemoryLayoutError::*;
 
@@ -112,7 +130,7 @@ pub(crate) fn layout_memory<L: Clone + Default>(
     for line in program {
         for key in line.symbols.clone().into_iter() {
             trace!(key = %key.inner, position, "Inserting label");
-            layout.insert_label(key.inner, position)?;
+            layout.insert_label(key, position)?;
         }
 
         if let Some(ref content) = line.content {
@@ -182,7 +200,10 @@ pub(crate) fn layout_memory<L: Clone + Default>(
                 }
 
                 LineContent::Directive { kind, .. } => {
-                    return Err(InvalidDirectiveArgument { kind: kind.inner });
+                    return Err(InvalidDirectiveArgument {
+                        kind: kind.inner,
+                        location: kind.location.clone(),
+                    });
                 }
             }
         }
@@ -340,7 +361,8 @@ mod tests {
         assert_eq!(
             layout_memory(&program).err(),
             Some(MemoryLayoutError::DuplicateLabel {
-                label: "hello".into()
+                label: "hello".into(),
+                location: RelativeLocation::default(),
             })
         );
     }
@@ -354,6 +376,7 @@ mod tests {
             layout_memory(&program).err(),
             Some(MemoryLayoutError::InvalidDirectiveArgument {
                 kind: DirectiveKind::String,
+                location: RelativeLocation::default(),
                 // argument: 3.into(),
             })
         );
@@ -365,6 +388,7 @@ mod tests {
             layout_memory(&program).err(),
             Some(MemoryLayoutError::InvalidDirectiveArgument {
                 kind: DirectiveKind::Space,
+                location: RelativeLocation::default(),
                 // argument: "hello".into(),
             })
         );
@@ -376,6 +400,7 @@ mod tests {
             layout_memory(&program).err(),
             Some(MemoryLayoutError::InvalidDirectiveArgument {
                 kind: DirectiveKind::Addr,
+                location: RelativeLocation::default(),
                 // argument: "hello".into(),
             })
         );

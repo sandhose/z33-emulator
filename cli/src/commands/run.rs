@@ -1,9 +1,15 @@
 use std::{path::PathBuf, process::exit};
 
 use clap::{Parser, ValueHint};
+use codespan_reporting::diagnostic::{Diagnostic, Label};
+use codespan_reporting::files::SimpleFiles;
+use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
 use tracing::{debug, error, info};
 use z33_emulator::{
-    compile, parse,
+    compile,
+    compiler::CompilationError,
+    parse,
+    parser::location::{AbsoluteLocation, MapLocation},
     preprocessor::{preprocess, NativeFilesystem},
 };
 
@@ -23,6 +29,12 @@ pub struct RunOpt {
     interactive: bool,
 }
 
+fn char_offset(a: &str, b: &str) -> usize {
+    let a = a.as_ptr();
+    let b = b.as_ptr();
+    b as usize - a as usize
+}
+
 impl RunOpt {
     pub fn exec(&self) -> Result<(), Box<dyn std::error::Error>> {
         let fs = NativeFilesystem::from_env()?;
@@ -30,27 +42,92 @@ impl RunOpt {
         let source = preprocess(&fs, &self.input)?;
         let source = source.as_str();
 
+        let mut files = SimpleFiles::new();
+        let file_id = files.add("preprocessed", source);
+
         debug!("Parsing program");
         let program = match parse(source) {
             Ok(p) => p,
             Err(e) => {
-                error!("{}", e);
-                for (location, kind) in e.errors.iter() {
-                    eprintln!("---");
-                    let offset = crate::util::char_offset(source, location);
-                    let message = match kind {
-                        nom::error::VerboseErrorKind::Context(s) => s.to_string(),
-                        nom::error::VerboseErrorKind::Char(c) => format!("expected '{}'", c),
-                        nom::error::VerboseErrorKind::Nom(code) => format!("{:?}", code),
-                    };
-                    crate::util::display_error_offset(source, offset, &message);
-                }
+                let msg = format!("{}", e);
+                let labels: Vec<_> = e
+                    .errors
+                    .iter()
+                    .map(|(location, kind)| {
+                        let message = match kind {
+                            nom::error::VerboseErrorKind::Context(s) => s.to_string(),
+                            nom::error::VerboseErrorKind::Char(c) => format!("expected '{}'", c),
+                            nom::error::VerboseErrorKind::Nom(code) => format!("{:?}", code),
+                        };
+                        let offset = char_offset(source, location);
+
+                        Label::primary(file_id, offset..offset).with_message(message)
+                    })
+                    .collect();
+
+                let diagnostic = Diagnostic::error().with_message(msg).with_labels(labels);
+
+                let writer = StandardStream::stderr(ColorChoice::Auto);
+                let config = codespan_reporting::term::Config {
+                    before_label_lines: 3,
+                    after_label_lines: 3,
+                    ..Default::default()
+                };
+
+                codespan_reporting::term::emit(&mut writer.lock(), &config, &files, &diagnostic)?;
                 exit(1);
             }
         };
 
+        let program = program.map_location(&AbsoluteLocation::default());
+
         debug!(entrypoint = %self.entrypoint, "Building computer");
-        let (mut computer, debug_info) = compile(program.inner, &self.entrypoint)?;
+        let (mut computer, debug_info) = match compile(program.inner, &self.entrypoint) {
+            Ok(p) => p,
+            Err(e) => {
+                // TODO: some cleanup needed
+                let mut last_error = &e as &dyn std::error::Error;
+                for error in anyhow::Chain::new(&e) {
+                    // TODO: get the location of individual errors
+                    error!("{}", error);
+                    last_error = error;
+                }
+
+                let msg = format!("{}", last_error);
+
+                let location = match &e {
+                    CompilationError::MemoryLayout(e) => e.location(),
+                    CompilationError::MemoryFill(e) => Some(e.location()),
+                    CompilationError::UnknownEntrypoint(_e) => None,
+                };
+
+                if let Some(location) = location {
+                    let label = Label::primary(
+                        file_id,
+                        location.offset..(location.offset + location.length),
+                    );
+
+                    let diagnostic = Diagnostic::error()
+                        .with_message(msg)
+                        .with_labels(vec![label]);
+
+                    let writer = StandardStream::stderr(ColorChoice::Auto);
+                    let config = codespan_reporting::term::Config {
+                        before_label_lines: 3,
+                        after_label_lines: 3,
+                        ..Default::default()
+                    };
+
+                    codespan_reporting::term::emit(
+                        &mut writer.lock(),
+                        &config,
+                        &files,
+                        &diagnostic,
+                    )?;
+                }
+                exit(1);
+            }
+        };
 
         info!("Running program");
         if self.interactive {

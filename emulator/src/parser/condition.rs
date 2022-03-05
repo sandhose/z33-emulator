@@ -31,7 +31,7 @@ use super::{
         parse_expression, Context as ExpressionContext, EmptyContext as EmptyExpressionContext,
         EvaluationError as ExpressionEvaluationError, Node as ENode,
     },
-    location::{Locatable, Located, RelativeLocation},
+    location::{Locatable, Located, MapLocation, RelativeLocation},
     precedence::Precedence,
 };
 use super::{literal::parse_bool_literal, location::AbsoluteLocation};
@@ -74,6 +74,40 @@ pub(crate) enum Node<L> {
 
     /// defined(N)
     Defined(Located<String, L>),
+}
+
+impl<P, L> MapLocation<P> for Node<L>
+where
+    L: MapLocation<P, Mapped = P>,
+{
+    type Mapped = Node<L::Mapped>;
+
+    fn map_location(self, parent: &P) -> Self::Mapped {
+        match self {
+            Node::Equal(a, b) => Node::Equal(a.map_location(parent), b.map_location(parent)),
+            Node::NotEqual(a, b) => Node::NotEqual(a.map_location(parent), b.map_location(parent)),
+            Node::GreaterOrEqual(a, b) => {
+                Node::GreaterOrEqual(a.map_location(parent), b.map_location(parent))
+            }
+            Node::GreaterThan(a, b) => {
+                Node::GreaterThan(a.map_location(parent), b.map_location(parent))
+            }
+            Node::LesserOrEqual(a, b) => {
+                Node::LesserOrEqual(a.map_location(parent), b.map_location(parent))
+            }
+            Node::LesserThan(a, b) => {
+                Node::LesserThan(a.map_location(parent), b.map_location(parent))
+            }
+            Node::Or(a, b) => Node::Or(a.map_location(parent), b.map_location(parent)),
+            Node::And(a, b) => Node::And(a.map_location(parent), b.map_location(parent)),
+            Node::Not(a) => Node::Not(a.map_location(parent)),
+            Node::Literal(a) => Node::Literal(a),
+            Node::Defined(Located { inner, location }) => Node::Defined(Located {
+                inner,
+                location: location.map_location(parent),
+            }),
+        }
+    }
 }
 
 impl<L> std::fmt::Display for Node<L> {

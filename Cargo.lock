@@ -118,6 +118,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "codespan-reporting"
+version = "0.11.1"
+source = "git+https://github.com/brendanzab/codespan.git#c84116f5a667bfce2aa1e045205c5832cfee1548"
+dependencies = [
+ "termcolor",
+ "unicode-width",
+]
+
+[[package]]
 name = "ctor"
 version = "0.1.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -919,6 +928,7 @@ dependencies = [
  "atty",
  "clap",
  "clap_complete",
+ "codespan-reporting",
  "nom",
  "rustyline",
  "rustyline-derive",

@@ -13,7 +13,7 @@ use super::{
     expression::{parse_expression, Context, EvaluationError, Node},
     literal::parse_string_literal,
     location::Locatable,
-    location::{Located, RelativeLocation},
+    location::{Located, MapLocation, RelativeLocation},
     ParseError,
 };
 use crate::{
@@ -152,6 +152,36 @@ pub(crate) enum InstructionArgument<L> {
     },
 }
 
+impl<L, P> MapLocation<P> for InstructionArgument<L>
+where
+    L: MapLocation<P, Mapped = P>,
+{
+    type Mapped = InstructionArgument<L::Mapped>;
+
+    fn map_location(self, parent: &P) -> Self::Mapped {
+        match self {
+            InstructionArgument::Value(v) => {
+                let v = v.map_location(parent);
+                InstructionArgument::Value(v)
+            }
+            InstructionArgument::Register(r) => InstructionArgument::Register(r),
+            InstructionArgument::Direct(d) => {
+                let d = d.map_location(parent);
+                InstructionArgument::Direct(d)
+            }
+            InstructionArgument::Indirect(i) => {
+                let i = i.map_location_only(parent);
+                InstructionArgument::Indirect(i)
+            }
+            InstructionArgument::Indexed { register, value } => {
+                let register = register.map_location_only(parent);
+                let value = value.map_location(parent);
+                InstructionArgument::Indexed { register, value }
+            }
+        }
+    }
+}
+
 /// Parse an instruction argument
 pub(crate) fn parse_instruction_argument<'a, Error: ParseError<&'a str>>(
     input: &'a str,
@@ -214,6 +244,23 @@ pub(crate) enum DirectiveArgument<L> {
     /// An expression (`.addr`, `.word`, `.space` directives)
     #[display("{0}")]
     Expression(Node<L>),
+}
+
+impl<L, P> MapLocation<P> for DirectiveArgument<L>
+where
+    L: MapLocation<P, Mapped = P>,
+{
+    type Mapped = DirectiveArgument<L::Mapped>;
+
+    fn map_location(self, parent: &P) -> Self::Mapped {
+        match self {
+            DirectiveArgument::StringLiteral(s) => DirectiveArgument::StringLiteral(s),
+            DirectiveArgument::Expression(n) => {
+                let n = n.map_location(parent);
+                DirectiveArgument::Expression(n)
+            }
+        }
+    }
 }
 
 impl<L: Clone> AstNode<L> for DirectiveArgument<L> {
