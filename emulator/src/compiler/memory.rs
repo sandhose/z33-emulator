@@ -25,11 +25,14 @@ pub enum MemoryFillError<L> {
     #[error("could not evaluate expression")]
     Evaluation {
         location: L,
-        source: ExpressionEvaluationError,
+        source: ExpressionEvaluationError<L>,
     },
 
     #[error("could not compute instruction argument")]
-    Compute { location: L, source: ComputeError },
+    Compute {
+        location: L,
+        source: ComputeError<L>,
+    },
 
     #[error("could not compile instruction")]
     InstructionCompilation {

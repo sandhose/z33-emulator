@@ -92,10 +92,10 @@ pub enum MemoryLayoutError<L> {
     #[error("invalid argument for directive .{kind}")]
     InvalidDirectiveArgument { kind: DirectiveKind, location: L },
 
-    #[error("failed to evaluate argument for directive .{kind}: {inner}")]
+    #[error("failed to evaluate argument for directive .{kind}")]
     DirectiveArgumentEvaluation {
         kind: DirectiveKind,
-        inner: ExpressionEvaluationError,
+        source: ExpressionEvaluationError<L>,
     },
 
     #[error("address {address} is already filled")]
@@ -153,9 +153,12 @@ pub(crate) fn layout_memory<L: Clone + Default>(
                             ..
                         },
                 } => {
-                    let size = e
-                        .evaluate(&EmptyExpressionContext)
-                        .map_err(|inner| DirectiveArgumentEvaluation { kind: Space, inner })?;
+                    let size = e.evaluate(&EmptyExpressionContext).map_err(|source| {
+                        DirectiveArgumentEvaluation {
+                            kind: Space,
+                            source,
+                        }
+                    })?;
 
                     trace!(size, position, "Reserving space");
 
@@ -175,7 +178,7 @@ pub(crate) fn layout_memory<L: Clone + Default>(
                 } => {
                     let addr = e
                         .evaluate(&EmptyExpressionContext)
-                        .map_err(|inner| DirectiveArgumentEvaluation { kind: Addr, inner })?;
+                        .map_err(|source| DirectiveArgumentEvaluation { kind: Addr, source })?;
 
                     debug!(addr, "Changing address");
 

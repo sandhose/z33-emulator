@@ -27,7 +27,7 @@ pub enum Subcommand {
 
 impl Subcommand {
     /// Run a subcommand
-    pub fn exec(self) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn exec(self) -> anyhow::Result<()> {
         use Subcommand::*;
         match self {
             Run(opt) => opt.exec(),

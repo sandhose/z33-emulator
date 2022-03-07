@@ -13,7 +13,7 @@ use crate::parser::{
         parse_condition, Context as ConditionContext, EvaluationError as ConditionEvaluationError,
     },
     expression::EmptyContext as EmptyExpressionContext,
-    location::{AbsoluteLocation, Located, RelativeLocation},
+    location::{AbsoluteLocation, Locatable, Located, MapLocation},
     preprocessor::{parse, Node},
 };
 
@@ -25,11 +25,11 @@ pub use fs::{Filesystem, InMemoryFilesystem, NativeFilesystem};
 pub enum GetFileError {
     /// An error from the underlying filesystem
     ///
-    /// The inner error is wrapped around a std::rc::Rc because std::io::Error does not implement
+    /// The inner error is wrapped around a std::arc::Arc because std::io::Error does not implement
     /// Clone, but this error needs to be clonable, since it is stored in the parser cache and
     /// might be returned multiple times.
     #[error("i/o error: {0}")]
-    IO(#[from] std::rc::Rc<std::io::Error>),
+    IO(#[from] std::sync::Arc<std::io::Error>),
 
     #[error("parse error: {message}")]
     ParseError { message: String },
@@ -37,21 +37,6 @@ pub enum GetFileError {
 
 struct ParsedFile<L> {
     chunks: Vec<Located<Node<L>, L>>,
-}
-
-impl ParsedFile<RelativeLocation> {
-    fn into_absolute(self) -> ParsedFile<AbsoluteLocation> {
-        let root = AbsoluteLocation::default();
-        let chunks = self
-            .chunks
-            .into_iter()
-            .map(|located_chunk| {
-                located_chunk.into_absolute(&root, Node::<RelativeLocation>::into_absolute)
-            })
-            .collect();
-
-        ParsedFile { chunks }
-    }
 }
 
 impl<L> ParsedFile<L> {
@@ -65,20 +50,40 @@ impl<L> ParsedFile<L> {
     }
 }
 
+impl<P, L> MapLocation<P> for ParsedFile<L>
+where
+    L: MapLocation<P, Mapped = P>,
+{
+    type Mapped = ParsedFile<P>;
+
+    fn map_location(self, parent: &P) -> Self::Mapped {
+        let chunks = self
+            .chunks
+            .into_iter()
+            .map(|chunk| chunk.map_location(parent))
+            .collect();
+
+        ParsedFile { chunks }
+    }
+}
+
+#[derive(Default)]
 struct ParserCache {
-    files: HashMap<PathBuf, Result<ParsedFile<AbsoluteLocation>, GetFileError>>,
+    files: HashMap<PathBuf, Result<ParsedFile<AbsoluteLocation<PathBuf>>, GetFileError>>,
+    sources: HashMap<PathBuf, String>,
 }
 
 impl ParserCache {
     fn new() -> Self {
-        Self {
-            files: Default::default(),
-        }
+        Self::default()
     }
 }
 
 impl ParserCache {
-    fn get_file(&self, path: &Path) -> &Result<ParsedFile<AbsoluteLocation>, GetFileError> {
+    fn get_file(
+        &self,
+        path: &Path,
+    ) -> &Result<ParsedFile<AbsoluteLocation<PathBuf>>, GetFileError> {
         self.files.get(path).expect("file not in cache")
     }
 
@@ -89,11 +94,13 @@ impl ParserCache {
 
         let res = (|| {
             let content = {
-                let mut f = fs.open(path).map_err(std::rc::Rc::new)?;
+                let mut f = fs.open(path).map_err(std::sync::Arc::new)?;
                 let mut buf = String::new();
-                f.read_to_string(&mut buf).map_err(std::rc::Rc::new)?;
+                f.read_to_string(&mut buf).map_err(std::sync::Arc::new)?;
                 buf
             };
+
+            self.sources.insert(path.to_path_buf(), content.clone());
 
             let (_, chunks) = all_consuming(parse)(content.as_str())
                 .finish()
@@ -101,7 +108,12 @@ impl ParserCache {
                     message: convert_error(content.as_str(), e),
                 })?;
 
-            Ok(ParsedFile { chunks }.into_absolute())
+            let parent = AbsoluteLocation {
+                offset: 0,
+                length: 0,
+                file: path.to_owned(),
+            };
+            Ok(ParsedFile { chunks }.map_location(&parent))
         })();
 
         let mut paths: Vec<PathBuf> = Vec::new();
@@ -124,18 +136,29 @@ impl ParserCache {
 }
 
 #[derive(Error, Debug)]
-pub enum PreprocessorError {
+pub enum PreprocessorError<L> {
     #[error("could not get file {path}: {inner}")]
     GetFile { path: PathBuf, inner: GetFileError },
 
-    #[error("user error: {0}")]
-    UserError(String),
+    #[error("user error: {message}")]
+    UserError { location: L, message: String },
 
     #[error("invalid syntax in condition")]
-    ConditionParse,
+    ConditionParse { location: L },
 
-    #[error("could not evaluate condition: {0}")]
-    ConditionEvaluation(#[from] ConditionEvaluationError),
+    #[error("could not evaluate condition")]
+    ConditionEvaluation(#[from] ConditionEvaluationError<L>),
+}
+
+impl<L> PreprocessorError<L> {
+    pub fn location(&self) -> Option<&L> {
+        match self {
+            PreprocessorError::GetFile { .. } => None,
+            PreprocessorError::UserError { location, .. } => Some(location),
+            PreprocessorError::ConditionParse { location } => Some(location),
+            PreprocessorError::ConditionEvaluation(e) => e.location(),
+        }
+    }
 }
 
 #[derive(Default)]
@@ -178,13 +201,13 @@ impl Context {
     }
 }
 
-fn process_chunk<FS: Filesystem, L: Clone>(
-    chunk: &Node<L>,
+fn process_chunk<FS: Filesystem>(
+    chunk: &Node<AbsoluteLocation<PathBuf>>,
     context: &mut Context,
     open_path: &Path,
     cache: &ParserCache,
     fs: &FS,
-) -> Result<Vec<String>, PreprocessorError> {
+) -> Result<Vec<String>, PreprocessorError<AbsoluteLocation<PathBuf>>> {
     use PreprocessorError::*;
 
     match chunk {
@@ -196,7 +219,10 @@ fn process_chunk<FS: Filesystem, L: Clone>(
 
         Node::Error { ref message } => {
             // Return the user-defined error
-            Err(UserError(message.inner.clone()))
+            Err(UserError {
+                message: message.inner.clone(),
+                location: message.location.clone(),
+            })
         }
 
         Node::Undefine { ref key } => {
@@ -233,9 +259,16 @@ fn process_chunk<FS: Filesystem, L: Clone>(
         Node::Condition { branches, fallback } => {
             for branch in branches.iter() {
                 let condition = context.replace(&branch.condition.inner);
-                let (_, expression) = parse_condition(&condition)
-                    .finish()
-                    .map_err(|_: ()| ConditionParse)?; // TODO: wrap the error
+                let (_, expression) =
+                    parse_condition(&condition)
+                        .finish()
+                        .map_err(|_: ()| ConditionParse {
+                            location: branch.condition.location.clone(),
+                        })?; // TODO: wrap the error
+
+                let expression = expression
+                    .map_location(&branch.condition.location)
+                    .with_location(branch.condition.location.clone());
 
                 if expression.evaluate(context)? {
                     let mut buf = Vec::new();
@@ -266,7 +299,7 @@ fn preprocess_path<FS: Filesystem>(
     context: &mut Context,
     cache: &ParserCache,
     fs: &FS,
-) -> Result<Vec<String>, PreprocessorError> {
+) -> Result<Vec<String>, PreprocessorError<AbsoluteLocation<PathBuf>>> {
     use PreprocessorError::*;
 
     let mut buf = Vec::new();
@@ -283,7 +316,13 @@ fn preprocess_path<FS: Filesystem>(
     Ok(buf)
 }
 
-pub fn preprocess<FS: Filesystem>(fs: &FS, entrypoint: &Path) -> Result<String, PreprocessorError> {
+pub fn preprocess<FS: Filesystem>(
+    fs: &FS,
+    entrypoint: &Path,
+) -> (
+    HashMap<PathBuf, String>,
+    Result<String, PreprocessorError<AbsoluteLocation<PathBuf>>>,
+) {
     let path = fs.relative(None, entrypoint);
     let mut context = Context::default();
     let cache = {
@@ -291,8 +330,12 @@ pub fn preprocess<FS: Filesystem>(fs: &FS, entrypoint: &Path) -> Result<String, 
         c.fill(&path, fs);
         c
     };
-    let chunks = preprocess_path(&path, &mut context, &cache, fs)?;
-    Ok(chunks.join("\n"))
+    let chunks = match preprocess_path(&path, &mut context, &cache, fs) {
+        Ok(c) => c,
+        Err(e) => return (cache.sources, Err(e)),
+    };
+
+    (cache.sources, Ok(chunks.join("\n")))
 }
 
 #[cfg(test)]
@@ -377,7 +420,7 @@ mod tests {
     #[test]
     fn inclusion_test() {
         let fs = fs();
-        let res = preprocess(&fs, &PathBuf::from("/inclusion.S")).unwrap();
+        let res = preprocess(&fs, &PathBuf::from("/inclusion.S")).1.unwrap();
         assert_eq!(
             res,
             indoc::indoc! {r#"
@@ -391,7 +434,7 @@ mod tests {
     #[test]
     fn condition_test() {
         let fs = fs();
-        let res = preprocess(&fs, &PathBuf::from("/condition.S")).unwrap();
+        let res = preprocess(&fs, &PathBuf::from("/condition.S")).1.unwrap();
         assert_eq!(
             res,
             indoc::indoc! {r#"
@@ -410,7 +453,7 @@ mod tests {
     #[test]
     fn definition_test() {
         let fs = fs();
-        let res = preprocess(&fs, &PathBuf::from("/define.S")).unwrap();
+        let res = preprocess(&fs, &PathBuf::from("/define.S")).1.unwrap();
         assert_eq!(
             res,
             indoc::indoc! {r#"
@@ -420,7 +463,9 @@ mod tests {
             "#}
         );
 
-        let res = preprocess(&fs, &PathBuf::from("/double-define.S")).unwrap();
+        let res = preprocess(&fs, &PathBuf::from("/double-define.S"))
+            .1
+            .unwrap();
         assert_eq!(
             res,
             indoc::indoc! {r#"
@@ -432,10 +477,10 @@ mod tests {
     #[test]
     fn user_error_test() {
         let fs = fs();
-        let res = preprocess(&fs, &PathBuf::from("/error.S"));
+        let res = preprocess(&fs, &PathBuf::from("/error.S")).1;
         assert!(res.is_err());
-        if let Err(PreprocessorError::UserError(c)) = res {
-            assert_eq!(c, "custom".to_string());
+        if let Err(PreprocessorError::UserError { message, .. }) = res {
+            assert_eq!(message, "custom".to_string());
         } else {
             panic!("not a UserError");
         }

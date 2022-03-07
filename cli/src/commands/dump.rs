@@ -17,10 +17,10 @@ pub struct DumpOpt {
 }
 
 impl DumpOpt {
-    pub fn exec(&self) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn exec(&self) -> anyhow::Result<()> {
         let fs = NativeFilesystem::from_env()?;
         info!(path = ?self.input, "Reading program");
-        let source = preprocess(&fs, &self.input)?;
+        let source = preprocess(&fs, &self.input).1?;
         let source = source.as_str();
 
         debug!("Parsing program");

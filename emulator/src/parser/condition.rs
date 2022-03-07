@@ -26,6 +26,7 @@ use nom::{
 };
 use thiserror::Error;
 
+use super::literal::parse_bool_literal;
 use super::{
     expression::{
         parse_expression, Context as ExpressionContext, EmptyContext as EmptyExpressionContext,
@@ -34,7 +35,6 @@ use super::{
     location::{Locatable, Located, MapLocation, RelativeLocation},
     precedence::Precedence,
 };
-use super::{literal::parse_bool_literal, location::AbsoluteLocation};
 use super::{parse_identifier, ParseError};
 
 type ChildNode<L> = Located<Box<Node<L>>, L>;
@@ -187,65 +187,22 @@ impl Node<RelativeLocation> {
             Defined(a) => Defined(a.offset(offset)),
         }
     }
-
-    // TODO: this should go in a trait
-    #[allow(dead_code)]
-    fn into_absolute(self, location: &AbsoluteLocation) -> Node<AbsoluteLocation> {
-        use Node::*;
-
-        let mapper = |node: Box<Node<RelativeLocation>>, parent: &AbsoluteLocation| {
-            Box::new(node.into_absolute(parent))
-        };
-
-        match self {
-            Equal(a, b) => Equal(
-                a.into_absolute(location, ENode::into_absolute),
-                b.into_absolute(location, ENode::into_absolute),
-            ),
-            NotEqual(a, b) => NotEqual(
-                a.into_absolute(location, ENode::into_absolute),
-                b.into_absolute(location, ENode::into_absolute),
-            ),
-            GreaterOrEqual(a, b) => GreaterOrEqual(
-                a.into_absolute(location, ENode::into_absolute),
-                b.into_absolute(location, ENode::into_absolute),
-            ),
-            GreaterThan(a, b) => GreaterThan(
-                a.into_absolute(location, ENode::into_absolute),
-                b.into_absolute(location, ENode::into_absolute),
-            ),
-            LesserOrEqual(a, b) => LesserOrEqual(
-                a.into_absolute(location, ENode::into_absolute),
-                b.into_absolute(location, ENode::into_absolute),
-            ),
-            LesserThan(a, b) => LesserThan(
-                a.into_absolute(location, ENode::into_absolute),
-                b.into_absolute(location, ENode::into_absolute),
-            ),
-            Or(a, b) => Or(
-                a.into_absolute(location, mapper),
-                b.into_absolute(location, mapper),
-            ),
-            And(a, b) => And(
-                a.into_absolute(location, mapper),
-                b.into_absolute(location, mapper),
-            ),
-            Not(a) => Not(a.into_absolute(location, mapper)),
-            Literal(l) => Literal(l),
-            Defined(d) => Defined(d.into_absolute(location, |d, _| d)),
-        }
-    }
 }
 
 #[derive(Error, Debug, PartialEq)]
-pub enum EvaluationError {
-    #[error("could not evaluate expression: {0}")]
-    ExpressionEvaluation(ExpressionEvaluationError),
+pub enum EvaluationError<L> {
+    #[error("could not evaluate expression")]
+    ExpressionEvaluation {
+        location: L,
+        source: ExpressionEvaluationError<L>,
+    },
 }
 
-impl From<ExpressionEvaluationError> for EvaluationError {
-    fn from(e: ExpressionEvaluationError) -> Self {
-        Self::ExpressionEvaluation(e)
+impl<L> EvaluationError<L> {
+    pub fn location(&self) -> Option<&L> {
+        match self {
+            EvaluationError::ExpressionEvaluation { location, .. } => Some(location),
+        }
     }
 }
 
@@ -272,9 +229,9 @@ impl Context for EmptyContext {
     }
 }
 
-impl<L> Node<L> {
+impl<L: Clone> Node<L> {
     /// Evaluate a condition AST node with a given context
-    pub fn evaluate<C: Context>(&self, context: &C) -> Result<bool, EvaluationError> {
+    pub fn evaluate<C: Context>(&self, context: &C) -> Result<bool, ExpressionEvaluationError<L>> {
         let value = match self {
             Node::Equal(a, b) => {
                 let context = context.get_expression_context();
@@ -341,6 +298,17 @@ impl<L> Node<L> {
         };
 
         Ok(value)
+    }
+}
+
+impl<L: Clone> Located<Node<L>, L> {
+    pub fn evaluate<C: Context>(&self, context: &C) -> Result<bool, EvaluationError<L>> {
+        self.inner
+            .evaluate(context)
+            .map_err(|source| EvaluationError::ExpressionEvaluation {
+                location: self.location.clone(),
+                source,
+            })
     }
 }
 
@@ -559,12 +527,15 @@ mod tests {
     type R<T> = nom::IResult<&'static str, T, ()>;
 
     #[track_caller]
-    fn evaluate<L>(res: IResult<&str, Node<L>>) -> bool {
+    fn evaluate<L: Clone + std::fmt::Debug>(res: IResult<&str, Node<L>>) -> bool {
         evaluate_with_context(res, &EmptyContext)
     }
 
     #[track_caller]
-    fn evaluate_with_context<C: Context, L>(res: IResult<&str, Node<L>>, context: &C) -> bool {
+    fn evaluate_with_context<C: Context, L: Clone + std::fmt::Debug>(
+        res: IResult<&str, Node<L>>,
+        context: &C,
+    ) -> bool {
         let (rest, node) = res.finish().unwrap();
         assert_eq!(rest, "");
         node.evaluate(context).unwrap()
@@ -579,6 +550,7 @@ mod tests {
         );
     }
 
+    /*
     #[test]
     fn absolute_location_test() {
         use Node::*;
@@ -611,6 +583,7 @@ mod tests {
             )
         );
     }
+    */
 
     #[test]
     fn number_comparison_test() {
@@ -727,11 +700,9 @@ mod tests {
                 E::Literal(10).with_location(())
             )
             .evaluate(ctx),
-            Err(EvaluationError::ExpressionEvaluation(
-                ExpressionEvaluationError::UndefinedVariable {
-                    variable: "undefined".into()
-                }
-            ))
+            Err(ExpressionEvaluationError::UndefinedVariable {
+                variable: "undefined".into(),
+            })
         );
     }
 }

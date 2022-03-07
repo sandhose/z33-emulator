@@ -27,7 +27,7 @@ pub fn dump(source: &str) -> Result<JsValue, JsValue> {
     files.insert("-".into(), source.to_string());
 
     let fs = InMemoryFilesystem::new(files);
-    let preprocessed = preprocess(&fs, &PathBuf::from("-"));
+    let (_, preprocessed) = preprocess(&fs, &PathBuf::from("-"));
 
     if let Err(e) = preprocessed {
         output.error = Some(format!("{}", e));

@@ -315,22 +315,16 @@ impl<L> From<i128> for DirectiveArgument<L> {
 }
 
 #[derive(Error, Debug)]
-pub enum ComputeError {
-    #[error("could not evaluate argument: {0}")]
-    Evaluation(EvaluationError),
+pub enum ComputeError<L> {
+    #[error("could not evaluate argument")]
+    Evaluation(#[from] EvaluationError<L>),
 }
 
-impl From<EvaluationError> for ComputeError {
-    fn from(e: EvaluationError) -> Self {
-        Self::Evaluation(e)
-    }
-}
-
-impl<L> InstructionArgument<L> {
+impl<L: Clone> InstructionArgument<L> {
     pub(crate) fn evaluate<C: Context>(
         &self,
         context: &C,
-    ) -> Result<ImmRegDirIndIdx, ComputeError> {
+    ) -> Result<ImmRegDirIndIdx, ComputeError<L>> {
         match self {
             Self::Value(v) => {
                 let value = v.evaluate(context)?;

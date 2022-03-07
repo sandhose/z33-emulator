@@ -9,7 +9,7 @@ use nom::{
 
 use super::{
     literal::parse_string_literal,
-    location::{AbsoluteLocation, Locatable, Located, RelativeLocation},
+    location::{Locatable, Located, MapLocation, RelativeLocation},
     parse_identifier, ParseError,
 };
 
@@ -21,15 +21,16 @@ pub(crate) struct ConditionBranch<L> {
     pub body: Located<Children<L>, L>,
 }
 
-impl ConditionBranch<RelativeLocation> {
-    fn into_absolute(self, parent: &AbsoluteLocation) -> ConditionBranch<AbsoluteLocation> {
-        let condition = self.condition.into_absolute(parent, |c, _| c);
-        let body = self.body.into_absolute(parent, |c, p| {
-            c.into_iter()
-                .map(|c| c.into_absolute(p, |c, p| c.into_absolute(p)))
-                .collect()
-        });
-        ConditionBranch { condition, body }
+impl<P, L> MapLocation<P> for ConditionBranch<L>
+where
+    L: MapLocation<P, Mapped = P>,
+{
+    type Mapped = ConditionBranch<P>;
+
+    fn map_location(self, parent: &P) -> Self::Mapped {
+        let condition = self.condition.map_location_only(parent);
+        let body = self.body.map_location(parent);
+        ConditionBranch { body, condition }
     }
 }
 
@@ -57,6 +58,37 @@ pub(crate) enum Node<L> {
     },
 }
 
+impl<P, L> MapLocation<P> for Node<L>
+where
+    L: MapLocation<P, Mapped = P>,
+{
+    type Mapped = Node<P>;
+
+    fn map_location(self, parent: &P) -> Self::Mapped {
+        use Node::*;
+        match self {
+            Raw { content } => Raw { content },
+            Error { message } => Error {
+                message: message.map_location_only(parent),
+            },
+            Undefine { key } => Undefine {
+                key: key.map_location_only(parent),
+            },
+            Definition { key, content } => Definition {
+                key: key.map_location_only(parent),
+                content: content.map(|c| c.map_location_only(parent)),
+            },
+            Inclusion { path } => Inclusion {
+                path: path.map_location_only(parent),
+            },
+            Condition { branches, fallback } => Condition {
+                branches: branches.map_location(parent),
+                fallback: fallback.map_location(parent),
+            },
+        }
+    }
+}
+
 impl<L> Node<L> {
     pub(crate) fn walk<F>(&self, f: &mut F)
     where
@@ -76,43 +108,6 @@ impl<L> Node<L> {
                     chunk.inner.walk(f)
                 }
             }
-        }
-    }
-}
-
-impl Node<RelativeLocation> {
-    pub(crate) fn into_absolute(self, parent: &AbsoluteLocation) -> Node<AbsoluteLocation> {
-        use Node::*;
-        match self {
-            Raw { content } => Raw { content },
-            Error { message } => Error {
-                message: message.into_absolute(parent, |c, _| c),
-            },
-            Undefine { key } => Undefine {
-                key: key.into_absolute(parent, |k, _| k),
-            },
-            Definition { key, content } => Definition {
-                key: key.into_absolute(parent, |k, _| k),
-                content: content.map(|c| c.into_absolute(parent, |c, _| c)),
-            },
-            Inclusion { path } => Inclusion {
-                path: path.into_absolute(parent, |p, _| p),
-            },
-            Condition { branches, fallback } => Condition {
-                branches: branches
-                    .into_iter()
-                    .map(|b| b.into_absolute(parent))
-                    .collect(),
-                fallback: fallback.map(
-                    |l: Located<Children<RelativeLocation>, RelativeLocation>| {
-                        l.into_absolute(parent, |c, p| {
-                            c.into_iter()
-                                .map(|c| c.into_absolute(p, |c, p| c.into_absolute(p)))
-                                .collect()
-                        })
-                    },
-                ),
-            },
         }
     }
 }

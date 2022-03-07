@@ -69,6 +69,7 @@ impl RelativeLocation {
         AbsoluteLocation {
             offset: parent.offset + self.offset,
             length: self.length,
+            file: (),
         }
     }
 }
@@ -95,14 +96,19 @@ impl<T> Located<T, RelativeLocation> {
 }
 
 #[derive(Clone, Debug, PartialEq, Default)]
-pub struct AbsoluteLocation {
+pub struct AbsoluteLocation<File = ()> {
     pub offset: usize,
     pub length: usize,
+    pub file: File,
 }
 
-impl From<(usize, usize)> for AbsoluteLocation {
+impl<F: Default> From<(usize, usize)> for AbsoluteLocation<F> {
     fn from((offset, length): (usize, usize)) -> Self {
-        AbsoluteLocation { offset, length }
+        AbsoluteLocation {
+            offset,
+            length,
+            file: F::default(),
+        }
     }
 }
 
@@ -220,15 +226,53 @@ where
     }
 }
 
-impl MapLocation<AbsoluteLocation> for RelativeLocation {
-    type Mapped = AbsoluteLocation;
+impl<P, T> MapLocation<P> for Option<T>
+where
+    T: MapLocation<P>,
+{
+    type Mapped = Option<T::Mapped>;
 
-    fn map_location(self, parent: &AbsoluteLocation) -> Self::Mapped {
+    fn map_location(self, parent: &P) -> Self::Mapped {
+        self.map(|inner| inner.map_location(parent))
+    }
+}
+
+impl<P, T> MapLocation<P> for Vec<T>
+where
+    T: MapLocation<P>,
+{
+    type Mapped = Vec<T::Mapped>;
+
+    fn map_location(self, parent: &P) -> Self::Mapped {
+        self.into_iter()
+            .map(|item| item.map_location(parent))
+            .collect()
+    }
+}
+
+impl<F> MapLocation<AbsoluteLocation<F>> for RelativeLocation
+where
+    F: Clone,
+{
+    type Mapped = AbsoluteLocation<F>;
+
+    fn map_location(self, parent: &AbsoluteLocation<F>) -> Self::Mapped {
         AbsoluteLocation {
             offset: parent.offset + self.offset,
             length: self.length,
+            file: parent.file.clone(),
         }
     }
+}
+
+impl MapLocation<()> for AbsoluteLocation {
+    type Mapped = ();
+    fn map_location(self, _parent: &()) -> Self::Mapped {}
+}
+
+impl MapLocation<()> for RelativeLocation {
+    type Mapped = ();
+    fn map_location(self, _parent: &()) -> Self::Mapped {}
 }
 
 impl<T, L> Located<T, L> {

@@ -13,10 +13,10 @@ pub struct PreprocessOpt {
 }
 
 impl PreprocessOpt {
-    pub fn exec(&self) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn exec(&self) -> anyhow::Result<()> {
         let fs = NativeFilesystem::from_env()?;
         info!(path = ?self.input, "Reading program");
-        let source = preprocess(&fs, &self.input)?;
+        let source = preprocess(&fs, &self.input).1?;
         println!("{}", source);
         Ok(())
     }

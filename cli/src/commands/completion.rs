@@ -29,7 +29,7 @@ fn print_completions<G: Generator>(generator: G, command: &mut Command) {
 }
 
 impl CompletionOpt {
-    pub fn exec(&self) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn exec(&self) -> anyhow::Result<()> {
         let mut command = Opt::command();
         match self.shell {
             ShellKind::Bash => print_completions(Bash, &mut command),

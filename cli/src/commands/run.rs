@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::{path::PathBuf, process::exit};
 
 use clap::{Parser, ValueHint};
@@ -36,10 +37,51 @@ fn char_offset(a: &str, b: &str) -> usize {
 }
 
 impl RunOpt {
-    pub fn exec(&self) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn exec(&self) -> anyhow::Result<()> {
         let fs = NativeFilesystem::from_env()?;
         info!(path = ?self.input, "Reading program");
-        let source = preprocess(&fs, &self.input)?;
+        let source = match preprocess(&fs, &self.input) {
+            (_, Ok(p)) => p,
+            (sources, Err(e)) => {
+                for error in anyhow::Chain::new(&e) {
+                    // TODO: get the location of individual errors
+                    error!("{}", error);
+                }
+
+                let msg = format!("{}", e);
+                let mut files = SimpleFiles::new();
+                let file_ids: HashMap<_, _> = sources
+                    .into_iter()
+                    .map(|(name, source)| {
+                        (
+                            name.clone(),
+                            files.add(name.to_string_lossy().into_owned(), source),
+                        )
+                    })
+                    .collect();
+
+                let mut labels = Vec::new();
+
+                if let Some(location) = e.location() {
+                    labels.push(Label::primary(
+                        file_ids[&location.file],
+                        location.offset..(location.offset + location.length),
+                    ));
+                }
+
+                let diagnostic = Diagnostic::error().with_message(msg).with_labels(labels);
+
+                let writer = StandardStream::stderr(ColorChoice::Auto);
+                let config = codespan_reporting::term::Config {
+                    before_label_lines: 3,
+                    after_label_lines: 3,
+                    ..Default::default()
+                };
+
+                codespan_reporting::term::emit(&mut writer.lock(), &config, &files, &diagnostic)?;
+                exit(1);
+            }
+        };
         let source = source.as_str();
 
         let mut files = SimpleFiles::new();
@@ -79,7 +121,8 @@ impl RunOpt {
             }
         };
 
-        let program = program.map_location(&AbsoluteLocation::default());
+        let parent = AbsoluteLocation::<()>::default();
+        let program = program.map_location(&parent);
 
         debug!(entrypoint = %self.entrypoint, "Building computer");
         let (mut computer, debug_info) = match compile(program.inner, &self.entrypoint) {

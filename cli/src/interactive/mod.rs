@@ -233,7 +233,7 @@ impl Session {
 pub(crate) fn run_interactive(
     computer: &mut Computer,
     debug_info: DebugInfo,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> anyhow::Result<()> {
     info!("Running in interactive mode. Type \"help\" to list available commands.");
     let config = Config::builder()
         .history_ignore_space(true)

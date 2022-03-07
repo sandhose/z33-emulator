@@ -18,7 +18,7 @@
 //! All the calculation is done with the [`Value`](type.Value.html) type, then converted down using the
 //! `TryFrom` trait.
 
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
 
 use nom::{
     branch::alt,
@@ -34,7 +34,7 @@ use crate::ast::{AstNode, NodeKind};
 
 use super::{
     literal::parse_number_literal,
-    location::{AbsoluteLocation, Locatable, Located, MapLocation, RelativeLocation},
+    location::{Locatable, Located, MapLocation, RelativeLocation},
     parse_identifier,
     precedence::Precedence,
     ParseError,
@@ -230,7 +230,6 @@ impl<L> std::fmt::Display for Node<L> {
 }
 
 impl Node<RelativeLocation> {
-    #[allow(dead_code)]
     fn offset(self, offset: usize) -> Self {
         use Node::*;
         match self {
@@ -244,53 +243,6 @@ impl Node<RelativeLocation> {
             Divide(a, b) => Divide(a.offset(offset), b.offset(offset)),
             Invert(a) => Invert(a.offset(offset)),
             BinaryNot(a) => BinaryNot(a.offset(offset)),
-            Literal(a) => Literal(a),
-            Variable(a) => Variable(a),
-        }
-    }
-
-    pub(crate) fn into_absolute(self, location: &AbsoluteLocation) -> Node<AbsoluteLocation> {
-        use Node::*;
-
-        let mapper = |node: Box<Node<RelativeLocation>>, parent: &AbsoluteLocation| {
-            Box::new(node.into_absolute(parent))
-        };
-
-        match self {
-            BinaryOr(a, b) => BinaryOr(
-                a.into_absolute(location, mapper),
-                b.into_absolute(location, mapper),
-            ),
-            BinaryAnd(a, b) => BinaryAnd(
-                a.into_absolute(location, mapper),
-                b.into_absolute(location, mapper),
-            ),
-            LeftShift(a, b) => LeftShift(
-                a.into_absolute(location, mapper),
-                b.into_absolute(location, mapper),
-            ),
-            RightShift(a, b) => RightShift(
-                a.into_absolute(location, mapper),
-                b.into_absolute(location, mapper),
-            ),
-            Sum(a, b) => Sum(
-                a.into_absolute(location, mapper),
-                b.into_absolute(location, mapper),
-            ),
-            Substract(a, b) => Substract(
-                a.into_absolute(location, mapper),
-                b.into_absolute(location, mapper),
-            ),
-            Multiply(a, b) => Multiply(
-                a.into_absolute(location, mapper),
-                b.into_absolute(location, mapper),
-            ),
-            Divide(a, b) => Divide(
-                a.into_absolute(location, mapper),
-                b.into_absolute(location, mapper),
-            ),
-            Invert(a) => Invert(a.into_absolute(location, mapper)),
-            BinaryNot(a) => BinaryNot(a.into_absolute(location, mapper)),
             Literal(a) => Literal(a),
             Variable(a) => Variable(a),
         }
@@ -310,72 +262,89 @@ impl Context for EmptyContext {
 }
 
 #[derive(Error, Debug, PartialEq)]
-pub enum EvaluationError {
+pub enum EvaluationError<L> {
     #[error("undefined variable {variable:?}")]
     UndefinedVariable { variable: String },
 
     #[error("could not downcast value")]
     Downcast,
+
+    #[error("invalid bitshift")]
+    Shift,
+
+    #[error("overflow")]
+    Overflow,
+
+    #[error("divide by zero")]
+    DivByZero,
+
+    #[error("evaluation")]
+    Expression {
+        location: L,
+        inner: Box<EvaluationError<L>>,
+    },
 }
 
-impl<L> Node<L> {
+impl<L: Clone> Node<L> {
     pub fn evaluate<C: Context, V: TryFrom<Value>>(
         &self,
         context: &C,
-    ) -> Result<V, EvaluationError> {
+    ) -> Result<V, EvaluationError<L>> {
         let value: Value =
             match self {
                 Node::BinaryOr(left, right) => {
-                    let left: Value = left.inner.evaluate(context)?;
-                    let right: Value = right.inner.evaluate(context)?;
+                    let left: Value = left.evaluate(context)?;
+                    let right: Value = right.evaluate(context)?;
                     left | right
                 }
 
                 Node::BinaryAnd(left, right) => {
-                    let left: Value = left.inner.evaluate(context)?;
-                    let right: Value = right.inner.evaluate(context)?;
+                    let left: Value = left.evaluate(context)?;
+                    let right: Value = right.evaluate(context)?;
                     left & right
                 }
 
                 Node::LeftShift(left, right) => {
-                    let left: Value = left.inner.evaluate(context)?;
-                    let right: Value = right.inner.evaluate(context)?;
-                    left << right
+                    let left: Value = left.evaluate(context)?;
+                    let right: Value = right.evaluate(context)?;
+                    left.checked_shl(right.try_into().map_err(|_| EvaluationError::Downcast)?)
+                        .ok_or(EvaluationError::Shift)?
                 }
 
                 Node::RightShift(left, right) => {
-                    let left: Value = left.inner.evaluate(context)?;
-                    let right: Value = right.inner.evaluate(context)?;
-                    left >> right
+                    let left: Value = left.evaluate(context)?;
+                    let right: Value = right.evaluate(context)?;
+                    left.checked_shr(right.try_into().map_err(|_| EvaluationError::Downcast)?)
+                        .ok_or(EvaluationError::Shift)?
                 }
 
                 Node::Sum(left, right) => {
-                    let left: Value = left.inner.evaluate(context)?;
-                    let right: Value = right.inner.evaluate(context)?;
-                    left + right
+                    let left: Value = left.evaluate(context)?;
+                    let right: Value = right.evaluate(context)?;
+                    left.checked_add(right).ok_or(EvaluationError::Overflow)?
                 }
 
                 Node::Substract(left, right) => {
-                    let left: Value = left.inner.evaluate(context)?;
-                    let right: Value = right.inner.evaluate(context)?;
-                    left - right
+                    let left: Value = left.evaluate(context)?;
+                    let right: Value = right.evaluate(context)?;
+                    left.checked_sub(right).ok_or(EvaluationError::Overflow)?
                 }
 
                 Node::Multiply(left, right) => {
-                    let left: Value = left.inner.evaluate(context)?;
-                    let right: Value = right.inner.evaluate(context)?;
-                    left * right
+                    let left: Value = left.evaluate(context)?;
+                    let right: Value = right.evaluate(context)?;
+                    left.checked_mul(right).ok_or(EvaluationError::Overflow)?
                 }
 
                 Node::Divide(left, right) => {
-                    let left: Value = left.inner.evaluate(context)?;
-                    let right: Value = right.inner.evaluate(context)?;
-                    left / right
+                    let left: Value = left.evaluate(context)?;
+                    let right: Value = right.evaluate(context)?;
+                    left.checked_div(right).ok_or(EvaluationError::DivByZero)?
                 }
 
                 Node::Invert(operand) => {
-                    let operand: Value = operand.inner.evaluate(context)?;
-                    -operand
+                    let operand: Value = operand.evaluate(context)?;
+                    operand.checked_neg().ok_or(EvaluationError::Overflow)?
                 }
 
                 Node::BinaryNot(operand) => {
@@ -402,6 +371,20 @@ impl<L> Node<L> {
             };
 
         V::try_from(value).map_err(|_| EvaluationError::Downcast)
+    }
+}
+
+impl<L: Clone> ChildNode<L> {
+    pub fn evaluate<C: Context, V: TryFrom<Value>>(
+        &self,
+        context: &C,
+    ) -> Result<V, EvaluationError<L>> {
+        self.inner
+            .evaluate(context)
+            .map_err(|source| EvaluationError::Expression {
+                location: self.location.clone(),
+                inner: Box::new(source),
+            })
     }
 }
 
@@ -731,7 +714,7 @@ mod tests {
     use super::*;
 
     #[track_caller]
-    fn evaluate<L>(res: IResult<&str, Node<L>>) -> i128 {
+    fn evaluate<L: Clone + std::fmt::Debug>(res: IResult<&str, Node<L>>) -> i128 {
         let (rest, node) = res.finish().unwrap();
         assert_eq!(rest, "");
         node.evaluate(&EmptyContext).unwrap()
