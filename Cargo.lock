@@ -22,9 +22,9 @@ dependencies = [
 
 [[package]]
 name = "anyhow"
-version = "1.0.55"
+version = "1.0.56"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "159bb86af3a200e19a068f4224eae4c8bb2d0fa054c7e5d1cacd5cef95e684cd"
+checksum = "4361135be9122e0870de935d7c439aef945b9f9ddd4199a553b5270b49c82a27"
 
 [[package]]
 name = "atty"
@@ -921,7 +921,7 @@ checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
 
 [[package]]
 name = "z33-cli"
-version = "0.3.0"
+version = "0.5.0"
 dependencies = [
  "ansi_term",
  "anyhow",
@@ -941,7 +941,7 @@ dependencies = [
 
 [[package]]
 name = "z33-emulator"
-version = "0.3.0"
+version = "0.5.0"
 dependencies = [
  "bitflags",
  "indoc",
@@ -956,7 +956,7 @@ dependencies = [
 
 [[package]]
 name = "z33-web"
-version = "0.3.0"
+version = "0.5.0"
 dependencies = [
  "serde",
  "serde-wasm-bindgen",
