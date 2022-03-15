@@ -1,6 +1,6 @@
 //! Utility AST manipulation, mainly for reporting
 
-use crate::parser::location::Located;
+use crate::parser::location::{Located, MapLocation};
 
 pub trait AstNode<L> {
     fn kind(&self) -> NodeKind;
@@ -87,6 +87,25 @@ pub struct Node<L> {
     pub(crate) location: L,
 }
 
+impl<L, P> MapLocation<P> for Node<L>
+where
+    L: MapLocation<P, Mapped = P>,
+{
+    type Mapped = Node<P>;
+
+    fn map_location(self, parent: &P) -> Self::Mapped {
+        let location = self.location.map_location(parent);
+        let children = self.children.map_location(&location);
+
+        Node {
+            kind: self.kind,
+            children,
+            content: self.content,
+            location,
+        }
+    }
+}
+
 impl<L> Node<L> {
     pub(crate) fn new(kind: NodeKind, location: L) -> Self {
         Node {
@@ -100,27 +119,6 @@ impl<L> Node<L> {
     pub(crate) fn content(mut self, content: String) -> Self {
         self.content = Some(content);
         self
-    }
-
-    /// Map the locations of AST nodes
-    pub fn map_location<O, M>(self, mapper: &M) -> Node<O>
-    where
-        M: Fn(L) -> O,
-    {
-        let location = mapper(self.location);
-        let children = self
-            .children
-            .into_iter()
-            .map(|n| n.map_location(mapper))
-            .collect();
-        let kind = self.kind;
-        let content = self.content;
-        Node {
-            kind,
-            children,
-            content,
-            location,
-        }
     }
 
     /// Transforms the location of AST nodes relative to their parent

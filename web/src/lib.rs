@@ -7,7 +7,7 @@ use wasm_bindgen::prelude::*;
 use z33_emulator::{
     compiler::layout,
     constants as C,
-    parser::location::{AbsoluteLocation, Lines, RelativeLocation},
+    parser::location::{AbsoluteLocation, MapLocation},
     preprocessor::{preprocess, InMemoryFilesystem},
 };
 
@@ -50,14 +50,7 @@ pub fn dump(source: &str) -> Result<JsValue, JsValue> {
     let ast = program.to_node();
 
     // Transform the AST relative locations to absolute ones
-    let ast = ast.transform_location(
-        &AbsoluteLocation::default(),
-        &RelativeLocation::into_absolute,
-    );
-
-    // Map the AST absolute offsets to line/col locations
-    let lines = Lines::new(source);
-    let ast = ast.map_location(&|l| l.to_line_aware(&lines));
+    let ast = ast.map_location(&AbsoluteLocation::default());
 
     output.ast = Some(format!("{}", ast));
 

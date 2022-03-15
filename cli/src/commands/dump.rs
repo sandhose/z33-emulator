@@ -5,7 +5,7 @@ use clap::{Parser, ValueHint};
 use tracing::{debug, info};
 use z33_emulator::{
     parse,
-    parser::location::{AbsoluteLocation, Lines, RelativeLocation},
+    parser::location::{AbsoluteLocation, MapLocation},
     preprocessor::{preprocess, NativeFilesystem},
 };
 
@@ -30,14 +30,7 @@ impl DumpOpt {
         let ast = program.to_node();
 
         // Transform the AST relative locations to absolute ones
-        let ast = ast.transform_location(
-            &AbsoluteLocation::default(),
-            &RelativeLocation::into_absolute,
-        );
-
-        // Map the AST absolute offsets to line/col locations
-        let lines = Lines::new(source);
-        let ast = ast.map_location(&|l| l.to_line_aware(&lines));
+        let ast = ast.map_location(&AbsoluteLocation::default());
 
         println!("{}", ast);
 
