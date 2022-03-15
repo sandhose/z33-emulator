@@ -8,7 +8,7 @@ use z33_emulator::{
     compiler::layout,
     constants as C,
     parser::location::{AbsoluteLocation, MapLocation},
-    preprocessor::{preprocess, InMemoryFilesystem},
+    preprocessor::{InMemoryFilesystem, Preprocessor},
 };
 
 #[derive(Default, Serialize)]
@@ -24,28 +24,31 @@ struct Output {
 pub fn dump(source: &str) -> Result<JsValue, JsValue> {
     let mut output = Output::default();
     let mut files = HashMap::new();
-    files.insert("-".into(), source.to_string());
+    let path = PathBuf::from("-");
+    files.insert(path.clone(), source.to_string());
 
     let fs = InMemoryFilesystem::new(files);
-    let (_, preprocessed) = preprocess(&fs, &PathBuf::from("-"));
+    let preprocessor = Preprocessor::new(fs).and_load(&path);
 
-    if let Err(e) = preprocessed {
-        output.error = Some(format!("{}", e));
-        return Ok(serde_wasm_bindgen::to_value(&output)?);
-    }
-
-    let source = &preprocessed.unwrap();
+    let source = match preprocessor.preprocess(&path) {
+        Ok(s) => s,
+        Err(e) => {
+            output.error = Some(format!("{}", e));
+            return Ok(serde_wasm_bindgen::to_value(&output)?);
+        }
+    };
 
     output.preprocessed = Some(source.clone());
 
-    let program = z33_emulator::parser::parse_new::<z33_emulator::parser::Error<_>>(source); // TODO: the error is tied to the input
+    let program = z33_emulator::parser::parse_new::<z33_emulator::parser::Error<_>>(&source); // TODO: the error is tied to the input
 
-    if let Err(e) = program {
-        output.error = Some(format!("{:#?}", e));
-        return Ok(serde_wasm_bindgen::to_value(&output)?);
-    }
-
-    let program = program.unwrap();
+    let program = match program {
+        Ok(p) => p,
+        Err(e) => {
+            output.error = Some(format!("{:#?}", e));
+            return Ok(serde_wasm_bindgen::to_value(&output)?);
+        }
+    };
 
     let ast = program.to_node();
 

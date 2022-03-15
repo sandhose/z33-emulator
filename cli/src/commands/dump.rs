@@ -6,7 +6,7 @@ use tracing::{debug, info};
 use z33_emulator::{
     parse,
     parser::location::{AbsoluteLocation, MapLocation},
-    preprocessor::{preprocess, NativeFilesystem},
+    preprocessor::{NativeFilesystem, Preprocessor},
 };
 
 #[derive(Parser, Debug)]
@@ -20,7 +20,9 @@ impl DumpOpt {
     pub fn exec(&self) -> anyhow::Result<()> {
         let fs = NativeFilesystem::from_env()?;
         info!(path = ?self.input, "Reading program");
-        let source = preprocess(&fs, &self.input).1?;
+        let preprocessor = Preprocessor::new(fs).and_load(&self.input);
+
+        let source = preprocessor.preprocess(&self.input)?;
         let source = source.as_str();
 
         debug!("Parsing program");

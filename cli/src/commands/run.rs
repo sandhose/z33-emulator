@@ -6,12 +6,13 @@ use codespan_reporting::diagnostic::{Diagnostic, Label};
 use codespan_reporting::files::SimpleFiles;
 use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
 use tracing::{debug, error, info};
+use z33_emulator::preprocessor::Preprocessor;
 use z33_emulator::{
     compile,
     compiler::CompilationError,
     parse,
     parser::location::{AbsoluteLocation, MapLocation},
-    preprocessor::{preprocess, NativeFilesystem},
+    preprocessor::NativeFilesystem,
 };
 
 use crate::interactive::run_interactive;
@@ -40,9 +41,10 @@ impl RunOpt {
     pub fn exec(&self) -> anyhow::Result<()> {
         let fs = NativeFilesystem::from_env()?;
         info!(path = ?self.input, "Reading program");
-        let source = match preprocess(&fs, &self.input) {
-            (_, Ok(p)) => p,
-            (sources, Err(e)) => {
+        let preprocessor = Preprocessor::new(fs).and_load(&self.input);
+        let source = match preprocessor.preprocess(&self.input) {
+            Ok(p) => p,
+            Err(e) => {
                 for error in anyhow::Chain::new(&e) {
                     // TODO: get the location of individual errors
                     error!("{}", error);
@@ -50,8 +52,9 @@ impl RunOpt {
 
                 let msg = format!("{}", e);
                 let mut files = SimpleFiles::new();
-                let file_ids: HashMap<_, _> = sources
-                    .into_iter()
+                let file_ids: HashMap<_, _> = preprocessor
+                    .sources()
+                    .iter()
                     .map(|(name, source)| {
                         (
                             name.clone(),

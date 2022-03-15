@@ -201,141 +201,175 @@ impl Context {
     }
 }
 
-fn process_chunk<FS: Filesystem>(
-    chunk: &Node<AbsoluteLocation<PathBuf>>,
-    context: &mut Context,
-    open_path: &Path,
-    cache: &ParserCache,
-    fs: &FS,
-) -> Result<Vec<String>, PreprocessorError<AbsoluteLocation<PathBuf>>> {
-    use PreprocessorError::*;
+pub struct Preprocessor<FS> {
+    cache: ParserCache,
+    fs: FS,
+}
 
-    match chunk {
-        Node::Raw { ref content } => {
-            // Replace the definitions in the content
-            let replaced = context.replace(content);
-            Ok(vec![replaced])
+impl<FS> Preprocessor<FS> {
+    pub fn new(fs: FS) -> Self {
+        Self {
+            cache: ParserCache::new(),
+            fs,
+        }
+    }
+
+    pub fn and_load(mut self, entrypoint: &Path) -> Self
+    where
+        FS: Filesystem,
+    {
+        self.load(entrypoint);
+        self
+    }
+
+    pub fn sources(&self) -> &HashMap<PathBuf, String> {
+        &self.cache.sources
+    }
+
+    pub fn load(&mut self, entrypoint: &Path)
+    where
+        FS: Filesystem,
+    {
+        let path = self.fs.relative(None, entrypoint);
+        self.cache.fill(&path, &self.fs);
+    }
+
+    pub fn preprocess(
+        &self,
+        entrypoint: &Path,
+    ) -> Result<String, PreprocessorError<AbsoluteLocation<PathBuf>>>
+    where
+        FS: Filesystem,
+    {
+        let path = self.fs.relative(None, entrypoint);
+        let mut context = Context::default();
+        let chunks = self.preprocess_path(&path, &mut context)?;
+
+        Ok(chunks.join("\n"))
+    }
+
+    fn preprocess_path(
+        &self,
+        path: &Path,
+        context: &mut Context,
+    ) -> Result<Vec<String>, PreprocessorError<AbsoluteLocation<PathBuf>>>
+    where
+        FS: Filesystem,
+    {
+        use PreprocessorError::*;
+
+        let mut buf = Vec::new();
+        let file = self
+            .cache
+            .get_file(path)
+            .as_ref()
+            .map_err(|inner| GetFile {
+                path: path.to_path_buf(),
+                inner: inner.clone(),
+            })?;
+
+        for chunk in file.chunks.iter() {
+            let content = self.process_chunk(&chunk.inner, context, path)?;
+            buf.extend(content);
         }
 
-        Node::Error { ref message } => {
-            // Return the user-defined error
-            Err(UserError {
-                message: message.inner.clone(),
-                location: message.location.clone(),
-            })
-        }
+        Ok(buf)
+    }
 
-        Node::Undefine { ref key } => {
-            // Remove a definition
-            let key = &key.inner;
-            context.undefine(key);
-            Ok(Vec::new()) // Generates no text
-        }
+    fn process_chunk(
+        &self,
+        chunk: &Node<AbsoluteLocation<PathBuf>>,
+        context: &mut Context,
+        open_path: &Path,
+    ) -> Result<Vec<String>, PreprocessorError<AbsoluteLocation<PathBuf>>>
+    where
+        FS: Filesystem,
+    {
+        use PreprocessorError::*;
 
-        Node::Definition {
-            ref key,
-            ref content,
-        } => {
-            // Add a definition
-            let key = key.inner.clone();
-            let content = content.as_ref().map(|i| &i.inner);
-            // First replace existing definitions in the content
-            let content = content.map(|c| context.replace(c));
-            // Then add the definition
-            context.define(key, content);
-            Ok(Vec::new()) // Generates no text
-        }
+        match chunk {
+            Node::Raw { ref content } => {
+                // Replace the definitions in the content
+                let replaced = context.replace(content);
+                Ok(vec![replaced])
+            }
 
-        Node::Inclusion { path: ref include } => {
-            // Include a file
-            let include: PathBuf = include.inner.clone().into();
-            // First resolve its path
-            let path = fs.relative(Some(open_path), &include);
-            // Then process it
-            let content = preprocess_path(&path, context, cache, fs)?;
-            Ok(content)
-        }
+            Node::Error { ref message } => {
+                // Return the user-defined error
+                Err(UserError {
+                    message: message.inner.clone(),
+                    location: message.location.clone(),
+                })
+            }
 
-        Node::Condition { branches, fallback } => {
-            for branch in branches.iter() {
-                let condition = context.replace(&branch.condition.inner);
-                let (_, expression) =
-                    parse_condition(&condition)
-                        .finish()
-                        .map_err(|_: ()| ConditionParse {
-                            location: branch.condition.location.clone(),
-                        })?; // TODO: wrap the error
+            Node::Undefine { ref key } => {
+                // Remove a definition
+                let key = &key.inner;
+                context.undefine(key);
+                Ok(Vec::new()) // Generates no text
+            }
 
-                let expression = expression
-                    .map_location(&branch.condition.location)
-                    .with_location(branch.condition.location.clone());
+            Node::Definition {
+                ref key,
+                ref content,
+            } => {
+                // Add a definition
+                let key = key.inner.clone();
+                let content = content.as_ref().map(|i| &i.inner);
+                // First replace existing definitions in the content
+                let content = content.map(|c| context.replace(c));
+                // Then add the definition
+                context.define(key, content);
+                Ok(Vec::new()) // Generates no text
+            }
 
-                if expression.evaluate(context)? {
+            Node::Inclusion { path: ref include } => {
+                // Include a file
+                let include: PathBuf = include.inner.clone().into();
+                // First resolve its path
+                let path = self.fs.relative(Some(open_path), &include);
+                // Then process it
+                let content = self.preprocess_path(&path, context)?;
+                Ok(content)
+            }
+
+            Node::Condition { branches, fallback } => {
+                for branch in branches.iter() {
+                    let condition = context.replace(&branch.condition.inner);
+                    let (_, expression) =
+                        parse_condition(&condition)
+                            .finish()
+                            .map_err(|_: ()| ConditionParse {
+                                location: branch.condition.location.clone(),
+                            })?; // TODO: wrap the error
+
+                    let expression = expression
+                        .map_location(&branch.condition.location)
+                        .with_location(branch.condition.location.clone());
+
+                    if expression.evaluate(context)? {
+                        let mut buf = Vec::new();
+                        for chunk in branch.body.inner.iter() {
+                            let chunks = self.process_chunk(&chunk.inner, context, open_path)?;
+                            buf.extend(chunks);
+                        }
+                        return Ok(buf);
+                    }
+                }
+
+                if let Some(ref body) = fallback {
                     let mut buf = Vec::new();
-                    for chunk in branch.body.inner.iter() {
-                        let chunks = process_chunk(&chunk.inner, context, open_path, cache, fs)?;
+                    for chunk in body.inner.iter() {
+                        let chunks = self.process_chunk(&chunk.inner, context, open_path)?;
                         buf.extend(chunks);
                     }
                     return Ok(buf);
                 }
-            }
 
-            if let Some(ref body) = fallback {
-                let mut buf = Vec::new();
-                for chunk in body.inner.iter() {
-                    let chunks = process_chunk(&chunk.inner, context, open_path, cache, fs)?;
-                    buf.extend(chunks);
-                }
-                return Ok(buf);
+                Ok(Vec::new())
             }
-
-            Ok(Vec::new())
         }
     }
-}
-
-fn preprocess_path<FS: Filesystem>(
-    path: &Path,
-    context: &mut Context,
-    cache: &ParserCache,
-    fs: &FS,
-) -> Result<Vec<String>, PreprocessorError<AbsoluteLocation<PathBuf>>> {
-    use PreprocessorError::*;
-
-    let mut buf = Vec::new();
-    let file = cache.get_file(path).as_ref().map_err(|inner| GetFile {
-        path: path.to_path_buf(),
-        inner: inner.clone(),
-    })?;
-
-    for chunk in file.chunks.iter() {
-        let content = process_chunk(&chunk.inner, context, path, cache, fs)?;
-        buf.extend(content);
-    }
-
-    Ok(buf)
-}
-
-pub fn preprocess<FS: Filesystem>(
-    fs: &FS,
-    entrypoint: &Path,
-) -> (
-    HashMap<PathBuf, String>,
-    Result<String, PreprocessorError<AbsoluteLocation<PathBuf>>>,
-) {
-    let path = fs.relative(None, entrypoint);
-    let mut context = Context::default();
-    let cache = {
-        let mut c = ParserCache::new();
-        c.fill(&path, fs);
-        c
-    };
-    let chunks = match preprocess_path(&path, &mut context, &cache, fs) {
-        Ok(c) => c,
-        Err(e) => return (cache.sources, Err(e)),
-    };
-
-    (cache.sources, Ok(chunks.join("\n")))
 }
 
 #[cfg(test)]
@@ -417,10 +451,19 @@ mod tests {
         })
     }
 
+    fn preprocess<P: AsRef<Path>>(
+        path: P,
+    ) -> Result<String, PreprocessorError<AbsoluteLocation<PathBuf>>> {
+        let fs = fs();
+        let mut preprocessor = Preprocessor::new(fs);
+        let path = path.as_ref();
+        preprocessor.load(path);
+        preprocessor.preprocess(path)
+    }
+
     #[test]
     fn inclusion_test() {
-        let fs = fs();
-        let res = preprocess(&fs, &PathBuf::from("/inclusion.S")).1.unwrap();
+        let res = preprocess("/inclusion.S").unwrap();
         assert_eq!(
             res,
             indoc::indoc! {r#"
@@ -433,8 +476,7 @@ mod tests {
 
     #[test]
     fn condition_test() {
-        let fs = fs();
-        let res = preprocess(&fs, &PathBuf::from("/condition.S")).1.unwrap();
+        let res = preprocess("/condition.S").unwrap();
         assert_eq!(
             res,
             indoc::indoc! {r#"
@@ -452,8 +494,7 @@ mod tests {
 
     #[test]
     fn definition_test() {
-        let fs = fs();
-        let res = preprocess(&fs, &PathBuf::from("/define.S")).1.unwrap();
+        let res = preprocess("/define.S").unwrap();
         assert_eq!(
             res,
             indoc::indoc! {r#"
@@ -463,9 +504,7 @@ mod tests {
             "#}
         );
 
-        let res = preprocess(&fs, &PathBuf::from("/double-define.S"))
-            .1
-            .unwrap();
+        let res = preprocess("/double-define.S").unwrap();
         assert_eq!(
             res,
             indoc::indoc! {r#"
@@ -476,8 +515,7 @@ mod tests {
 
     #[test]
     fn user_error_test() {
-        let fs = fs();
-        let res = preprocess(&fs, &PathBuf::from("/error.S")).1;
+        let res = preprocess("/error.S");
         assert!(res.is_err());
         if let Err(PreprocessorError::UserError { message, .. }) = res {
             assert_eq!(message, "custom".to_string());
