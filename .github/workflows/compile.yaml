@@ -44,7 +44,7 @@ jobs:
           command: build
           args: --release --target=${{ matrix.target }}
 
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@v3
         with:
           name: z33-cli-${{ matrix.target }}
           path: target/${{ matrix.target }}/release/${{ matrix.exe }}
