@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use nom::{combinator::all_consuming, error::convert_error, Finish};
+use nom::{combinator::all_consuming, error::convert_error, Finish, Offset};
 use thiserror::Error;
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -13,7 +13,7 @@ use crate::parser::{
         parse_condition, Context as ConditionContext, EvaluationError as ConditionEvaluationError,
     },
     expression::EmptyContext as EmptyExpressionContext,
-    location::{AbsoluteLocation, Locatable, Located, MapLocation},
+    location::{AbsoluteLocation, Locatable, Located, MapLocation, RelativeLocation},
     preprocessor::{parse, Node},
 };
 
@@ -187,17 +187,19 @@ impl Context {
         self.definitions.remove(key);
     }
 
-    fn replace(&self, input: &str) -> String {
-        let words: Vec<_> = input
+    fn replace<'a>(&'a self, input: &'a str) -> Vec<Located<&'a str, RelativeLocation>> {
+        input
             .split_word_bounds()
-            .map(|word| match self.definitions.get(word) {
-                Some(Some(replacement)) => replacement.clone(),
-                Some(None) => String::new(),
-                None => word.to_string(),
+            .filter_map(|word| {
+                let location = RelativeLocation::from((input.offset(word), word.len()));
+                let replaced = match self.definitions.get(word) {
+                    Some(Some(r)) => r,
+                    Some(None) => return None,
+                    None => word,
+                };
+                Some(replaced.with_location(location))
             })
-            .collect();
-
-        words.join("")
+            .collect()
     }
 }
 
@@ -269,7 +271,7 @@ impl<FS> Preprocessor<FS> {
             })?;
 
         for chunk in file.chunks.iter() {
-            let content = self.process_chunk(&chunk.inner, context, path)?;
+            let content = self.process_chunk(chunk, context, path)?;
             buf.extend(content);
         }
 
@@ -278,7 +280,7 @@ impl<FS> Preprocessor<FS> {
 
     fn process_chunk(
         &self,
-        chunk: &Node<AbsoluteLocation<PathBuf>>,
+        chunk: &Located<Node<AbsoluteLocation<PathBuf>>, AbsoluteLocation<PathBuf>>,
         context: &mut Context,
         open_path: &Path,
     ) -> Result<Vec<String>, PreprocessorError<AbsoluteLocation<PathBuf>>>
@@ -287,11 +289,11 @@ impl<FS> Preprocessor<FS> {
     {
         use PreprocessorError::*;
 
-        match chunk {
+        match &chunk.inner {
             Node::Raw { ref content } => {
                 // Replace the definitions in the content
                 let replaced = context.replace(content);
-                Ok(vec![replaced])
+                Ok(vec![replaced.into_iter().map(|l| l.inner).collect()])
             }
 
             Node::Error { ref message } => {
@@ -317,7 +319,8 @@ impl<FS> Preprocessor<FS> {
                 let key = key.inner.clone();
                 let content = content.as_ref().map(|i| &i.inner);
                 // First replace existing definitions in the content
-                let content = content.map(|c| context.replace(c));
+                let content =
+                    content.map(|c| context.replace(c).into_iter().map(|l| l.inner).collect());
                 // Then add the definition
                 context.define(key, content);
                 Ok(Vec::new()) // Generates no text
@@ -335,7 +338,12 @@ impl<FS> Preprocessor<FS> {
 
             Node::Condition { branches, fallback } => {
                 for branch in branches.iter() {
-                    let condition = context.replace(&branch.condition.inner);
+                    let condition: String = context
+                        .replace(&branch.condition.inner)
+                        .into_iter()
+                        .map(|l| l.inner)
+                        .collect();
+
                     let (_, expression) =
                         parse_condition(&condition)
                             .finish()
@@ -350,7 +358,7 @@ impl<FS> Preprocessor<FS> {
                     if expression.evaluate(context)? {
                         let mut buf = Vec::new();
                         for chunk in branch.body.inner.iter() {
-                            let chunks = self.process_chunk(&chunk.inner, context, open_path)?;
+                            let chunks = self.process_chunk(chunk, context, open_path)?;
                             buf.extend(chunks);
                         }
                         return Ok(buf);
@@ -360,7 +368,7 @@ impl<FS> Preprocessor<FS> {
                 if let Some(ref body) = fallback {
                     let mut buf = Vec::new();
                     for chunk in body.inner.iter() {
-                        let chunks = self.process_chunk(&chunk.inner, context, open_path)?;
+                        let chunks = self.process_chunk(chunk, context, open_path)?;
                         buf.extend(chunks);
                     }
                     return Ok(buf);
