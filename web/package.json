@@ -10,7 +10,7 @@
     "@rollup/plugin-html": "^0.2.0",
     "@rollup/plugin-node-resolve": "^13.0.6",
     "@rollup/plugin-sucrase": "^4.0.1",
-    "@wasm-tool/rollup-plugin-rust": "^1.0.5",
+    "@wasm-tool/rollup-plugin-rust": "^2.2.2",
     "cssnano": "^5.1.0",
     "postcss": "^8.4.7",
     "rollup": "^2.69.1",
@@ -23,6 +23,6 @@
     "typescript": "^4.6.2"
   },
   "dependencies": {
-    "monaco-editor": "^0.32.1"
+    "monaco-editor": "^0.33.0"
   }
 }

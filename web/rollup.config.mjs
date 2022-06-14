@@ -8,6 +8,7 @@ import { string } from "rollup-plugin-string";
 import { terser } from "rollup-plugin-terser";
 import html from "@rollup/plugin-html";
 import dev from "rollup-plugin-dev";
+import { fileURLToPath } from "url";
 
 import cssnano from "cssnano";
 
@@ -20,7 +21,7 @@ export default {
   },
   plugins: [
     alias({
-      entries: [{ find: "z33-web-bindings", replacement: "./Cargo.toml" }],
+      entries: [{ find: "z33-web-bindings", replacement: fileURLToPath(new URL("./Cargo.toml", import.meta.url)) }],
     }),
     string({
       include: "../samples/*.S",

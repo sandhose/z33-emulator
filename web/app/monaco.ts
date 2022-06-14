@@ -1,5 +1,5 @@
 import EditorWorker from "web-worker:monaco-editor/esm/vs/editor/editor.worker.js";
-import "monaco-editor/esm/vs/editor/browser/controller/coreCommands.js";
+import 'monaco-editor/esm/vs/editor/browser/coreCommands.js';
 import "monaco-editor/esm/vs/editor/browser/widget/codeEditorWidget.js";
 export * from "monaco-editor/esm/vs/editor/editor.api.js";
 
