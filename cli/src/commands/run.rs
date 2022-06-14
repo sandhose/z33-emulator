@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::{path::PathBuf, process::exit};
 
-use clap::{Parser, ValueHint};
+use clap::{ArgAction, Parser, ValueHint};
 use codespan_reporting::diagnostic::{Diagnostic, Label};
 use codespan_reporting::files::SimpleFiles;
 use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
@@ -20,14 +20,15 @@ use crate::interactive::run_interactive;
 #[derive(Parser, Debug)]
 pub struct RunOpt {
     /// Input file
-    #[clap(parse(from_os_str), value_hint = ValueHint::FilePath)]
+    #[clap(value_parser, value_hint = ValueHint::FilePath)]
     input: PathBuf,
 
     /// Start label
+    #[clap(value_parser)]
     entrypoint: String,
 
     /// Run the program in interactive mode
-    #[clap(short, long)]
+    #[clap(short, long, action = ArgAction::SetTrue)]
     interactive: bool,
 }
 

@@ -8,7 +8,7 @@ use z33_emulator::preprocessor::{NativeFilesystem, Preprocessor};
 #[derive(Parser, Debug)]
 pub struct PreprocessOpt {
     /// Input file
-    #[clap(parse(from_os_str), value_hint = ValueHint::FilePath)]
+    #[clap(value_parser, value_hint = ValueHint::FilePath)]
     input: PathBuf,
 }
 

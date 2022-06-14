@@ -39,7 +39,7 @@ enum Command {
     /// Execute the next instructions
     Step {
         /// Number of steps to execute
-        #[clap(default_value = "1")]
+        #[clap(value_parser, default_value = "1")]
         number: u64,
     },
 
@@ -47,16 +47,20 @@ enum Command {
     Exit,
 
     /// Show the state of registers
-    Registers { register: Option<Reg> },
+    Registers {
+        #[clap(value_parser)]
+        register: Option<Reg>,
+    },
 
     /// Show the content of a block in memory
     Memory {
         /// The address to show. Can be a direct address (number literal) or an indirect one
         /// (register with an optional offset).
+        #[clap(value_parser)]
         address: parse::Address,
 
         /// Number of memory cells to show.
-        #[clap(default_value = "1")]
+        #[clap(value_parser, default_value = "1")]
         number: i64,
     },
 
@@ -66,19 +70,21 @@ enum Command {
     /// Show the next few instructions
     List {
         /// Number of instructions to show.
-        #[clap(default_value = "10")]
+        #[clap(value_parser, default_value = "10")]
         number: u32,
     },
 
     /// Set a breakpoint
     Break {
         /// The address where to set the breakpoint
+        #[clap(value_parser)]
         address: parse::Address,
     },
 
     /// Remove a breakpoint
     Unbreak {
         /// The address of the breakpoint to remove
+        #[clap(value_parser)]
         address: parse::Address,
     },
 

@@ -12,7 +12,7 @@ use z33_emulator::{
 #[derive(Parser, Debug)]
 pub struct DumpOpt {
     /// Input file
-    #[clap(parse(from_os_str), value_hint = ValueHint::FilePath)]
+    #[clap(value_parser, value_hint = ValueHint::FilePath)]
     input: PathBuf,
 }
 

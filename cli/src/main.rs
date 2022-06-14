@@ -2,7 +2,7 @@
 
 use std::process::exit;
 
-use clap::{ArgGroup, Parser};
+use clap::{ArgAction, ArgGroup, Parser};
 use tracing::error;
 use tracing_subscriber::filter::EnvFilter;
 use tracing_subscriber::prelude::*;
@@ -16,19 +16,19 @@ use crate::commands::Subcommand;
 #[clap(version, author, about, group = ArgGroup::new("format"))]
 struct Opt {
     /// Increase the level of verbosity. Can be used multiple times.
-    #[clap(short, long, parse(from_occurrences), global(true))]
+    #[clap(short, long, action = ArgAction::Count, global(true))]
     verbose: u8,
 
     /// Force colored output. Default is to check if the output is a tty
-    #[clap(short = 'c', long, global(true), group = "format")]
+    #[clap(short = 'c', long, action = ArgAction::SetTrue, global(true), group = "format")]
     color: bool,
 
     /// Force non-colored output. Default is to check if the output is a tty
-    #[clap(short = 'C', long, global(true), group = "format")]
+    #[clap(short = 'C', long, action = ArgAction::SetTrue, global(true), group = "format")]
     no_color: bool,
 
     /// Use JSON output for log messages
-    #[clap(short, long, global(true), group = "format")]
+    #[clap(short, long, action = ArgAction::SetTrue, global(true), group = "format")]
     json: bool,
 
     #[clap(subcommand)]
