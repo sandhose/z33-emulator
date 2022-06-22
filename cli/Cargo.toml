@@ -17,7 +17,7 @@ rustyline-derive = "0.6.0"
 clap = { version = "3.2.6", features = ["derive"] }
 shell-words = "1.1.0"
 ansi_term = "0.12.1"
-clap_complete = "3.2.1"
+clap_complete = "3.2.2"
 atty = "0.2.14"
 nom = "7.1.1"
 anyhow = "1.0.58"
