@@ -21,7 +21,12 @@ export default {
   },
   plugins: [
     alias({
-      entries: [{ find: "z33-web-bindings", replacement: fileURLToPath(new URL("./Cargo.toml", import.meta.url)) }],
+      entries: [
+        {
+          find: "z33-web-bindings",
+          replacement: fileURLToPath(new URL("./Cargo.toml", import.meta.url)),
+        },
+      ],
     }),
     string({
       include: "../samples/*.S",
