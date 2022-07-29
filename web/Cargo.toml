@@ -11,6 +11,6 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 z33-emulator = { path = "../emulator" }
-wasm-bindgen = "0.2.81"
+wasm-bindgen = "0.2.82"
 serde = { version = "1.0.140", features = ["derive"] }
 serde-wasm-bindgen = "0.4.3"
