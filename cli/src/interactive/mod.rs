@@ -10,7 +10,8 @@
 use std::collections::{HashMap, HashSet};
 
 use clap::Parser;
-use rustyline::{config::OutputStreamType, CompletionType, Config, EditMode, Editor};
+use rustyline::Behavior;
+use rustyline::{CompletionType, Config, EditMode, Editor};
 use tracing::{debug, info, warn};
 
 use z33_emulator::compiler::DebugInfo;
@@ -245,14 +246,14 @@ pub(crate) fn run_interactive(
         .history_ignore_space(true)
         .completion_type(CompletionType::List)
         .edit_mode(EditMode::Emacs)
-        .output_stream(OutputStreamType::Stderr)
+        .behavior(Behavior::PreferTerm)
         .auto_add_history(true)
         .build();
 
     let mut session = Session::from_debug_info(debug_info);
 
     let h: RunHelper<Command> = RunHelper::new();
-    let mut rl = Editor::with_config(config);
+    let mut rl = Editor::with_config(config)?;
     rl.set_helper(Some(h));
 
     let mut last_command = None;
