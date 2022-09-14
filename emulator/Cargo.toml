@@ -14,7 +14,7 @@ thiserror = "1.0.34"
 nom = "7.1.1"
 tracing = "0.1.36"
 tracing-subscriber = "0.3.15"
-unicode-segmentation = "1.9.0"
+unicode-segmentation = "1.10.0"
 parse-display = "0.6.0"
 
 [dev-dependencies]
