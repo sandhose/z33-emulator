@@ -20,7 +20,7 @@ pub use traits::{ExtractError, ExtractValue, ResolveAddress};
 
 /// An immediate value
 #[derive(PartialEq, Clone, Debug, Display)]
-#[display("[{0}]")]
+#[display("{0}")]
 pub struct Imm(pub C::Word);
 
 impl Imm {
