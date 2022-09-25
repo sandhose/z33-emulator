@@ -17,6 +17,9 @@ jobs:
           toolchain: stable
           override: true
 
+      - name: Setup Rust build cache
+        uses: Swatinem/rust-cache@v2
+
       - name: Run cargo check
         uses: actions-rs/cargo@v1.0.3
         with:
@@ -35,6 +38,9 @@ jobs:
           profile: minimal
           toolchain: stable
           override: true
+
+      - name: Setup Rust build cache
+        uses: Swatinem/rust-cache@v2
 
       - name: Run cargo test
         uses: actions-rs/cargo@v1.0.3
@@ -56,6 +62,9 @@ jobs:
           override: true
           components: rustfmt, clippy
 
+      - name: Setup Rust build cache
+        uses: Swatinem/rust-cache@v2
+
       - name: Run cargo fmt
         uses: actions-rs/cargo@v1.0.3
         with:
@@ -65,4 +74,4 @@ jobs:
       - name: Run cargo clippy
         uses: actions-rs/cargo@v1.0.3
         with:
-          command: clippy
+          command: clippy --workspace
