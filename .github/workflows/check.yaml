@@ -74,4 +74,5 @@ jobs:
       - name: Run cargo clippy
         uses: actions-rs/cargo@v1.0.3
         with:
-          command: clippy --workspace
+          command: clippy 
+          args: --workspace
