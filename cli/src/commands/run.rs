@@ -39,6 +39,7 @@ fn char_offset(a: &str, b: &str) -> usize {
 }
 
 impl RunOpt {
+    #[allow(clippy::too_many_lines)]
     pub fn exec(&self) -> anyhow::Result<()> {
         let fs = NativeFilesystem::from_env()?;
         info!(path = ?self.input, "Reading program");
@@ -101,7 +102,7 @@ impl RunOpt {
                     .iter()
                     .map(|(location, kind)| {
                         let message = match kind {
-                            nom::error::VerboseErrorKind::Context(s) => s.to_string(),
+                            nom::error::VerboseErrorKind::Context(s) => (*s).to_owned(),
                             nom::error::VerboseErrorKind::Char(c) => format!("expected '{}'", c),
                             nom::error::VerboseErrorKind::Nom(code) => format!("{:?}", code),
                         };

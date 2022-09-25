@@ -62,7 +62,7 @@ enum Command {
 
         /// Number of memory cells to show.
         #[clap(value_parser, default_value = "1")]
-        number: i64,
+        number: i32,
     },
 
     /// Trigger a hardware interrupt
@@ -134,19 +134,19 @@ impl Session {
 
     /// Add a breakpoint
     fn add_breakpoint(&mut self, address: C::Address) {
-        if !self.breakpoints.insert(address) {
-            warn!(address, "A breakpoint was already set");
-        } else {
+        if self.breakpoints.insert(address) {
             info!(address, "Setting a breakpoint");
+        } else {
+            warn!(address, "A breakpoint was already set");
         }
     }
 
     /// Remove a breakpoint
     fn remove_breakpoint(&mut self, address: C::Address) {
-        if !self.breakpoints.remove(&address) {
-            warn!(address, "No breakpoint was set here");
-        } else {
+        if self.breakpoints.remove(&address) {
             info!(address, "Removing breakpoint");
+        } else {
+            warn!(address, "No breakpoint was set here");
         }
     }
 
@@ -177,9 +177,9 @@ impl Session {
 
         // This might be an unnecessary copy, but we want them to be sorted by address for
         // readability
-        let mut bp: Vec<_> = self.breakpoints.iter().cloned().collect();
+        let mut bp: Vec<_> = self.breakpoints.iter().copied().collect();
         bp.sort_unstable();
-        for addr in bp.into_iter() {
+        for addr in bp {
             self.display_instruction(computer, addr);
         }
     }
@@ -226,17 +226,18 @@ impl Session {
             x => info!("{} labels:", x),
         }
 
-        for (label, &addr) in self.labels.iter() {
+        for (label, &addr) in &self.labels {
             info!("  {} => {}", label, addr);
         }
     }
 
     /// Display the number of CPU cycles used
-    fn display_cycles(&self, computer: &Computer) {
+    fn display_cycles(computer: &Computer) {
         info!("Cycles: {}", computer.cycles);
     }
 }
 
+#[allow(clippy::too_many_lines)]
 pub(crate) fn run_interactive(
     computer: &mut Computer,
     debug_info: DebugInfo,
@@ -310,7 +311,7 @@ pub(crate) fn run_interactive(
                 let address = address.clone().evaluate(computer, &session.labels)?;
 
                 if number.is_positive() {
-                    for i in 0..(*number as C::Address) {
+                    for i in 0..(number.unsigned_abs() as C::Address) {
                         let address = address + i;
                         let cell = computer.memory.get(address)?;
                         info!(address, value = %cell);
@@ -325,7 +326,7 @@ pub(crate) fn run_interactive(
             }
 
             Command::Interrupt => {
-                computer.recover_from_exception(Exception::HardwareInterrupt)?;
+                computer.recover_from_exception(&Exception::HardwareInterrupt)?;
                 session.reset_list();
             }
 
@@ -366,14 +367,14 @@ pub(crate) fn run_interactive(
                     session.display_labels();
                 }
                 Some(InfoCommand::Cycles) => {
-                    session.display_cycles(computer);
+                    Session::display_cycles(computer);
                 }
                 None => {
                     session.display_breakpoints(computer);
                     info!("–");
                     session.display_labels();
                     info!("–");
-                    session.display_cycles(computer);
+                    Session::display_cycles(computer);
                 }
             },
         };

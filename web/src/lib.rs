@@ -1,3 +1,7 @@
+#![forbid(unsafe_code)]
+#![deny(clippy::all, clippy::pedantic)]
+#![allow(clippy::missing_errors_doc, clippy::missing_panics_doc)]
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 

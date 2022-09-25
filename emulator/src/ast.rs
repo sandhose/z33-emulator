@@ -171,7 +171,7 @@ impl<L: std::fmt::Display> Node<L> {
             writeln!(f, "{:?} @ {}", self.kind, self.location)?;
         }
 
-        for child in self.children.iter() {
+        for child in &self.children {
             child.fmt_indent(f, level + 1)?;
         }
 

@@ -86,13 +86,14 @@ impl Computer {
     /// supervisor mode first.
     #[tracing::instrument(skip(self))]
     pub(crate) fn set_register(&mut self, reg: &Reg, val: Cell) -> Result<()> {
-        if *reg == Reg::SR {
+        let reg = *reg;
+        if reg == Reg::SR {
             self.check_privileged()?;
         }
 
         self.registers
             .set(reg, val)
-            .map_err(|inner| ProcessorError::InvalidRegister { reg: *reg, inner })
+            .map_err(|inner| ProcessorError::InvalidRegister { reg, inner })
     }
 
     fn jump(&mut self, address: C::Address) {
@@ -124,7 +125,7 @@ impl Computer {
 
         let cost = inner(self).or_else(|e| {
             if let ProcessorError::Exception(e) = e {
-                self.recover_from_exception(e)
+                self.recover_from_exception(&e)
                     .map_err(ProcessorError::Exception)
                     .map(|_| 1) // TODO: fixed cost for exceptions?
             } else {
@@ -138,7 +139,7 @@ impl Computer {
 
     pub fn recover_from_exception(
         &mut self,
-        exception: Exception,
+        exception: &Exception,
     ) -> std::result::Result<(), Exception> {
         debug!(exception = %exception, "Recovering from exception");
         *(self.memory.get_mut(C::INTERRUPT_PC_SAVE)?) = self.registers.get(&Reg::PC);
@@ -200,6 +201,11 @@ pub struct AddressParseError;
 
 #[cfg(test)]
 mod tests {
+    // This is fine in tests
+    #![allow(clippy::cast_possible_truncation)]
+
+    use crate::constants::Word;
+
     use super::arguments::{Idx, Imm, ImmRegDirIndIdx};
     use super::*;
 
@@ -213,7 +219,7 @@ mod tests {
 
         // Write some memory (with indirect access)
         computer.write(0x42, 100_i64).unwrap();
-        computer.registers.set(&Reg::B, Cell::Word(0x32)).unwrap();
+        computer.registers.set(Reg::B, Cell::Word(0x32)).unwrap();
         let instruction = Instruction::Add(ImmRegDirIndIdx::Idx(Idx(Reg::B, 0x10)), Reg::A);
         instruction.execute(&mut computer).unwrap();
         assert_eq!(computer.registers.get(&Reg::A), Cell::Word(105));
@@ -277,7 +283,7 @@ mod tests {
         //      rtn
 
         let start_inst = vec![
-            Instruction::Call(ImmRegDirIndIdx::Imm(Imm(subroutine as _))),
+            Instruction::Call(ImmRegDirIndIdx::Imm(Imm(Word::from(subroutine)))),
             Instruction::Add(ImmRegDirIndIdx::Reg(Reg::A), Reg::B),
         ]
         .into_iter()

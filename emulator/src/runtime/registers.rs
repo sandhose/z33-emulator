@@ -40,6 +40,7 @@ pub struct Registers {
 }
 
 impl Registers {
+    #[must_use]
     pub fn get(&self, reg: &Reg) -> Cell {
         match reg {
             Reg::A => self.a.clone(),
@@ -50,7 +51,7 @@ impl Registers {
         }
     }
 
-    pub(crate) fn get_word(&self, reg: &Reg) -> Result<C::Word, CellError> {
+    pub(crate) fn get_word(&self, reg: Reg) -> Result<C::Word, CellError> {
         match reg {
             Reg::A => self.a.extract_word(),
             Reg::B => self.b.extract_word(),
@@ -60,7 +61,7 @@ impl Registers {
         }
     }
 
-    pub(crate) fn set(&mut self, reg: &Reg, value: Cell) -> Result<(), CellError> {
+    pub(crate) fn set(&mut self, reg: Reg, value: Cell) -> Result<(), CellError> {
         match reg {
             Reg::A => self.a = value,
             Reg::B => self.b = value,
@@ -107,7 +108,7 @@ pub enum Reg {
 
 impl Reg {
     /// CPU cycles count to use this value
-    pub(crate) const fn cost(&self) -> usize {
+    pub(crate) const fn cost() -> usize {
         // Accessing a register does not take any CPU cycle
         0
     }

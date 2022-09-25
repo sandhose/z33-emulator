@@ -80,47 +80,47 @@ where
     Input: InputTake + Compare<&'static str> + Clone,
     Error: nom::error::ParseError<Input> + nom::error::ContextError<Input>,
 {
-    use InstructionKind::*;
+    use InstructionKind as K;
 
     // `alt` only allows for 21-member tuples so we need to trick a bit by nesting them
     alt((
         alt((
-            context("add", value(Add, tag_no_case("add"))),
-            context("and", value(And, tag_no_case("and"))),
-            context("call", value(Call, tag_no_case("call"))),
-            context("cmp", value(Cmp, tag_no_case("cmp"))),
-            context("div", value(Div, tag_no_case("div"))),
-            context("fas", value(Fas, tag_no_case("fas"))),
-            context("in", value(In, tag_no_case("in"))),
-            context("jmp", value(Jmp, tag_no_case("jmp"))),
-            context("jeq", value(Jeq, tag_no_case("jeq"))),
-            context("jne", value(Jne, tag_no_case("jne"))),
-            context("jle", value(Jle, tag_no_case("jle"))),
-            context("jlt", value(Jlt, tag_no_case("jlt"))),
-            context("jge", value(Jge, tag_no_case("jge"))),
-            context("jgt", value(Jgt, tag_no_case("jgt"))),
-            context("ld", value(Ld, tag_no_case("ld"))),
-            context("mul", value(Mul, tag_no_case("mul"))),
-            context("neg", value(Neg, tag_no_case("neg"))),
-            context("nop", value(Nop, tag_no_case("nop"))),
-            context("not", value(Not, tag_no_case("not"))),
-            context("or", value(Or, tag_no_case("or"))),
-            context("out", value(Out, tag_no_case("out"))),
+            context("add", value(K::Add, tag_no_case("add"))),
+            context("and", value(K::And, tag_no_case("and"))),
+            context("call", value(K::Call, tag_no_case("call"))),
+            context("cmp", value(K::Cmp, tag_no_case("cmp"))),
+            context("div", value(K::Div, tag_no_case("div"))),
+            context("fas", value(K::Fas, tag_no_case("fas"))),
+            context("in", value(K::In, tag_no_case("in"))),
+            context("jmp", value(K::Jmp, tag_no_case("jmp"))),
+            context("jeq", value(K::Jeq, tag_no_case("jeq"))),
+            context("jne", value(K::Jne, tag_no_case("jne"))),
+            context("jle", value(K::Jle, tag_no_case("jle"))),
+            context("jlt", value(K::Jlt, tag_no_case("jlt"))),
+            context("jge", value(K::Jge, tag_no_case("jge"))),
+            context("jgt", value(K::Jgt, tag_no_case("jgt"))),
+            context("ld", value(K::Ld, tag_no_case("ld"))),
+            context("mul", value(K::Mul, tag_no_case("mul"))),
+            context("neg", value(K::Neg, tag_no_case("neg"))),
+            context("nop", value(K::Nop, tag_no_case("nop"))),
+            context("not", value(K::Not, tag_no_case("not"))),
+            context("or", value(K::Or, tag_no_case("or"))),
+            context("out", value(K::Out, tag_no_case("out"))),
         )),
         alt((
-            context("pop", value(Pop, tag_no_case("pop"))),
-            context("push", value(Push, tag_no_case("push"))),
-            context("reset", value(Reset, tag_no_case("reset"))),
-            context("rti", value(Rti, tag_no_case("rti"))),
-            context("rtn", value(Rtn, tag_no_case("rtn"))),
-            context("shl", value(Shl, tag_no_case("shl"))),
-            context("shr", value(Shr, tag_no_case("shr"))),
-            context("st", value(St, tag_no_case("st"))),
-            context("sub", value(Sub, tag_no_case("sub"))),
-            context("swap", value(Swap, tag_no_case("swap"))),
-            context("trap", value(Trap, tag_no_case("trap"))),
-            context("xor", value(Xor, tag_no_case("xor"))),
-            context("debugreg", value(DebugReg, tag_no_case("debugreg"))),
+            context("pop", value(K::Pop, tag_no_case("pop"))),
+            context("push", value(K::Push, tag_no_case("push"))),
+            context("reset", value(K::Reset, tag_no_case("reset"))),
+            context("rti", value(K::Rti, tag_no_case("rti"))),
+            context("rtn", value(K::Rtn, tag_no_case("rtn"))),
+            context("shl", value(K::Shl, tag_no_case("shl"))),
+            context("shr", value(K::Shr, tag_no_case("shr"))),
+            context("st", value(K::St, tag_no_case("st"))),
+            context("sub", value(K::Sub, tag_no_case("sub"))),
+            context("swap", value(K::Swap, tag_no_case("swap"))),
+            context("trap", value(K::Trap, tag_no_case("trap"))),
+            context("xor", value(K::Xor, tag_no_case("xor"))),
+            context("debugreg", value(K::DebugReg, tag_no_case("debugreg"))),
         )),
     ))(input)
 }
@@ -186,7 +186,7 @@ where
 pub(crate) fn parse_instruction_argument<'a, Error: ParseError<&'a str>>(
     input: &'a str,
 ) -> IResult<&'a str, InstructionArgument<RelativeLocation>, Error> {
-    use InstructionArgument::*;
+    use InstructionArgument::{Register, Value};
     alt((
         context("immediate value", map(parse_expression, Value)),
         context("register", map(parse_register, Register)),
@@ -224,13 +224,13 @@ where
     Input: InputTake + Compare<&'static str> + Clone,
     Error: nom::error::ParseError<Input> + nom::error::ContextError<Input>,
 {
-    use DirectiveKind::*;
+    use DirectiveKind as K;
 
     alt((
-        context("addr", value(Addr, tag_no_case("addr"))),
-        context("space", value(Space, tag_no_case("space"))),
-        context("string", value(String, tag_no_case("string"))),
-        context("word", value(Word, tag_no_case("word"))),
+        context("addr", value(K::Addr, tag_no_case("addr"))),
+        context("space", value(K::Space, tag_no_case("space"))),
+        context("string", value(K::String, tag_no_case("string"))),
+        context("word", value(K::Word, tag_no_case("word"))),
     ))(input)
 }
 
@@ -378,14 +378,12 @@ impl<L: Clone> AstNode<L> for InstructionArgument<L> {
 pub fn parse_register<'a, Error: ParseError<&'a str>>(
     input: &'a str,
 ) -> IResult<&'a str, Reg, Error> {
-    use Reg::*;
-
     alt((
-        context("%a", value(A, tag_no_case("%a"))),
-        context("%b", value(B, tag_no_case("%b"))),
-        context("%pc", value(PC, tag_no_case("%pc"))),
-        context("%sp", value(SP, tag_no_case("%sp"))),
-        context("%sr", value(SR, tag_no_case("%sr"))),
+        context("%a", value(Reg::A, tag_no_case("%a"))),
+        context("%b", value(Reg::B, tag_no_case("%b"))),
+        context("%pc", value(Reg::PC, tag_no_case("%pc"))),
+        context("%sp", value(Reg::SP, tag_no_case("%sp"))),
+        context("%sr", value(Reg::SR, tag_no_case("%sr"))),
     ))(input)
 }
 
@@ -397,7 +395,7 @@ fn parse_indexed<'a, Error: ParseError<&'a str>>(
         Plus,
         Minus,
     }
-    use Sign::*;
+    use Sign::{Minus, Plus};
 
     let (rest, _) = char('[')(input)?;
     let (rest, _) = space0(rest)?;

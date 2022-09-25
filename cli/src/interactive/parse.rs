@@ -32,10 +32,14 @@ impl Address {
     ) -> Result<C::Address, anyhow::Error> {
         let node = match self {
             Address::Direct(node) => node,
-            Address::Indirect(reg) => ExpressionNode::Literal(reg.extract_address(computer)? as _),
+            Address::Indirect(reg) => {
+                ExpressionNode::Literal(i128::from(reg.extract_address(computer)?))
+            }
             Address::Indexed(reg, node) => ExpressionNode::Sum(
-                Box::new(ExpressionNode::Literal(reg.extract_word(computer)? as _))
-                    .with_location(()),
+                Box::new(ExpressionNode::Literal(i128::from(
+                    reg.extract_word(computer)?,
+                )))
+                .with_location(()),
                 Box::new(node).with_location(()),
             ),
         };
@@ -58,13 +62,14 @@ impl FromStr for Address {
 }
 
 fn parse_indexed(input: &str) -> IResult<&str, Address, VerboseError<&str>> {
-    let (rest, reg) = parse_register(input)?;
     #[derive(Clone, Copy)]
     enum Sign {
         Plus,
         Minus,
     }
-    use Sign::*;
+    use Sign::{Minus, Plus};
+
+    let (rest, reg) = parse_register(input)?;
 
     let (rest, sign) = alt((
         value(Plus, char('+')),  // "%a + …"

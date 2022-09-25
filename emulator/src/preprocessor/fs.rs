@@ -15,9 +15,8 @@ pub trait Filesystem {
 
     fn relative(&self, sibling: Option<&Path>, path: &Path) -> PathBuf {
         sibling
-            .and_then(|s| s.parent()) // Get the parent of the sibling
-            .map(ToOwned::to_owned) // Path::parent outputs a reference, make it owned again
-            .unwrap_or_else(|| self.root()) // Default to the "root" path
+            .and_then(std::path::Path::parent)
+            .map_or_else(|| self.root(), ToOwned::to_owned) // Default to the "root" path
             .join(path) // And join relative to that
     }
 }
@@ -27,6 +26,7 @@ pub struct InMemoryFilesystem {
 }
 
 impl InMemoryFilesystem {
+    #[must_use]
     pub const fn new(files: HashMap<PathBuf, String>) -> Self {
         InMemoryFilesystem { files }
     }

@@ -92,7 +92,7 @@ impl<L: Clone> AstNode<L> for LineContent<L> {
     fn children(&self) -> Vec<Node<L>> {
         match self {
             LineContent::Instruction { kind, arguments } => std::iter::once(kind.to_node())
-                .chain(arguments.iter().map(|a| a.to_node()))
+                .chain(arguments.iter().map(Located::to_node))
                 .collect(),
             LineContent::Directive { kind, argument } => vec![kind.to_node(), argument.to_node()],
         }
@@ -166,7 +166,7 @@ impl<L: Clone> AstNode<L> for Line<L> {
                 .map(|s| Node::new(NodeKind::Symbol, s.location.clone()).content(s.inner.clone())),
         );
 
-        children.extend(self.content.iter().map(|c| c.to_node()));
+        children.extend(self.content.iter().map(Located::to_node));
 
         children
     }
@@ -175,7 +175,7 @@ impl<L: Clone> AstNode<L> for Line<L> {
 impl<L> std::fmt::Display for Line<L> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut had_something = false;
-        for symbol in self.symbols.iter() {
+        for symbol in &self.symbols {
             write!(f, "{}: ", symbol.inner)?;
             had_something = true;
         }
@@ -261,13 +261,13 @@ impl<L: Clone> AstNode<L> for Program<L> {
     }
 
     fn children(&self) -> Vec<Node<L>> {
-        self.lines.iter().map(|l| l.to_node()).collect()
+        self.lines.iter().map(Located::to_node).collect()
     }
 }
 
 impl<L> std::fmt::Display for Program<L> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for line in self.lines.iter() {
+        for line in &self.lines {
             writeln!(f, "{}", line.inner)?;
         }
 

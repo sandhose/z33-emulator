@@ -3,7 +3,7 @@ use std::convert::TryInto;
 use parse_display::Display;
 use tracing::{debug, info};
 
-use crate::constants::*;
+use crate::constants::{Word, INTERRUPT_PC_SAVE, INTERRUPT_SR_SAVE};
 
 use super::{
     arguments::{DirIndIdx, ExtractValue, ImmReg, ImmRegDirIndIdx, RegDirIndIdx, ResolveAddress},
@@ -155,10 +155,8 @@ impl Instruction {
     /// Execute the instruction
     #[tracing::instrument(skip(computer))]
     pub(crate) fn execute(&self, computer: &mut Computer) -> Result<(), ProcessorError> {
-        use Instruction::*;
-
         match self {
-            Add(arg, reg) => {
+            Self::Add(arg, reg) => {
                 let a = arg.extract_word(computer)?;
                 let b = reg.extract_word(computer)?;
                 let (res, overflow) = a.overflowing_add(b);
@@ -171,7 +169,7 @@ impl Instruction {
                     .set(StatusRegister::OVERFLOW, overflow);
             }
 
-            And(arg, reg) => {
+            Self::And(arg, reg) => {
                 let a = arg.extract_word(computer)?;
                 let b = reg.extract_word(computer)?;
                 let res = a & b;
@@ -179,7 +177,7 @@ impl Instruction {
                 computer.set_register(reg, res.into())?;
             }
 
-            Call(arg) => {
+            Self::Call(arg) => {
                 // Push PC
                 let pc = computer.registers.pc;
                 computer.push(pc)?;
@@ -189,7 +187,7 @@ impl Instruction {
                 computer.jump(addr);
             }
 
-            Cmp(arg, reg) => {
+            Self::Cmp(arg, reg) => {
                 let a = arg.extract_word(computer)?;
                 let b = reg.extract_word(computer)?;
 
@@ -204,7 +202,7 @@ impl Instruction {
                 );
             }
 
-            Div(arg, reg) => {
+            Self::Div(arg, reg) => {
                 let a = arg.extract_word(computer)?;
                 let b = reg.extract_word(computer)?;
                 let res = b.checked_div(a).ok_or(Exception::DivByZero)?;
@@ -212,7 +210,7 @@ impl Instruction {
                 computer.set_register(reg, res.into())?;
             }
 
-            Fas(addr, reg) => {
+            Self::Fas(addr, reg) => {
                 let addr = addr.resolve_address(&computer.registers)?;
                 let cell = computer.memory.get_mut(addr)?;
                 let val = cell.clone();
@@ -220,18 +218,18 @@ impl Instruction {
                 computer.set_register(reg, val)?;
             }
 
-            In(_, _) => {
+            Self::In(_, _) => {
                 computer.check_privileged()?;
                 todo!();
             }
 
-            Jmp(arg) => {
+            Self::Jmp(arg) => {
                 let val = arg.extract_address(computer)?;
                 debug!("Jumping to address {:#x}", val);
                 computer.registers.pc = val;
             }
 
-            Jeq(arg) => {
+            Self::Jeq(arg) => {
                 if computer.registers.sr.contains(StatusRegister::ZERO) {
                     let val = arg.extract_address(computer)?;
                     debug!("Jumping to address {:#x}", val);
@@ -239,7 +237,7 @@ impl Instruction {
                 }
             }
 
-            Jne(arg) => {
+            Self::Jne(arg) => {
                 if !computer.registers.sr.contains(StatusRegister::ZERO) {
                     let val = arg.extract_address(computer)?;
                     debug!("Jumping to address {:#x}", val);
@@ -247,7 +245,7 @@ impl Instruction {
                 }
             }
 
-            Jle(arg) => {
+            Self::Jle(arg) => {
                 if computer.registers.sr.contains(StatusRegister::ZERO)
                     || computer.registers.sr.contains(StatusRegister::NEGATIVE)
                 {
@@ -257,7 +255,7 @@ impl Instruction {
                 }
             }
 
-            Jlt(arg) => {
+            Self::Jlt(arg) => {
                 if !computer.registers.sr.contains(StatusRegister::ZERO)
                     && computer.registers.sr.contains(StatusRegister::NEGATIVE)
                 {
@@ -267,7 +265,7 @@ impl Instruction {
                 }
             }
 
-            Jge(arg) => {
+            Self::Jge(arg) => {
                 if computer.registers.sr.contains(StatusRegister::ZERO)
                     || !computer.registers.sr.contains(StatusRegister::NEGATIVE)
                 {
@@ -277,7 +275,7 @@ impl Instruction {
                 }
             }
 
-            Jgt(arg) => {
+            Self::Jgt(arg) => {
                 if !computer.registers.sr.contains(StatusRegister::ZERO)
                     && !computer.registers.sr.contains(StatusRegister::NEGATIVE)
                 {
@@ -287,12 +285,12 @@ impl Instruction {
                 }
             }
 
-            Ld(arg, reg) => {
+            Self::Ld(arg, reg) => {
                 let val = arg.extract_cell(computer)?;
                 computer.set_register(reg, val)?;
             }
 
-            Mul(arg, reg) => {
+            Self::Mul(arg, reg) => {
                 let a = arg.extract_word(computer)?;
                 let b = reg.extract_word(computer)?;
                 let (res, overflow) = a.overflowing_mul(b);
@@ -305,7 +303,7 @@ impl Instruction {
                     .set(StatusRegister::OVERFLOW, overflow);
             }
 
-            Neg(reg) => {
+            Self::Neg(reg) => {
                 let val = reg.extract_word(computer)?;
                 let res = -(val as i64);
                 let res = res as Word;
@@ -313,16 +311,16 @@ impl Instruction {
                 computer.set_register(reg, res.into())?;
             }
 
-            Nop => {}
+            Self::Nop => {}
 
-            Not(reg) => {
+            Self::Not(reg) => {
                 let val = reg.extract_word(computer)?;
                 let res = !val;
                 debug!("!{} = {}", val, res);
                 computer.set_register(reg, res.into())?;
             }
 
-            Or(arg, reg) => {
+            Self::Or(arg, reg) => {
                 let a = arg.extract_word(computer)?;
                 let b = reg.extract_word(computer)?;
                 let res = a | b;
@@ -330,26 +328,26 @@ impl Instruction {
                 computer.set_register(reg, res.into())?;
             }
 
-            Out(_, _) => {
+            Self::Out(_, _) => {
                 computer.check_privileged()?;
                 todo!()
             }
 
-            Pop(reg) => {
+            Self::Pop(reg) => {
                 let val = computer.pop()?.clone();
                 debug!("pop => {:?}", val);
                 computer.set_register(reg, val)?;
             }
 
-            Push(val) => {
+            Self::Push(val) => {
                 let val = val.extract_cell(computer)?;
                 debug!("push({:?})", val);
                 computer.push(val)?;
             }
 
-            Reset => return Err(ProcessorError::Reset),
+            Self::Reset => return Err(ProcessorError::Reset),
 
-            Rti => {
+            Self::Rti => {
                 computer.check_privileged()?;
                 computer.registers.pc =
                     computer.memory.get(INTERRUPT_PC_SAVE)?.extract_address()?;
@@ -358,14 +356,14 @@ impl Instruction {
                 );
             }
 
-            Rtn => {
+            Self::Rtn => {
                 let ret = computer.pop()?; // Pop the return address
                 let ret = ret.extract_address()?; // Convert it to an address
                 debug!("Returning to {}", ret);
                 computer.registers.pc = ret; // and jump to it
             }
 
-            Shl(arg, reg) => {
+            Self::Shl(arg, reg) => {
                 let a = arg.extract_word(computer)?;
                 let b = reg.extract_word(computer)?;
 
@@ -376,7 +374,7 @@ impl Instruction {
                 computer.set_register(reg, res.into())?;
             }
 
-            Shr(arg, reg) => {
+            Self::Shr(arg, reg) => {
                 let a = arg.extract_word(computer)?;
                 let b = reg.extract_word(computer)?;
 
@@ -387,13 +385,13 @@ impl Instruction {
                 computer.set_register(reg, res.into())?;
             }
 
-            St(reg, address) => {
+            Self::St(reg, address) => {
                 let val = reg.extract_word(computer)?;
                 let address = address.resolve_address(&computer.registers)?;
                 computer.write(address, val)?;
             }
 
-            Sub(arg, reg) => {
+            Self::Sub(arg, reg) => {
                 let a = arg.extract_word(computer)?;
                 let b = reg.extract_word(computer)?;
                 let (res, overflow) = b.overflowing_sub(a);
@@ -407,7 +405,7 @@ impl Instruction {
                     .set(StatusRegister::OVERFLOW, overflow);
             }
 
-            Swap(arg, reg) => {
+            Self::Swap(arg, reg) => {
                 // First we extract the value from both arguments
                 let value = arg.extract_cell(computer)?;
                 let value2 = reg.extract_cell(computer)?;
@@ -430,11 +428,11 @@ impl Instruction {
                 }
             }
 
-            Trap => {
+            Self::Trap => {
                 return Err(Exception::Trap.into());
             }
 
-            Xor(arg, reg) => {
+            Self::Xor(arg, reg) => {
                 let a = arg.extract_word(computer)?;
                 let b = reg.extract_word(computer)?;
                 let res = a ^ b;
@@ -442,7 +440,7 @@ impl Instruction {
                 computer.set_register(reg, res.into())?;
             }
 
-            DebugReg => {
+            Self::DebugReg => {
                 info!("debugreg: {}", computer.registers);
             }
         };
@@ -452,45 +450,52 @@ impl Instruction {
 
     /// Get the total cost of an instruction in terms of CPU cycles
     pub(crate) const fn cost(&self) -> usize {
-        use Instruction::*;
-
         // All instruction cost one CPU cycle itself, plus the cost of each of its arguments
         match self {
-            DebugReg => 0, // The only exception being `debugreg`, which costs nothing
+            Self::DebugReg => 0, // The only exception being `debugreg`, which costs nothing
 
-            Add(a, b) => 1 + a.cost() + b.cost(),
-            And(a, b) => 1 + a.cost() + b.cost(),
-            Call(a) => 1 + a.cost(),
-            Cmp(a, b) => 1 + a.cost() + b.cost(),
-            Div(a, b) => 1 + a.cost() + b.cost(),
-            Fas(a, b) => 1 + a.cost() + b.cost(),
-            In(a, b) => 1 + a.cost() + b.cost(),
-            Jmp(a) => 1 + a.cost(),
-            Jeq(a) => 1 + a.cost(),
-            Jne(a) => 1 + a.cost(),
-            Jle(a) => 1 + a.cost(),
-            Jlt(a) => 1 + a.cost(),
-            Jge(a) => 1 + a.cost(),
-            Jgt(a) => 1 + a.cost(),
-            Ld(a, b) => 1 + a.cost() + b.cost(),
-            Mul(a, b) => 1 + a.cost() + b.cost(),
-            Neg(a) => 1 + a.cost(),
-            Nop => 1,
-            Not(a) => 1 + a.cost(),
-            Or(a, b) => 1 + a.cost() + b.cost(),
-            Out(a, b) => 1 + a.cost() + b.cost(),
-            Pop(a) => 1 + a.cost(),
-            Push(a) => 1 + a.cost(),
-            Reset => 1,
-            Rti => 1,
-            Rtn => 1,
-            Shl(a, b) => 1 + a.cost() + b.cost(),
-            Shr(a, b) => 1 + a.cost() + b.cost(),
-            St(a, b) => 1 + a.cost() + b.cost(),
-            Sub(a, b) => 1 + a.cost() + b.cost(),
-            Swap(a, b) => 1 + a.cost() + b.cost(),
-            Trap => 1,
-            Xor(a, b) => 1 + a.cost() + b.cost(),
+            // imm|reg|dir|ind|idx, reg
+            Self::Div(a, _)
+            | Self::Or(a, _)
+            | Self::Add(a, _)
+            | Self::And(a, _)
+            | Self::Cmp(a, _)
+            | Self::Mul(a, _)
+            | Self::Ld(a, _)
+            | Self::Sub(a, _)
+            | Self::Xor(a, _)
+            | Self::Shl(a, _)
+            | Self::Shr(a, _) => 1 + a.cost() + Reg::cost(),
+
+            // dir|ind|idx, reg
+            Self::Fas(a, _) | Self::In(a, _) => 1 + a.cost() + Reg::cost(),
+
+            // imm|reg|dir|ind|idx
+            Self::Call(a)
+            | Self::Jmp(a)
+            | Self::Jeq(a)
+            | Self::Jne(a)
+            | Self::Jle(a)
+            | Self::Jlt(a)
+            | Self::Jge(a)
+            | Self::Jgt(a) => 1 + a.cost(),
+
+            // reg
+            Self::Pop(_) | Self::Neg(_) | Self::Not(_) => 1 + Reg::cost(),
+
+            // imm|reg, dir|ind|idx
+            Self::Out(a, b) => 1 + a.cost() + b.cost(),
+
+            // imm|reg
+            Self::Push(a) => 1 + a.cost(),
+
+            // reg, dir|ind|idx
+            Self::St(_, b) => 1 + Reg::cost() + b.cost(),
+
+            // reg|dir|ind|idx, reg
+            Self::Swap(a, _) => 1 + a.cost() + Reg::cost(),
+
+            Self::Nop | Self::Reset | Self::Rti | Self::Rtn | Self::Trap => 1,
         }
     }
 }

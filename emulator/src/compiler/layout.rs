@@ -12,13 +12,16 @@ use crate::parser::{
     line::{Line, LineContent},
     value::{DirectiveArgument, DirectiveKind},
 };
-use crate::{constants::*, parser::location::Located};
+use crate::{
+    constants::{Address, PROGRAM_START},
+    parser::location::Located,
+};
 
 pub(crate) type Labels = HashMap<String, Address>;
 
 impl ExpressionContext for Labels {
     fn resolve_variable(&self, variable: &str) -> Option<i128> {
-        self.get(variable).map(|v| *v as _)
+        self.get(variable).map(|v| i128::from(*v))
     }
 }
 
@@ -105,10 +108,10 @@ pub enum MemoryLayoutError<L> {
 impl<L> MemoryLayoutError<L> {
     pub fn location(&self) -> Option<&L> {
         match self {
-            MemoryLayoutError::DuplicateLabel { location, .. } => Some(location),
-            MemoryLayoutError::InvalidDirectiveArgument { location, .. } => Some(location),
-            MemoryLayoutError::DirectiveArgumentEvaluation { .. } => None,
-            MemoryLayoutError::MemoryOverlap { .. } => None,
+            MemoryLayoutError::DuplicateLabel { location, .. }
+            | MemoryLayoutError::InvalidDirectiveArgument { location, .. } => Some(location),
+            MemoryLayoutError::DirectiveArgumentEvaluation { .. }
+            | MemoryLayoutError::MemoryOverlap { .. } => None,
         }
     }
 }
@@ -120,15 +123,15 @@ impl<L> MemoryLayoutError<L> {
 pub(crate) fn layout_memory<L: Clone + Default>(
     program: &[Line<L>],
 ) -> Result<Layout<L>, MemoryLayoutError<L>> {
-    use DirectiveKind::*;
-    use MemoryLayoutError::*;
+    use DirectiveKind::{Addr, Space, String, Word};
+    use MemoryLayoutError::{DirectiveArgumentEvaluation, InvalidDirectiveArgument};
 
     debug!(lines = program.len(), "Laying out memory");
-    let mut layout: Layout<L> = Default::default();
+    let mut layout: Layout<L> = Layout::default();
     let mut position = PROGRAM_START;
 
     for line in program {
-        for key in line.symbols.clone().into_iter() {
+        for key in line.symbols.clone() {
             trace!(key = %key.inner, position, "Inserting label");
             layout.insert_label(key, position)?;
         }
@@ -226,7 +229,7 @@ mod tests {
     };
     use crate::runtime::Reg;
 
-    use InstructionKind::*;
+    use InstructionKind::{Add, Jmp};
 
     #[test]
     fn place_labels_simple_test() {

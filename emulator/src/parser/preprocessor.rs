@@ -30,7 +30,7 @@ where
     fn map_location(self, parent: &P) -> Self::Mapped {
         let condition = self.condition.map_location_only(parent);
         let body = self.body.map_location(parent);
-        ConditionBranch { body, condition }
+        ConditionBranch { condition, body }
     }
 }
 
@@ -65,23 +65,22 @@ where
     type Mapped = Node<P>;
 
     fn map_location(self, parent: &P) -> Self::Mapped {
-        use Node::*;
         match self {
-            Raw { content } => Raw { content },
-            Error { message } => Error {
+            Self::Raw { content } => Node::Raw { content },
+            Self::Error { message } => Node::Error {
                 message: message.map_location_only(parent),
             },
-            Undefine { key } => Undefine {
+            Self::Undefine { key } => Node::Undefine {
                 key: key.map_location_only(parent),
             },
-            Definition { key, content } => Definition {
+            Self::Definition { key, content } => Node::Definition {
                 key: key.map_location_only(parent),
                 content: content.map(|c| c.map_location_only(parent)),
             },
-            Inclusion { path } => Inclusion {
+            Self::Inclusion { path } => Node::Inclusion {
                 path: path.map_location_only(parent),
             },
-            Condition { branches, fallback } => Condition {
+            Self::Condition { branches, fallback } => Node::Condition {
                 branches: branches.map_location(parent),
                 fallback: fallback.map_location(parent),
             },
@@ -98,14 +97,14 @@ impl<L> Node<L> {
 
         if let Node::Condition { branches, fallback } = self {
             for branch in branches.iter() {
-                for chunk in branch.body.inner.iter() {
-                    chunk.inner.walk(f)
+                for chunk in &branch.body.inner {
+                    chunk.inner.walk(f);
                 }
             }
 
             if let Some(fallback) = fallback {
-                for chunk in fallback.inner.iter() {
-                    chunk.inner.walk(f)
+                for chunk in &fallback.inner {
+                    chunk.inner.walk(f);
                 }
             }
         }
@@ -129,9 +128,8 @@ fn parse_directive_argument<'a, Error: ParseError<&'a str>>(
         let (rest, _) = space0(cursor)?;
 
         // peek at the next thing after the spaces
-        match rest.get(..2) {
-            Some("//") | Some("\r\n") => break,
-            _ => {}
+        if let Some("//" | "\r\n") = rest.get(..2) {
+            break;
         }
 
         if let Some("\n") = rest.get(..1) {
@@ -241,6 +239,14 @@ fn parse_error<'a, Error: ParseError<&'a str>>(
 fn parse_condition<'a, Error: ParseError<&'a str>>(
     input: &'a str,
 ) -> IResult<&'a str, Node<RelativeLocation>, Error> {
+    // This structure helps parsing the else/elif/end directives
+    enum BranchDirective {
+        Else,
+        ElseIf(Located<String, RelativeLocation>),
+        EndIf,
+    }
+    use BranchDirective::{Else, ElseIf, EndIf};
+
     // First, get the "#if"
     let (rest, _) = char('#')(input)?;
     let (rest, _) = space0(rest)?;
@@ -262,14 +268,6 @@ fn parse_condition<'a, Error: ParseError<&'a str>>(
 
     // We have the first branch parsed, let's parse the others
     let branch = ConditionBranch { condition, body };
-
-    // This structure helps parsing the else/elif/end directives
-    enum BranchDirective {
-        Else,
-        ElseIf(Located<String, RelativeLocation>),
-        EndIf,
-    }
-    use BranchDirective::*;
 
     let mut cursor = rest; // This saves current location in the input
     let mut branches = vec![branch];
@@ -310,7 +308,7 @@ fn parse_condition<'a, Error: ParseError<&'a str>>(
         cursor = rest;
 
         if let ElseIf(condition) = directive {
-            branches.push(ConditionBranch { condition, body })
+            branches.push(ConditionBranch { condition, body });
         } else {
             fallback = Some(body);
             break;
@@ -479,7 +477,7 @@ mod tests {
 
     #[test]
     fn parse_simple_test() {
-        use Node::*;
+        use Node::{Definition, Error, Inclusion, Raw, Undefine};
         let (rest, body) = parse::<()>(indoc::indoc! {r#"
             hello
             #include "foo"
@@ -535,7 +533,7 @@ mod tests {
 
     #[test]
     fn parse_weird_test() {
-        use Node::*;
+        use Node::{Definition, Error, Inclusion, Raw, Undefine};
         let (rest, body) = parse::<()>(indoc::indoc! {r#"
             hello
             #  include   "foo"//comment
@@ -601,7 +599,7 @@ mod tests {
 
     #[test]
     fn parse_condition_test() {
-        use Node::*;
+        use Node::{Condition, Raw};
         let input = indoc::indoc! {r#"
             #if true
             foo

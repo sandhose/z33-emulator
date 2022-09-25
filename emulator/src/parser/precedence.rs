@@ -44,29 +44,30 @@ impl<'a, T: std::fmt::Display + Precedence> std::fmt::Display for ChildTree<'a, 
 
 impl<L> Precedence for ExpressionNode<L> {
     fn precedence(&self) -> usize {
-        use ExpressionNode::*;
         match self {
-            Literal(_) | Variable(_) => 0,
-            Invert(_) | BinaryNot(_) => 2,
-            Multiply(_, _) | Divide(_, _) => 3,
-            Sum(_, _) | Substract(_, _) => 4,
-            LeftShift(_, _) | RightShift(_, _) => 5,
-            BinaryAnd(_, _) => 8,
-            BinaryOr(_, _) => 10,
+            Self::Literal(_) | Self::Variable(_) => 0,
+            Self::Invert(_) | Self::BinaryNot(_) => 2,
+            Self::Multiply(_, _) | Self::Divide(_, _) => 3,
+            Self::Sum(_, _) | Self::Substract(_, _) => 4,
+            Self::LeftShift(_, _) | Self::RightShift(_, _) => 5,
+            Self::BinaryAnd(_, _) => 8,
+            Self::BinaryOr(_, _) => 10,
         }
     }
 }
 
 impl<L> Precedence for ConditionNode<L> {
     fn precedence(&self) -> usize {
-        use ConditionNode::*;
         match self {
-            Literal(_) | Defined(_) => 0,
-            Not(_) => 2,
-            GreaterOrEqual(_, _) | GreaterThan(_, _) | LesserOrEqual(_, _) | LesserThan(_, _) => 6,
-            Equal(_, _) | NotEqual(_, _) => 7,
-            And(_, _) => 11,
-            Or(_, _) => 12,
+            Self::Literal(_) | Self::Defined(_) => 0,
+            Self::Not(_) => 2,
+            Self::GreaterOrEqual(_, _)
+            | Self::GreaterThan(_, _)
+            | Self::LesserOrEqual(_, _)
+            | Self::LesserThan(_, _) => 6,
+            Self::Equal(_, _) | Self::NotEqual(_, _) => 7,
+            Self::And(_, _) => 11,
+            Self::Or(_, _) => 12,
         }
     }
 }

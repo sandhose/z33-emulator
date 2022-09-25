@@ -39,7 +39,7 @@ pub struct RelativeLocation {
 
 impl From<()> for RelativeLocation {
     fn from(_: ()) -> Self {
-        Default::default()
+        Self::default()
     }
 }
 
@@ -61,6 +61,7 @@ where
 }
 
 impl RelativeLocation {
+    #[must_use]
     pub fn into_absolute(self, parent: &AbsoluteLocation) -> AbsoluteLocation {
         self.to_absolute(parent)
     }

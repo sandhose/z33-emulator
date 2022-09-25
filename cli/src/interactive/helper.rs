@@ -42,10 +42,7 @@ fn suggest(command: &Command, input: &[String]) -> (usize, HashSet<String>) {
         suggestions.insert("help".to_string());
     }
 
-    let mut index = input.len();
-    if index > 0 {
-        index -= 1
-    }
+    let index = input.len().saturating_sub(1);
 
     // Find the curresponding positional arg if it exists and add suggestions for it
     if let Some(arg) = command.get_positionals().nth(index) {
@@ -54,7 +51,7 @@ fn suggest(command: &Command, input: &[String]) -> (usize, HashSet<String>) {
             _ => Vec::new(),
         };
 
-        suggestions.extend(additional.into_iter().map(String::from))
+        suggestions.extend(additional.into_iter().map(String::from));
     }
 
     match input {

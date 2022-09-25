@@ -29,7 +29,7 @@ fn print_completions<G: Generator>(generator: G, command: &mut Command) {
 }
 
 impl CompletionOpt {
-    pub fn exec(&self) -> anyhow::Result<()> {
+    pub fn exec(&self) {
         let mut command = Opt::command();
         match self.shell {
             ShellKind::Bash => print_completions(Bash, &mut command),
@@ -38,7 +38,5 @@ impl CompletionOpt {
             ShellKind::PowerShell => print_completions(PowerShell, &mut command),
             ShellKind::Zsh => print_completions(Zsh, &mut command),
         }
-
-        Ok(())
     }
 }

@@ -3,7 +3,7 @@ use std::convert::TryInto;
 use parse_display::Display;
 use thiserror::Error;
 
-use crate::constants::*;
+use crate::constants::{Address, Char, Word, MEMORY_SIZE};
 
 use super::instructions::Instruction;
 
@@ -80,7 +80,7 @@ impl Cell {
                 let mut buf = [0; 1];
                 // TODO: check that this does not panic
                 c.encode_utf8(&mut buf);
-                Ok(buf[0] as _)
+                Ok(Word::from(buf[0]))
             }
             t => Err(CellError::InvalidType {
                 expected: CellKind::Word,
@@ -120,7 +120,11 @@ impl Cell {
         match self {
             Self::Char(c) => Ok(*c),
             Self::Empty => Ok('\0'),
-            Self::Word(w) if (0x00..=0xFF).contains(w) => Ok(char::from(*w as u8)),
+            Self::Word(w) if (0x00..=0xFF).contains(w) => {
+                // This cast is fine, because we checked the range before
+                #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+                Ok(char::from(*w as u8))
+            }
             t => Err(CellError::InvalidType {
                 expected: CellKind::Char,
                 was: t.cell_kind(),
@@ -145,7 +149,7 @@ impl From<Instruction> for Cell {
 
 impl TryFromCell for Instruction {
     fn try_from_cell(value: &Cell) -> Result<Self, CellError> {
-        value.extract_instruction().map(|i| i.clone())
+        value.extract_instruction().cloned()
     }
 }
 

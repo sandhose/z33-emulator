@@ -44,9 +44,9 @@ pub enum MemoryFillError<L> {
 impl<L> MemoryFillError<L> {
     pub fn location(&self) -> &L {
         match self {
-            MemoryFillError::Evaluation { location, .. } => location,
-            MemoryFillError::Compute { location, .. } => location,
-            MemoryFillError::InstructionCompilation { location, .. } => location,
+            MemoryFillError::Evaluation { location, .. }
+            | MemoryFillError::Compute { location, .. }
+            | MemoryFillError::InstructionCompilation { location, .. } => location,
         }
     }
 }
@@ -101,6 +101,7 @@ where
     X::try_from(x).map_err(Into::into)
 }
 
+#[allow(clippy::needless_pass_by_value)]
 fn get_none(args: Vec<ImmRegDirIndIdx>) -> Result<(), InstructionCompilationError> {
     if !args.is_empty() {
         return Err(InstructionCompilationError::InvalidArgumentNumber {
@@ -117,175 +118,175 @@ fn compile_instruction(
     kind: &InstructionKind,
     arguments: Vec<ImmRegDirIndIdx>,
 ) -> Result<Instruction, InstructionCompilationError> {
-    use InstructionKind::*;
+    use InstructionKind as K;
 
     match kind {
-        Add => {
+        K::Add => {
             let (a, b) = get_tuple(arguments)?;
             Ok(Instruction::Add(a, b))
         }
 
-        And => {
+        K::And => {
             let (a, b) = get_tuple(arguments)?;
             Ok(Instruction::And(a, b))
         }
 
-        Call => {
+        K::Call => {
             let a = get_singleton(arguments)?;
             Ok(Instruction::Call(a))
         }
 
-        Cmp => {
+        K::Cmp => {
             let (a, b) = get_tuple(arguments)?;
             Ok(Instruction::Cmp(a, b))
         }
 
-        Div => {
+        K::Div => {
             let (a, b) = get_tuple(arguments)?;
             Ok(Instruction::Div(a, b))
         }
 
-        Fas => {
+        K::Fas => {
             let (a, b) = get_tuple(arguments)?;
             Ok(Instruction::Fas(a, b))
         }
 
-        In => {
+        K::In => {
             let (a, b) = get_tuple(arguments)?;
             Ok(Instruction::In(a, b))
         }
 
-        Jmp => {
+        K::Jmp => {
             let a = get_singleton(arguments)?;
             Ok(Instruction::Jmp(a))
         }
 
-        Jeq => {
+        K::Jeq => {
             let a = get_singleton(arguments)?;
             Ok(Instruction::Jeq(a))
         }
 
-        Jne => {
+        K::Jne => {
             let a = get_singleton(arguments)?;
             Ok(Instruction::Jne(a))
         }
 
-        Jle => {
+        K::Jle => {
             let a = get_singleton(arguments)?;
             Ok(Instruction::Jle(a))
         }
 
-        Jlt => {
+        K::Jlt => {
             let a = get_singleton(arguments)?;
             Ok(Instruction::Jlt(a))
         }
 
-        Jge => {
+        K::Jge => {
             let a = get_singleton(arguments)?;
             Ok(Instruction::Jge(a))
         }
 
-        Jgt => {
+        K::Jgt => {
             let a = get_singleton(arguments)?;
             Ok(Instruction::Jgt(a))
         }
 
-        Ld => {
+        K::Ld => {
             let (a, b) = get_tuple(arguments)?;
             Ok(Instruction::Ld(a, b))
         }
 
-        Mul => {
+        K::Mul => {
             let (a, b) = get_tuple(arguments)?;
             Ok(Instruction::Mul(a, b))
         }
 
-        Neg => {
+        K::Neg => {
             let a = get_singleton(arguments)?;
             Ok(Instruction::Neg(a))
         }
 
-        Nop => {
+        K::Nop => {
             get_none(arguments)?;
             Ok(Instruction::Nop)
         }
 
-        Not => {
+        K::Not => {
             let a = get_singleton(arguments)?;
             Ok(Instruction::Not(a))
         }
 
-        Or => {
+        K::Or => {
             let (a, b) = get_tuple(arguments)?;
             Ok(Instruction::Or(a, b))
         }
 
-        Out => {
+        K::Out => {
             let (a, b) = get_tuple(arguments)?;
             Ok(Instruction::Out(a, b))
         }
 
-        Pop => {
+        K::Pop => {
             let a = get_singleton(arguments)?;
             Ok(Instruction::Pop(a))
         }
 
-        Push => {
+        K::Push => {
             let a = get_singleton(arguments)?;
             Ok(Instruction::Push(a))
         }
 
-        Reset => {
+        K::Reset => {
             get_none(arguments)?;
             Ok(Instruction::Reset)
         }
 
-        Rti => {
+        K::Rti => {
             get_none(arguments)?;
             Ok(Instruction::Rti)
         }
 
-        Rtn => {
+        K::Rtn => {
             get_none(arguments)?;
             Ok(Instruction::Rtn)
         }
 
-        Shl => {
+        K::Shl => {
             let (a, b) = get_tuple(arguments)?;
             Ok(Instruction::Shl(a, b))
         }
 
-        Shr => {
+        K::Shr => {
             let (a, b) = get_tuple(arguments)?;
             Ok(Instruction::Shr(a, b))
         }
 
-        St => {
+        K::St => {
             let (a, b) = get_tuple(arguments)?;
             Ok(Instruction::St(a, b))
         }
 
-        Sub => {
+        K::Sub => {
             let (a, b) = get_tuple(arguments)?;
             Ok(Instruction::Sub(a, b))
         }
 
-        Swap => {
+        K::Swap => {
             let (a, b) = get_tuple(arguments)?;
             Ok(Instruction::Swap(a, b))
         }
 
-        Trap => {
+        K::Trap => {
             get_none(arguments)?;
             Ok(Instruction::Trap)
         }
 
-        Xor => {
+        K::Xor => {
             let (a, b) = get_tuple(arguments)?;
             Ok(Instruction::Xor(a, b))
         }
 
-        DebugReg => {
+        K::DebugReg => {
             get_none(arguments)?;
             Ok(Instruction::DebugReg)
         }
@@ -297,19 +298,22 @@ fn compile_placement<L: Clone>(
     labels: &Labels,
     placement: &Placement<L>,
 ) -> Result<Cell, MemoryFillError<L>> {
-    use DirectiveKind::*;
-    use Placement::*;
+    use Placement as P;
 
     match placement {
         // Reserved placements are created by .space directives
-        Reserved => Ok(Cell::Empty),
+        P::Reserved => Ok(Cell::Empty),
 
         // Char placements are create by .string directives
-        Char(c) => Ok(Cell::Char(*c)),
+        P::Char(c) => Ok(Cell::Char(*c)),
 
         // A .word directive (don't mind the weird destructuring)
-        Line(LineContent::Directive {
-            kind: Located { inner: Word, .. },
+        P::Line(LineContent::Directive {
+            kind:
+                Located {
+                    inner: DirectiveKind::Word,
+                    ..
+                },
             argument:
                 Located {
                     inner: DirectiveArgument::Expression(expression),
@@ -328,11 +332,11 @@ fn compile_placement<L: Clone>(
         }
 
         // We should not have any other directives other than "word" at this point
-        Line(LineContent::Directive { .. }) => {
+        P::Line(LineContent::Directive { .. }) => {
             unreachable!();
         }
 
-        Line(LineContent::Instruction { kind, arguments }) => {
+        P::Line(LineContent::Instruction { kind, arguments }) => {
             let span = span!(Level::TRACE, "line", %kind);
             let _guard = span.enter();
             let arguments: Result<Vec<_>, _> = arguments

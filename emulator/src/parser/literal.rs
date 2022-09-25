@@ -45,9 +45,9 @@ where
 /// Parse a decimal number
 fn from_decimal<I>(input: I) -> Result<u64, ParseIntError>
 where
-    I: ToString,
+    I: AsRef<str>,
 {
-    u64::from_str(&input.to_string())
+    u64::from_str(input.as_ref())
 }
 
 /// Check if character is a decimal digit
@@ -58,9 +58,9 @@ fn is_digit<C: AsChar>(c: C) -> bool {
 /// Parse a hexadecimal number
 fn from_hexadecimal<I>(input: I) -> Result<u64, ParseIntError>
 where
-    I: ToString,
+    I: AsRef<str>,
 {
-    u64::from_str_radix(&input.to_string(), 16)
+    u64::from_str_radix(input.as_ref(), 16)
 }
 
 /// Check if character is a hexadecimal digit
@@ -69,11 +69,11 @@ fn is_hex_digit<C: AsChar>(c: C) -> bool {
 }
 
 /// Extract a hexadecimal literal
-fn parse_hexadecimal_literal<I, Error: ParseError<I>>(input: I) -> IResult<I, u64, Error>
+fn parse_hexadecimal_literal<I, Error>(input: I) -> IResult<I, u64, Error>
 where
-    I: InputTakeAtPosition + InputTake + Compare<&'static str> + ToString + Clone,
+    I: InputTakeAtPosition + InputTake + Compare<&'static str> + AsRef<str> + Clone,
     <I as InputTakeAtPosition>::Item: AsChar,
-    Error: FromExternalError<I, ParseIntError>,
+    Error: ParseError<I> + FromExternalError<I, ParseIntError>,
 {
     let (input, _) = tag_no_case("0x")(input)?;
     cut(map_res(take_while1(is_hex_digit), from_hexadecimal))(input)
@@ -82,9 +82,9 @@ where
 /// Parse an octal number
 fn from_octal<I>(input: I) -> Result<u64, std::num::ParseIntError>
 where
-    I: ToString,
+    I: AsRef<str>,
 {
-    u64::from_str_radix(&input.to_string(), 8)
+    u64::from_str_radix(input.as_ref(), 8)
 }
 
 /// Check if character is an octal digit
@@ -93,11 +93,11 @@ fn is_oct_digit<C: AsChar>(c: C) -> bool {
 }
 
 /// Extract an octal literal
-fn parse_octal_literal<I, Error: ParseError<I>>(input: I) -> IResult<I, u64, Error>
+fn parse_octal_literal<I, Error>(input: I) -> IResult<I, u64, Error>
 where
-    I: InputTakeAtPosition + InputTake + Compare<&'static str> + ToString + Clone,
+    I: InputTakeAtPosition + InputTake + Compare<&'static str> + AsRef<str> + Clone,
     <I as InputTakeAtPosition>::Item: AsChar,
-    Error: FromExternalError<I, ParseIntError>,
+    Error: ParseError<I> + FromExternalError<I, ParseIntError>,
 {
     let (input, _) = tag_no_case("0o")(input)?;
     cut(map_res(take_while1(is_oct_digit), from_octal))(input)
@@ -106,9 +106,9 @@ where
 /// Parse a binary number
 fn from_binary<I>(input: I) -> Result<u64, ParseIntError>
 where
-    I: ToString,
+    I: AsRef<str>,
 {
-    u64::from_str_radix(&input.to_string(), 2)
+    u64::from_str_radix(input.as_ref(), 2)
 }
 
 /// Check if character is a binary digit
@@ -117,22 +117,22 @@ fn is_bin_digit<C: AsChar>(c: C) -> bool {
 }
 
 /// Extract a binary literal
-fn parse_binary_literal<I, Error: ParseError<I>>(input: I) -> IResult<I, u64, Error>
+fn parse_binary_literal<I, Error>(input: I) -> IResult<I, u64, Error>
 where
-    I: InputTakeAtPosition + InputTake + Compare<&'static str> + ToString + Clone,
+    I: InputTakeAtPosition + InputTake + Compare<&'static str> + AsRef<str> + Clone,
     <I as InputTakeAtPosition>::Item: AsChar,
-    Error: FromExternalError<I, ParseIntError>,
+    Error: ParseError<I> + FromExternalError<I, ParseIntError>,
 {
     let (input, _) = tag_no_case("0b")(input)?;
     cut(map_res(take_while1(is_bin_digit), from_binary))(input)
 }
 
 /// Parse a number literal
-pub fn parse_number_literal<I, Error: ParseError<I>>(input: I) -> IResult<I, u64, Error>
+pub fn parse_number_literal<I, Error>(input: I) -> IResult<I, u64, Error>
 where
-    I: InputTakeAtPosition + InputTake + Compare<&'static str> + ToString + Clone,
+    I: InputTakeAtPosition + InputTake + Compare<&'static str> + AsRef<str> + Clone,
     <I as InputTakeAtPosition>::Item: AsChar,
-    Error: FromExternalError<I, ParseIntError>,
+    Error: ParseError<I> + FromExternalError<I, ParseIntError>,
 {
     alt((
         parse_hexadecimal_literal,
@@ -224,8 +224,8 @@ mod tests {
         type R<'a> = IResult<&'a str, u64, ()>;
         assert_eq!(parse_octal_literal("0o77"), R::Ok(("", 0o77)));
         assert_eq!(parse_octal_literal("0O77"), R::Ok(("", 0o77)));
-        assert_eq!(parse_octal_literal("0o177777"), R::Ok(("", 0o177777)));
-        assert_eq!(parse_octal_literal("0o200000"), R::Ok(("", 0o200000)));
+        assert_eq!(parse_octal_literal("0o177777"), R::Ok(("", 0o177_777)));
+        assert_eq!(parse_octal_literal("0o200000"), R::Ok(("", 0o200_000)));
         assert_eq!(
             parse_octal_literal("0oinvalid"),
             R::Err(nom::Err::Failure(()))
@@ -259,11 +259,11 @@ mod tests {
         assert_eq!(parse_binary_literal("0B10"), R::Ok(("", 0b10)));
         assert_eq!(
             parse_binary_literal("0b1111111111111111"),
-            R::Ok(("", 0b1111111111111111))
+            R::Ok(("", 0b1111_1111_1111_1111))
         );
         assert_eq!(
             parse_binary_literal("0b10000000000000000"),
-            R::Ok(("", 0b10000000000000000))
+            R::Ok(("", 0b1_0000_0000_0000_0000))
         );
         assert_eq!(
             parse_binary_literal("0binvalid"),

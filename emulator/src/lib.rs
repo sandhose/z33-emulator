@@ -1,4 +1,10 @@
 #![forbid(unsafe_code)]
+#![deny(clippy::all, clippy::pedantic)]
+#![allow(
+    clippy::module_name_repetitions,
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc
+)]
 
 mod ast;
 pub mod compiler;

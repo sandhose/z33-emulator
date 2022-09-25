@@ -28,13 +28,14 @@ pub enum Subcommand {
 impl Subcommand {
     /// Run a subcommand
     pub fn exec(self) -> anyhow::Result<()> {
-        use Subcommand::*;
         match self {
-            Run(opt) => opt.exec(),
-            Preprocess(opt) => opt.exec(),
-            Print(opt) => opt.exec(),
-            Dump(opt) => opt.exec(),
-            Completion(opt) => opt.exec(),
+            Self::Run(opt) => opt.exec()?,
+            Self::Preprocess(opt) => opt.exec()?,
+            Self::Print(opt) => opt.exec()?,
+            Self::Dump(opt) => opt.exec()?,
+            Self::Completion(opt) => opt.exec(),
         }
+
+        Ok(())
     }
 }

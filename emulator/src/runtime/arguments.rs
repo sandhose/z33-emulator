@@ -1,13 +1,10 @@
 //! Structures to represent most of argument combinations
 
 use parse_display::Display;
-use thiserror::Error;
 
-use super::{
-    memory::{CellError, MemoryError, TryFromCell},
-    registers::Reg,
-    Cell, Computer, Registers,
-};
+use self::conversions::ArgKind;
+
+use super::registers::Reg;
 
 use crate::constants as C;
 
@@ -25,7 +22,7 @@ pub struct Imm(pub C::Word);
 
 impl Imm {
     /// CPU cycles count to use this value
-    pub const fn cost(&self) -> usize {
+    pub const fn cost() -> usize {
         0
     }
 }
@@ -37,7 +34,7 @@ pub struct Dir(pub C::Address);
 
 impl Dir {
     /// CPU cycles count to use this value
-    pub const fn cost(&self) -> usize {
+    pub const fn cost() -> usize {
         1
     }
 }
@@ -49,7 +46,7 @@ pub struct Ind(pub Reg);
 
 impl Ind {
     /// CPU cycles count to use this value
-    pub const fn cost(&self) -> usize {
+    pub const fn cost() -> usize {
         1
     }
 }
@@ -61,7 +58,7 @@ pub struct Idx(pub Reg, pub C::Word);
 
 impl Idx {
     /// CPU cycles count to use this value
-    pub const fn cost(&self) -> usize {
+    pub const fn cost() -> usize {
         1
     }
 }
@@ -84,24 +81,23 @@ impl ImmRegDirIndIdx {
     /// CPU cycles count to use this value
     pub const fn cost(&self) -> usize {
         match self {
-            ImmRegDirIndIdx::Imm(a) => a.cost(),
-            ImmRegDirIndIdx::Reg(a) => a.cost(),
-            ImmRegDirIndIdx::Dir(a) => a.cost(),
-            ImmRegDirIndIdx::Ind(a) => a.cost(),
-            ImmRegDirIndIdx::Idx(a) => a.cost(),
+            ImmRegDirIndIdx::Imm(_) => Imm::cost(),
+            ImmRegDirIndIdx::Reg(_) => Reg::cost(),
+            ImmRegDirIndIdx::Dir(_) => Dir::cost(),
+            ImmRegDirIndIdx::Ind(_) => Ind::cost(),
+            ImmRegDirIndIdx::Idx(_) => Idx::cost(),
         }
     }
 
     /// Get the kind of this argument
     /// This is used to build nice errors on conversions
     const fn kind(&self) -> conversions::ArgKind {
-        use self::conversions::ArgKind::*;
         match self {
-            Self::Imm(_) => Imm,
-            Self::Reg(_) => Reg,
-            Self::Dir(_) => Dir,
-            Self::Ind(_) => Ind,
-            Self::Idx(_) => Idx,
+            Self::Imm(_) => ArgKind::Imm,
+            Self::Reg(_) => ArgKind::Reg,
+            Self::Dir(_) => ArgKind::Dir,
+            Self::Ind(_) => ArgKind::Ind,
+            Self::Idx(_) => ArgKind::Idx,
         }
     }
 }
@@ -117,9 +113,9 @@ pub enum DirIndIdx {
 impl DirIndIdx {
     pub const fn cost(&self) -> usize {
         match self {
-            DirIndIdx::Dir(a) => a.cost(),
-            DirIndIdx::Ind(a) => a.cost(),
-            DirIndIdx::Idx(a) => a.cost(),
+            DirIndIdx::Dir(_) => Dir::cost(),
+            DirIndIdx::Ind(_) => Ind::cost(),
+            DirIndIdx::Idx(_) => Idx::cost(),
         }
     }
 }
@@ -136,10 +132,10 @@ pub enum RegDirIndIdx {
 impl RegDirIndIdx {
     pub const fn cost(&self) -> usize {
         match self {
-            RegDirIndIdx::Reg(a) => a.cost(),
-            RegDirIndIdx::Dir(a) => a.cost(),
-            RegDirIndIdx::Ind(a) => a.cost(),
-            RegDirIndIdx::Idx(a) => a.cost(),
+            RegDirIndIdx::Reg(_) => Reg::cost(),
+            RegDirIndIdx::Dir(_) => Dir::cost(),
+            RegDirIndIdx::Ind(_) => Ind::cost(),
+            RegDirIndIdx::Idx(_) => Idx::cost(),
         }
     }
 }
@@ -154,8 +150,8 @@ pub enum ImmReg {
 impl ImmReg {
     pub const fn cost(&self) -> usize {
         match self {
-            ImmReg::Imm(a) => a.cost(),
-            ImmReg::Reg(a) => a.cost(),
+            ImmReg::Imm(_) => Imm::cost(),
+            ImmReg::Reg(_) => Reg::cost(),
         }
     }
 }
@@ -164,7 +160,16 @@ impl ImmReg {
 mod traits {
     use std::convert::TryFrom;
 
-    use super::*;
+    use thiserror::Error;
+
+    use super::super::{
+        memory::{CellError, MemoryError, TryFromCell},
+        registers::Reg,
+        Cell, Computer, Registers,
+    };
+    use super::{Dir, DirIndIdx, Idx, Imm, ImmReg, ImmRegDirIndIdx, Ind, RegDirIndIdx};
+
+    use crate::constants as C;
 
     pub trait ResolveAddress {
         fn resolve_address(&self, c: &Registers) -> Result<C::Address, CellError>;
@@ -289,7 +294,7 @@ mod traits {
         }
 
         fn extract_word(&self, c: &Computer) -> Result<C::Word, ExtractError> {
-            Ok(c.registers.get_word(self)?)
+            Ok(c.registers.get_word(*self)?)
         }
     }
 
@@ -325,7 +330,10 @@ mod traits {
 mod conversions {
     use std::convert::TryFrom;
 
-    use super::*;
+    use parse_display::Display;
+    use thiserror::Error;
+
+    use super::{DirIndIdx, ImmReg, ImmRegDirIndIdx, Reg, RegDirIndIdx};
 
     /// Valid argument kinds
     #[derive(PartialEq, Eq, Clone, Debug, Display)]
@@ -426,7 +434,7 @@ mod conversions {
                 ImmRegDirIndIdx::Dir(a) => Ok(Self::Dir(a)),
                 ImmRegDirIndIdx::Ind(a) => Ok(Self::Ind(a)),
                 ImmRegDirIndIdx::Idx(a) => Ok(Self::Idx(a)),
-                other => Err(ArgConversionError {
+                other @ ImmRegDirIndIdx::Imm(_) => Err(ArgConversionError {
                     expected: [K::Reg, K::Dir, K::Ind, K::Idx].into(),
                     got: other.kind(),
                 }),

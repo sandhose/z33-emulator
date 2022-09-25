@@ -115,47 +115,41 @@ where
 
 impl<L: Clone> AstNode<L> for Node<L> {
     fn kind(&self) -> crate::ast::NodeKind {
-        use Node::*;
-        use NodeKind::*;
         match self {
-            BinaryOr(_, _) => ExpressionBinaryOr,
-            BinaryAnd(_, _) => ExpressionBinaryAnd,
-            LeftShift(_, _) => ExpressionLeftShift,
-            RightShift(_, _) => ExpressionRightShift,
-            Sum(_, _) => ExpressionSum,
-            Substract(_, _) => ExpressionSubstract,
-            Multiply(_, _) => ExpressionMultiply,
-            Divide(_, _) => ExpressionDivide,
-            Invert(_) => ExpressionInvert,
-            BinaryNot(_) => ExpressionBinaryNot,
-            Literal(_) => ExpressionLiteral,
-            Variable(_) => ExpressionVariable,
+            Node::BinaryOr(_, _) => NodeKind::ExpressionBinaryOr,
+            Node::BinaryAnd(_, _) => NodeKind::ExpressionBinaryAnd,
+            Node::LeftShift(_, _) => NodeKind::ExpressionLeftShift,
+            Node::RightShift(_, _) => NodeKind::ExpressionRightShift,
+            Node::Sum(_, _) => NodeKind::ExpressionSum,
+            Node::Substract(_, _) => NodeKind::ExpressionSubstract,
+            Node::Multiply(_, _) => NodeKind::ExpressionMultiply,
+            Node::Divide(_, _) => NodeKind::ExpressionDivide,
+            Node::Invert(_) => NodeKind::ExpressionInvert,
+            Node::BinaryNot(_) => NodeKind::ExpressionBinaryNot,
+            Node::Literal(_) => NodeKind::ExpressionLiteral,
+            Node::Variable(_) => NodeKind::ExpressionVariable,
         }
     }
 
     fn children(&self) -> Vec<crate::ast::Node<L>> {
-        use Node::*;
-
         match self {
-            BinaryOr(a, b) => vec![a.to_node(), b.to_node()],
-            BinaryAnd(a, b) => vec![a.to_node(), b.to_node()],
-            LeftShift(a, b) => vec![a.to_node(), b.to_node()],
-            RightShift(a, b) => vec![a.to_node(), b.to_node()],
-            Sum(a, b) => vec![a.to_node(), b.to_node()],
-            Substract(a, b) => vec![a.to_node(), b.to_node()],
-            Multiply(a, b) => vec![a.to_node(), b.to_node()],
-            Divide(a, b) => vec![a.to_node(), b.to_node()],
-            Invert(a) => vec![a.to_node()],
-            BinaryNot(a) => vec![a.to_node()],
-            Variable(_) | Literal(_) => Vec::new(),
+            Node::BinaryOr(a, b)
+            | Node::BinaryAnd(a, b)
+            | Node::LeftShift(a, b)
+            | Node::RightShift(a, b)
+            | Node::Sum(a, b)
+            | Node::Substract(a, b)
+            | Node::Multiply(a, b)
+            | Node::Divide(a, b) => vec![a.to_node(), b.to_node()],
+            Node::Invert(a) | Node::BinaryNot(a) => vec![a.to_node()],
+            Node::Variable(_) | Node::Literal(_) => Vec::new(),
         }
     }
 
     fn content(&self) -> Option<String> {
-        use Node::*;
         match self {
-            Literal(l) => Some(format!("{}", l)),
-            Variable(v) => Some(v.clone()),
+            Node::Literal(l) => Some(format!("{}", l)),
+            Node::Variable(v) => Some(v.clone()),
             _ => None,
         }
     }
@@ -163,67 +157,66 @@ impl<L: Clone> AstNode<L> for Node<L> {
 
 impl<L> std::fmt::Display for Node<L> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use Node::*;
         if f.sign_plus() {
             // Special case for indexed arguments
             match self {
-                Invert(a) => write!(f, "- {}", a.inner),
+                Node::Invert(a) => write!(f, "- {}", a.inner),
                 n => write!(f, "+ {}", n),
             }
         } else {
             match self {
-                BinaryOr(a, b) => write!(
+                Node::BinaryOr(a, b) => write!(
                     f,
                     "{} | {}",
                     a.inner.with_parent(self),
                     b.inner.with_parent(self)
                 ),
-                BinaryAnd(a, b) => write!(
+                Node::BinaryAnd(a, b) => write!(
                     f,
                     "{} & {}",
                     a.inner.with_parent(self),
                     b.inner.with_parent(self)
                 ),
-                LeftShift(a, b) => write!(
+                Node::LeftShift(a, b) => write!(
                     f,
                     "{} << {}",
                     a.inner.with_parent(self),
                     b.inner.with_parent(self)
                 ),
-                RightShift(a, b) => write!(
+                Node::RightShift(a, b) => write!(
                     f,
                     "{} >> {}",
                     a.inner.with_parent(self),
                     b.inner.with_parent(self)
                 ),
-                Sum(a, b) => write!(
+                Node::Sum(a, b) => write!(
                     f,
                     "{} + {}",
                     a.inner.with_parent(self),
                     b.inner.with_parent(self)
                 ),
-                Substract(a, b) => write!(
+                Node::Substract(a, b) => write!(
                     f,
                     "{} - {}",
                     a.inner.with_parent(self),
                     b.inner.with_parent(self)
                 ),
-                Multiply(a, b) => write!(
+                Node::Multiply(a, b) => write!(
                     f,
                     "{} * {}",
                     a.inner.with_parent(self),
                     b.inner.with_parent(self)
                 ),
-                Divide(a, b) => write!(
+                Node::Divide(a, b) => write!(
                     f,
                     "{} / {}",
                     a.inner.with_parent(self),
                     b.inner.with_parent(self)
                 ),
-                Invert(a) => write!(f, "-{}", a.inner.with_parent(self)),
-                BinaryNot(a) => write!(f, "~{}", a.inner.with_parent(self)),
-                Literal(a) => write!(f, "{}", a),
-                Variable(a) => write!(f, "{}", a),
+                Node::Invert(a) => write!(f, "-{}", a.inner.with_parent(self)),
+                Node::BinaryNot(a) => write!(f, "~{}", a.inner.with_parent(self)),
+                Node::Literal(a) => write!(f, "{}", a),
+                Node::Variable(a) => write!(f, "{}", a),
             }
         }
     }
@@ -231,20 +224,19 @@ impl<L> std::fmt::Display for Node<L> {
 
 impl Node<RelativeLocation> {
     fn offset(self, offset: usize) -> Self {
-        use Node::*;
         match self {
-            BinaryOr(a, b) => BinaryOr(a.offset(offset), b.offset(offset)),
-            BinaryAnd(a, b) => BinaryAnd(a.offset(offset), b.offset(offset)),
-            LeftShift(a, b) => LeftShift(a.offset(offset), b.offset(offset)),
-            RightShift(a, b) => RightShift(a.offset(offset), b.offset(offset)),
-            Sum(a, b) => Sum(a.offset(offset), b.offset(offset)),
-            Substract(a, b) => Substract(a.offset(offset), b.offset(offset)),
-            Multiply(a, b) => Multiply(a.offset(offset), b.offset(offset)),
-            Divide(a, b) => Divide(a.offset(offset), b.offset(offset)),
-            Invert(a) => Invert(a.offset(offset)),
-            BinaryNot(a) => BinaryNot(a.offset(offset)),
-            Literal(a) => Literal(a),
-            Variable(a) => Variable(a),
+            Node::BinaryOr(a, b) => Node::BinaryOr(a.offset(offset), b.offset(offset)),
+            Node::BinaryAnd(a, b) => Node::BinaryAnd(a.offset(offset), b.offset(offset)),
+            Node::LeftShift(a, b) => Node::LeftShift(a.offset(offset), b.offset(offset)),
+            Node::RightShift(a, b) => Node::RightShift(a.offset(offset), b.offset(offset)),
+            Node::Sum(a, b) => Node::Sum(a.offset(offset), b.offset(offset)),
+            Node::Substract(a, b) => Node::Substract(a.offset(offset), b.offset(offset)),
+            Node::Multiply(a, b) => Node::Multiply(a.offset(offset), b.offset(offset)),
+            Node::Divide(a, b) => Node::Divide(a.offset(offset), b.offset(offset)),
+            Node::Invert(a) => Node::Invert(a.offset(offset)),
+            Node::BinaryNot(a) => Node::BinaryNot(a.offset(offset)),
+            Node::Literal(a) => Node::Literal(a),
+            Node::Variable(a) => Node::Variable(a),
         }
     }
 }
@@ -671,7 +663,7 @@ fn parse_atom<'a, Error: ParseError<&'a str>>(
     alt((
         context(
             "number literal",
-            map(parse_number_literal, |v| Node::Literal(v as Value)),
+            map(parse_number_literal, |v| Node::Literal(Value::from(v))),
         ),
         context(
             "identifier",
