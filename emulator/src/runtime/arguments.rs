@@ -19,7 +19,7 @@ pub use traits::{ExtractError, ExtractValue, ResolveAddress};
  */
 
 /// An immediate value
-#[derive(PartialEq, Clone, Debug, Display)]
+#[derive(PartialEq, Eq, Clone, Debug, Display)]
 #[display("{0}")]
 pub struct Imm(pub C::Word);
 
@@ -31,7 +31,7 @@ impl Imm {
 }
 
 /// A direct memory access
-#[derive(PartialEq, Clone, Debug, Display)]
+#[derive(PartialEq, Eq, Clone, Debug, Display)]
 #[display("[{0}]")]
 pub struct Dir(pub C::Address);
 
@@ -43,7 +43,7 @@ impl Dir {
 }
 
 /// An indirect memory access (from a register value)
-#[derive(PartialEq, Clone, Debug, Display)]
+#[derive(PartialEq, Eq, Clone, Debug, Display)]
 #[display("[{0}]")]
 pub struct Ind(pub Reg);
 
@@ -55,7 +55,7 @@ impl Ind {
 }
 
 /// An indexed memory access (from a register value and an offset)
-#[derive(PartialEq, Clone, Debug, Display)]
+#[derive(PartialEq, Eq, Clone, Debug, Display)]
 #[display("[{0}{1:+}]")]
 pub struct Idx(pub Reg, pub C::Word);
 
@@ -70,7 +70,7 @@ impl Idx {
  * Then define the combination of argument types needed
  */
 
-#[derive(PartialEq, Clone, Debug, Display)]
+#[derive(PartialEq, Eq, Clone, Debug, Display)]
 #[display("{0}")]
 pub enum ImmRegDirIndIdx {
     Imm(Imm),
@@ -106,7 +106,7 @@ impl ImmRegDirIndIdx {
     }
 }
 
-#[derive(PartialEq, Clone, Debug, Display)]
+#[derive(PartialEq, Eq, Clone, Debug, Display)]
 #[display("{0}")]
 pub enum DirIndIdx {
     Dir(Dir),
@@ -124,7 +124,7 @@ impl DirIndIdx {
     }
 }
 
-#[derive(PartialEq, Clone, Debug, Display)]
+#[derive(PartialEq, Eq, Clone, Debug, Display)]
 #[display("{0}")]
 pub enum RegDirIndIdx {
     Reg(Reg),
@@ -144,7 +144,7 @@ impl RegDirIndIdx {
     }
 }
 
-#[derive(PartialEq, Clone, Debug, Display)]
+#[derive(PartialEq, Eq, Clone, Debug, Display)]
 #[display("{0}")]
 pub enum ImmReg {
     Imm(Imm),
@@ -328,7 +328,7 @@ mod conversions {
     use super::*;
 
     /// Valid argument kinds
-    #[derive(PartialEq, Clone, Debug, Display)]
+    #[derive(PartialEq, Eq, Clone, Debug, Display)]
     #[display(style = "lowercase")]
     pub enum ArgKind {
         Imm,

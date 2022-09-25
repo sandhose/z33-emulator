@@ -316,7 +316,7 @@ pub(crate) fn run_interactive(
                         info!(address, value = %cell);
                     }
                 } else {
-                    for i in 0..(number.abs() as C::Address) {
+                    for i in 0..(number.unsigned_abs() as C::Address) {
                         let address = address - i;
                         let cell = computer.memory.get(address)?;
                         info!(address, value = %cell);

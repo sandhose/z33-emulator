@@ -198,7 +198,7 @@ pub(crate) fn parse_instruction_argument<'a, Error: ParseError<&'a str>>(
     ))(input)
 }
 
-#[derive(Display, FromStr, Clone, Copy, Debug, PartialEq)]
+#[derive(Display, FromStr, Clone, Copy, Debug, PartialEq, Eq)]
 #[display(style = "lowercase")]
 pub enum DirectiveKind {
     Addr,

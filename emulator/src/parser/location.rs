@@ -1,7 +1,7 @@
 use nom::Offset;
 use parse_display::Display;
 
-#[derive(Clone, Debug, PartialEq, Display)]
+#[derive(Clone, Debug, PartialEq, Eq, Display)]
 #[display("{inner}", bound(T))]
 pub struct Located<T, L> {
     pub inner: T,
@@ -31,7 +31,7 @@ pub trait Locatable: Sized {
 
 impl<T> Locatable for T {}
 
-#[derive(Clone, Debug, PartialEq, Default)]
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct RelativeLocation {
     offset: usize,
     length: usize,
@@ -95,7 +95,7 @@ impl<T> Located<T, RelativeLocation> {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Default)]
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct AbsoluteLocation<File = ()> {
     pub offset: usize,
     pub length: usize,

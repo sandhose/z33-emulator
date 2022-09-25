@@ -13,7 +13,7 @@ use super::{
     Computer, ProcessorError,
 };
 
-#[derive(Debug, Clone, PartialEq, Display)]
+#[derive(Debug, Clone, PartialEq, Eq, Display)]
 pub enum Instruction {
     /// Add a value to a register
     #[display("add  {0}, {1}")]

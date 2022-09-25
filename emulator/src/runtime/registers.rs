@@ -21,7 +21,7 @@ bitflags! {
     }
 }
 
-#[derive(Debug, Default, Clone, PartialEq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Registers {
     /// General purpose
     pub a: Cell,
@@ -86,7 +86,7 @@ impl std::fmt::Display for Registers {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Display)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Display)]
 #[display("%{}", style = "lowercase")]
 pub enum Reg {
     /// General purpose

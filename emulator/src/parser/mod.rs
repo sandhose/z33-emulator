@@ -27,11 +27,11 @@ pub use expression::{parse_expression, Context as ExpressionContext, Node as Exp
 pub use value::parse_register;
 
 fn is_identifier_char(c: char) -> bool {
-    is_start_identifier_char(c) || ('0'..'9').contains(&c)
+    is_start_identifier_char(c) || ('0'..='9').contains(&c)
 }
 
 fn is_start_identifier_char(c: char) -> bool {
-    c == '_' || ('a'..'z').contains(&c) || ('A'..'Z').contains(&c)
+    c == '_' || ('a'..='z').contains(&c) || ('A'..='Z').contains(&c)
 }
 
 /// Parse a C-like identifier

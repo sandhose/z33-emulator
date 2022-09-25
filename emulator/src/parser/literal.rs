@@ -52,7 +52,7 @@ where
 
 /// Check if character is a decimal digit
 fn is_digit<C: AsChar>(c: C) -> bool {
-    c.as_char().is_digit(10)
+    c.as_char().is_ascii_digit()
 }
 
 /// Parse a hexadecimal number
@@ -65,7 +65,7 @@ where
 
 /// Check if character is a hexadecimal digit
 fn is_hex_digit<C: AsChar>(c: C) -> bool {
-    c.as_char().is_digit(16)
+    c.as_char().is_ascii_hexdigit()
 }
 
 /// Extract a hexadecimal literal
@@ -214,7 +214,7 @@ mod tests {
             assert!(is_oct_digit(c));
         }
 
-        for c in ('8'..='9').chain('a'..='z').chain('A'..'Z') {
+        for c in ('8'..='9').chain('a'..='z').chain('A'..='Z') {
             assert!(!is_oct_digit(c));
         }
     }
@@ -247,7 +247,7 @@ mod tests {
             assert!(is_bin_digit(c));
         }
 
-        for c in ('2'..='9').chain('a'..='z').chain('A'..'Z') {
+        for c in ('2'..='9').chain('a'..='z').chain('A'..='Z') {
             assert!(!is_bin_digit(c));
         }
     }

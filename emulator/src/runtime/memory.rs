@@ -28,7 +28,7 @@ pub enum CellError {
 }
 
 /// Represents a cell in memory and in general purpose registers
-#[derive(Debug, Clone, PartialEq, Display)]
+#[derive(Debug, Clone, PartialEq, Eq, Display)]
 pub enum Cell {
     /// An instruction
     ///
