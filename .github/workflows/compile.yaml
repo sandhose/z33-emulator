@@ -49,6 +49,8 @@ jobs:
 
       - name: Setup Rust build cache
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ${{ matrix.target }}
 
       - name: Build the binary
         uses: actions-rs/cargo@v1.0.3

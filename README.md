@@ -8,9 +8,11 @@ This is an emulator for the z33 architecture used in the _"Architecture des Syst
 
 Binaries for [the latest release](https://github.com/sandhose/z33-emulator/releases/latest) are available here:
 
-- [Linux](https://github.com/sandhose/z33-emulator/releases/latest/download/z33-cli-x86_64-unknown-linux-musl.tar.gz) (x86 64bit)
-- [macOS](https://github.com/sandhose/z33-emulator/releases/latest/download/z33-cli-x86_64-apple-darwin.tar.gz) (x86 64bit)
-- [Windows](https://github.com/sandhose/z33-emulator/releases/latest/download/z33-cli-x86_64-pc-windows-msvc.exe) (x86 64bit)
+- [Linux (x86 64bit)](https://github.com/sandhose/z33-emulator/releases/latest/download/z33-cli-x86_64-unknown-linux-musl.tar.gz)
+- [Linux (ARM 64bit)](https://github.com/sandhose/z33-emulator/releases/latest/download/z33-cli-aarch64-unknown-linux-musl.tar.gz)
+- [macOS (x86 64bit)](https://github.com/sandhose/z33-emulator/releases/latest/download/z33-cli-x86_64-apple-darwin.tar.gz)
+- [macOS (ARM 64bit)](https://github.com/sandhose/z33-emulator/releases/latest/download/z33-cli-aarch64-apple-darwin.tar.gz)
+- [Windows](https://github.com/sandhose/z33-emulator/releases/latest/download/z33-cli-x86_64-pc-windows-msvc.exe)
 
 ### Compiling
 
