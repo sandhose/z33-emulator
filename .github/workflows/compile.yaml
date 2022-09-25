@@ -18,18 +18,23 @@ jobs:
           - target: aarch64-unknown-linux-musl
             os: ubuntu-22.04
             exe: z33-cli
+            use-cross: true
           - target: x86_64-unknown-linux-musl
             os: ubuntu-22.04
             exe: z33-cli
+            use-cross: false
           - target: aarch64-apple-darwin
             os: macos-latest
             exe: z33-cli
+            use-cross: false
           - target: x86_64-apple-darwin
             os: macos-12
             exe: z33-cli
+            use-cross: false
           - target: x86_64-pc-windows-msvc
             os: windows-2022
             exe: z33-cli.exe
+            use-cross: false
 
     steps:
       - name: Checkout sources
@@ -50,6 +55,7 @@ jobs:
         with:
           command: build
           args: --release --target=${{ matrix.target }} -p z33-cli
+          use-cross: ${{ matrix.use-cross }}
 
       - name: Upload the binary as artifact
         uses: actions/upload-artifact@v3
