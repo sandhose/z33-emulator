@@ -49,7 +49,7 @@ jobs:
         uses: actions-rs/cargo@v1.0.3
         with:
           command: build
-          args: --release --target=${{ matrix.target }}
+          args: --release --target=${{ matrix.target }} -p z33-cli
 
       - name: Upload the binary as artifact
         uses: actions/upload-artifact@v3
