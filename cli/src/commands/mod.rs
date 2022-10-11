@@ -1,4 +1,4 @@
-use clap::{AppSettings, Parser};
+use clap::Parser;
 
 mod completion;
 mod dump;
@@ -7,7 +7,6 @@ mod print;
 mod run;
 
 #[derive(Parser)]
-#[clap(setting = AppSettings::DeriveDisplayOrder)]
 pub enum Subcommand {
     /// Preprocess, compile and run a program
     Run(self::run::RunOpt),

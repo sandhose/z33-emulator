@@ -1,4 +1,4 @@
-use clap::{ArgAction, ArgEnum, Command, IntoApp, Parser};
+use clap::{ArgAction, Command, CommandFactory, Parser, ValueEnum};
 use clap_complete::{
     generate,
     shells::{Bash, Elvish, Fish, PowerShell, Zsh},
@@ -9,11 +9,11 @@ use crate::Opt;
 
 #[derive(Parser, Debug)]
 pub struct CompletionOpt {
-    #[clap(arg_enum, action = ArgAction::Set)]
+    #[clap(value_enum, action = ArgAction::Set)]
     shell: ShellKind,
 }
 
-#[derive(ArgEnum, Clone, Debug)]
+#[derive(ValueEnum, Clone, Debug)]
 enum ShellKind {
     Bash,
     Elvish,
