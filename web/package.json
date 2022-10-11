@@ -7,7 +7,7 @@
   },
   "devDependencies": {
     "@rollup/plugin-alias": "^4.0.0",
-    "@rollup/plugin-html": "^0.2.0",
+    "@rollup/plugin-html": "^1.0.0",
     "@rollup/plugin-node-resolve": "^15.0.0",
     "@rollup/plugin-sucrase": "^5.0.0",
     "@wasm-tool/rollup-plugin-rust": "^2.3.1",
