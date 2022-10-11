@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use std::marker::PhantomData;
 
 use ansi_term::Style;
-use clap::{Command, IntoApp};
+use clap::{Command, CommandFactory};
 use rustyline::{
     completion::Completer,
     highlight::Highlighter,
@@ -15,11 +15,11 @@ use rustyline_derive::Helper;
 
 /// Rustyline helper, that handles interactive completion, highlighting and hinting.
 #[derive(Helper, Debug)]
-pub(crate) struct RunHelper<T: IntoApp> {
+pub(crate) struct RunHelper<T: CommandFactory> {
     app: PhantomData<T>,
 }
 
-impl<T: IntoApp> RunHelper<T> {
+impl<T: CommandFactory> RunHelper<T> {
     pub fn new() -> Self {
         RunHelper { app: PhantomData }
     }
@@ -46,7 +46,7 @@ fn suggest(command: &Command, input: &[String]) -> (usize, HashSet<String>) {
 
     // Find the curresponding positional arg if it exists and add suggestions for it
     if let Some(arg) = command.get_positionals().nth(index) {
-        let additional: Vec<&str> = match arg.get_id() {
+        let additional: Vec<&str> = match arg.get_id().as_str() {
             "register" | "address" => vec!["%a", "%b", "%sp", "%sr"],
             _ => Vec::new(),
         };
@@ -72,7 +72,7 @@ fn suggest(command: &Command, input: &[String]) -> (usize, HashSet<String>) {
     }
 }
 
-impl<T: IntoApp> Completer for RunHelper<T> {
+impl<T: CommandFactory> Completer for RunHelper<T> {
     type Candidate = String;
 
     fn complete(
@@ -104,7 +104,7 @@ impl<T: IntoApp> Completer for RunHelper<T> {
     }
 }
 
-impl<T: IntoApp> Highlighter for RunHelper<T> {
+impl<T: CommandFactory> Highlighter for RunHelper<T> {
     fn highlight_hint<'h>(&self, hint: &'h str) -> Cow<'h, str> {
         let style = Style::new().dimmed();
         let hint = style.paint(hint).to_string();
@@ -122,7 +122,7 @@ impl<T: IntoApp> Highlighter for RunHelper<T> {
     }
 }
 
-impl<T: IntoApp> Hinter for RunHelper<T> {
+impl<T: CommandFactory> Hinter for RunHelper<T> {
     type Hint = String;
     fn hint(&self, line: &str, pos: usize, _ctx: &Context<'_>) -> Option<String> {
         let line = &line[..pos];
@@ -149,7 +149,7 @@ impl<T: IntoApp> Hinter for RunHelper<T> {
     }
 }
 
-impl<T: IntoApp> Validator for RunHelper<T> {
+impl<T: CommandFactory> Validator for RunHelper<T> {
     fn validate(&self, ctx: &mut ValidationContext) -> rustyline::Result<ValidationResult> {
         let input = ctx.input();
         let res = shell_words::split(input);
