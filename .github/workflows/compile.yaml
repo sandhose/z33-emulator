@@ -70,9 +70,6 @@ jobs:
       - name: Install zig, cargo-zigbuild and cargo-xwin
         run: pip3 install ziglang cargo-zigbuild cargo-xwin
 
-      - name: Install cargo-zigbuild
-        run: cargo install cargo-zigbuild
-
       - name: Download the macOS SDK
         run: curl -L "https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacOSX11.3.sdk.tar.xz" | tar -J -x -C /opt
 
