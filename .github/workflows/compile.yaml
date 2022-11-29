@@ -45,11 +45,11 @@ jobs:
             exe: z33-cli
 
           - target: aarch64-pc-windows-msvc
-            tool: xwin
+            tool: xwin build
             exe: z33-cli.exe
 
-          - target: aarch64-pc-windows-msvc
-            tool: xwin
+          - target: x86_64-pc-windows-msvc
+            tool: xwin build
             exe: z33-cli.exe
 
     steps:
