@@ -1021,7 +1021,7 @@ checksum = "09041cd90cf85f7f8b2df60c646f853b7f535ce68f85244eb6731cf89fa498ec"
 
 [[package]]
 name = "z33-cli"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "ansi_term",
  "anyhow",
@@ -1041,7 +1041,7 @@ dependencies = [
 
 [[package]]
 name = "z33-emulator"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "bitflags",
  "indoc",
@@ -1056,7 +1056,7 @@ dependencies = [
 
 [[package]]
 name = "z33-web"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "serde",
  "serde-wasm-bindgen",
