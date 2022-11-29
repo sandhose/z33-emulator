@@ -1,69 +1,69 @@
 on:
   push:
+    branches: [ main ]
   pull_request:
+    branches: [ main ]
   release:
     types:
       - published
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_NET_GIT_FETCH_WITH_CLI: "true"
 
 name: Compile
 
 jobs:
   build:
     name: Build for ${{ matrix.target }}
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-22.04
+    env:
+      SDKROOT: /opt/MacOSX11.3.sdk
+
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - target: aarch64-unknown-linux-musl
-            os: ubuntu-22.04
-            exe: z33-cli
-            use-cross: true
-          - target: x86_64-unknown-linux-musl
-            os: ubuntu-22.04
-            exe: z33-cli
-            use-cross: false
-          - target: aarch64-apple-darwin
-            os: macos-latest
-            exe: z33-cli
-            use-cross: false
-          - target: x86_64-apple-darwin
-            os: macos-12
-            exe: z33-cli
-            use-cross: false
-          - target: x86_64-pc-windows-msvc
-            os: windows-2022
-            exe: z33-cli.exe
-            use-cross: false
+        target:
+          - aarch64-unknown-linux-musl
+          - x86_64-unknown-linux-musl
+          - aarch64-apple-darwin
+          - x86_64-apple-darwin
 
     steps:
       - name: Checkout sources
         uses: actions/checkout@v3
 
-      - name: Setup Rust toolchain
-        uses: actions-rs/toolchain@v1.0.7
-        with:
-          toolchain: stable
-          target: ${{ matrix.target }}
-          override: true
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install stable-${{ matrix.target }}
+          rustup default stable-${{ matrix.target }}
 
       - name: Setup Rust build cache
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: ${{ matrix.target }}
 
+      - name: Install zig
+        run: pip3 install ziglang
+
+      - name: Install cargo-zigbuild
+        run: cargo install cargo-zigbuild
+
+      - name: Download the macOS SDK
+        run: curl -L "https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacOSX11.3.sdk.tar.xz" | tar -J -x -C /opt
+
       - name: Build the binary
-        uses: actions-rs/cargo@v1.0.3
-        with:
-          command: build
-          args: --release --target=${{ matrix.target }} -p z33-cli
-          use-cross: ${{ matrix.use-cross }}
+        run: cargo zigbuild --release --target=${{ matrix.target }} -p z33-cli
 
       - name: Upload the binary as artifact
         uses: actions/upload-artifact@v3
         with:
           name: z33-cli-${{ matrix.target }}
-          path: target/${{ matrix.target }}/release/${{ matrix.exe }}
+          path: target/${{ matrix.target }}/release/z33-cli
 
   publish:
     name: Upload the release artifacts
