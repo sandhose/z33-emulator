@@ -92,7 +92,7 @@ impl<T: CommandFactory> Completer for RunHelper<T> {
 
             // If the last char was a space, insert an empty word to autocomplete the next word
             if complete {
-                words.push("".to_string());
+                words.push(String::new());
             }
 
             let (offset, candidates) = suggest(&app, words.as_slice());
@@ -135,7 +135,7 @@ impl<T: CommandFactory> Hinter for RunHelper<T> {
 
         // If the last char was a space, insert an empty word to autocomplete the next word
         if complete {
-            words.push("".to_string());
+            words.push(String::new());
         }
 
         let app = T::command();
