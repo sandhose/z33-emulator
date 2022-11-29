@@ -39,8 +39,9 @@ jobs:
 
       - name: Install Rust toolchain
         run: |
-          rustup toolchain install stable-${{ matrix.target }}
-          rustup default stable-${{ matrix.target }}
+          rustup toolchain install stable
+          rustup default stable
+          rustup target add ${{ matrix.target }}
 
       - name: Setup Rust build cache
         uses: Swatinem/rust-cache@v2
