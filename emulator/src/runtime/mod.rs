@@ -115,7 +115,7 @@ impl Computer {
         fn inner(c: &mut Computer) -> Result<usize> {
             let inst = c.decode_instruction()?;
             let cost = inst.cost();
-            tracing::Span::current().record("cost", &cost);
+            tracing::Span::current().record("cost", cost);
             info!("Executing instruction \"{}\"", inst);
             // This clone is necessary as `inst` is borrowed from `self`.
             // The computer might modify the cell where the instruction is stored when executing it.
