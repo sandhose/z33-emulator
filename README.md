@@ -70,8 +70,8 @@ Releasing a new version is done by running doing the following steps:
    ```sh
    # Edit the bump flag accordingly
    cargo set-version --bump patch
-   # Version can be extracted like that
-   VERSION="$(cargo metadata --format-version=1 | jq -r '.packages[] | select(.name == "z33-cli").version')"
+   # Crate version can be extracted like that
+   VERSION="v$(cargo metadata --format-version=1 | jq -r '.packages[] | select(.name == "z33-cli").version')"
    ```
  - Commit the changes
    ```sh
@@ -80,7 +80,7 @@ Releasing a new version is done by running doing the following steps:
    ```
  - Create a new git tag and push it
    ```sh
-   git tag -s ${VERSION}
+   git tag -s "${VERSION}"
    git push --tags
    ```
  - Wait for the CI to create the draft GitHub release
@@ -90,7 +90,7 @@ Releasing a new version is done by running doing the following steps:
 
 ```sh
 cargo set-version --bump patch
-VERSION="$(cargo metadata --format-version=1 | jq -r '.packages[] | select(.name == "z33-cli").version')"
+VERSION="v$(cargo metadata --format-version=1 | jq -r '.packages[] | select(.name == "z33-cli").version')"
 git commit -m "${VERSION}" ./Cargo.lock ./{web,emulator,cli}/Cargo.toml
 git push
 git tag -s "${VERSION}"
