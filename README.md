@@ -8,12 +8,21 @@ This is an emulator for the z33 architecture used in the _"Architecture des Syst
 
 Binaries for [the latest release](https://github.com/sandhose/z33-emulator/releases/latest) are available here:
 
-- [Linux (x86 64bit)](https://github.com/sandhose/z33-emulator/releases/latest/download/z33-cli-x86_64-unknown-linux-musl.tar.gz)
-- [Linux (ARM 64bit)](https://github.com/sandhose/z33-emulator/releases/latest/download/z33-cli-aarch64-unknown-linux-musl.tar.gz)
-- [macOS (x86 64bit)](https://github.com/sandhose/z33-emulator/releases/latest/download/z33-cli-x86_64-apple-darwin.tar.gz)
-- [macOS (ARM 64bit)](https://github.com/sandhose/z33-emulator/releases/latest/download/z33-cli-aarch64-apple-darwin.tar.gz)
-- [Windows (x86 64bit)](https://github.com/sandhose/z33-emulator/releases/latest/download/z33-cli-x86_64-pc-windows-msvc.exe)
-- [Windows (ARM 64bit)](https://github.com/sandhose/z33-emulator/releases/latest/download/z33-cli-aarch64-pc-windows-msvc.exe)
+- [Linux (x86 64bit)](https://github.com/sandhose/z33-emulator/releases/latest/download/z33-cli-x86_64-linux.tar.gz)
+- [Linux (ARM 64bit)](https://github.com/sandhose/z33-emulator/releases/latest/download/z33-cli-aarch64-linux.tar.gz)
+- [macOS (x86 64bit)](https://github.com/sandhose/z33-emulator/releases/latest/download/z33-cli-x86_64-macos.tar.gz)
+- [macOS (ARM 64bit)](https://github.com/sandhose/z33-emulator/releases/latest/download/z33-cli-aarch64-macos.tar.gz)
+- [Windows (x86 64bit)](https://github.com/sandhose/z33-emulator/releases/latest/download/z33-cli-x86_64-windows.exe)
+- [Windows (ARM 64bit)](https://github.com/sandhose/z33-emulator/releases/latest/download/z33-cli-aarch64-windows.exe)
+
+#### Using the binaries on macOS
+
+The macOS binaries are not signed, and macOS will quarantine them by default.
+This can be fixed by removing the quarantine flag on the binary:
+
+```sh
+xattr -r -d com.apple.quarantine [path to]/z33-cli
+```
 
 ### Compiling
 
