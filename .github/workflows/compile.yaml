@@ -27,30 +27,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - target: aarch64-unknown-linux-musl
-            tool: zigbuild
-            exe: z33-cli
-
-          - target: x86_64-unknown-linux-musl
-            tool: zigbuild
-            exe: z33-cli
-
-          - target: aarch64-apple-darwin
-            tool: zigbuild
-            exe: z33-cli
-
-          - target: x86_64-apple-darwin
-            tool: zigbuild
-            exe: z33-cli
-
-          - target: aarch64-pc-windows-msvc
-            tool: xwin build
-            exe: z33-cli.exe
-
-          - target: x86_64-pc-windows-msvc
-            tool: xwin build
-            exe: z33-cli.exe
+        target:
+          - aarch64-unknown-linux-musl
+          - x86_64-unknown-linux-musl
+          - aarch64-apple-darwin
+          - x86_64-apple-darwin
 
     steps:
       - name: Checkout sources
@@ -67,24 +48,96 @@ jobs:
         with:
           shared-key: ${{ matrix.target }}
 
-      - name: Install zig, cargo-zigbuild and cargo-xwin
-        run: pip3 install ziglang cargo-zigbuild cargo-xwin
+      - name: Install zig and cargo-zigbuild
+        run: pip3 install ziglang cargo-zigbuild
 
       - name: Download the macOS SDK
+        if: contains(matrix.target, 'darwin')
         run: curl -L "https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacOSX11.3.sdk.tar.xz" | tar -J -x -C /opt
 
       - name: Build the binary
-        run: cargo ${{ matrix.tool }} --release --target=${{ matrix.target }} -p z33-cli
+        run: cargo zigbuild --release --target=${{ matrix.target }} -p z33-cli
+
+      - name: Create the archive
+        run: tar -czvf z33-cli-${{ matrix.target }}.tar.gz --owner=0 --group=0  -C target/${{ matrix.target }}/release/ z33-cli
 
       - name: Upload the binary as artifact
         uses: actions/upload-artifact@v3
         with:
-          name: z33-cli-${{ matrix.target }}
-          path: target/${{ matrix.target }}/release/${{ matrix.exe }}
+          name: z33-cli-${{ matrix.target }}.tar.gz
+          path: z33-cli-${{ matrix.target }}.tar.gz
+
+
+  build-windows:
+    name: Build for Windows ${{ matrix.arch }}
+    runs-on: ubuntu-22.04
+    env:
+      XWIN_ARCH: ${{ matrix.arch }}
+      XWIN_VARIANT: onecore
+      XWIN_CACHE_DIR: ./cargo-xwin
+
+    strategy:
+      fail-fast: false
+      matrix:
+        arch:
+          - x86_64
+          - aarch64
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v3
+
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install stable
+          rustup default stable
+          rustup target add ${{ matrix.arch }}-pc-windows-msvc
+
+      - name: Setup Rust build cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ${{ matrix.arch }}
+
+      - name: Setup cargo-xwin cache
+        uses: actions/cache@v3
+        with:
+          path: cargo-xwin
+          key: cargo-xwin-${{ matrix.arch }}
+
+      - name: Install cargo-xwin
+        run: pip3 install cargo-xwin
+
+      - name: Build the binary
+        run: cargo xwin build --release --target=${{ matrix.arch }}-pc-windows-msvc -p z33-cli
+
+      - name: Move the binary
+        run: mv target/${{ matrix.arch }}-pc-windows-msvc/release/z33-cli.exe ./z33-cli-${{ matrix.arch }}-windows.exe
+
+      - name: Upload the binary as artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: z33-cli-${{ matrix.arch }}-windows.exe
+          path: z33-cli-${{ matrix.arch }}-windows.exe
+
+
+  show:
+    name: Show the build artifacts
+    needs: [build, build-windows]
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Download the artifacts from the previous job
+        uses: actions/download-artifact@v3
+        with:
+          path: artifacts
+
+      - name: Show the downloaded artifacts
+        run: find artifacts/
+
 
   publish:
     name: Upload the release artifacts
-    needs: [build]
+    needs: [build, build-windows]
     runs-on: ubuntu-22.04
     if: github.event_name == 'release'
 
@@ -94,37 +147,13 @@ jobs:
         with:
           path: artifacts
 
-      - name: Fix permissions (x86_64-apple-darwin)
-        run: chmod +x artifacts/z33-cli-x86_64-apple-darwin/z33-cli
-
-      - name: Fix permissions (aarch64-apple-darwin)
-        run: chmod +x artifacts/z33-cli-aarch64-apple-darwin/z33-cli
-
-      - name: Fix permissions (x86_64-unknown-linux-musl)
-        run: chmod +x artifacts/z33-cli-x86_64-unknown-linux-musl/z33-cli
-
-      - name: Fix permissions (aarch64-unknown-linux-musl)
-        run: chmod +x artifacts/z33-cli-aarch64-unknown-linux-musl/z33-cli
-
-      - name: Create darwin x86_64 archive
-        run: tar -czvf z33-cli-x86_64-apple-darwin.tar.gz --owner=0 --group=0  -C artifacts/z33-cli-x86_64-apple-darwin/ z33-cli
-
-      - name: Create darwin aarch64 archive
-        run: tar -czvf z33-cli-aarch64-apple-darwin.tar.gz --owner=0 --group=0  -C artifacts/z33-cli-aarch64-apple-darwin/ z33-cli
-
-      - name: Create linux x86_64 archive
-        run: tar -czvf z33-cli-x86_64-unknown-linux-musl.tar.gz --owner=0 --group=0  -C artifacts/z33-cli-x86_64-unknown-linux-musl/ z33-cli
-
-      - name: Create linux aarch64 archive
-        run: tar -czvf z33-cli-aarch64-unknown-linux-musl.tar.gz --owner=0 --group=0  -C artifacts/z33-cli-aarch64-unknown-linux-musl/ z33-cli
-
       - name: Upload darwin x86_64 archive
         uses: actions/upload-release-asset@v1.0.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./z33-cli-x86_64-apple-darwin.tar.gz
+          asset_path: ./artifacts/z33-cli-x86_64-apple-darwin.tar.gz/z33-cli-x86_64-apple-darwin.tar.gz
           asset_name: z33-cli-x86_64-apple-darwin.tar.gz
           asset_content_type: application/tar+gzip
 
@@ -134,7 +163,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./z33-cli-aarch64-apple-darwin.tar.gz
+          asset_path: ./artifacts/z33-cli-aarch64-apple-darwin.tar.gz/z33-cli-aarch64-apple-darwin.tar.gz
           asset_name: z33-cli-aarch64-apple-darwin.tar.gz
           asset_content_type: application/tar+gzip
 
@@ -144,7 +173,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./z33-cli-x86_64-unknown-linux-musl.tar.gz
+          asset_path: ./artifacts/z33-cli-x86_64-unknown-linux-musl.tar.gz/z33-cli-x86_64-unknown-linux-musl.tar.gz
           asset_name: z33-cli-x86_64-unknown-linux-musl.tar.gz
           asset_content_type: application/tar+gzip
 
@@ -154,7 +183,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./z33-cli-aarch64-unknown-linux-musl.tar.gz
+          asset_path: ./artifacts/z33-cli-aarch64-unknown-linux-musl.tar.gz/z33-cli-aarch64-unknown-linux-musl.tar.gz
           asset_name: z33-cli-aarch64-unknown-linux-musl.tar.gz
           asset_content_type: application/tar+gzip
 
@@ -164,8 +193,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./artifacts/z33-cli-x86_64-pc-windows-msvc/z33-cli.exe
-          asset_name: z33-cli-x86_64-pc-windows-msvc.exe
+          asset_path: ./artifacts/z33-cli-x86_64-windows.exe/z33-cli-x86_64-windows.exe
+          asset_name: z33-cli-x86_64-windows.exe
           asset_content_type: application/vnd.microsoft.portable-executable
 
       - name: Upload windows aarch64 executable
@@ -174,6 +203,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./artifacts/z33-cli-aarch64-pc-windows-msvc/z33-cli.exe
-          asset_name: z33-cli-aarch64-pc-windows-msvc.exe
+          asset_path: ./artifacts/z33-cli-aarch64-windows.exe/z33-cli-aarch64-windows.exe
+          asset_name: z33-cli-aarch64-windows.exe
           asset_content_type: application/vnd.microsoft.portable-executable
