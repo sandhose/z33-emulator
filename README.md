@@ -62,6 +62,43 @@ cargo build --release
 - `interrupt`: Trigger a hardware interrupt
 - `exit`: Exit the emulator
 
+## Releasing
+
+Releasing a new version is done by running doing the following steps:
+
+ - Change the crate version in the `Cargo.toml`. This can be automated using [`cargo-edit`](https://github.com/killercup/cargo-edit):
+   ```sh
+   # Edit the bump flag accordingly
+   cargo set-version --bump patch
+   # Version can be extracted like that
+   VERSION="$(cargo metadata --format-version=1 | jq -r '.packages[] | select(.name == "z33-cli").version')"
+   ```
+ - Commit the changes
+   ```sh
+   git commit -m "${VERSION}" ./Cargo.lock ./{web,emulator,cli}/Cargo.toml
+   git push
+   ```
+ - Create a new git tag and push it
+   ```sh
+   git tag -s ${VERSION}
+   git push --tags
+   ```
+ - Wait for the CI to create the draft GitHub release
+ - Finish the release from the GitHub interface
+
+<details><summary>Full script</summary>
+
+```sh
+cargo set-version --bump patch
+VERSION="$(cargo metadata --format-version=1 | jq -r '.packages[] | select(.name == "z33-cli").version')"
+git commit -m "${VERSION}" ./Cargo.lock ./{web,emulator,cli}/Cargo.toml
+git push
+git tag -s "${VERSION}"
+git push --tags
+```
+
+</details>
+
 # License
 
 [MIT](./LICENSE) © [Quentin Gliech](https://sandhose.fr)
