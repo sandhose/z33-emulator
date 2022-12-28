@@ -305,7 +305,7 @@ impl Instruction {
 
             Self::Neg(reg) => {
                 let val = reg.extract_word(computer)?;
-                let res = -(val as i64);
+                let res = -val;
                 let res = res as Word;
                 debug!("-{} = {}", val, res);
                 computer.set_register(reg, res.into())?;

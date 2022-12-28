@@ -524,7 +524,7 @@ mod tests {
                 }
                 .with_location((77, 12)),
                 Raw {
-                    content: "".to_string(),
+                    content: String::new(),
                 }
                 .with_location((90, 0))
             ]
@@ -582,7 +582,7 @@ mod tests {
                 }
                 .with_location((125, 27)),
                 Raw {
-                    content: "".to_string()
+                    content: String::new()
                 }
                 .with_location((153, 0)),
                 Raw {
@@ -590,7 +590,7 @@ mod tests {
                 }
                 .with_location((154, 10)),
                 Raw {
-                    content: "".to_string()
+                    content: String::new()
                 }
                 .with_location((165, 0)),
             ]

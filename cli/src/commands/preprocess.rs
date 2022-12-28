@@ -18,7 +18,7 @@ impl PreprocessOpt {
         info!(path = ?self.input, "Reading program");
         let preprocessor = Preprocessor::new(fs).and_load(&self.input);
         let source = preprocessor.preprocess(&self.input)?;
-        println!("{}", source);
+        println!("{source}");
         Ok(())
     }
 }

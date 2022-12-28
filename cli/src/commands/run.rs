@@ -52,7 +52,7 @@ impl RunOpt {
                     error!("{}", error);
                 }
 
-                let msg = format!("{}", e);
+                let msg = format!("{e}");
                 let mut files = SimpleFiles::new();
                 let file_ids: HashMap<_, _> = preprocessor
                     .sources()
@@ -96,15 +96,15 @@ impl RunOpt {
         let program = match parse(source) {
             Ok(p) => p,
             Err(e) => {
-                let msg = format!("{}", e);
+                let msg = format!("{e}");
                 let labels: Vec<_> = e
                     .errors
                     .iter()
                     .map(|(location, kind)| {
                         let message = match kind {
                             nom::error::VerboseErrorKind::Context(s) => (*s).to_owned(),
-                            nom::error::VerboseErrorKind::Char(c) => format!("expected '{}'", c),
-                            nom::error::VerboseErrorKind::Nom(code) => format!("{:?}", code),
+                            nom::error::VerboseErrorKind::Char(c) => format!("expected '{c}'"),
+                            nom::error::VerboseErrorKind::Nom(code) => format!("{code:?}"),
                         };
                         let offset = char_offset(source, location);
 
@@ -141,7 +141,7 @@ impl RunOpt {
                     last_error = error;
                 }
 
-                let msg = format!("{}", last_error);
+                let msg = format!("{last_error}");
 
                 let location = match &e {
                     CompilationError::MemoryLayout(e) => e.location(),

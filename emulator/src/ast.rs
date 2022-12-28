@@ -166,7 +166,7 @@ impl<L: std::fmt::Display> Node<L> {
                 content.clone()
             };
 
-            writeln!(f, "{:?}({:?}) @ {}", self.kind, content, self.location)?;
+            writeln!(f, "{:?}({content:?}) @ {}", self.kind, self.location)?;
         } else {
             writeln!(f, "{:?} @ {}", self.kind, self.location)?;
         }

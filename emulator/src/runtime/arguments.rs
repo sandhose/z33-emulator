@@ -365,7 +365,7 @@ mod conversions {
                 if index != 0 {
                     write!(f, "/")?;
                 }
-                write!(f, "{}", entry)?;
+                write!(f, "{entry}")?;
             }
             Ok(())
         }
