@@ -274,7 +274,7 @@ pub(crate) fn run_interactive(
             match Command::try_parse_from(words) {
                 Ok(c) => c,
                 Err(e) => {
-                    eprintln!("{}", e);
+                    eprintln!("{e}");
                     continue;
                 }
             }

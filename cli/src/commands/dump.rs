@@ -34,7 +34,7 @@ impl DumpOpt {
         // Transform the AST relative locations to absolute ones
         let ast = ast.map_location(&AbsoluteLocation::default());
 
-        println!("{}", ast);
+        println!("{ast}");
 
         Ok(())
     }

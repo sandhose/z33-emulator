@@ -162,7 +162,7 @@ impl<L> std::fmt::Display for Node<L> {
                 b.inner.with_parent(self)
             ),
             Node::Not(a) => write!(f, "!{}", a.inner.with_parent(self)),
-            Node::Literal(a) => write!(f, "{}", a),
+            Node::Literal(a) => write!(f, "{a}"),
             Node::Defined(a) => write!(f, "defined({})", a.inner),
         }
     }

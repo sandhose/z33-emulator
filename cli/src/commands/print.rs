@@ -25,7 +25,7 @@ impl PrintOpt {
 
         debug!("Parsing program");
         let program = parse(source).unwrap(); // TODO: the error is tied to the input
-        println!("{}", program);
+        println!("{program}");
 
         Ok(())
     }

@@ -80,7 +80,7 @@ impl<L> Layout<L> {
         let mut v: Vec<_> = self
             .memory
             .iter()
-            .map(|(k, v)| (*k, format!("{}", v)))
+            .map(|(k, v)| (*k, format!("{v}")))
             .collect();
         v.sort_by_key(|&(k, _)| k);
         v

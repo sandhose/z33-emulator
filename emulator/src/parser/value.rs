@@ -69,7 +69,7 @@ impl<L> AstNode<L> for InstructionKind {
     }
 
     fn content(&self) -> Option<String> {
-        Some(format!("{}", self))
+        Some(format!("{self}"))
     }
 }
 
@@ -213,7 +213,7 @@ impl<L> AstNode<L> for DirectiveKind {
     }
 
     fn content(&self) -> Option<String> {
-        Some(format!("{}", self))
+        Some(format!("{self}"))
     }
 }
 
@@ -357,7 +357,7 @@ impl<L: Clone> AstNode<L> for InstructionArgument<L> {
 
     fn content(&self) -> Option<String> {
         match self {
-            InstructionArgument::Register(r) => Some(format!("{}", r)),
+            InstructionArgument::Register(r) => Some(format!("{r}")),
             _ => None,
         }
     }

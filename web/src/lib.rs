@@ -37,7 +37,7 @@ pub fn dump(source: &str) -> Result<JsValue, JsValue> {
     let source = match preprocessor.preprocess(&path) {
         Ok(s) => s,
         Err(e) => {
-            output.error = Some(format!("{}", e));
+            output.error = Some(format!("{e}"));
             return Ok(serde_wasm_bindgen::to_value(&output)?);
         }
     };
@@ -49,7 +49,7 @@ pub fn dump(source: &str) -> Result<JsValue, JsValue> {
     let program = match program {
         Ok(p) => p,
         Err(e) => {
-            output.error = Some(format!("{:#?}", e));
+            output.error = Some(format!("{e:#?}"));
             return Ok(serde_wasm_bindgen::to_value(&output)?);
         }
     };
@@ -59,12 +59,12 @@ pub fn dump(source: &str) -> Result<JsValue, JsValue> {
     // Transform the AST relative locations to absolute ones
     let ast = ast.map_location(&AbsoluteLocation::default());
 
-    output.ast = Some(format!("{}", ast));
+    output.ast = Some(format!("{ast}"));
 
     let layout = layout(program.inner);
 
     if let Err(e) = layout {
-        output.error = Some(format!("{}", e));
+        output.error = Some(format!("{e}"));
         return Ok(serde_wasm_bindgen::to_value(&output)?);
     }
 

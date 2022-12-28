@@ -120,7 +120,7 @@ impl<L> AstNode<L> for Reg {
     }
 
     fn content(&self) -> Option<String> {
-        Some(format!("{}", self))
+        Some(format!("{self}"))
     }
 }
 

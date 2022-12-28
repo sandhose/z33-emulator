@@ -148,7 +148,7 @@ impl<L: Clone> AstNode<L> for Node<L> {
 
     fn content(&self) -> Option<String> {
         match self {
-            Node::Literal(l) => Some(format!("{}", l)),
+            Node::Literal(l) => Some(format!("{l}")),
             Node::Variable(v) => Some(v.clone()),
             _ => None,
         }
@@ -161,7 +161,7 @@ impl<L> std::fmt::Display for Node<L> {
             // Special case for indexed arguments
             match self {
                 Node::Invert(a) => write!(f, "- {}", a.inner),
-                n => write!(f, "+ {}", n),
+                n => write!(f, "+ {n}"),
             }
         } else {
             match self {
@@ -215,8 +215,8 @@ impl<L> std::fmt::Display for Node<L> {
                 ),
                 Node::Invert(a) => write!(f, "-{}", a.inner.with_parent(self)),
                 Node::BinaryNot(a) => write!(f, "~{}", a.inner.with_parent(self)),
-                Node::Literal(a) => write!(f, "{}", a),
-                Node::Variable(a) => write!(f, "{}", a),
+                Node::Literal(a) => write!(f, "{a}"),
+                Node::Variable(a) => write!(f, "{a}"),
             }
         }
     }
