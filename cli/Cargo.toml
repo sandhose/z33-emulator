@@ -19,7 +19,7 @@ shell-words = "1.1.0"
 ansi_term = "0.12.1"
 clap_complete = "4.0.7"
 atty = "0.2.14"
-nom = "7.1.1"
+nom = "7.1.2"
 anyhow = "1.0.68"
 thiserror = "1.0.38"
 codespan-reporting = { git = "https://github.com/brendanzab/codespan.git" }
