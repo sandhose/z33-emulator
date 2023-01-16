@@ -12,7 +12,7 @@ license = "MIT"
 z33-emulator = { path = "../emulator" }
 tracing = "0.1.37"
 tracing-subscriber =  { version = "0.3.16", features = ["env-filter", "json"] }
-rustyline = "10.0.0"
+rustyline = "10.1.0"
 rustyline-derive = "0.7.0"
 clap = { version = "4.0.32", features = ["derive"] }
 shell-words = "1.1.0"
