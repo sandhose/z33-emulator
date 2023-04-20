@@ -28,7 +28,7 @@ pub enum CellError {
 }
 
 /// Represents a cell in memory and in general purpose registers
-#[derive(Debug, Clone, PartialEq, Eq, Display)]
+#[derive(Debug, Clone, PartialEq, Eq, Display, Default)]
 pub enum Cell {
     /// An instruction
     ///
@@ -48,13 +48,8 @@ pub enum Cell {
 
     /// An empty cell, no value was ever set here,
     #[display("0")]
+    #[default]
     Empty,
-}
-
-impl Default for Cell {
-    fn default() -> Self {
-        Cell::Empty
-    }
 }
 
 impl Cell {
