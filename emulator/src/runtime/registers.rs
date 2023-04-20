@@ -10,7 +10,7 @@ use crate::{
 use super::memory::{Cell, CellError, TryFromCell};
 
 bitflags! {
-    #[derive(Default)]
+    #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
     pub struct StatusRegister: C::Word {
         const CARRY            = 0b000_0000_0001;
         const ZERO             = 0b000_0000_0010;
@@ -57,7 +57,7 @@ impl Registers {
             Reg::B => self.b.extract_word(),
             Reg::PC => Ok(self.pc.into()),
             Reg::SP => Ok(self.sp.into()),
-            Reg::SR => Ok(self.sr.bits),
+            Reg::SR => Ok(self.sr.bits()),
         }
     }
 
@@ -71,7 +71,7 @@ impl Registers {
             Reg::SP => {
                 self.sp = C::Address::try_from_cell(&value)?;
             }
-            Reg::SR => self.sr.bits = C::Word::try_from_cell(&value)?,
+            Reg::SR => self.sr = StatusRegister::from_bits_retain(C::Word::try_from_cell(&value)?),
         };
         Ok(())
     }
