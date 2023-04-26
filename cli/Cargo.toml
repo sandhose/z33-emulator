@@ -10,7 +10,7 @@ license = "MIT"
 
 [dependencies]
 z33-emulator = { path = "../emulator" }
-tracing = "0.1.37"
+tracing = "0.1.38"
 tracing-subscriber =  { version = "0.3.16", features = ["env-filter", "json"] }
 rustyline = "11.0.0"
 rustyline-derive = "0.8.0"
