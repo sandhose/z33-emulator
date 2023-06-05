@@ -10,7 +10,7 @@
     "@rollup/plugin-html": "^1.0.2",
     "@rollup/plugin-node-resolve": "^15.1.0",
     "@rollup/plugin-sucrase": "^5.0.1",
-    "@wasm-tool/rollup-plugin-rust": "^2.3.5",
+    "@wasm-tool/rollup-plugin-rust": "^2.4.0",
     "cssnano": "^6.0.0",
     "postcss": "^8.4.24",
     "rollup": "^2.79.1",
