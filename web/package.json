@@ -12,7 +12,7 @@
     "@rollup/plugin-sucrase": "^5.0.1",
     "@wasm-tool/rollup-plugin-rust": "^2.4.0",
     "cssnano": "^6.0.1",
-    "postcss": "^8.4.25",
+    "postcss": "^8.4.26",
     "rollup": "^2.79.1",
     "rollup-plugin-dev": "^2.0.3",
     "rollup-plugin-postcss": "^4.0.0",
