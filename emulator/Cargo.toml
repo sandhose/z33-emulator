@@ -18,5 +18,5 @@ unicode-segmentation = "1.10.1"
 parse-display = "0.8.1"
 
 [dev-dependencies]
-indoc = "2.0.2"
+indoc = "2.0.3"
 pretty_assertions = "1.4.0"
