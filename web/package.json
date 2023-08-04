@@ -23,6 +23,6 @@
     "typescript": "^5.1.6"
   },
   "dependencies": {
-    "monaco-editor": "^0.40.0"
+    "monaco-editor": "^0.41.0"
   }
 }
