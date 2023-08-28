@@ -108,7 +108,7 @@ impl<L> std::fmt::Display for LineContent<L> {
 
                 // then the list of arguments
                 let mut first = true; // This is to properly show comma between arguments
-                for arg in arguments.iter() {
+                for arg in arguments {
                     if !first {
                         write!(f, ",")?;
                     }

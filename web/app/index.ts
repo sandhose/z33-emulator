@@ -1,10 +1,9 @@
-import "./style.css";
 import bindings from "z33-web-bindings";
 
 const samples = {
-  directives: () => import("../../samples/directives.S"),
-  fact: () => import("../../samples/fact.S"),
-  handler: () => import("../../samples/handler.S"),
+  directives: () => import("../../samples/directives.S?raw"),
+  fact: () => import("../../samples/fact.S?raw"),
+  handler: () => import("../../samples/handler.S?raw"),
 };
 
 type Output = {
@@ -12,7 +11,7 @@ type Output = {
   preprocessed?: string;
   error?: string;
   memory?: Array<[number, string]>;
-  labels?: Record<string, number>;
+  labels?: Map<string, number>;
 };
 
 const createSection = (title: string, parent: Element): HTMLOutputElement => {
@@ -86,8 +85,13 @@ const createSection = (title: string, parent: Element): HTMLOutputElement => {
     consoleOutput.value = output.error || "-";
     astOutput.value = output.ast || "-";
     preprocessorOutput.value = output.preprocessed || "-";
-    memoryOutput.value = output.memory.map(([k, v]) => `${k}\t${v}`).join("\n");
-    labelsOutput.value = JSON.stringify(Object.fromEntries([...output.labels]));
+    memoryOutput.value =
+      output.memory?.map(([k, v]) => `${k}\t${v}`).join("\n") || "-";
+    labelsOutput.value = JSON.stringify(
+      Object.fromEntries(output.labels || []),
+      null,
+      2,
+    );
   };
 
   model.onDidChangeContent(() => update());

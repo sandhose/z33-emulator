@@ -1,0 +1,44 @@
+targets = [
+    { triple = "aarch64-unknown-linux-musl" },
+    { triple = "x86_64-unknown-linux-musl" },
+    { triple = "aarch64-apple-darwin" },
+    { triple = "x86_64-apple-darwin" },
+    { triple = "aarch64-pc-windows-msvc" },
+    { triple = "x86_64-pc-windows-msvc" },
+    { triple = "wasm32-unknown-unknown" },
+]
+
+[advisories]
+db-path = "~/.cargo/advisory-db"
+db-urls = ["https://github.com/rustsec/advisory-db"]
+vulnerability = "deny"
+unmaintained = "warn"
+yanked = "warn"
+notice = "warn"
+ignore = []
+
+[licenses]
+unlicensed = "deny"
+allow-osi-fsf-free = "both"
+allow = [
+    "Unicode-DFS-2016",
+]
+copyleft = "deny"
+default = "deny"
+confidence-threshold = 0.8
+
+[bans]
+multiple-versions = "deny"
+wildcards = "allow"
+highlight = "all"
+skip = [
+    # Both are because of the `matchers` dependency in `tracing-subscriber`
+    { name = "regex-automata", version = "0.1.10" },
+    { name = "regex-syntax", version = "0.6.29" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = ["https://github.com/brendanzab/codespan"]
