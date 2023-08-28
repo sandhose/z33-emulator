@@ -334,7 +334,7 @@ impl<FS> Preprocessor<FS> {
             }
 
             Node::Condition { branches, fallback } => {
-                for branch in branches.iter() {
+                for branch in branches {
                     let condition: String = ctx
                         .replace(&branch.condition.inner)
                         .into_iter()

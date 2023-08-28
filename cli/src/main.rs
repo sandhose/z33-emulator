@@ -2,6 +2,7 @@
 #![deny(clippy::all, clippy::pedantic)]
 #![allow(clippy::module_name_repetitions)]
 
+use std::io::IsTerminal;
 use std::process::exit;
 
 use clap::{ArgAction, ArgGroup, Parser};
@@ -54,7 +55,7 @@ impl Opt {
         } else if self.no_color {
             false
         } else {
-            atty::is(atty::Stream::Stdout)
+            std::io::stdout().is_terminal()
         }
     }
 

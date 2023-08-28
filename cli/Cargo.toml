@@ -10,16 +10,16 @@ license = "MIT"
 
 [dependencies]
 z33-emulator = { path = "../emulator" }
-tracing = "0.1.38"
-tracing-subscriber =  { version = "0.3.17", features = ["env-filter", "json"] }
+
+anstyle = "1.0.2"
+anyhow = "1.0.75"
+clap = { version = "4.4.0", features = ["derive"] }
+clap_complete = "4.4.0"
+codespan-reporting = { git = "https://github.com/brendanzab/codespan.git" }
+nom = "7.1.3"
 rustyline = "12.0.0"
 rustyline-derive = "0.9.0"
-clap = { version = "4.1.14", features = ["derive"] }
 shell-words = "1.1.0"
-ansi_term = "0.12.1"
-clap_complete = "4.3.2"
-atty = "0.2.14"
-nom = "7.1.3"
-anyhow = "1.0.75"
 thiserror = "1.0.47"
-codespan-reporting = { git = "https://github.com/brendanzab/codespan.git" }
+tracing = "0.1.37"
+tracing-subscriber =  { version = "0.3.17", features = ["env-filter", "json"] }

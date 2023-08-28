@@ -96,7 +96,7 @@ impl<L> Node<L> {
         f(self);
 
         if let Node::Condition { branches, fallback } = self {
-            for branch in branches.iter() {
+            for branch in branches {
                 for chunk in &branch.body.inner {
                     chunk.inner.walk(f);
                 }

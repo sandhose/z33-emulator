@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::collections::HashSet;
 use std::marker::PhantomData;
 
-use ansi_term::Style;
+use anstyle::Style;
 use clap::{Command, CommandFactory};
 use rustyline::{
     completion::Completer,
@@ -107,8 +107,11 @@ impl<T: CommandFactory> Completer for RunHelper<T> {
 impl<T: CommandFactory> Highlighter for RunHelper<T> {
     fn highlight_hint<'h>(&self, hint: &'h str) -> Cow<'h, str> {
         let style = Style::new().dimmed();
-        let hint = style.paint(hint).to_string();
-        Cow::Owned(hint)
+        Cow::Owned(format!(
+            "{start}{hint}{end}",
+            start = style.render(),
+            end = style.render_reset()
+        ))
     }
 
     fn highlight_prompt<'b, 's: 'b, 'p: 'b>(
@@ -117,8 +120,11 @@ impl<T: CommandFactory> Highlighter for RunHelper<T> {
         _default: bool,
     ) -> Cow<'b, str> {
         let style = Style::new().bold();
-        let prompt = style.paint(prompt).to_string();
-        Cow::Owned(prompt)
+        Cow::Owned(format!(
+            "{start}{prompt}{end}",
+            start = style.render(),
+            end = style.render_reset()
+        ))
     }
 }
 
