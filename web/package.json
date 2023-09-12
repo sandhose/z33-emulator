@@ -13,6 +13,6 @@
     "vite": "^4.4.9"
   },
   "dependencies": {
-    "monaco-editor": "^0.41.0"
+    "monaco-editor": "^0.43.0"
   }
 }
