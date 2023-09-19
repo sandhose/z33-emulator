@@ -13,7 +13,7 @@ z33-emulator = { path = "../emulator" }
 
 anstyle = "1.0.3"
 anyhow = "1.0.75"
-clap = { version = "4.4.2", features = ["derive"] }
+clap = { version = "4.4.4", features = ["derive"] }
 clap_complete = "4.4.1"
 codespan-reporting = { git = "https://github.com/brendanzab/codespan.git" }
 nom = "7.1.3"
