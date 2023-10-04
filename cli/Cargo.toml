@@ -11,7 +11,7 @@ license = "MIT"
 [dependencies]
 z33-emulator = { path = "../emulator" }
 
-anstyle = "1.0.3"
+anstyle = "1.0.4"
 anyhow = "1.0.75"
 clap = { version = "4.4.6", features = ["derive"] }
 clap_complete = "4.4.3"
