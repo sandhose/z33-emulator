@@ -10,7 +10,7 @@
     "@types/node": "^20.8.0",
     "@wasm-tool/rollup-plugin-rust": "^2.4.2",
     "typescript": "^5.2.2",
-    "vite": "^4.4.9"
+    "vite": "^4.4.10"
   },
   "dependencies": {
     "monaco-editor": "^0.43.0"
