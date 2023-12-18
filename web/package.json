@@ -7,7 +7,7 @@
     "start": "vite"
   },
   "devDependencies": {
-    "@types/node": "^20.8.10",
+    "@types/node": "^20.10.5",
     "@wasm-tool/rollup-plugin-rust": "^2.4.5",
     "typescript": "^5.2.2",
     "vite": "^4.5.0"
