@@ -342,7 +342,7 @@ impl<FS> Preprocessor<FS> {
                         .collect();
 
                     let (_, expression) =
-                        parse_condition(&condition).finish().map_err(|_: ()| {
+                        parse_condition(&condition).finish().map_err(|(): ()| {
                             PreprocessorError::ConditionParse {
                                 location: branch.condition.location.clone(),
                             }
@@ -403,28 +403,28 @@ mod tests {
             );
             t.insert(
                 "/define.S".into(),
-                indoc::indoc! {r#"
+                indoc::indoc! {r"
                     #define FOO world
                     hello FOO
                     helloFOO
                     #undefine FOO
                     hello FOO
-                "#}
+                "}
                 .into(),
             );
             t.insert(
                 "/double-define.S".into(),
-                indoc::indoc! {r#"
+                indoc::indoc! {r"
                     #define FOO world
                     #define WHAT hello FOO
                     #define FOO toto
                     WHAT
-                "#}
+                "}
                 .into(),
             );
             t.insert(
                 "/condition.S".into(),
-                indoc::indoc! {r#"
+                indoc::indoc! {r"
                     #if true
                     simple
                     #endif
@@ -449,7 +449,7 @@ mod tests {
                     nested
                     #endif
                     #endif
-                "#}
+                "}
                 .into(),
             );
             t
@@ -471,11 +471,11 @@ mod tests {
         let res = preprocess("/inclusion.S").unwrap();
         assert_eq!(
             res,
-            indoc::indoc! {r#"
+            indoc::indoc! {r"
                 this is before foo.S
                 this is foo.S
                 this is after foo.S
-            "#}
+            "}
         );
     }
 
@@ -484,7 +484,7 @@ mod tests {
         let res = preprocess("/condition.S").unwrap();
         assert_eq!(
             res,
-            indoc::indoc! {r#"
+            indoc::indoc! {r"
                 simple
 
 
@@ -493,7 +493,7 @@ mod tests {
                 definition
 
                 nested
-            "#}
+            "}
         );
     }
 
@@ -502,19 +502,19 @@ mod tests {
         let res = preprocess("/define.S").unwrap();
         assert_eq!(
             res,
-            indoc::indoc! {r#"
+            indoc::indoc! {r"
                 hello world
                 helloFOO
                 hello FOO
-            "#}
+            "}
         );
 
         let res = preprocess("/double-define.S").unwrap();
         assert_eq!(
             res,
-            indoc::indoc! {r#"
+            indoc::indoc! {r"
                 hello world
-            "#}
+            "}
         );
     }
 

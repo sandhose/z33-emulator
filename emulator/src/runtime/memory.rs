@@ -50,8 +50,8 @@ pub enum Cell {
 impl std::fmt::Display for Cell {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Instruction(i) => write!(f, "{}", i),
-            Self::Word(w) => write!(f, "{}", w),
+            Self::Instruction(i) => write!(f, "{i}"),
+            Self::Word(w) => write!(f, "{w}"),
             Self::Char(c) => write!(f, "{} ({:#x})", c, u32::from(*c)),
             Self::Empty => write!(f, "0"),
         }

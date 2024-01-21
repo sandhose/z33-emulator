@@ -390,7 +390,7 @@ fn parse_or_rec<'a, Error: ParseError<&'a str>>(
     let (rest, _) = space0(input)?;
     let (rest, _) = char('|')(rest)?;
     // Check if it's not a "||" to avoid conflict with boolean operations
-    let (rest, _) = not(char('|'))(rest)?;
+    let (rest, ()) = not(char('|'))(rest)?;
     let (rest, _) = space0(rest)?;
 
     cut(move |rest: &'a str| {
@@ -430,7 +430,7 @@ fn parse_and_rec<'a, Error: ParseError<&'a str>>(
     let (rest, _) = space0(input)?;
     let (rest, _) = char('&')(rest)?;
     // Check if it's not a "&&" to avoid conflict with boolean operations
-    let (rest, _) = not(char('&'))(rest)?;
+    let (rest, ()) = not(char('&'))(rest)?;
     let (rest, _) = space0(rest)?;
 
     cut(move |rest: &'a str| {

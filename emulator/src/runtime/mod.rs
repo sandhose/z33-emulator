@@ -127,7 +127,7 @@ impl Computer {
             if let ProcessorError::Exception(e) = e {
                 self.recover_from_exception(&e)
                     .map_err(ProcessorError::Exception)
-                    .map(|_| 1) // TODO: fixed cost for exceptions?
+                    .map(|()| 1) // TODO: fixed cost for exceptions?
             } else {
                 Err(e)
             }
@@ -166,7 +166,7 @@ impl Computer {
     pub fn run(&mut self) -> Result<()> {
         loop {
             match self.step() {
-                Ok(_) => {}
+                Ok(()) => {}
                 Err(ProcessorError::Reset) => return Ok(()),
                 Err(v) => return Err(v),
             }

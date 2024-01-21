@@ -38,7 +38,7 @@ pub struct RelativeLocation {
 }
 
 impl From<()> for RelativeLocation {
-    fn from(_: ()) -> Self {
+    fn from((): ()) -> Self {
         Self::default()
     }
 }
