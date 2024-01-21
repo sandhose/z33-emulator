@@ -176,7 +176,7 @@ fn parse_definition<'a, Error: ParseError<&'a str>>(
         Ok((rest, content))
     })(rest)?;
 
-    let (rest, _) = eat_end_of_line(rest)?;
+    let (rest, ()) = eat_end_of_line(rest)?;
 
     Ok((rest, Node::Definition { key, content }))
 }
@@ -193,7 +193,7 @@ fn parse_undefine<'a, Error: ParseError<&'a str>>(
     let (rest, key) = parse_identifier(rest)?;
     let key = key.to_owned().with_location((input, start, rest));
 
-    let (rest, _) = eat_end_of_line(rest)?;
+    let (rest, ()) = eat_end_of_line(rest)?;
 
     Ok((rest, Node::Undefine { key }))
 }
@@ -212,7 +212,7 @@ fn parse_inclusion<'a, Error: ParseError<&'a str>>(
     let (rest, path) = parse_string_literal(rest)?;
     let path = path.with_location((input, start, rest));
 
-    let (rest, _) = eat_end_of_line(rest)?;
+    let (rest, ()) = eat_end_of_line(rest)?;
 
     Ok((rest, Node::Inclusion { path }))
 }
@@ -231,7 +231,7 @@ fn parse_error<'a, Error: ParseError<&'a str>>(
     let (rest, message) = parse_string_literal(rest)?;
     let message = message.with_location((input, start, rest));
 
-    let (rest, _) = eat_end_of_line(rest)?;
+    let (rest, ()) = eat_end_of_line(rest)?;
 
     Ok((rest, Node::Error { message }))
 }
@@ -258,7 +258,7 @@ fn parse_condition<'a, Error: ParseError<&'a str>>(
     let (rest, condition) = parse_directive_argument(rest)?;
     let condition = condition.to_string().with_location((input, start, rest));
 
-    let (rest, _) = eat_end_of_line(rest)?;
+    let (rest, ()) = eat_end_of_line(rest)?;
     let (rest, _) = line_ending(rest)?;
 
     // Parse its body
@@ -291,7 +291,7 @@ fn parse_condition<'a, Error: ParseError<&'a str>>(
             map(tag("else"), |_| Else),
         ))(rest)?;
 
-        let (rest, _) = eat_end_of_line(rest)?;
+        let (rest, ()) = eat_end_of_line(rest)?;
 
         // We've got an "#end" directive, get out of the loop
         // We don't update the cursor here since we will be re-parsing the #end directive afterward
@@ -319,7 +319,7 @@ fn parse_condition<'a, Error: ParseError<&'a str>>(
     let (rest, _) = space0(rest)?;
     let (rest, _) = tag("endif")(rest)?;
 
-    let (rest, _) = eat_end_of_line(rest)?;
+    let (rest, ()) = eat_end_of_line(rest)?;
 
     Ok((rest, Node::Condition { branches, fallback }))
 }
@@ -327,7 +327,7 @@ fn parse_condition<'a, Error: ParseError<&'a str>>(
 fn parse_raw<'a, Error: ParseError<&'a str>>(
     input: &'a str,
 ) -> IResult<&'a str, Node<RelativeLocation>, Error> {
-    let (rest, _) = not(char('#'))(input)?;
+    let (rest, ()) = not(char('#'))(input)?;
     let (rest, content) = not_line_ending(rest)?;
     // Strip the comment from the content
     let content = if let Some(i) = content.find("//") {
@@ -600,7 +600,7 @@ mod tests {
     #[test]
     fn parse_condition_test() {
         use Node::{Condition, Raw};
-        let input = indoc::indoc! {r#"
+        let input = indoc::indoc! {r"
             #if true
             foo
             #if false
@@ -611,7 +611,7 @@ mod tests {
             #else
             baz
             #endif
-        "#}
+        "}
         .trim_end(); // Remove the trailing linebreak
 
         // Check a few locations used bellow

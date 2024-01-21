@@ -302,13 +302,11 @@ fn compile_placement<L: Clone>(
 
     match placement {
         // Reserved placements are created by .space directives
-        P::Reserved => Ok(Cell::Empty),
+        // Empty placements at the end of .string directives
+        P::Reserved | P::Nul => Ok(Cell::Empty),
 
         // Char placements are created by .string directives
         P::Char(c) => Ok(Cell::Char(*c)),
-
-        // Empty placements at the end of .string directives
-        P::Nul => Ok(Cell::Empty),
 
         // A .word directive (don't mind the weird destructuring)
         P::Line(LineContent::Directive {
