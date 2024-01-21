@@ -1,6 +1,5 @@
 use std::convert::TryInto;
 
-use parse_display::Display;
 use thiserror::Error;
 
 use crate::constants::{Address, Char, Word, MEMORY_SIZE};
@@ -28,28 +27,35 @@ pub enum CellError {
 }
 
 /// Represents a cell in memory and in general purpose registers
-#[derive(Debug, Clone, PartialEq, Eq, Display, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum Cell {
     /// An instruction
     ///
     /// The instruction can be a big type, so only a reference is saved here.
-    #[display("{0}")]
     Instruction(Box<Instruction>),
 
     /// An unsigned word
     ///
     /// In contrast, a word is small enough to be copied.
-    #[display("{0}")]
     Word(Word),
 
     /// A signle char
-    #[display("{:?}")]
     Char(Char),
 
     /// An empty cell, no value was ever set here,
-    #[display("0")]
     #[default]
     Empty,
+}
+
+impl std::fmt::Display for Cell {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Instruction(i) => write!(f, "{}", i),
+            Self::Word(w) => write!(f, "{}", w),
+            Self::Char(c) => write!(f, "{} ({:#x})", c, u32::from(*c)),
+            Self::Empty => write!(f, "0"),
+        }
+    }
 }
 
 impl Cell {
