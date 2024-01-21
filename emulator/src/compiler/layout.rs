@@ -35,6 +35,10 @@ pub(crate) enum Placement<L> {
     #[display("{0:?}")]
     Char(char),
 
+    /// An empty memory cell, at the end of a .string
+    #[display("NUL")]
+    Nul,
+
     /// A instruction or a .word directive
     #[display("{0}")]
     Line(LineContent<L>),
@@ -203,6 +207,9 @@ pub(crate) fn layout_memory<L: Clone + Default>(
                         layout.insert_placement(position, Placement::Char(c))?;
                         position += 1;
                     }
+
+                    layout.insert_placement(position, Placement::Nul)?;
+                    position += 1;
                 }
 
                 LineContent::Directive { kind, .. } => {
