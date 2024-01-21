@@ -356,8 +356,8 @@ mod tests {
         let expected = {
             let mut h = HashMap::new();
             h.insert(String::from("first"), PROGRAM_START);
-            h.insert(String::from("second"), PROGRAM_START + 5);
-            h.insert(String::from("main"), PROGRAM_START + 5 + 12);
+            h.insert(String::from("second"), PROGRAM_START + 6);
+            h.insert(String::from("main"), PROGRAM_START + 6 + 13);
             h
         };
 
