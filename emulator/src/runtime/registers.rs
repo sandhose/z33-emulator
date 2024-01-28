@@ -7,10 +7,10 @@ use crate::{
     constants as C,
 };
 
-use super::memory::{Cell, CellError, TryFromCell};
+use super::memory::{Cell, CellError};
 
 bitflags! {
-    #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+    #[derive(Default, Clone, Copy, PartialEq, Eq)]
     pub struct StatusRegister: C::Word {
         const CARRY            = 0b000_0000_0001;
         const ZERO             = 0b000_0000_0010;
@@ -18,6 +18,12 @@ bitflags! {
         const OVERFLOW         = 0b000_0000_1000;
         const INTERRUPT_ENABLE = 0b001_0000_0000;
         const SUPERVISOR       = 0b010_0000_0000;
+    }
+}
+
+impl std::fmt::Debug for StatusRegister {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:#012b}", self.bits())
     }
 }
 
@@ -66,12 +72,12 @@ impl Registers {
             Reg::A => self.a = value,
             Reg::B => self.b = value,
             Reg::PC => {
-                self.pc = C::Address::try_from_cell(&value)?;
+                self.pc = C::Address::try_from(&value)?;
             }
             Reg::SP => {
-                self.sp = C::Address::try_from_cell(&value)?;
+                self.sp = C::Address::try_from(&value)?;
             }
-            Reg::SR => self.sr = StatusRegister::from_bits_retain(C::Word::try_from_cell(&value)?),
+            Reg::SR => self.sr = StatusRegister::from_bits_retain(C::Word::try_from(&value)?),
         };
         Ok(())
     }

@@ -163,7 +163,7 @@ mod traits {
     use thiserror::Error;
 
     use super::super::{
-        memory::{CellError, MemoryError, TryFromCell},
+        memory::{CellError, MemoryError},
         registers::Reg,
         Cell, Computer, Registers,
     };
@@ -221,7 +221,7 @@ mod traits {
             // Get the register value
             let cell = c.get(&self.0);
             // and try converting it to an address
-            let addr = C::Address::try_from_cell(&cell)?;
+            let addr = C::Address::try_from(&cell)?;
             Ok(addr)
         }
     }
@@ -237,11 +237,11 @@ mod traits {
             // Get the register value
             let cell = c.get(&self.0);
             // and try converting it to a word
-            let addr = C::Word::try_from_cell(&cell)?;
+            let addr = C::Word::try_from(&cell)?;
             // add the offset
             let addr = addr + self.1;
             // and convert it to an address
-            let addr = C::Address::try_from_cell(&addr.into())?;
+            let addr = C::Address::try_from(&addr.into())?;
             Ok(addr)
         }
     }

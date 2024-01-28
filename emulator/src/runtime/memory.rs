@@ -2,18 +2,17 @@ use std::convert::TryInto;
 
 use thiserror::Error;
 
-use crate::constants::{Address, Char, Word, MEMORY_SIZE};
+use crate::constants::{Address, Word, MEMORY_SIZE};
 
 use super::instructions::Instruction;
 
 /// Type of cells
 ///
-/// There is a 1-1 mapping with the `Cell` type in this module.
+/// There is a 1-1 mapping with the [`Cell`] type in this module.
 #[derive(Debug)]
 pub enum CellKind {
     Instruction,
     Word,
-    Char,
     Empty,
 }
 
@@ -39,9 +38,6 @@ pub enum Cell {
     /// In contrast, a word is small enough to be copied.
     Word(Word),
 
-    /// A signle char
-    Char(Char),
-
     /// An empty cell, no value was ever set here,
     #[default]
     Empty,
@@ -52,7 +48,6 @@ impl std::fmt::Display for Cell {
         match self {
             Self::Instruction(i) => write!(f, "{i}"),
             Self::Word(w) => write!(f, "{w}"),
-            Self::Char(c) => write!(f, "{} ({:#x})", c, u32::from(*c)),
             Self::Empty => write!(f, "0"),
         }
     }
@@ -64,7 +59,6 @@ impl Cell {
         match self {
             Self::Instruction(_) => CellKind::Instruction,
             Self::Word(_) => CellKind::Word,
-            Self::Char(_) => CellKind::Char,
             Self::Empty => CellKind::Empty,
         }
     }
@@ -72,17 +66,10 @@ impl Cell {
     /// Extract a word from the cell.
     ///
     /// If the cell is empty, it extracts "0"
-    /// If it is a char, it tries to convert it to its ASCII code
     pub(crate) fn extract_word(&self) -> Result<Word, CellError> {
         match self {
             Self::Word(w) => Ok(*w),
             Self::Empty => Ok(0),
-            Self::Char(c) if c.is_ascii() => {
-                let mut buf = [0; 1];
-                // TODO: check that this does not panic
-                c.encode_utf8(&mut buf);
-                Ok(Word::from(buf[0]))
-            }
             t => Err(CellError::InvalidType {
                 expected: CellKind::Word,
                 was: t.cell_kind(),
@@ -93,14 +80,13 @@ impl Cell {
     /// Extract an address from the cell.
     ///
     /// If the cell is empty, it extracts "0"
-    /// If it is a char, it tries to convert it to its ASCII code
     pub(crate) fn extract_address(&self) -> Result<Address, CellError> {
         let word = self.extract_word()?;
         word.try_into()
             .map_err(|_| CellError::InvalidAddress { word })
     }
 
-    /// Extract an instruction from the cell.
+    /// Extract an [`Instruction`] from the cell.
     ///
     /// Raises an error if it is any other type
     pub fn extract_instruction(&self) -> Result<&Instruction, CellError> {
@@ -112,34 +98,6 @@ impl Cell {
             }),
         }
     }
-
-    /// Extracts a char from the cell.
-    ///
-    /// If the cell is empty, it extracts '\0'
-    /// If the cell is a word, it tries converting it to a char if it is in the ASCII range
-    fn extract_char(&self) -> Result<Char, CellError> {
-        match self {
-            Self::Char(c) => Ok(*c),
-            Self::Empty => Ok('\0'),
-            Self::Word(w) if (0x00..=0xFF).contains(w) => {
-                // This cast is fine, because we checked the range before
-                #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
-                Ok(char::from(*w as u8))
-            }
-            t => Err(CellError::InvalidType {
-                expected: CellKind::Char,
-                was: t.cell_kind(),
-            }),
-        }
-    }
-}
-
-/// Trait to help converting from cells
-pub(crate) trait TryFromCell: Sized {
-    /// Convert the cell to a value
-    ///
-    /// The inner value of the cell is copied/cloned.
-    fn try_from_cell(value: &Cell) -> Result<Self, CellError>;
 }
 
 impl From<Instruction> for Cell {
@@ -148,8 +106,10 @@ impl From<Instruction> for Cell {
     }
 }
 
-impl TryFromCell for Instruction {
-    fn try_from_cell(value: &Cell) -> Result<Self, CellError> {
+impl TryFrom<&Cell> for Instruction {
+    type Error = CellError;
+
+    fn try_from(value: &Cell) -> Result<Self, Self::Error> {
         value.extract_instruction().cloned()
     }
 }
@@ -160,8 +120,10 @@ impl From<Word> for Cell {
     }
 }
 
-impl TryFromCell for Word {
-    fn try_from_cell(value: &Cell) -> Result<Self, CellError> {
+impl TryFrom<&Cell> for Word {
+    type Error = CellError;
+
+    fn try_from(value: &Cell) -> Result<Self, Self::Error> {
         value.extract_word()
     }
 }
@@ -172,24 +134,11 @@ impl From<Address> for Cell {
     }
 }
 
-impl TryFromCell for Address {
-    fn try_from_cell(value: &Cell) -> Result<Self, CellError> {
-        let word = value.extract_word()?;
+impl TryFrom<&Cell> for Address {
+    type Error = CellError;
 
-        word.try_into()
-            .map_err(|_| CellError::InvalidAddress { word })
-    }
-}
-
-impl From<Char> for Cell {
-    fn from(c: Char) -> Self {
-        Self::Char(c)
-    }
-}
-
-impl TryFromCell for Char {
-    fn try_from_cell(value: &Cell) -> Result<Self, CellError> {
-        value.extract_char()
+    fn try_from(value: &Cell) -> Result<Self, Self::Error> {
+        value.extract_address()
     }
 }
 
@@ -203,26 +152,21 @@ pub enum MemoryError {
 
 /// Holds the memory cells of the computer.
 ///
-/// It has 65536 cells by default.
+/// It has 10000 cells
 pub struct Memory {
-    inner: Vec<Cell>,
+    inner: [Cell; MEMORY_SIZE as _],
 }
 
+const DEFAULT_CELL_VALUE: Cell = Cell::Empty;
 impl Default for Memory {
     fn default() -> Self {
-        Self::new(MEMORY_SIZE as _)
+        Self {
+            inner: [DEFAULT_CELL_VALUE; MEMORY_SIZE as _],
+        }
     }
 }
 
 impl Memory {
-    /// Create a new memory component with a given size
-    pub(crate) fn new(size: usize) -> Self {
-        let inner = std::iter::repeat(Cell::Empty) // Fill the memory with empty cells
-            .take(size)
-            .collect();
-        Self { inner }
-    }
-
     /// Get a cell at an address
     ///
     /// It fails if the address is invalid or out of bounds.

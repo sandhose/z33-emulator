@@ -2,10 +2,9 @@
 
 pub type Address = u32;
 pub type Word = i64;
-pub type Char = char;
 
 /// Total size of the computer memory
-pub const MEMORY_SIZE: Address = 10000;
+pub const MEMORY_SIZE: Address = 10_000;
 
 /// Start of the stack pointer
 pub const STACK_START: Address = MEMORY_SIZE;

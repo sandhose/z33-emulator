@@ -306,7 +306,7 @@ fn compile_placement<L: Clone>(
         P::Reserved | P::Nul => Ok(Cell::Empty),
 
         // Char placements are created by .string directives
-        P::Char(c) => Ok(Cell::Char(*c)),
+        P::Char(c) => Ok(Cell::Word(u32::from(*c).into())),
 
         // A .word directive (don't mind the weird destructuring)
         P::Line(LineContent::Directive {
