@@ -2,7 +2,10 @@
   "compilerOptions": {
     "target": "ES2020",
     "module": "ES2020",
-    "lib": ["esnext", "dom"],
+    "lib": [
+      "esnext",
+      "dom"
+    ],
     "allowJs": false,
     "sourceMap": true,
     "isolatedModules": true,
@@ -10,9 +13,23 @@
     "moduleResolution": "node",
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    "types": [
+      "vite/client"
+    ],
+    "paths": {
+      "z33-web-bindings": [
+        "./types/z33_web_init"
+      ]
+    }
   },
-  "files": ["global.d.ts"],
-  "include": ["app", "global.d.ts", "vite.config.ts"],
-  "exclude": ["node_modules", "dist", "src", "target"]
+  "include": [
+    "app"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "src",
+    "target"
+  ]
 }

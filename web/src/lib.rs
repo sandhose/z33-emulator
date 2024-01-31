@@ -1,31 +1,31 @@
 #![forbid(unsafe_code)]
 #![deny(clippy::all, clippy::pedantic)]
 #![allow(clippy::missing_errors_doc, clippy::missing_panics_doc)]
-
 use std::collections::HashMap;
 use std::path::PathBuf;
 
 use serde::Serialize;
+use tsify::Tsify;
 use wasm_bindgen::prelude::*;
 
 use z33_emulator::{
     compiler::layout,
-    constants as C,
     parser::location::{AbsoluteLocation, MapLocation},
     preprocessor::{InMemoryFilesystem, Preprocessor},
 };
 
-#[derive(Default, Serialize)]
-struct Output {
+#[derive(Default, Serialize, Tsify)]
+#[tsify(into_wasm_abi)]
+pub struct Output {
     ast: Option<String>,
     preprocessed: Option<String>,
-    memory: Vec<(C::Address, String)>,
-    labels: HashMap<String, C::Address>,
+    memory: Vec<(u32, String)>,
+    labels: HashMap<String, u32>,
     error: Option<String>,
 }
 
 #[wasm_bindgen]
-pub fn dump(source: &str) -> Result<JsValue, JsValue> {
+pub fn dump(source: &str) -> Result<Output, JsValue> {
     let mut output = Output::default();
     let mut files = HashMap::new();
     let path = PathBuf::from("-");
@@ -38,7 +38,7 @@ pub fn dump(source: &str) -> Result<JsValue, JsValue> {
         Ok(s) => s,
         Err(e) => {
             output.error = Some(format!("{e}"));
-            return Ok(serde_wasm_bindgen::to_value(&output)?);
+            return Ok(output);
         }
     };
 
@@ -50,7 +50,7 @@ pub fn dump(source: &str) -> Result<JsValue, JsValue> {
         Ok(p) => p,
         Err(e) => {
             output.error = Some(format!("{e:#?}"));
-            return Ok(serde_wasm_bindgen::to_value(&output)?);
+            return Ok(output);
         }
     };
 
@@ -65,12 +65,12 @@ pub fn dump(source: &str) -> Result<JsValue, JsValue> {
 
     if let Err(e) = layout {
         output.error = Some(format!("{e}"));
-        return Ok(serde_wasm_bindgen::to_value(&output)?);
+        return Ok(output);
     }
 
     let layout = layout.unwrap();
     output.memory = layout.memory_report();
     output.labels = layout.labels;
 
-    Ok(serde_wasm_bindgen::to_value(&output)?)
+    Ok(output)
 }

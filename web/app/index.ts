@@ -6,14 +6,6 @@ const samples = {
   handler: () => import("../../samples/handler.S?raw"),
 };
 
-type Output = {
-  ast?: string;
-  preprocessed?: string;
-  error?: string;
-  memory?: Array<[number, string]>;
-  labels?: Map<string, number>;
-};
-
 const createSection = (title: string, parent: Element): HTMLOutputElement => {
   const section = document.createElement("section");
   const heading = document.createElement("h4");
@@ -81,7 +73,7 @@ const createSection = (title: string, parent: Element): HTMLOutputElement => {
 
   const update = () => {
     const value = model.getValue();
-    const output: Output = dump(value);
+    const output = dump(value);
     consoleOutput.value = output.error || "-";
     astOutput.value = output.ast || "-";
     preprocessorOutput.value = output.preprocessed || "-";

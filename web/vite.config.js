@@ -10,5 +10,11 @@ export default defineConfig({
       ),
     },
   },
-  plugins: [rust()],
+  plugins: [
+    rust({
+      experimental: {
+        typescriptDeclarationDir: 'types',
+      }
+    })
+  ],
 });
