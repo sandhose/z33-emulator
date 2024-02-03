@@ -7,7 +7,7 @@ use crate::{constants as C, parser::line::Program, runtime::Computer, runtime::R
 
 use self::{layout::MemoryLayoutError, memory::MemoryFillError};
 
-pub(crate) mod layout;
+pub mod layout;
 pub(crate) mod memory;
 
 type Labels = HashMap<String, C::Address>;

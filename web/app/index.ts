@@ -37,7 +37,7 @@ const createSection = (title: string, parent: Element): HTMLOutputElement => {
 
   document.body.appendChild(root);
 
-  const { dump } = await bindings();
+  const { InMemoryPreprocessor, Program } = await bindings();
 
   const monaco = await import("./monaco");
   editorContainer.classList.remove("loading");
@@ -73,17 +73,28 @@ const createSection = (title: string, parent: Element): HTMLOutputElement => {
 
   const update = () => {
     const value = model.getValue();
-    const output = dump(value);
-    consoleOutput.value = output.error || "-";
-    astOutput.value = output.ast || "-";
-    preprocessorOutput.value = output.preprocessed || "-";
-    memoryOutput.value =
-      output.memory?.map(([k, v]) => `${k}\t${v}`).join("\n") || "-";
-    labelsOutput.value = JSON.stringify(
-      Object.fromEntries(output.labels || []),
-      null,
-      2,
-    );
+    try {
+      const preprocessor = new InMemoryPreprocessor(
+        new Map([["input.S", value]]),
+      );
+      const preprocessed = preprocessor.preprocess("input.S");
+      preprocessorOutput.value = preprocessed;
+      const program = Program.parse(preprocessed);
+      astOutput.value = program.ast;
+      const layout = program.layout();
+      memoryOutput.value = Array.from(layout.memory.entries())
+        .map(([k, v]) => `${k}\t${v}`)
+        .join("\n");
+      labelsOutput.value = Array.from(layout.labels.entries())
+        .map(([k, v]) => `${v}\t${k}`)
+        .join("\n");
+      consoleOutput.value = "-";
+      preprocessor.free();
+      layout.free();
+    } catch (e) {
+      console.error(e);
+      consoleOutput.value = String(e);
+    }
   };
 
   model.onDidChangeContent(() => update());

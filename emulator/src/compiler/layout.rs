@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use parse_display::Display;
 use thiserror::Error;
@@ -17,7 +17,7 @@ use crate::{
     parser::location::Located,
 };
 
-pub(crate) type Labels = HashMap<String, Address>;
+pub(crate) type Labels = BTreeMap<String, Address>;
 
 impl ExpressionContext for Labels {
     fn resolve_variable(&self, variable: &str) -> Option<i128> {
@@ -80,14 +80,11 @@ impl<L> Layout<L> {
         Ok(())
     }
 
-    pub fn memory_report(&self) -> Vec<(Address, String)> {
-        let mut v: Vec<_> = self
-            .memory
+    pub fn memory_report(&self) -> BTreeMap<Address, String> {
+        self.memory
             .iter()
             .map(|(k, v)| (*k, format!("{v}")))
-            .collect();
-        v.sort_by_key(|&(k, _)| k);
-        v
+            .collect()
     }
 }
 
