@@ -1,35 +1,41 @@
 {
   "compilerOptions": {
     "target": "ES2020",
-    "module": "ES2020",
+    "useDefineForClassFields": true,
     "lib": [
-      "esnext",
-      "dom"
+      "ES2020",
+      "DOM",
+      "DOM.Iterable"
     ],
-    "allowJs": false,
-    "sourceMap": true,
-    "isolatedModules": true,
-    "strict": true,
-    "moduleResolution": "node",
-    "esModuleInterop": true,
+    "module": "ESNext",
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    /* Linting */
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
     "types": [
       "vite/client"
     ],
     "paths": {
       "z33-web-bindings": [
-        "./types/z33_web_init"
+        "./types/z33_web"
       ]
     }
   },
   "include": [
     "app"
   ],
-  "exclude": [
-    "node_modules",
-    "dist",
-    "src",
-    "target"
+  "references": [
+    {
+      "path": "./tsconfig.node.json"
+    }
   ]
 }

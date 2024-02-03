@@ -1,10 +1,12 @@
-import EditorWorker from "monaco-editor/esm/vs/editor/editor.worker.js?worker";
-import "monaco-editor/esm/vs/editor/browser/coreCommands.js";
-import "monaco-editor/esm/vs/editor/browser/widget/codeEditorWidget.js";
-export * from "monaco-editor/esm/vs/editor/editor.api.js";
+import * as monaco from "monaco-editor";
+import { loader } from "@monaco-editor/react";
+
+import editorWorker from "monaco-editor/esm/vs/editor/editor.worker?worker";
 
 self.MonacoEnvironment = {
-  getWorker(_moduleId: string, label: string): Worker {
-    return new EditorWorker();
-  },
+	getWorker(_workerId, _label) {
+		return new editorWorker();
+	},
 };
+
+loader.config({ monaco });
