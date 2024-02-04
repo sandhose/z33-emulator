@@ -9,6 +9,7 @@ export default defineConfig({
 	},
 	resolve: {
 		alias: {
+			"@": fileURLToPath(new URL("./app", import.meta.url)),
 			"z33-web-bindings": fileURLToPath(
 				new URL("./Cargo.toml", import.meta.url),
 			),

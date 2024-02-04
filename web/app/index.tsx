@@ -1,3 +1,4 @@
+import "./globals.css";
 import "./monaco.ts";
 import { createRoot } from "react-dom/client";
 import App from "./App";
