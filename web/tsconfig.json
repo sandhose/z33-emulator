@@ -27,8 +27,12 @@
     "paths": {
       "z33-web-bindings": [
         "./types/z33_web"
+      ],
+      "@/*": [
+        "./app/*"
       ]
-    }
+    },
+    "baseUrl": "."
   },
   "include": [
     "app"

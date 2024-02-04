@@ -63,7 +63,7 @@ impl Program {
     pub fn parse(source: &str) -> Result<Program, JsValue> {
         let program = z33_emulator::parser::parse_new::<z33_emulator::parser::Error<_>>(source);
         match program {
-            Ok(p) => Ok(Self { program: p }),
+            Ok(program) => Ok(Self { program }),
             Err(e) => Err(format!("{e:#?}").into()),
         }
     }
