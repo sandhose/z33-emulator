@@ -5,7 +5,7 @@ import { Uri } from "monaco-editor";
 import { Button } from "./components/ui/button";
 import { Separator } from "./components/ui/separator";
 import { Input } from "./components/ui/input";
-import { FilePlusIcon, TrashIcon } from "@radix-ui/react-icons";
+import { FilePlusIcon, TrashIcon, UploadIcon } from "@radix-ui/react-icons";
 import {
 	Table,
 	TableBody,
@@ -14,11 +14,124 @@ import {
 	TableHeader,
 	TableRow,
 } from "./components/ui/table";
+import { z } from "zod";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import {
+	Form,
+	FormControl,
+	FormField,
+	FormItem,
+	FormLabel,
+	FormMessage,
+} from "./components/ui/form";
 
 type Props = {
 	initialFiles: Map<string, string>;
 	initialSelected: string;
 	onCompile?: (files: Map<string, string>, selected: string) => void;
+};
+
+const newFileFormSchema = z.object({
+	filename: z.string().min(1),
+});
+
+const NewFileForm: React.FC<{
+	onSubmit: (filename: string) => void;
+}> = ({ onSubmit }) => {
+	const form = useForm<z.infer<typeof newFileFormSchema>>({
+		resolver: zodResolver(newFileFormSchema),
+	});
+
+	function handleSubmit(values: z.infer<typeof newFileFormSchema>) {
+		try {
+			onSubmit(values.filename);
+			form.reset({ filename: "" });
+		} catch (error) {
+			form.setError("filename", { message: String(error) });
+		}
+	}
+
+	return (
+		<Form {...form}>
+			<form
+				className="flex flex-col gap-2"
+				onSubmit={form.handleSubmit(handleSubmit)}
+			>
+				<FormField
+					control={form.control}
+					name="filename"
+					render={({ field }) => (
+						<FormItem>
+							<FormLabel>Create a new empty file</FormLabel>
+							<div className="flex gap-2">
+								<FormControl>
+									<Input placeholder="file.S" {...field} type="text" />
+								</FormControl>
+							</div>
+							<FormMessage />
+						</FormItem>
+					)}
+				/>
+				<Button type="submit" variant="secondary">
+					<FilePlusIcon className="mr-2 h-4 w-4" />
+					New
+				</Button>
+			</form>
+		</Form>
+	);
+};
+
+const uploadFileFormSchema = z.object({
+	files: z.instanceof(FileList),
+});
+
+const UploadFileForm: React.FC<{
+	onSubmit: (file: File) => void;
+}> = ({ onSubmit }) => {
+	const form = useForm<z.infer<typeof uploadFileFormSchema>>({
+		resolver: zodResolver(uploadFileFormSchema),
+	});
+
+	return (
+		<Form {...form}>
+			<form
+				className="flex flex-col gap-2"
+				onSubmit={form.handleSubmit((values, event) => {
+					for (const file of values.files) {
+						onSubmit(file);
+					}
+					(event?.target as HTMLFormElement).reset();
+				})}
+			>
+				<FormField
+					control={form.control}
+					name="files"
+					render={({ field }) => (
+						<FormItem>
+							<FormLabel>Upload from computer</FormLabel>
+							<FormControl>
+								<Input
+									multiple
+									ref={field.ref}
+									disabled={field.disabled}
+									name={field.name}
+									onBlur={field.onBlur}
+									onChange={(event) => field.onChange(event.target.files)}
+									type="file"
+								/>
+							</FormControl>
+							<FormMessage />
+						</FormItem>
+					)}
+				/>
+				<Button type="submit" variant="secondary">
+					<UploadIcon className="mr-2 h-4 w-4" />
+					Upload
+				</Button>
+			</form>
+		</Form>
+	);
 };
 
 export const MultiFileEditor: React.FC<Props> = ({
@@ -69,84 +182,98 @@ export const MultiFileEditor: React.FC<Props> = ({
 
 	return (
 		<main className="flex h-screen bg-background">
-			<div className="flex flex-col gap-4 p-4">
+			<div className="flex flex-col gap-4 p-4 w-96">
+				<div className="flex-1 overflow-auto">
+					<Table>
+						<TableHeader>
+							<TableRow>
+								<TableHead>Filename</TableHead>
+								<TableHead className="w-10">Delete</TableHead>
+							</TableRow>
+						</TableHeader>
+						<TableBody>
+							{fileNames.map((name) => (
+								<TableRow
+									key={name.path}
+									data-state={name.path === fileName.path ? "selected" : ""}
+								>
+									<TableCell>
+										<Button
+											className="w-full font-mono"
+											variant="link"
+											onClick={() => setFileName(name)}
+										>
+											{name.path}
+										</Button>
+									</TableCell>
+									<TableCell>
+										<Button
+											variant="outline"
+											size="icon"
+											onClick={() => {
+												if (!monaco) {
+													return;
+												}
+												for (const model of monaco.editor.getModels()) {
+													if (model.uri.path === name.path) {
+														model.dispose();
+														break;
+													}
+												}
+												sync();
+											}}
+										>
+											<TrashIcon />
+										</Button>
+									</TableCell>
+								</TableRow>
+							))}
+						</TableBody>
+					</Table>
+				</div>
+
+				<div className="flex flex-col gap-4 p-4 border rounded">
+					<NewFileForm
+						onSubmit={(filename) => {
+							setFileName(Uri.file(filename));
+							if (!monaco) {
+								return;
+							}
+
+							const uri = Uri.file(filename);
+							monaco.editor.createModel("", "assembly", uri);
+							setFileName(uri);
+							sync();
+						}}
+					/>
+
+					<Separator />
+
+					<UploadFileForm
+						onSubmit={(file) => {
+							const reader = new FileReader();
+							reader.onload = () => {
+								if (!monaco) {
+									return;
+								}
+
+								const uri = Uri.file(file.name);
+								monaco.editor.createModel(
+									reader.result as string,
+									"assembly",
+									uri,
+								);
+								setFileName(uri);
+								sync();
+							};
+							reader.readAsText(file);
+						}}
+					/>
+				</div>
+
 				<Button type="button" onClick={() => compile()}>
 					Compile
 				</Button>
-
-				<Separator />
-
-				<form
-					className="flex gap-2"
-					onSubmit={(e) => {
-						e.preventDefault();
-						const form = e.target as HTMLFormElement;
-						const data = new FormData(form);
-						const filename = data.get("filename");
-						if (!monaco || !filename || typeof filename !== "string") {
-							return;
-						}
-
-						const uri = Uri.file(filename);
-						monaco.editor.createModel("", "assembly", uri);
-						form.reset();
-						setFileName(uri);
-						sync();
-					}}
-				>
-					<Input type="input" name="filename" />
-					<Button type="submit" variant="outline">
-						<FilePlusIcon className="mr-2 h-4 w-4" />
-						New
-					</Button>
-				</form>
-
-				<Table>
-					<TableHeader>
-						<TableRow>
-							<TableHead>Filename</TableHead>
-							<TableHead className="w-10">Delete</TableHead>
-						</TableRow>
-					</TableHeader>
-					<TableBody>
-						{fileNames.map((name) => (
-							<TableRow
-								key={name.path}
-								data-state={name.path === fileName.path ? "selected" : ""}
-							>
-								<TableCell>
-									<Button
-										className="w-full text-left font-mono"
-										variant="link"
-										onClick={() => setFileName(name)}
-									>
-										{name.path}
-									</Button>
-								</TableCell>
-								<TableCell>
-									<Button
-										variant="outline"
-										size="icon"
-										onClick={() => {
-											if (!monaco) {
-												return;
-											}
-											for (const model of monaco.editor.getModels()) {
-												if (model.uri.path === name.path) {
-													model.dispose();
-													break;
-												}
-											}
-											sync();
-										}}
-									>
-										<TrashIcon />
-									</Button>
-								</TableCell>
-							</TableRow>
-						))}
-					</TableBody>
-				</Table>
 			</div>
 
 			<div className="flex-1">
