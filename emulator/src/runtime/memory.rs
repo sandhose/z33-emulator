@@ -157,6 +157,17 @@ pub struct Memory {
     inner: Box<[Cell; MEMORY_SIZE as _]>,
 }
 
+// Implement clone without destroying the stack
+impl Clone for Memory {
+    fn clone(&self) -> Self {
+        let mut new = Self::default();
+        for (i, cell) in self.inner.iter().enumerate() {
+            new.inner[i] = cell.clone();
+        }
+        new
+    }
+}
+
 const DEFAULT_CELL_VALUE: Cell = Cell::Empty;
 impl Default for Memory {
     fn default() -> Self {
