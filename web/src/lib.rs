@@ -9,9 +9,10 @@ use tsify::Tsify;
 use wasm_bindgen::prelude::*;
 
 use z33_emulator::{
-    compiler::layout,
+    compiler::compile,
     parser::location::{AbsoluteLocation, MapLocation, RelativeLocation},
     preprocessor::{InMemoryFilesystem, Preprocessor},
+    runtime::ProcessorError,
 };
 
 #[wasm_bindgen(start)]
@@ -51,6 +52,7 @@ impl InMemoryPreprocessor {
 
 #[wasm_bindgen]
 pub struct Program {
+    source: String,
     program: z33_emulator::parser::location::Located<
         z33_emulator::parser::Program<RelativeLocation>,
         RelativeLocation,
@@ -60,12 +62,17 @@ pub struct Program {
 #[wasm_bindgen]
 impl Program {
     #[wasm_bindgen]
-    pub fn parse(source: &str) -> Result<Program, JsValue> {
-        let program = z33_emulator::parser::parse_new::<z33_emulator::parser::Error<_>>(source);
+    pub fn parse(source: String) -> Result<Program, JsValue> {
+        let program = z33_emulator::parser::parse_new::<z33_emulator::parser::Error<_>>(&source);
         match program {
-            Ok(program) => Ok(Self { program }),
+            Ok(program) => Ok(Self { source, program }),
             Err(e) => Err(format!("{e:#?}").into()),
         }
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn source(&self) -> String {
+        self.source.clone()
     }
 
     #[wasm_bindgen(getter)]
@@ -75,34 +82,116 @@ impl Program {
         format!("{ast}")
     }
 
-    pub fn layout(self) -> Result<Layout, JsValue> {
-        let layout = layout(self.program.inner).map_err(|e| format!("{e}"))?;
-        Ok(Layout { layout })
-    }
-}
-
-#[wasm_bindgen]
-pub struct Layout {
-    layout: z33_emulator::compiler::layout::Layout<RelativeLocation>,
-}
-
-#[wasm_bindgen]
-impl Layout {
-    #[wasm_bindgen(getter)]
-    pub fn memory(&self) -> MemoryReport {
-        MemoryReport(self.layout.memory_report())
-    }
-
     #[wasm_bindgen(getter)]
     pub fn labels(&self) -> Labels {
-        Labels(self.layout.labels.clone())
+        Labels(
+            self.program
+                .inner
+                .labels()
+                .into_iter()
+                .map(ToOwned::to_owned)
+                .collect(),
+        )
+    }
+
+    #[wasm_bindgen]
+    pub fn compile(&self, entrypoint: &str) -> Result<Computer, JsValue> {
+        let (computer, debug_info) =
+            compile(self.program.inner.clone(), entrypoint).map_err(|e| format!("{e}"))?;
+
+        Ok(Computer {
+            debug_info,
+            computer,
+        })
     }
 }
 
 #[derive(Serialize, Tsify)]
 #[tsify(into_wasm_abi)]
-pub struct MemoryReport(BTreeMap<u32, String>);
+pub struct Labels(Vec<String>);
+
+#[wasm_bindgen]
+pub struct Computer {
+    debug_info: z33_emulator::compiler::DebugInfo,
+    computer: z33_emulator::runtime::Computer,
+}
+
+#[derive(Serialize, Tsify)]
+#[serde(tag = "type", rename_all = "lowercase")]
+#[tsify(into_wasm_abi)]
+pub enum Cell {
+    Instruction { instruction: String },
+    Word { word: i64 },
+    Empty,
+}
+
+impl Cell {
+    pub fn from_runtime_cell(cell: &z33_emulator::runtime::Cell) -> Self {
+        match cell {
+            z33_emulator::runtime::Cell::Instruction(s) => Self::Instruction {
+                instruction: s.to_string(),
+            },
+            z33_emulator::runtime::Cell::Word(w) => Self::Word { word: *w },
+            z33_emulator::runtime::Cell::Empty => Self::Empty,
+        }
+    }
+}
 
 #[derive(Serialize, Tsify)]
 #[tsify(into_wasm_abi)]
-pub struct Labels(BTreeMap<String, u32>);
+pub struct Registers {
+    a: Cell,
+    b: Cell,
+    pc: u32,
+    sp: u32,
+    sr: i64,
+}
+
+#[derive(Serialize, Tsify)]
+#[tsify(into_wasm_abi)]
+pub struct MemoryView {
+    start: u32,
+    end: u32,
+    cells: Vec<Cell>,
+}
+
+#[derive(Serialize, Tsify)]
+#[tsify(into_wasm_abi)]
+pub struct LabelsWithAddresses(BTreeMap<String, u32>);
+
+#[wasm_bindgen]
+impl Computer {
+    pub fn step(&mut self) -> Result<bool, JsValue> {
+        match self.computer.step() {
+            Ok(()) => Ok(false),
+            Err(ProcessorError::Reset) => Ok(true),
+            Err(e) => Err(format!("{e}").into()),
+        }
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn labels(&self) -> LabelsWithAddresses {
+        LabelsWithAddresses(self.debug_info.labels.clone())
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn registers(&self) -> Registers {
+        let registers = &self.computer.registers;
+        Registers {
+            a: Cell::from_runtime_cell(&registers.a),
+            b: Cell::from_runtime_cell(&registers.b),
+            pc: registers.pc,
+            sp: registers.sp,
+            sr: registers.sr.bits(),
+        }
+    }
+
+    pub fn memory_view(&self, start: u32, end: u32) -> Result<MemoryView, JsValue> {
+        let mut cells = Vec::new();
+        for i in start..end {
+            let cell = self.computer.memory.get(i).map_err(|e| format!("{e}"))?;
+            cells.push(Cell::from_runtime_cell(&cell));
+        }
+        Ok(MemoryView { start, end, cells })
+    }
+}

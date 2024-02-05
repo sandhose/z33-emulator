@@ -15,7 +15,7 @@ mod registers;
 pub use self::arguments::ExtractValue;
 pub use self::exception::Exception;
 pub(crate) use self::instructions::Instruction;
-pub(crate) use self::memory::{Cell, Memory};
+pub use self::memory::{Cell, Memory};
 pub use self::registers::{Reg, Registers};
 
 use self::arguments::{ExtractError, Ind, ResolveAddress};

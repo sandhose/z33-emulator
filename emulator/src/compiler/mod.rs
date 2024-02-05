@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use thiserror::Error;
 use tracing::debug;
@@ -10,7 +10,7 @@ use self::{layout::MemoryLayoutError, memory::MemoryFillError};
 pub mod layout;
 pub(crate) mod memory;
 
-type Labels = HashMap<String, C::Address>;
+type Labels = BTreeMap<String, C::Address>;
 
 /// Holds informations about the compilation
 pub struct DebugInfo {
