@@ -128,7 +128,7 @@ impl<L> std::fmt::Display for LineContent<L> {
 /// (if any).
 ///
 /// Note that the `Default::default()` implementation represents an empty line.
-#[derive(Debug, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub(crate) struct Line<L> {
     pub symbols: Vec<Located<String, L>>,
     pub content: Option<Located<LineContent<L>, L>>,
@@ -234,9 +234,18 @@ where
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Program<L> {
     pub(crate) lines: Vec<Located<Line<L>, L>>,
+}
+
+impl<L> Program<L> {
+    pub fn labels(&self) -> Vec<&str> {
+        self.lines
+            .iter()
+            .flat_map(|line| line.inner.symbols.iter().map(|s| s.inner.as_str()))
+            .collect()
+    }
 }
 
 impl<L, P> MapLocation<P> for Program<L>
