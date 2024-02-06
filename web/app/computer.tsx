@@ -13,6 +13,7 @@ import {
 import { Input } from "./components/ui/input";
 import { StepForm } from "./step-form";
 import { Separator } from "./components/ui/separator";
+import { Button } from "./components/ui/button";
 
 const MEMORY_SIZE = 10_000;
 
@@ -148,30 +149,46 @@ export const ComputerView: React.FC<Props> = ({ computer }) => {
 	}, [computer]);
 
 	return (
-		<div className="flex justify-center gap-4 p-2 my-4 mx-auto *:w-96">
+		<div className="flex justify-center gap-4 p-4 mx-auto *:w-96 h-screen">
 			<div className="flex flex-col gap-4">
 				<div className="border p-4 rounded">Cycles: {computer.cycles}</div>
+				<div className="flex-1">
+					<RegisterView registers={registers} />
+				</div>
 				<StepForm onStep={onStep} />
-				<RegisterView registers={registers} />
 			</div>
 
 			<div className="flex flex-col gap-4">
-				<Input
-					type="number"
-					value={viewAddress}
-					onChange={(e) => setViewAddress(+e.target.value)}
-				/>
+				<div className="flex-1 overflow-auto">
+					<MemoryViewer
+						description="Arbitrary memory viewer"
+						computer={computer}
+						from={viewAddress}
+						count={20}
+						highlight={viewAddress}
+						labels={labels}
+					/>
+				</div>
 
-				<Separator />
+				<div className="flex flex-col gap-2 border p-4 rounded">
+					<h4 className="text-md font-bold">Jump to label:</h4>
 
-				<MemoryViewer
-					description="Arbitrary memory viewer"
-					computer={computer}
-					from={viewAddress}
-					count={20}
-					highlight={viewAddress}
-					labels={labels}
-				/>
+					{Array.from(computer.labels).map(([label, address]) => (
+						<Button
+							variant="secondary"
+							key={label}
+							onClick={() => setViewAddress(address)}
+						>
+							{label}
+						</Button>
+					))}
+
+					<Input
+						type="number"
+						value={viewAddress}
+						onChange={(e) => setViewAddress(+e.target.value)}
+					/>
+				</div>
 			</div>
 
 			<MemoryViewer
