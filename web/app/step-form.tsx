@@ -17,7 +17,7 @@ import { Progress } from "./components/ui/progress";
 
 const formSchema = z.object({
 	speed: z.coerce.number().min(1).max(100).default(1),
-	steps: z.coerce.number().min(1).max(100).default(1),
+	steps: z.coerce.number().min(1).max(1000).default(1),
 });
 
 export const StepForm: React.FC<{ onStep: () => boolean }> = ({ onStep }) => {
@@ -60,7 +60,7 @@ export const StepForm: React.FC<{ onStep: () => boolean }> = ({ onStep }) => {
 
 	const form = useForm<z.infer<typeof formSchema>>({
 		resolver: zodResolver(formSchema),
-		defaultValues: { steps: 1, speed: 50 },
+		defaultValues: { steps: 1, speed: 20 },
 	});
 
 	function onSubmit(values: z.infer<typeof formSchema>) {
