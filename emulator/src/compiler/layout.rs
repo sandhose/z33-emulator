@@ -252,12 +252,10 @@ mod tests {
         ];
 
         let labels = layout_memory(&program).unwrap().labels;
-        let expected = {
-            let mut h = HashMap::new();
-            h.insert(String::from("main"), PROGRAM_START);
-            h.insert(String::from("loop"), PROGRAM_START + 1);
-            h
-        };
+        let expected = BTreeMap::from_iter([
+            ("main".into(), PROGRAM_START),
+            ("loop".into(), PROGRAM_START + 1),
+        ]);
         assert_eq!(labels, expected);
     }
 
@@ -272,11 +270,7 @@ mod tests {
         ];
 
         let labels = layout_memory(&program).unwrap().labels;
-        let expected = {
-            let mut h = HashMap::new();
-            h.insert(String::from("main"), 10);
-            h
-        };
+        let expected = BTreeMap::from_iter(vec![("main".into(), 10)]);
         assert_eq!(labels, expected);
     }
 
@@ -296,13 +290,11 @@ mod tests {
         ];
 
         let labels = layout_memory(&program).unwrap().labels;
-        let expected = {
-            let mut h = HashMap::new();
-            h.insert(String::from("first"), PROGRAM_START);
-            h.insert(String::from("second"), PROGRAM_START + 10);
-            h.insert(String::from("main"), PROGRAM_START + 15);
-            h
-        };
+        let expected = BTreeMap::from_iter([
+            ("first".into(), PROGRAM_START),
+            ("second".into(), PROGRAM_START + 10),
+            ("main".into(), PROGRAM_START + 15),
+        ]);
 
         assert_eq!(labels, expected);
     }
@@ -323,13 +315,11 @@ mod tests {
         ];
 
         let labels = layout_memory(&program).unwrap().labels;
-        let expected = {
-            let mut h = HashMap::new();
-            h.insert(String::from("first"), PROGRAM_START);
-            h.insert(String::from("second"), PROGRAM_START + 1);
-            h.insert(String::from("main"), PROGRAM_START + 2);
-            h
-        };
+        let expected = BTreeMap::from_iter(vec![
+            ("first".into(), PROGRAM_START),
+            ("second".into(), PROGRAM_START + 1),
+            ("main".into(), PROGRAM_START + 2),
+        ]);
 
         assert_eq!(labels, expected);
     }
@@ -350,13 +340,11 @@ mod tests {
         ];
 
         let labels = layout_memory(&program).unwrap().labels;
-        let expected = {
-            let mut h = HashMap::new();
-            h.insert(String::from("first"), PROGRAM_START);
-            h.insert(String::from("second"), PROGRAM_START + 6);
-            h.insert(String::from("main"), PROGRAM_START + 6 + 13);
-            h
-        };
+        let expected = BTreeMap::from_iter([
+            ("first".into(), PROGRAM_START),
+            ("second".into(), PROGRAM_START + 6),
+            ("main".into(), PROGRAM_START + 6 + 13),
+        ]);
 
         assert_eq!(labels, expected);
     }
