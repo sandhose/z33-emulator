@@ -79,13 +79,6 @@ impl<L> Layout<L> {
         self.labels.insert(label.inner, address);
         Ok(())
     }
-
-    pub fn memory_report(&self) -> BTreeMap<Address, String> {
-        self.memory
-            .iter()
-            .map(|(k, v)| (*k, format!("{v}")))
-            .collect()
-    }
 }
 
 #[derive(Debug, Error, PartialEq)]

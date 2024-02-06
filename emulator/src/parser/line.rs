@@ -240,6 +240,7 @@ pub struct Program<L> {
 }
 
 impl<L> Program<L> {
+    #[must_use]
     pub fn labels(&self) -> Vec<&str> {
         self.lines
             .iter()
