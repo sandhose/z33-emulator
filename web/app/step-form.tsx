@@ -63,7 +63,7 @@ export const StepForm: React.FC<{ onStep: () => boolean }> = ({ onStep }) => {
 		defaultValues: { steps: 1, speed: 50 },
 	});
 
-	async function onSubmit(values: z.infer<typeof formSchema>) {
+	function onSubmit(values: z.infer<typeof formSchema>) {
 		setSpeed(values.speed);
 		setLastStepsValue(values.steps);
 		setStepsToRun(values.steps);
@@ -118,12 +118,6 @@ export const StepForm: React.FC<{ onStep: () => boolean }> = ({ onStep }) => {
 
 				{running ? (
 					<>
-						{lastStepsValue > 1 ? (
-							<Progress
-								value={(100 * (lastStepsValue - stepsToRun)) / lastStepsValue}
-							/>
-						) : null}
-
 						<Button
 							type="button"
 							variant="destructive"
@@ -131,6 +125,12 @@ export const StepForm: React.FC<{ onStep: () => boolean }> = ({ onStep }) => {
 						>
 							Stop
 						</Button>
+
+						{lastStepsValue > 1 ? (
+							<Progress
+								value={(100 * (lastStepsValue - stepsToRun)) / lastStepsValue}
+							/>
+						) : null}
 					</>
 				) : (
 					<Button type="submit">Run</Button>
