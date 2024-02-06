@@ -70,9 +70,9 @@ impl Cell {
         match self {
             Self::Word(w) => Ok(*w),
             Self::Empty => Ok(0),
-            t => Err(CellError::InvalidType {
+            Self::Instruction(_) => Err(CellError::InvalidType {
                 expected: CellKind::Word,
-                was: t.cell_kind(),
+                was: CellKind::Instruction,
             }),
         }
     }

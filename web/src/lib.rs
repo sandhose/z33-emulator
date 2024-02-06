@@ -37,6 +37,7 @@ pub struct InputFiles(HashMap<PathBuf, String>);
 #[wasm_bindgen]
 impl InMemoryPreprocessor {
     #[wasm_bindgen(constructor)]
+    #[must_use]
     pub fn new(files: InputFiles) -> Self {
         let fs = InMemoryFilesystem::new(files.0);
         let preprocessor = Preprocessor::new(fs);
@@ -75,11 +76,13 @@ impl Program {
     }
 
     #[wasm_bindgen(getter)]
+    #[must_use]
     pub fn source(&self) -> String {
         self.source.clone()
     }
 
     #[wasm_bindgen(getter)]
+    #[must_use]
     pub fn ast(&self) -> String {
         let ast = self.program.to_node();
         let ast = ast.map_location(&AbsoluteLocation::default());
@@ -87,6 +90,7 @@ impl Program {
     }
 
     #[wasm_bindgen(getter)]
+    #[must_use]
     pub fn labels(&self) -> Labels {
         Labels(
             self.program
@@ -150,7 +154,8 @@ pub enum Cell {
 }
 
 impl Cell {
-    pub fn from_runtime_cell(cell: &z33_emulator::runtime::Cell) -> Self {
+    #[must_use]
+    fn from_runtime_cell(cell: &z33_emulator::runtime::Cell) -> Self {
         match cell {
             z33_emulator::runtime::Cell::Instruction(s) => Self::Instruction {
                 instruction: s.to_string(),
@@ -210,16 +215,19 @@ impl Computer {
     }
 
     #[wasm_bindgen(getter)]
+    #[must_use]
     pub fn labels(&self) -> LabelsWithAddresses {
         LabelsWithAddresses(self.debug_info.labels.clone())
     }
 
     #[wasm_bindgen(getter)]
+    #[must_use]
     pub fn cycles(&self) -> usize {
         // TODO: this should be observable
         self.computer.cycles
     }
 
+    #[must_use]
     pub fn registers(&self) -> <Registers as Tsify>::JsType {
         let value = JsValue::from(self.registers.get());
         value.into()
@@ -274,7 +282,7 @@ impl MemoryObserver {
     }
 
     fn set(&mut self, memory: Memory) {
-        for (address, address_subscribers) in self.subscribers.borrow().iter() {
+        for (address, address_subscribers) in &*self.subscribers.borrow() {
             let old_cell = self.snapshot.get(*address).unwrap_throw();
             let new_cell = memory.get(*address).unwrap_throw();
             // Only notify if the cell has changed
@@ -282,7 +290,7 @@ impl MemoryObserver {
                 continue;
             }
 
-            let cell = Cell::from_runtime_cell(&new_cell).into_js().unwrap_throw();
+            let cell = Cell::from_runtime_cell(new_cell).into_js().unwrap_throw();
             for callback in address_subscribers.values() {
                 callback.call1(&JsValue::NULL, &cell).unwrap_throw();
             }
