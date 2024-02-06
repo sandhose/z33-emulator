@@ -21,6 +21,7 @@ pub trait Filesystem {
     }
 }
 
+#[derive(Debug)]
 pub struct InMemoryFilesystem {
     files: HashMap<PathBuf, String>,
 }

@@ -7,7 +7,7 @@
 //! Using Parser to do this is a bit of a hack, and requires some weird options to have it working
 //! but works nonetheless.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
 
 use clap::Parser;
 use rustyline::Behavior;
@@ -118,7 +118,7 @@ struct Session {
     breakpoints: HashSet<C::Address>,
 
     /// Map of labels in program
-    labels: HashMap<String, C::Address>,
+    labels: BTreeMap<String, C::Address>,
 
     /// Current address for the `list` command
     list_address: Option<C::Address>,

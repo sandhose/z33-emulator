@@ -70,9 +70,9 @@ impl Cell {
         match self {
             Self::Word(w) => Ok(*w),
             Self::Empty => Ok(0),
-            t => Err(CellError::InvalidType {
+            Self::Instruction(_) => Err(CellError::InvalidType {
                 expected: CellKind::Word,
-                was: t.cell_kind(),
+                was: CellKind::Instruction,
             }),
         }
     }
@@ -154,14 +154,25 @@ pub enum MemoryError {
 ///
 /// It has 10000 cells
 pub struct Memory {
-    inner: [Cell; MEMORY_SIZE as _],
+    inner: Box<[Cell; MEMORY_SIZE as _]>,
+}
+
+// Implement clone without destroying the stack
+impl Clone for Memory {
+    fn clone(&self) -> Self {
+        let mut new = Self::default();
+        for (i, cell) in self.inner.iter().enumerate() {
+            new.inner[i] = cell.clone();
+        }
+        new
+    }
 }
 
 const DEFAULT_CELL_VALUE: Cell = Cell::Empty;
 impl Default for Memory {
     fn default() -> Self {
         Self {
-            inner: [DEFAULT_CELL_VALUE; MEMORY_SIZE as _],
+            inner: Box::new([DEFAULT_CELL_VALUE; MEMORY_SIZE as _]),
         }
     }
 }

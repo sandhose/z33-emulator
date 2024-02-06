@@ -7,10 +7,7 @@ use nom::{
     bytes::complete::take_while1, combinator::all_consuming, combinator::verify, Finish, IResult,
 };
 
-use self::{
-    line::Program,
-    location::{Locatable, Located, RelativeLocation},
-};
+use self::location::{Locatable, Located, RelativeLocation};
 
 pub(crate) mod condition;
 mod errors;
@@ -24,6 +21,7 @@ pub(crate) mod value;
 
 pub use errors::{Error, ParseError};
 pub use expression::{parse_expression, Context as ExpressionContext, Node as ExpressionNode};
+pub use line::Program;
 pub use value::parse_register;
 
 fn is_identifier_char(c: char) -> bool {
