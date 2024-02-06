@@ -14,6 +14,12 @@ import { Input } from "./components/ui/input";
 import { StepForm } from "./step-form";
 import { Separator } from "./components/ui/separator";
 import { Button } from "./components/ui/button";
+import {
+	DoubleArrowLeftIcon,
+	DoubleArrowRightIcon,
+	MinusIcon,
+	PlusIcon,
+} from "@radix-ui/react-icons";
 
 const MEMORY_SIZE = 10_000;
 
@@ -171,7 +177,7 @@ export const ComputerView: React.FC<Props> = ({ computer }) => {
 				</div>
 
 				<div className="flex flex-col gap-2 border p-4 rounded">
-					<h4 className="text-md font-bold">Jump to label:</h4>
+					<h4 className="text-sm font-medium">View at label:</h4>
 
 					{Array.from(computer.labels).map(([label, address]) => (
 						<Button
@@ -183,11 +189,45 @@ export const ComputerView: React.FC<Props> = ({ computer }) => {
 						</Button>
 					))}
 
-					<Input
-						type="number"
-						value={viewAddress}
-						onChange={(e) => setViewAddress(+e.target.value)}
-					/>
+					<div className="flex gap-2 items-center">
+						<Button
+							variant="outline"
+							className="aspect-square"
+							size="icon"
+							onClick={() => setViewAddress(viewAddress - 10)}
+						>
+							<DoubleArrowLeftIcon />
+						</Button>
+						<Button
+							variant="outline"
+							className="aspect-square"
+							size="icon"
+							onClick={() => setViewAddress(viewAddress - 1)}
+						>
+							<MinusIcon />
+						</Button>
+						<Input
+							type="number"
+							value={viewAddress}
+							onChange={(e) => setViewAddress(+e.target.value)}
+						/>
+						<Button
+							variant="outline"
+							className="aspect-square"
+							size="icon"
+							onClick={() => setViewAddress(viewAddress + 1)}
+						>
+							<PlusIcon />
+						</Button>
+						<Button
+							variant="outline"
+							className="aspect-square"
+							size="icon"
+							onClick={() => setViewAddress(viewAddress + 10)}
+						>
+							<DoubleArrowRightIcon />
+						</Button>
+					</div>
 				</div>
 			</div>
 
