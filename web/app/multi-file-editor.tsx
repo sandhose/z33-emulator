@@ -1,7 +1,7 @@
 import { Editor, Monaco, useMonaco } from "@monaco-editor/react";
 import type * as React from "react";
 import { useState } from "react";
-import { Uri } from "monaco-editor";
+import { Uri } from "monaco-editor/esm/vs/editor/editor.api.js";
 import { Button } from "./components/ui/button";
 import { Separator } from "./components/ui/separator";
 import { Input } from "./components/ui/input";
@@ -175,7 +175,7 @@ export const MultiFileEditor: React.FC<Props> = ({
 			monaco.editor.createModel(
 				content,
 				"assembly",
-				Uri.file(path.replace(/^.*[\\/]/, "")),
+				monaco.Uri.file(path.replace(/^.*[\\/]/, "")),
 			);
 		}
 	}
@@ -235,12 +235,12 @@ export const MultiFileEditor: React.FC<Props> = ({
 				<div className="flex flex-col gap-4 p-4 border rounded">
 					<NewFileForm
 						onSubmit={(filename) => {
-							setFileName(Uri.file(filename));
 							if (!monaco) {
 								return;
 							}
 
-							const uri = Uri.file(filename);
+							setFileName(monaco.Uri.file(filename));
+							const uri = monaco.Uri.file(filename);
 							monaco.editor.createModel("", "assembly", uri);
 							setFileName(uri);
 							sync();
@@ -257,7 +257,7 @@ export const MultiFileEditor: React.FC<Props> = ({
 									return;
 								}
 
-								const uri = Uri.file(file.name);
+								const uri = monaco.Uri.file(file.name);
 								monaco.editor.createModel(
 									reader.result as string,
 									"assembly",
