@@ -155,7 +155,7 @@ dependencies = [
 [[package]]
 name = "codespan-reporting"
 version = "0.11.1"
-source = "git+https://github.com/brendanzab/codespan.git#c84116f5a667bfce2aa1e045205c5832cfee1548"
+source = "git+https://github.com/brendanzab/codespan.git#57c223b08932ba8a4644f2dcc1571c87844b7c68"
 dependencies = [
  "termcolor",
  "unicode-width",
