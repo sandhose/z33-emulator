@@ -174,7 +174,7 @@ jobs:
           mv ./artifacts/{x86_64,aarch64}-{linux,macos,windows}/* ./
 
       - name: Prepare a release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: |
             z33-cli-x86_64-linux.tar.gz
