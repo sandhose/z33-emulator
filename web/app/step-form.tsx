@@ -67,7 +67,12 @@ export const StepForm: React.FC<{ onStep: () => boolean }> = ({ onStep }) => {
 		setSpeed(values.speed);
 		setLastStepsValue(values.steps);
 		setStepsToRun(values.steps);
+		onStepCallback();
 	}
+
+	const [currentStepsInput] = form.watch(["steps"]);
+	// For some reason, the input is sometimes a number, sometimes a string
+	const willRunOneStep = `${currentStepsInput}` === "1";
 
 	return panicked ? (
 		<div className="border p-4 rounded text-center text-xl border-destructive bg-destructive-foreground text-destructive">
@@ -86,15 +91,15 @@ export const StepForm: React.FC<{ onStep: () => boolean }> = ({ onStep }) => {
 			>
 				<FormField
 					control={form.control}
+					name="speed"
 					disabled={stepsToRun > 0}
-					name="steps"
 					render={({ field }) => (
-						<FormItem>
-							<FormLabel>Steps</FormLabel>
+						<FormItem className={willRunOneStep ? "hidden" : ""}>
+							<FormLabel>Speed: {field.value} op/s</FormLabel>
 							<FormControl>
-								<Input {...field} type="number" />
+								<Input {...field} min="1" max="100" step="1" type="range" />
 							</FormControl>
-							<FormDescription>How many steps to run</FormDescription>
+							<FormDescription>How fast to run</FormDescription>
 							<FormMessage />
 						</FormItem>
 					)}
@@ -102,15 +107,15 @@ export const StepForm: React.FC<{ onStep: () => boolean }> = ({ onStep }) => {
 
 				<FormField
 					control={form.control}
-					name="speed"
 					disabled={stepsToRun > 0}
+					name="steps"
 					render={({ field }) => (
 						<FormItem>
-							<FormLabel>Speed: {field.value} op/s</FormLabel>
+							<FormLabel>Steps</FormLabel>
 							<FormControl>
-								<Input {...field} min="1" max="100" step="1" type="range" />
+								<Input min={1} {...field} type="number" />
 							</FormControl>
-							<FormDescription>How fast to run</FormDescription>
+							<FormDescription>How many steps to run</FormDescription>
 							<FormMessage />
 						</FormItem>
 					)}
@@ -133,7 +138,7 @@ export const StepForm: React.FC<{ onStep: () => boolean }> = ({ onStep }) => {
 						) : null}
 					</>
 				) : (
-					<Button type="submit">Run</Button>
+					<Button type="submit">{willRunOneStep ? "Step" : "Run"}</Button>
 				)}
 			</form>
 		</Form>
