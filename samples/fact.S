@@ -1,10 +1,8 @@
-.addr 100
 main:
     push 5
     call factorielle
     reset
 
-.addr 200
 factorielle:
     ld   [%sp+1],%a
     cmp  1,%a
@@ -21,7 +19,6 @@ factorielle:
     pop  %b           // restaurer b
     rtn
 
-.addr 300
 casparticulier:
     ld  1, %a
     rtn

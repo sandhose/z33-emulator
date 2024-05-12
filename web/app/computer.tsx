@@ -12,7 +12,6 @@ import {
 } from "./components/ui/table";
 import { Input } from "./components/ui/input";
 import { StepForm } from "./step-form";
-import { Separator } from "./components/ui/separator";
 import { Button } from "./components/ui/button";
 import {
 	DoubleArrowLeftIcon,
@@ -27,12 +26,48 @@ type Props = {
 	computer: Computer;
 };
 
-const CellView: React.FC<{ cell: Cell }> = ({ cell }) =>
-	cell.type === "word"
-		? cell.word
-		: cell.type === "instruction"
-		  ? cell.instruction
-		  : "0 (empty)";
+const Word: React.FC<{ word: number; labels: Map<number, string[]> }> = ({
+	word,
+	labels,
+}) => {
+	const list = labels.get(word);
+	if (list) {
+		return <>{word} = {...list.map((l) => <Label label={l} />)}</>;
+	}
+
+	// Find the nearest label with offset.
+	let distance = 100;
+	let nearest: string[] | null = null;
+	for (const [address, candidates] of labels) {
+		const d = word - address;
+		if (d > 0 && d < distance) {
+			distance = d;
+			nearest = candidates;
+		}
+	}
+
+	if (nearest) {
+		return (
+			<>
+				{word} = {...nearest.map((l) => <Label label={`${l}+${distance}`} />)}
+			</>
+		);
+	}
+
+	return word;
+};
+
+const CellView: React.FC<{ cell: Cell; labels: Map<number, string[]> }> = ({
+	cell,
+	labels,
+}) =>
+	cell.type === "word" ? (
+		<Word word={cell.word} labels={labels} />
+	) : cell.type === "instruction" ? (
+		cell.instruction
+	) : (
+		"0 (empty)"
+	);
 
 const normalize = (value: number): number =>
 	Math.max(0, Math.min(value, MEMORY_SIZE - 1));
@@ -45,13 +80,20 @@ const useMemoryCell = (computer: Computer, address: number): Cell => {
 	return useSyncExternalStore(subscribe, () => computer.memory(address));
 };
 
-const MemoryCell: React.FC<{ computer: Computer; address: number }> = ({
-	computer,
-	address,
-}) => {
+const MemoryCell: React.FC<{
+	computer: Computer;
+	address: number;
+	labels: Map<number, string[]>;
+}> = ({ computer, address, labels }) => {
 	const cell = useMemoryCell(computer, address);
-	return <CellView cell={cell} />;
+	return <CellView cell={cell} labels={labels} />;
 };
+
+const Label: React.FC<{ label: string }> = ({ label }) => (
+	<span className="px-2 bg-accent text-accent-foreground rounded text-xs">
+		{label}
+	</span>
+);
 
 const MemoryViewer: React.FC<{
 	computer: Computer;
@@ -82,9 +124,15 @@ const MemoryViewer: React.FC<{
 					>
 						<TableCell>{address}</TableCell>
 						<TableCell>
-							<MemoryCell computer={computer} address={address} />
+							<MemoryCell
+								computer={computer}
+								address={address}
+								labels={labels}
+							/>
 						</TableCell>
-						<TableCell>{labels.get(address)?.join(", ") || ""}</TableCell>
+						<TableCell>
+							{...(labels.get(address)?.map((l) => <Label label={l} />) || [])}
+						</TableCell>
 					</TableRow>
 				))}
 			</TableBody>
@@ -100,7 +148,10 @@ const useRegisters = (computer: Computer): Registers => {
 	return useSyncExternalStore(subscribe, () => computer.registers());
 };
 
-const RegisterView: React.FC<{ registers: Registers }> = ({ registers }) => {
+const RegisterView: React.FC<{
+	registers: Registers;
+	labels: Map<number, string[]>;
+}> = ({ registers, labels }) => {
 	return (
 		<Table>
 			<TableHeader>
@@ -113,18 +164,20 @@ const RegisterView: React.FC<{ registers: Registers }> = ({ registers }) => {
 				<TableRow>
 					<TableCell>%a</TableCell>
 					<TableCell>
-						<CellView cell={registers.a} />
+						<CellView cell={registers.a} labels={labels} />
 					</TableCell>
 				</TableRow>
 				<TableRow>
 					<TableCell>%b</TableCell>
 					<TableCell>
-						<CellView cell={registers.b} />
+						<CellView cell={registers.b} labels={labels} />
 					</TableCell>
 				</TableRow>
 				<TableRow>
 					<TableCell>%pc</TableCell>
-					<TableCell>{registers.pc}</TableCell>
+					<TableCell>
+						<Word word={registers.pc} labels={labels} />
+					</TableCell>
 				</TableRow>
 				<TableRow>
 					<TableCell>%sp</TableCell>
@@ -159,7 +212,7 @@ export const ComputerView: React.FC<Props> = ({ computer }) => {
 			<div className="flex flex-col gap-4">
 				<div className="border p-4 rounded">Cycles: {computer.cycles}</div>
 				<div className="flex-1">
-					<RegisterView registers={registers} />
+					<RegisterView registers={registers} labels={labels} />
 				</div>
 				<StepForm onStep={onStep} />
 			</div>
