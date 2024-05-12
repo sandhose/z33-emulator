@@ -1,4 +1,5 @@
 import { Editor, Monaco, useMonaco } from "@monaco-editor/react";
+import { useMediaQuery } from "usehooks-ts";
 import type * as React from "react";
 import { useState } from "react";
 import { Uri } from "monaco-editor/esm/vs/editor/editor.api.js";
@@ -143,6 +144,7 @@ export const MultiFileEditor: React.FC<Props> = ({
 	const [fileName, setFileName] = useState(Uri.file(initialSelected));
 	const [fileNames, setFileNames] = useState<Uri[]>([]);
 	const [program, setProgram] = useState<Program | null>(null);
+	const darkMode = useMediaQuery("(prefers-color-scheme: dark)");
 
 	function sync() {
 		if (!monaco) {
@@ -286,6 +288,7 @@ export const MultiFileEditor: React.FC<Props> = ({
 			<div className="flex-1">
 				<Editor
 					className="editor"
+					theme={darkMode ? "vs-dark" : "light"}
 					path={fileName.path}
 					beforeMount={handleEditorWillMount}
 					onMount={() => sync()}
