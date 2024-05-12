@@ -25,7 +25,7 @@ pub use fs::{Filesystem, InMemoryFilesystem, NativeFilesystem};
 pub enum GetFileError {
     /// An error from the underlying filesystem
     ///
-    /// The inner error is wrapped around a std::arc::Arc because std::io::Error does not implement
+    /// The inner error is wrapped around a `std::arc::Arc` because `std::io::Error` does not implement
     /// Clone, but this error needs to be clonable, since it is stored in the parser cache and
     /// might be returned multiple times.
     #[error("i/o error: {0}")]
