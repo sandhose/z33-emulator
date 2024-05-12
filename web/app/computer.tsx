@@ -90,9 +90,9 @@ const MemoryCell: React.FC<{
 };
 
 const Label: React.FC<{ label: string }> = ({ label }) => (
-	<span className="px-2 bg-accent text-accent-foreground rounded text-xs">
+	<div className="px-2 inline-block bg-accent text-accent-foreground rounded text-xs">
 		{label}
-	</span>
+	</div>
 );
 
 const MemoryViewer: React.FC<{
@@ -102,41 +102,26 @@ const MemoryViewer: React.FC<{
 	highlight: number;
 	labels: Map<number, string[]>;
 	description: string;
-}> = ({ computer, from, count, highlight, labels, description }) => {
+}> = ({ computer, from, count, highlight, labels }) => {
 	const start = normalize(from);
 	const end = normalize(from + count - 1) + 1;
 	const cells = Array.from({ length: end - start }, (_, i) => start + i);
 	return (
-		<Table className="w-96">
-			<TableCaption>{description}</TableCaption>
-			<TableHeader>
-				<TableRow>
-					<TableHead className="w-8">Address</TableHead>
-					<TableHead>Value</TableHead>
-					<TableHead className="w-8">Labels</TableHead>
-				</TableRow>
-			</TableHeader>
-			<TableBody className="font-mono">
-				{cells.map((address) => (
-					<TableRow
-						key={address}
-						data-state={address === highlight ? "selected" : undefined}
-					>
-						<TableCell>{address}</TableCell>
-						<TableCell>
-							<MemoryCell
-								computer={computer}
-								address={address}
-								labels={labels}
-							/>
-						</TableCell>
-						<TableCell>
-							{...(labels.get(address)?.map((l) => <Label label={l} />) || [])}
-						</TableCell>
-					</TableRow>
-				))}
-			</TableBody>
-		</Table>
+		<div className="font-mono text-sm w-96">
+			{cells.map((address) => (
+				<div
+					className="flex px-2 py-1 gap-2 border-b border-b-muted items-center data-[state=selected]:bg-muted"
+					key={address}
+					data-state={address === highlight ? "selected" : undefined}
+				>
+					<div className="w-10">{address}</div>
+					<div className="flex-1">
+						<MemoryCell computer={computer} address={address} labels={labels} />
+					</div>
+					{...(labels.get(address)?.map((l) => <Label label={l} />) || [])}
+				</div>
+			))}
+		</div>
 	);
 };
 
