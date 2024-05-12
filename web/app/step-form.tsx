@@ -75,12 +75,12 @@ export const StepForm: React.FC<{ onStep: () => boolean }> = ({ onStep }) => {
 	const willRunOneStep = `${currentStepsInput}` === "1";
 
 	return panicked ? (
-		<div className="border p-4 rounded text-center text-xl border-destructive bg-destructive-foreground text-destructive">
+		<div className="border p-4 rounded font-bold text-center text-xl border-destructive bg-destructive-foreground text-destructive">
 			Panicked!
 			<div className="text-xs font-bold">{panicked}</div>
 		</div>
 	) : halt ? (
-		<div className="border p-4 rounded text-center text-xl border-destructive bg-destructive-foreground text-destructive">
+		<div className="border p-4 rounded font-bold text-center text-xl border-destructive bg-destructive-foreground text-destructive">
 			Halted
 		</div>
 	) : (
