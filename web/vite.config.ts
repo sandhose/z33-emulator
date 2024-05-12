@@ -4,6 +4,7 @@ import rust from "@wasm-tool/rollup-plugin-rust";
 import { fileURLToPath } from "node:url";
 
 export default defineConfig({
+	base: "./",
 	build: {
 		target: "esnext",
 	},
