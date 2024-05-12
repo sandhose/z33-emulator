@@ -6,14 +6,6 @@ import { Button } from "./components/ui/button";
 import { Separator } from "./components/ui/separator";
 import { Input } from "./components/ui/input";
 import { FilePlusIcon, TrashIcon, UploadIcon } from "@radix-ui/react-icons";
-import {
-	Table,
-	TableBody,
-	TableCell,
-	TableHead,
-	TableHeader,
-	TableRow,
-} from "./components/ui/table";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -25,11 +17,19 @@ import {
 	FormLabel,
 	FormMessage,
 } from "./components/ui/form";
+import { Computer, InMemoryPreprocessor, Program } from "z33-web-bindings";
+import {
+	Popover,
+	PopoverTrigger,
+	PopoverContent,
+} from "./components/ui/popover";
+import { EntrypointSelector } from "./entrypoint-selector";
 
 type Props = {
 	initialFiles: Map<string, string>;
 	initialSelected: string;
 	onCompile?: (files: Map<string, string>, selected: string) => void;
+	onComputer?: (computer: Computer) => void;
 };
 
 const newFileFormSchema = z.object({
@@ -137,11 +137,12 @@ const UploadFileForm: React.FC<{
 export const MultiFileEditor: React.FC<Props> = ({
 	initialFiles,
 	initialSelected,
-	onCompile,
+	onComputer,
 }: Props) => {
 	const monaco = useMonaco();
 	const [fileName, setFileName] = useState(Uri.file(initialSelected));
 	const [fileNames, setFileNames] = useState<Uri[]>([]);
+	const [program, setProgram] = useState<Program | null>(null);
 
 	function sync() {
 		if (!monaco) {
@@ -162,7 +163,10 @@ export const MultiFileEditor: React.FC<Props> = ({
 			models.map((model) => [model.uri.path, model.getValue()]),
 		);
 
-		onCompile?.(files, fileName.path);
+		const preprocessor = new InMemoryPreprocessor(files);
+		const preprocessed = preprocessor.preprocess(fileName.path);
+		const newProgram = Program.parse(preprocessed);
+		setProgram(newProgram);
 	}
 
 	function handleEditorWillMount(monaco: Monaco) {
@@ -183,53 +187,41 @@ export const MultiFileEditor: React.FC<Props> = ({
 	return (
 		<main className="flex h-screen bg-background">
 			<div className="flex flex-col gap-4 p-4 w-96">
-				<div className="flex-1 overflow-auto">
-					<Table>
-						<TableHeader>
-							<TableRow>
-								<TableHead>Filename</TableHead>
-								<TableHead className="w-10">Delete</TableHead>
-							</TableRow>
-						</TableHeader>
-						<TableBody>
-							{fileNames.map((name) => (
-								<TableRow
-									key={name.path}
-									data-state={name.path === fileName.path ? "selected" : ""}
-								>
-									<TableCell>
-										<Button
-											className="w-full font-mono"
-											variant="link"
-											onClick={() => setFileName(name)}
-										>
-											{name.path}
-										</Button>
-									</TableCell>
-									<TableCell>
-										<Button
-											variant="outline"
-											size="icon"
-											onClick={() => {
-												if (!monaco) {
-													return;
-												}
-												for (const model of monaco.editor.getModels()) {
-													if (model.uri.path === name.path) {
-														model.dispose();
-														break;
-													}
-												}
-												sync();
-											}}
-										>
-											<TrashIcon />
-										</Button>
-									</TableCell>
-								</TableRow>
-							))}
-						</TableBody>
-					</Table>
+				<div className="flex-1 flex flex-col overflow-auto">
+					{fileNames.map((name) => (
+						<div
+							className="flex gap-2 items-center data-[state=selected]:bg-muted"
+							key={name.path}
+							data-state={name.path === fileName.path ? "selected" : ""}
+						>
+							<button
+								type="button"
+								className="flex-1 p-2 text-left text-sm font-mono self-stretch hover:underline"
+								onClick={() => setFileName(name)}
+							>
+								{name.path}
+							</button>
+							<Button
+								variant="ghost"
+								className="m-2"
+								size="icon"
+								onClick={() => {
+									if (!monaco) {
+										return;
+									}
+									for (const model of monaco.editor.getModels()) {
+										if (model.uri.path === name.path) {
+											model.dispose();
+											break;
+										}
+									}
+									sync();
+								}}
+							>
+								<TrashIcon />
+							</Button>
+						</div>
+					))}
 				</div>
 
 				<div className="flex flex-col gap-4 p-4 border rounded">
@@ -271,9 +263,24 @@ export const MultiFileEditor: React.FC<Props> = ({
 					/>
 				</div>
 
-				<Button type="button" onClick={() => compile()}>
-					Compile
-				</Button>
+				<Popover
+					onOpenChange={(open) => (open ? compile() : setProgram(null))}
+					open={!!program}
+				>
+					<PopoverTrigger asChild>
+						<Button type="button">Compile</Button>
+					</PopoverTrigger>
+					<PopoverContent>
+						{program && (
+							<EntrypointSelector
+								entrypoints={program.labels}
+								onRun={(entrypoint) =>
+									onComputer?.(program?.compile(entrypoint))
+								}
+							/>
+						)}
+					</PopoverContent>
+				</Popover>
 			</div>
 
 			<div className="flex-1">
