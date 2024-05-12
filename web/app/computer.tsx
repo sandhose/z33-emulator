@@ -1,24 +1,25 @@
-import type * as React from "react";
-import { useState, useSyncExternalStore, useCallback, useMemo } from "react";
-import { Cell, Computer, Registers } from "z33-web-bindings";
-import {
-	Table,
-	TableBody,
-	TableCaption,
-	TableCell,
-	TableHead,
-	TableHeader,
-	TableRow,
-} from "./components/ui/table";
-import { Input } from "./components/ui/input";
-import { StepForm } from "./step-form";
-import { Button } from "./components/ui/button";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import {
 	DoubleArrowLeftIcon,
 	DoubleArrowRightIcon,
 	MinusIcon,
 	PlusIcon,
 } from "@radix-ui/react-icons";
+import * as React from "react";
+import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
+import { Cell, Computer, Registers } from "z33-web-bindings";
+import { Button } from "./components/ui/button";
+import { Input } from "./components/ui/input";
+import {
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
+} from "./components/ui/table";
+import { StepForm } from "./step-form";
+import { cn } from "./lib/utils";
 
 const MEMORY_SIZE = 10_000;
 
@@ -97,30 +98,65 @@ const Label: React.FC<{ label: string }> = ({ label }) => (
 
 const MemoryViewer: React.FC<{
 	computer: Computer;
-	from: number;
-	count: number;
 	highlight: number;
 	labels: Map<number, string[]>;
-	description: string;
-}> = ({ computer, from, count, highlight, labels }) => {
-	const start = normalize(from);
-	const end = normalize(from + count - 1) + 1;
-	const cells = Array.from({ length: end - start }, (_, i) => start + i);
+}> = ({ computer, highlight, labels }) => {
+	const parentRef = React.useRef(null);
+
+	const rowVirtualizer = useVirtualizer({
+		// Render one more element to have the "TOP OF STACK" cell
+		count: MEMORY_SIZE + 1,
+		initialOffset: highlight * 32,
+		getScrollElement: () => parentRef.current,
+		estimateSize: () => 32,
+	});
+
+	React.useEffect(() => {
+		rowVirtualizer.scrollToIndex(normalize(highlight), { align: "center" });
+	}, [rowVirtualizer, highlight]);
+
 	return (
-		<div className="font-mono text-sm w-96">
-			{cells.map((address) => (
-				<div
-					className="flex px-2 py-1 gap-2 border-b border-b-muted items-center data-[state=selected]:bg-muted"
-					key={address}
-					data-state={address === highlight ? "selected" : undefined}
-				>
-					<div className="w-10">{address}</div>
-					<div className="flex-1">
-						<MemoryCell computer={computer} address={address} labels={labels} />
+		<div className="overflow-auto" ref={parentRef}>
+			<div
+				className="font-mono text-sm w-full relative"
+				style={{ height: `${rowVirtualizer.getTotalSize()}px` }}
+			>
+				{rowVirtualizer.getVirtualItems().map((virtualItem) => (
+					<div
+						className="flex px-2 py-1 gap-2 border-b border-b-muted items-center data-[state=selected]:bg-muted"
+						key={virtualItem.key}
+						style={{
+							position: "absolute",
+							top: 0,
+							left: 0,
+							width: "100%",
+							height: `${virtualItem.size}px`,
+							transform: `translateY(${virtualItem.start}px)`,
+						}}
+						data-state={
+							virtualItem.index === highlight ? "selected" : undefined
+						}
+					>
+						{virtualItem.index === MEMORY_SIZE ? (
+							"TOP OF STACK"
+						) : (
+							<>
+								<div className="w-10">{virtualItem.index}</div>
+								<div className="flex-1">
+									<MemoryCell
+										computer={computer}
+										address={virtualItem.index}
+										labels={labels}
+									/>
+								</div>
+								{...(labels
+									.get(virtualItem.index)
+									?.map((l) => <Label label={l} />) || [])}
+							</>
+						)}
 					</div>
-					{...(labels.get(address)?.map((l) => <Label label={l} />) || [])}
-				</div>
-			))}
+				))}
+			</div>
 		</div>
 	);
 };
@@ -177,6 +213,26 @@ const RegisterView: React.FC<{
 	);
 };
 
+export const Section: React.FC<React.ComponentProps<"section">> = ({
+	className,
+	children,
+	...props
+}) => (
+	<section className={cn("flex flex-col gap-4", className)} {...props}>
+		{children}
+	</section>
+);
+
+export const Title: React.FC<React.ComponentProps<"h1">> = ({
+	className,
+	children,
+	...props
+}) => (
+	<h1 className={cn("text-center text-xl font-bold", className)} {...props}>
+		{children}
+	</h1>
+);
+
 export const ComputerView: React.FC<Props> = ({ computer }) => {
 	const onStep = useCallback(() => computer.step(), [computer]);
 	const registers = useRegisters(computer);
@@ -193,26 +249,41 @@ export const ComputerView: React.FC<Props> = ({ computer }) => {
 	}, [computer]);
 
 	return (
-		<div className="flex justify-center gap-4 p-4 mx-auto *:w-96 h-screen">
-			<div className="flex flex-col gap-4">
+		<div className="flex justify-center gap-4 p-4 w-screen h-screen">
+			<Section className="w-64">
+				<Title>Controls</Title>
 				<div className="border p-4 rounded">Cycles: {computer.cycles}</div>
 				<div className="flex-1">
 					<RegisterView registers={registers} labels={labels} />
 				</div>
 				<StepForm onStep={onStep} />
-			</div>
+			</Section>
 
-			<div className="flex flex-col gap-4">
-				<div className="flex-1 overflow-auto">
-					<MemoryViewer
-						description="Arbitrary memory viewer"
-						computer={computer}
-						from={viewAddress}
-						count={20}
-						highlight={viewAddress}
-						labels={labels}
-					/>
-				</div>
+			<Section className="flex-1">
+				<Title>Program counter</Title>
+				<MemoryViewer
+					computer={computer}
+					highlight={registers.pc}
+					labels={labels}
+				/>
+			</Section>
+
+			<Section className="flex-1">
+				<Title>Stack pointer</Title>
+				<MemoryViewer
+					computer={computer}
+					highlight={registers.sp}
+					labels={labels}
+				/>
+			</Section>
+
+			<Section className="flex-1">
+				<Title>Memory view</Title>
+				<MemoryViewer
+					computer={computer}
+					highlight={viewAddress}
+					labels={labels}
+				/>
 
 				<div className="flex flex-col gap-2 border p-4 rounded">
 					<h4 className="text-sm font-medium">View at label:</h4>
@@ -220,10 +291,11 @@ export const ComputerView: React.FC<Props> = ({ computer }) => {
 					{Array.from(computer.labels).map(([label, address]) => (
 						<Button
 							variant="secondary"
+							size="sm"
 							key={label}
 							onClick={() => setViewAddress(address)}
 						>
-							{label}
+							{label} ({address})
 						</Button>
 					))}
 
@@ -267,24 +339,7 @@ export const ComputerView: React.FC<Props> = ({ computer }) => {
 						</Button>
 					</div>
 				</div>
-			</div>
-
-			<MemoryViewer
-				description="Stack view"
-				computer={computer}
-				from={registers.sp - 5}
-				count={20}
-				highlight={registers.sp}
-				labels={labels}
-			/>
-			<MemoryViewer
-				description="Program counter view"
-				computer={computer}
-				from={registers.pc - 10}
-				count={20}
-				highlight={registers.pc}
-				labels={labels}
-			/>
+			</Section>
 		</div>
 	);
 };
