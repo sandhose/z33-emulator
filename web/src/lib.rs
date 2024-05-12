@@ -1,6 +1,11 @@
 #![forbid(unsafe_code)]
 #![deny(clippy::all, clippy::pedantic)]
-#![allow(clippy::missing_errors_doc, clippy::missing_panics_doc)]
+#![allow(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    /* Tsify derive generates this */
+    clippy::empty_docs
+)]
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
