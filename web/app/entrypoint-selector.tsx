@@ -1,4 +1,4 @@
-import type * as React from "react";
+import * as React from "react";
 import {
 	Form,
 	FormControl,
@@ -25,6 +25,9 @@ const formSchema = z.object({
 	entrypoint: z.string(),
 });
 
+// List of possible default entrypoints to use
+const DEFAULT_ENTRYPOINT_NAMES = ["main", "start", "run", "entry"];
+
 type Props = {
 	onRun?: (entrypoint: string) => void;
 	entrypoints: string[];
@@ -37,6 +40,16 @@ export const EntrypointSelector: React.FC<Props> = ({
 	const form = useForm<z.infer<typeof formSchema>>({
 		resolver: zodResolver(formSchema),
 	});
+
+	React.useEffect(() => {
+		// Let's find a possible candidate for a default entrypoint
+		for (const candidate of DEFAULT_ENTRYPOINT_NAMES) {
+			if (entrypoints.includes(candidate)) {
+				form.setValue("entrypoint", candidate);
+				return;
+			}
+		}
+	}, [entrypoints, form.setValue]);
 
 	function onSubmit(values: z.infer<typeof formSchema>) {
 		onRun?.(values.entrypoint);
@@ -54,7 +67,7 @@ export const EntrypointSelector: React.FC<Props> = ({
 					render={({ field }) => (
 						<FormItem>
 							<FormLabel>Entrypoint</FormLabel>
-							<Select onValueChange={field.onChange} defaultValue={field.value}>
+							<Select onValueChange={field.onChange} value={field.value}>
 								<FormControl>
 									<SelectTrigger>
 										<SelectValue placeholder="Entrypoint" />
