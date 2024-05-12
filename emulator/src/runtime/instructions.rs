@@ -345,7 +345,13 @@ impl Instruction {
                 computer.push(val)?;
             }
 
-            Self::Reset => return Err(ProcessorError::Reset),
+            Self::Reset => {
+                // We go back one instruction on the %pc so that
+                // we're pointing to the actual reset instruction when
+                // the computer halts
+                computer.registers.pc -= 1;
+                return Err(ProcessorError::Reset);
+            }
 
             Self::Rti => {
                 computer.check_privileged()?;
