@@ -180,7 +180,7 @@ export const MultiFileEditor: React.FC<Props> = ({
 		for (const [path, content] of initialFiles) {
 			monaco.editor.createModel(
 				content,
-				"assembly",
+				"z33",
 				monaco.Uri.file(path.replace(/^.*[\\/]/, "")),
 			);
 		}
