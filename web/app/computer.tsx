@@ -5,9 +5,18 @@ import {
 	MinusIcon,
 	PlusIcon,
 } from "@radix-ui/react-icons";
-import * as React from "react";
-import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
-import { Cell, Computer, Registers } from "z33-web-bindings";
+import type * as React from "react";
+import {
+	useCallback,
+	useMemo,
+	useState,
+	useSyncExternalStore,
+	memo,
+	useDeferredValue,
+	useRef,
+	useEffect,
+} from "react";
+import { Cell, Computer, Cycles, Registers } from "z33-web-bindings";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
 import {
@@ -23,14 +32,9 @@ import { cn } from "./lib/utils";
 
 const MEMORY_SIZE = 10_000;
 
-type Props = {
-	computer: Computer;
-};
+type Labels = Map<number, string[]>;
 
-const Word: React.FC<{ word: number; labels: Map<number, string[]> }> = ({
-	word,
-	labels,
-}) => {
+const Word: React.FC<{ word: number; labels: Labels }> = ({ word, labels }) => {
 	const list = labels.get(word);
 	if (list) {
 		return <>{word} = {...list.map((l) => <Label label={l} />)}</>;
@@ -58,10 +62,7 @@ const Word: React.FC<{ word: number; labels: Map<number, string[]> }> = ({
 	return word;
 };
 
-const CellView: React.FC<{ cell: Cell; labels: Map<number, string[]> }> = ({
-	cell,
-	labels,
-}) =>
+const CellView: React.FC<{ cell: Cell; labels: Labels }> = ({ cell, labels }) =>
 	cell.type === "word" ? (
 		<Word word={cell.word} labels={labels} />
 	) : cell.type === "instruction" ? (
@@ -78,13 +79,14 @@ const useMemoryCell = (computer: Computer, address: number): Cell => {
 		(cb: (cell: Cell) => void) => computer.subscribe_memory(address, cb),
 		[computer, address],
 	);
-	return useSyncExternalStore(subscribe, () => computer.memory(address));
+	const value = useSyncExternalStore(subscribe, () => computer.memory(address));
+	return useDeferredValue(value);
 };
 
 const MemoryCell: React.FC<{
 	computer: Computer;
 	address: number;
-	labels: Map<number, string[]>;
+	labels: Labels;
 }> = ({ computer, address, labels }) => {
 	const cell = useMemoryCell(computer, address);
 	return <CellView cell={cell} labels={labels} />;
@@ -99,9 +101,9 @@ const Label: React.FC<{ label: string }> = ({ label }) => (
 const MemoryViewer: React.FC<{
 	computer: Computer;
 	highlight: number;
-	labels: Map<number, string[]>;
-}> = ({ computer, highlight, labels }) => {
-	const parentRef = React.useRef(null);
+	labels: Labels;
+}> = memo(({ computer, highlight, labels }) => {
+	const parentRef = useRef(null);
 
 	const rowVirtualizer = useVirtualizer({
 		// Render one more element to have the "TOP OF STACK" cell
@@ -111,7 +113,7 @@ const MemoryViewer: React.FC<{
 		estimateSize: () => 32,
 	});
 
-	React.useEffect(() => {
+	useEffect(() => {
 		rowVirtualizer.scrollToIndex(normalize(highlight), { align: "center" });
 	}, [rowVirtualizer, highlight]);
 
@@ -159,20 +161,33 @@ const MemoryViewer: React.FC<{
 			</div>
 		</div>
 	);
-};
+});
+MemoryViewer.displayName = "MemoryViewer";
 
 const useRegisters = (computer: Computer): Registers => {
 	const subscribe = useCallback(
 		(cb: (registers: Registers) => void) => computer.subscribe_registers(cb),
 		[computer],
 	);
-	return useSyncExternalStore(subscribe, () => computer.registers());
+	const registers = useSyncExternalStore(subscribe, () => computer.registers());
+	return useDeferredValue(registers);
+};
+
+const useCycles = (computer: Computer): Cycles => {
+	const subscribe = useCallback(
+		(cb: (cycles: Cycles) => void) => computer.subscribe_cycles(cb),
+		[computer],
+	);
+	const cycles = useSyncExternalStore(subscribe, () => computer.cycles());
+	console.log(cycles);
+	return useDeferredValue(cycles);
 };
 
 const RegisterView: React.FC<{
-	registers: Registers;
-	labels: Map<number, string[]>;
-}> = ({ registers, labels }) => {
+	computer: Computer;
+	labels: Labels;
+}> = ({ computer, labels }) => {
+	const registers = useRegisters(computer);
 	return (
 		<Table>
 			<TableHeader>
@@ -233,14 +248,155 @@ export const Title: React.FC<React.ComponentProps<"h1">> = ({
 	</h1>
 );
 
-export const ComputerView: React.FC<Props> = ({ computer }) => {
+export const CyclesView: React.FC<{ computer: Computer; className?: string }> =
+	({ computer, className }) => {
+		const cycles = useCycles(computer);
+		return <div className={className}>Cycles: {cycles}</div>;
+	};
+
+export const ControlSection: React.FC<{
+	className?: string;
+	computer: Computer;
+	labels: Labels;
+}> = memo(({ className, computer, labels }) => {
 	const onStep = useCallback(() => computer.step(), [computer]);
+	return (
+		<Section className={className}>
+			<Title>Controls</Title>
+			<CyclesView computer={computer} className="border p-4 rounded" />
+			<div className="flex-1">
+				<RegisterView computer={computer} labels={labels} />
+			</div>
+			<StepForm onStep={onStep} />
+		</Section>
+	);
+});
+ControlSection.displayName = "ControlSection";
+
+export const ProgramCounterSection: React.FC<{
+	className?: string;
+	computer: Computer;
+	labels: Labels;
+}> = memo(({ className, computer, labels }) => {
 	const registers = useRegisters(computer);
+	const programCounter = registers.pc;
+	return (
+		<Section className={className}>
+			<Title>Stack pointer</Title>
+			<MemoryViewer
+				computer={computer}
+				highlight={programCounter}
+				labels={labels}
+			/>
+		</Section>
+	);
+});
+ProgramCounterSection.displayName = "ProgramCounterSection";
 
+export const StackPointerSection: React.FC<{
+	className?: string;
+	computer: Computer;
+	labels: Labels;
+}> = memo(({ className, computer, labels }) => {
+	const registers = useRegisters(computer);
+	const stackPointer = registers.sp;
+	return (
+		<Section className={className}>
+			<Title>Stack pointer</Title>
+			<MemoryViewer
+				computer={computer}
+				highlight={stackPointer}
+				labels={labels}
+			/>
+		</Section>
+	);
+});
+StackPointerSection.displayName = "StackPointerSection";
+
+export const MemoryViewSection: React.FC<{
+	className?: string;
+	computer: Computer;
+	labels: Labels;
+}> = memo(({ className, computer, labels }) => {
 	const [viewAddress, setViewAddress] = useState(1000);
+	const minus10 = useCallback(() => setViewAddress((addr) => addr - 10), []);
+	const minus1 = useCallback(() => setViewAddress((addr) => addr - 1), []);
+	const plus1 = useCallback(() => setViewAddress((addr) => addr + 1), []);
+	const plus10 = useCallback(() => setViewAddress((addr) => addr + 10), []);
 
+	return (
+		<Section className={className}>
+			<Title>Memory view</Title>
+			<MemoryViewer
+				computer={computer}
+				highlight={viewAddress}
+				labels={labels}
+			/>
+
+			<div className="flex flex-col gap-2 border p-4 rounded">
+				<h4 className="text-sm font-medium">View at label:</h4>
+
+				{Array.from(computer.labels).map(([label, address]) => (
+					<Button
+						variant="secondary"
+						size="sm"
+						key={label}
+						onClick={() => setViewAddress(address)}
+					>
+						{label} ({address})
+					</Button>
+				))}
+
+				<div className="flex gap-2 items-center">
+					<Button
+						variant="outline"
+						className="aspect-square"
+						size="icon"
+						onClick={minus10}
+					>
+						<DoubleArrowLeftIcon />
+					</Button>
+					<Button
+						variant="outline"
+						className="aspect-square"
+						size="icon"
+						onClick={minus1}
+					>
+						<MinusIcon />
+					</Button>
+					<Input
+						type="number"
+						value={viewAddress}
+						onChange={(e) => setViewAddress(+e.target.value)}
+					/>
+					<Button
+						variant="outline"
+						className="aspect-square"
+						size="icon"
+						onClick={plus1}
+					>
+						<PlusIcon />
+					</Button>
+					<Button
+						variant="outline"
+						className="aspect-square"
+						size="icon"
+						onClick={plus10}
+					>
+						<DoubleArrowRightIcon />
+					</Button>
+				</div>
+			</div>
+		</Section>
+	);
+});
+MemoryViewSection.displayName = "MemoryViewSection";
+
+export const ComputerView: React.FC<{ computer: Computer }> = ({
+	computer,
+}) => {
 	const labels = useMemo(() => {
-		const labels = new Map<number, string[]>();
+		const labels: Labels = new Map();
 		for (const [label, address] of computer.labels) {
 			const values = labels.get(address) || [];
 			labels.set(address, [...values, label]);
@@ -250,96 +406,25 @@ export const ComputerView: React.FC<Props> = ({ computer }) => {
 
 	return (
 		<div className="flex justify-center gap-4 p-4 w-screen h-screen">
-			<Section className="w-64">
-				<Title>Controls</Title>
-				<div className="border p-4 rounded">Cycles: {computer.cycles}</div>
-				<div className="flex-1">
-					<RegisterView registers={registers} labels={labels} />
-				</div>
-				<StepForm onStep={onStep} />
-			</Section>
+			<ControlSection className="w-96" computer={computer} labels={labels} />
 
-			<Section className="flex-1">
-				<Title>Program counter</Title>
-				<MemoryViewer
-					computer={computer}
-					highlight={registers.pc}
-					labels={labels}
-				/>
-			</Section>
+			<ProgramCounterSection
+				className="flex-1"
+				computer={computer}
+				labels={labels}
+			/>
 
-			<Section className="flex-1">
-				<Title>Stack pointer</Title>
-				<MemoryViewer
-					computer={computer}
-					highlight={registers.sp}
-					labels={labels}
-				/>
-			</Section>
+			<StackPointerSection
+				className="flex-1"
+				computer={computer}
+				labels={labels}
+			/>
 
-			<Section className="flex-1">
-				<Title>Memory view</Title>
-				<MemoryViewer
-					computer={computer}
-					highlight={viewAddress}
-					labels={labels}
-				/>
-
-				<div className="flex flex-col gap-2 border p-4 rounded">
-					<h4 className="text-sm font-medium">View at label:</h4>
-
-					{Array.from(computer.labels).map(([label, address]) => (
-						<Button
-							variant="secondary"
-							size="sm"
-							key={label}
-							onClick={() => setViewAddress(address)}
-						>
-							{label} ({address})
-						</Button>
-					))}
-
-					<div className="flex gap-2 items-center">
-						<Button
-							variant="outline"
-							className="aspect-square"
-							size="icon"
-							onClick={() => setViewAddress(viewAddress - 10)}
-						>
-							<DoubleArrowLeftIcon />
-						</Button>
-						<Button
-							variant="outline"
-							className="aspect-square"
-							size="icon"
-							onClick={() => setViewAddress(viewAddress - 1)}
-						>
-							<MinusIcon />
-						</Button>
-						<Input
-							type="number"
-							value={viewAddress}
-							onChange={(e) => setViewAddress(+e.target.value)}
-						/>
-						<Button
-							variant="outline"
-							className="aspect-square"
-							size="icon"
-							onClick={() => setViewAddress(viewAddress + 1)}
-						>
-							<PlusIcon />
-						</Button>
-						<Button
-							variant="outline"
-							className="aspect-square"
-							size="icon"
-							onClick={() => setViewAddress(viewAddress + 10)}
-						>
-							<DoubleArrowRightIcon />
-						</Button>
-					</div>
-				</div>
-			</Section>
+			<MemoryViewSection
+				className="flex-1"
+				computer={computer}
+				labels={labels}
+			/>
 		</div>
 	);
 };

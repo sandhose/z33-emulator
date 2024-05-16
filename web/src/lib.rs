@@ -121,6 +121,8 @@ impl Program {
             sr: computer.registers.sr.bits(),
         });
 
+        let cycles = Observable::new(Cycles(computer.cycles));
+
         tracing::info!("Cloning");
         let memory = computer.memory.clone();
         tracing::info!("Cloned");
@@ -131,11 +133,16 @@ impl Program {
         Ok(Computer {
             debug_info,
             computer,
+            cycles,
             registers,
             memory,
         })
     }
 }
+
+#[derive(Serialize, Tsify, Clone, Copy, PartialEq, Eq)]
+#[tsify(into_wasm_abi)]
+pub struct Cycles(usize);
 
 #[derive(Serialize, Tsify)]
 #[tsify(into_wasm_abi)]
@@ -145,6 +152,7 @@ pub struct Labels(Vec<String>);
 pub struct Computer {
     debug_info: z33_emulator::compiler::DebugInfo,
     computer: z33_emulator::runtime::Computer,
+    cycles: Observable<Cycles>,
     registers: Observable<Registers>,
     memory: MemoryObserver,
 }
@@ -186,6 +194,9 @@ extern "C" {
     #[wasm_bindgen(typescript_type = "(registers: Registers) => void")]
     pub type RegistersCallback;
 
+    #[wasm_bindgen(typescript_type = "(cycles: Cycles) => void")]
+    pub type CyclesCallback;
+
     #[wasm_bindgen(typescript_type = "(cell: Cell) => void")]
     pub type MemoryCallback;
 
@@ -214,6 +225,7 @@ impl Computer {
             sr: self.computer.registers.sr.bits(),
         };
         self.registers.set(registers);
+        self.cycles.set(Cycles(self.computer.cycles));
         self.memory.set(self.computer.memory.clone());
 
         res
@@ -225,11 +237,16 @@ impl Computer {
         LabelsWithAddresses(self.debug_info.labels.clone())
     }
 
-    #[wasm_bindgen(getter)]
     #[must_use]
-    pub fn cycles(&self) -> usize {
-        // TODO: this should be observable
-        self.computer.cycles
+    pub fn cycles(&self) -> <Cycles as Tsify>::JsType {
+        let value = JsValue::from(self.cycles.get());
+        value.into()
+    }
+
+    pub fn subscribe_cycles(&mut self, callback: CyclesCallback) -> JsValue {
+        self.cycles
+            .subscribe(callback.unchecked_into())
+            .unchecked_into()
     }
 
     #[must_use]
