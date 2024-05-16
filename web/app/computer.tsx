@@ -4,6 +4,7 @@ import {
 	DoubleArrowRightIcon,
 	MinusIcon,
 	PlusIcon,
+	Crosshair1Icon,
 } from "@radix-ui/react-icons";
 import type * as React from "react";
 import {
@@ -11,6 +12,8 @@ import {
 	useMemo,
 	useState,
 	useSyncExternalStore,
+	forwardRef,
+	useImperativeHandle,
 	memo,
 	useDeferredValue,
 	useRef,
@@ -29,6 +32,12 @@ import {
 } from "./components/ui/table";
 import { StepForm } from "./step-form";
 import { cn } from "./lib/utils";
+import {
+	Tooltip,
+	TooltipContent,
+	TooltipProvider,
+	TooltipTrigger,
+} from "./components/ui/tooltip";
 
 const MEMORY_SIZE = 10_000;
 
@@ -98,70 +107,92 @@ const Label: React.FC<{ label: string }> = ({ label }) => (
 	</div>
 );
 
-const MemoryViewer: React.FC<{
+type MemoryViewerProps = {
 	computer: Computer;
 	highlight: number;
 	labels: Labels;
-}> = memo(({ computer, highlight, labels }) => {
-	const parentRef = useRef(null);
+};
 
-	const rowVirtualizer = useVirtualizer({
-		// Render one more element to have the "TOP OF STACK" cell
-		count: MEMORY_SIZE + 1,
-		initialOffset: highlight * 32,
-		getScrollElement: () => parentRef.current,
-		estimateSize: () => 32,
-	});
+type MemoryViewerRef = {
+	recenter: () => void;
+};
 
-	useEffect(() => {
-		rowVirtualizer.scrollToIndex(normalize(highlight), { align: "center" });
-	}, [rowVirtualizer, highlight]);
+const MemoryViewer = memo(
+	forwardRef<MemoryViewerRef, MemoryViewerProps>(
+		({ computer, highlight, labels }, ref) => {
+			const parentRef = useRef(null);
 
-	return (
-		<div className="overflow-auto" ref={parentRef}>
-			<div
-				className="font-mono text-sm w-full relative"
-				style={{ height: `${rowVirtualizer.getTotalSize()}px` }}
-			>
-				{rowVirtualizer.getVirtualItems().map((virtualItem) => (
+			const rowVirtualizer = useVirtualizer({
+				// Render one more element to have the "TOP OF STACK" cell
+				count: MEMORY_SIZE + 1,
+				initialOffset: highlight * 32,
+				getScrollElement: () => parentRef.current,
+				estimateSize: () => 32,
+			});
+
+			const recenter = useCallback(() => {
+				rowVirtualizer.scrollToIndex(normalize(highlight), { align: "center" });
+			}, [rowVirtualizer, highlight]);
+
+			useEffect(() => {
+				recenter();
+			}, [recenter]);
+
+			useImperativeHandle(
+				ref,
+				() => ({
+					recenter,
+				}),
+				[recenter],
+			);
+
+			return (
+				<div className="overflow-auto" ref={parentRef}>
 					<div
-						className="flex px-2 py-1 gap-2 border-b border-b-muted items-center data-[state=selected]:bg-muted"
-						key={virtualItem.key}
-						style={{
-							position: "absolute",
-							top: 0,
-							left: 0,
-							width: "100%",
-							height: `${virtualItem.size}px`,
-							transform: `translateY(${virtualItem.start}px)`,
-						}}
-						data-state={
-							virtualItem.index === highlight ? "selected" : undefined
-						}
+						className="font-mono text-sm w-full relative"
+						style={{ height: `${rowVirtualizer.getTotalSize()}px` }}
 					>
-						{virtualItem.index === MEMORY_SIZE ? (
-							"TOP OF STACK"
-						) : (
-							<>
-								<div className="w-10">{virtualItem.index}</div>
-								<div className="flex-1">
-									<MemoryCell
-										computer={computer}
-										address={virtualItem.index}
-										labels={labels}
-									/>
-								</div>
-								{...(labels
-									.get(virtualItem.index)
-									?.map((l) => <Label label={l} />) || [])}
-							</>
-						)}
+						{rowVirtualizer.getVirtualItems().map((virtualItem) => (
+							<div
+								className="flex px-2 py-1 gap-2 border-b border-b-muted items-center data-[state=selected]:bg-muted"
+								key={virtualItem.key}
+								style={{
+									position: "absolute",
+									top: 0,
+									left: 0,
+									width: "100%",
+									height: `${virtualItem.size}px`,
+									transform: `translateY(${virtualItem.start}px)`,
+								}}
+								data-state={
+									virtualItem.index === highlight ? "selected" : undefined
+								}
+							>
+								{virtualItem.index === MEMORY_SIZE ? (
+									"TOP OF STACK"
+								) : (
+									<>
+										<div className="w-10">{virtualItem.index}</div>
+										<div className="flex-1">
+											<MemoryCell
+												computer={computer}
+												address={virtualItem.index}
+												labels={labels}
+											/>
+										</div>
+										{...(labels
+											.get(virtualItem.index)
+											?.map((l) => <Label label={l} />) || [])}
+									</>
+								)}
+							</div>
+						))}
 					</div>
-				))}
-			</div>
-		</div>
-	);
-});
+				</div>
+			);
+		},
+	),
+);
 MemoryViewer.displayName = "MemoryViewer";
 
 const useRegisters = (computer: Computer): Registers => {
@@ -278,12 +309,29 @@ export const ProgramCounterSection: React.FC<{
 	computer: Computer;
 	labels: Labels;
 }> = memo(({ className, computer, labels }) => {
+	const ref = useRef<MemoryViewerRef>(null);
 	const registers = useRegisters(computer);
 	const programCounter = registers.pc;
 	return (
 		<Section className={className}>
-			<Title>Stack pointer</Title>
+			<div className="flex justify-between items-center">
+				<Title>Program counter</Title>
+				<Tooltip>
+					<TooltipTrigger asChild>
+						<Button
+							variant="secondary"
+							size="icon"
+							onClick={() => ref.current?.recenter()}
+						>
+							<Crosshair1Icon />
+						</Button>
+					</TooltipTrigger>
+					<TooltipContent>Recenter</TooltipContent>
+				</Tooltip>
+			</div>
+
 			<MemoryViewer
+				ref={ref}
 				computer={computer}
 				highlight={programCounter}
 				labels={labels}
@@ -298,11 +346,27 @@ export const StackPointerSection: React.FC<{
 	computer: Computer;
 	labels: Labels;
 }> = memo(({ className, computer, labels }) => {
+	const ref = useRef<MemoryViewerRef>(null);
 	const registers = useRegisters(computer);
 	const stackPointer = registers.sp;
 	return (
 		<Section className={className}>
-			<Title>Stack pointer</Title>
+			<div className="flex justify-between items-center">
+				<Title>Stack pointer</Title>
+				<Tooltip>
+					<TooltipTrigger asChild>
+						<Button
+							variant="secondary"
+							size="icon"
+							onClick={() => ref.current?.recenter()}
+						>
+							<Crosshair1Icon />
+						</Button>
+					</TooltipTrigger>
+					<TooltipContent>Recenter</TooltipContent>
+				</Tooltip>
+			</div>
+
 			<MemoryViewer
 				computer={computer}
 				highlight={stackPointer}

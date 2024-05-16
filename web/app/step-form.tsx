@@ -25,10 +25,10 @@ export const StepForm: React.FC<{ onStep: () => boolean }> = React.memo(
 	({ onStep }) => {
 		const [halt, setHalt] = useState(false);
 		const [panicked, setPanicked] = useState<string | null>(null);
+		const [running, setRunning] = useState(false);
 		const [stepsToRun, setStepsToRun] = useState(0);
 		const [lastStepsValue, setLastStepsValue] = useState(0);
 		const [speed, setSpeed] = useState(1);
-		const running = (halt || panicked !== null) && stepsToRun > 0;
 
 		const onStepCallback = useCallback(() => {
 			try {
@@ -41,6 +41,17 @@ export const StepForm: React.FC<{ onStep: () => boolean }> = React.memo(
 
 			setStepsToRun((prevCounter) => prevCounter - 1);
 		}, [onStep]);
+
+		useEffect(() => {
+			if (halt || panicked !== null) {
+				setRunning(false);
+				return;
+			}
+
+			if (running !== stepsToRun > 0) {
+				setRunning(stepsToRun > 0);
+			}
+		}, [halt, running, panicked, stepsToRun]);
 
 		useEffect(() => {
 			if (running) {
