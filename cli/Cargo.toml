@@ -12,7 +12,7 @@ license = "MIT"
 z33-emulator = { path = "../emulator" }
 
 anstyle = "1.0.7"
-anyhow = "1.0.83"
+anyhow = "1.0.86"
 clap = { version = "4.5.4", features = ["derive"] }
 clap_complete = "4.5.2"
 codespan-reporting = { git = "https://github.com/brendanzab/codespan.git" }
