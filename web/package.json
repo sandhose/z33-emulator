@@ -9,7 +9,7 @@
   "devDependencies": {
     "@biomejs/biome": "1.7.3",
     "@types/node": "^20.12.12",
-    "@types/react": "^18.3.2",
+    "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.2.1",
     "@wasm-tool/rollup-plugin-rust": "^2.4.5",
