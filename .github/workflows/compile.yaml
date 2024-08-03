@@ -89,7 +89,7 @@ jobs:
           shared-key: ${{ matrix.arch }}-linux
 
       - name: Install zig and cargo-zigbuild
-        run: pip3 install ziglang cargo-zigbuild
+        run: pipx install ziglang cargo-zigbuild
 
       - name: Build the binary
         run: cargo zigbuild --release --target=${{ matrix.arch }}-unknown-linux-musl -p z33-cli
@@ -140,7 +140,7 @@ jobs:
           key: cargo-xwin-${{ matrix.arch }}
 
       - name: Install cargo-xwin
-        run: pip3 install cargo-xwin
+        run: pipx install cargo-xwin
 
       - name: Build the binary
         run: cargo xwin build --release --target=${{ matrix.arch }}-pc-windows-msvc -p z33-cli
