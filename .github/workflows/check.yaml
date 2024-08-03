@@ -77,3 +77,19 @@ jobs:
 
       - name: Run cargo deny
         uses: EmbarkStudios/cargo-deny-action@v1
+
+  biome:
+    name: "`biome` check"
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Setup Biome
+        uses: biomejs/setup-biome@v2
+        with:
+          version: latest
+
+      - name: Run Biome
+        run: biome ci
+        working-directory: web

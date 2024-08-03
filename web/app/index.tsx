@@ -6,12 +6,12 @@ import { TooltipProvider } from "./components/ui/tooltip.tsx";
 
 const rootElement = document.getElementById("root");
 if (!rootElement) {
-	throw new Error("No root element found");
+  throw new Error("No root element found");
 }
 const root = createRoot(rootElement);
 
 root.render(
-	<TooltipProvider delayDuration={400} skipDelayDuration={200}>
-		<App />
-	</TooltipProvider>,
+  <TooltipProvider delayDuration={400} skipDelayDuration={200}>
+    <App />
+  </TooltipProvider>,
 );

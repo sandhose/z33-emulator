@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "build": "vite build",
-    "start": "vite"
+    "start": "vite",
+    "check": "biome check"
   },
   "devDependencies": {
     "@biomejs/biome": "1.8.3",
