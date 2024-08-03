@@ -1,8 +1,8 @@
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -17,7 +17,7 @@ name: Check
 jobs:
   test:
     name: Test Suite
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout sources
         uses: actions/checkout@v4
@@ -35,7 +35,7 @@ jobs:
 
   rustfmt:
     name: Format
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout sources
         uses: actions/checkout@v4
@@ -51,7 +51,7 @@ jobs:
 
   clippy:
     name: Clippy lints
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout sources
         uses: actions/checkout@v4
@@ -70,10 +70,10 @@ jobs:
 
   deny:
     name: "`cargo deny` audit"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-        - name: Checkout sources
-          uses: actions/checkout@v4
+      - name: Checkout sources
+        uses: actions/checkout@v4
 
-        - name: Run cargo deny
-          uses: EmbarkStudios/cargo-deny-action@v1
+      - name: Run cargo deny
+        uses: EmbarkStudios/cargo-deny-action@v1

@@ -1,8 +1,8 @@
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -22,7 +22,7 @@ name: Publish the web app on GitHub Pages
 jobs:
   publish:
     name: Publish
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout the code
@@ -33,7 +33,7 @@ jobs:
       - name: Install Node
         uses: actions/setup-node@v4.0.3
         with:
-          node-version: "18"
+          node-version: "20"
 
       - name: Install Rust toolchain
         run: |
@@ -45,17 +45,17 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Install Node dependencies
-        run: npm ci
+        run: pnpm i
         working-directory: web
 
       - name: Build the app
-        run: npm run build
+        run: pnpm run build
         working-directory: web
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: './web/dist'
+          path: "./web/dist"
 
       - name: Deploy to GitHub Pages
         uses: actions/deploy-pages@v4
