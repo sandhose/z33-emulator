@@ -21,12 +21,12 @@ pub struct DebugInfo {
 }
 
 #[derive(Debug, Error)]
-pub enum CompilationError<L> {
+pub enum CompilationError {
     #[error("could not layout memory")]
-    MemoryLayout(#[from] MemoryLayoutError<L>),
+    MemoryLayout(#[from] MemoryLayoutError),
 
     #[error("could not fill memory")]
-    MemoryFill(#[from] MemoryFillError<L>),
+    MemoryFill(#[from] MemoryFillError),
 
     #[error("unknown entrypoint: {0}")]
     UnknownEntrypoint(String),
@@ -41,18 +41,16 @@ pub enum CompilationError<L> {
 /// # Errors
 ///
 /// This function will return an error if the program is invalid
-pub fn layout<L: Clone + Default>(
-    program: Program<L>,
-) -> Result<layout::Layout<L>, MemoryLayoutError<L>> {
+pub fn layout(program: Program) -> Result<layout::Layout, MemoryLayoutError> {
     let lines: Vec<_> = program.lines.into_iter().map(|l| l.inner).collect();
     self::layout::layout_memory(&lines)
 }
 
 #[tracing::instrument(skip(program))]
-pub fn compile<L: Clone + Default + std::fmt::Debug>(
-    program: Program<L>,
+pub fn compile(
+    program: Program,
     entrypoint: &str,
-) -> Result<(Computer, DebugInfo), CompilationError<L>> {
+) -> Result<(Computer, DebugInfo), CompilationError> {
     let lines: Vec<_> = program.lines.into_iter().map(|l| l.inner).collect();
     let layout = self::layout::layout_memory(&lines)?;
     let memory = self::memory::fill_memory(&layout)?;

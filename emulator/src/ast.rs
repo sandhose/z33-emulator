@@ -1,20 +1,22 @@
 //! Utility AST manipulation, mainly for reporting
 
-use crate::parser::location::{Located, MapLocation};
+use std::ops::Range;
 
-pub trait AstNode<L> {
+use crate::parser::location::Located;
+
+pub trait AstNode {
     fn kind(&self) -> NodeKind;
 
     fn content(&self) -> Option<String> {
         None
     }
 
-    fn children(&self) -> Vec<Node<L>> {
+    fn children(&self) -> Vec<Node> {
         Vec::new()
     }
 }
 
-impl<L, T: AstNode<L>> AstNode<L> for Box<T> {
+impl<N: AstNode> AstNode for Box<N> {
     fn kind(&self) -> NodeKind {
         self.as_ref().kind()
     }
@@ -23,13 +25,13 @@ impl<L, T: AstNode<L>> AstNode<L> for Box<T> {
         self.as_ref().content()
     }
 
-    fn children(&self) -> Vec<Node<L>> {
+    fn children(&self) -> Vec<Node> {
         self.as_ref().children()
     }
 }
 
-impl<N: AstNode<L>, L: Clone> Located<N, L> {
-    pub fn to_node(&self) -> Node<L> {
+impl<N: AstNode> Located<N> {
+    pub fn to_node(&self) -> Node {
         let kind = self.inner.kind();
         let children = self.inner.children();
         let content = self.inner.content();
@@ -80,34 +82,15 @@ pub enum NodeKind {
     ExpressionVariable,
 }
 
-pub struct Node<L> {
+pub struct Node {
     pub(crate) kind: NodeKind,
-    pub(crate) children: Vec<Node<L>>,
+    pub(crate) children: Vec<Node>,
     pub(crate) content: Option<String>,
-    pub(crate) location: L,
+    pub(crate) location: Range<usize>,
 }
 
-impl<L, P> MapLocation<P> for Node<L>
-where
-    L: MapLocation<P, Mapped = P>,
-{
-    type Mapped = Node<P>;
-
-    fn map_location(self, parent: &P) -> Self::Mapped {
-        let location = self.location.map_location(parent);
-        let children = self.children.map_location(&location);
-
-        Node {
-            kind: self.kind,
-            children,
-            content: self.content,
-            location,
-        }
-    }
-}
-
-impl<L> Node<L> {
-    pub(crate) fn new(kind: NodeKind, location: L) -> Self {
+impl Node {
+    pub(crate) fn new(kind: NodeKind, location: Range<usize>) -> Self {
         Node {
             kind,
             children: Vec::new(),
@@ -120,36 +103,15 @@ impl<L> Node<L> {
         self.content = Some(content);
         self
     }
-
-    /// Transforms the location of AST nodes relative to their parent
-    pub fn transform_location<O, M>(self, parent: &O, mapper: &M) -> Node<O>
-    where
-        M: Fn(L, &O) -> O,
-    {
-        let location = mapper(self.location, parent);
-        let children = self
-            .children
-            .into_iter()
-            .map(|n| n.transform_location(&location, mapper))
-            .collect();
-        let kind = self.kind;
-        let content = self.content;
-        Node {
-            kind,
-            children,
-            content,
-            location,
-        }
-    }
 }
 
-impl<L: std::fmt::Display> std::fmt::Display for Node<L> {
+impl std::fmt::Display for Node {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.fmt_indent(f, 0)
     }
 }
 
-impl<L: std::fmt::Display> Node<L> {
+impl Node {
     fn fmt_indent(&self, f: &mut std::fmt::Formatter<'_>, level: usize) -> std::fmt::Result {
         for _ in 0..level {
             write!(f, "  ")?;
@@ -166,9 +128,9 @@ impl<L: std::fmt::Display> Node<L> {
                 content.clone()
             };
 
-            writeln!(f, "{:?}({content:?}) @ {}", self.kind, self.location)?;
+            writeln!(f, "{:?}({content:?}) @ {:?}", self.kind, self.location)?;
         } else {
-            writeln!(f, "{:?} @ {}", self.kind, self.location)?;
+            writeln!(f, "{:?} @ {:?}", self.kind, self.location)?;
         }
 
         for child in &self.children {

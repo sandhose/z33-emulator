@@ -3,13 +3,13 @@ use nom::bytes::complete::tag_no_case;
 use nom::character::complete::{char, space0};
 use nom::combinator::{map, value};
 use nom::error::context;
-use nom::{Compare, IResult, InputTake};
+use nom::{Compare, IResult, InputTake, Offset};
 use parse_display::{Display, FromStr};
 use thiserror::Error;
 
 use super::expression::{parse_expression, Context, EvaluationError, Node};
 use super::literal::parse_string_literal;
-use super::location::{Locatable, Located, MapLocation, RelativeLocation};
+use super::location::{Locatable, Located};
 use super::ParseError;
 use crate::ast::{AstNode, NodeKind};
 use crate::runtime::arguments::{Dir, Idx, Imm, ImmRegDirIndIdx, Ind};
@@ -54,7 +54,7 @@ pub(crate) enum InstructionKind {
     DebugReg,
 }
 
-impl<L> AstNode<L> for InstructionKind {
+impl AstNode for InstructionKind {
     fn kind(&self) -> NodeKind {
         NodeKind::InstructionKind
     }
@@ -119,10 +119,10 @@ where
 
 /// Represents an instruction argument
 #[derive(Clone, Debug, PartialEq, Display)]
-pub(crate) enum InstructionArgument<L> {
+pub(crate) enum InstructionArgument {
     /// An immediate value
     #[display("{0}")]
-    Value(Node<L>),
+    Value(Node),
 
     /// The content of a register
     #[display("{0}")]
@@ -130,54 +130,24 @@ pub(crate) enum InstructionArgument<L> {
 
     /// A direct memory access
     #[display("[{0.inner}]")]
-    Direct(Located<Node<L>, L>),
+    Direct(Located<Node>),
 
     /// An indirect memory access (register)
     #[display("[{0.inner}]")]
-    Indirect(Located<Reg, L>),
+    Indirect(Located<Reg>),
 
     /// An indexed memory access (register + offset)
     #[display("[{register.inner} {value.inner:+}]")]
     Indexed {
-        register: Located<Reg, L>,
-        value: Located<Node<L>, L>,
+        register: Located<Reg>,
+        value: Located<Node>,
     },
-}
-
-impl<L, P> MapLocation<P> for InstructionArgument<L>
-where
-    L: MapLocation<P, Mapped = P>,
-{
-    type Mapped = InstructionArgument<L::Mapped>;
-
-    fn map_location(self, parent: &P) -> Self::Mapped {
-        match self {
-            InstructionArgument::Value(v) => {
-                let v = v.map_location(parent);
-                InstructionArgument::Value(v)
-            }
-            InstructionArgument::Register(r) => InstructionArgument::Register(r),
-            InstructionArgument::Direct(d) => {
-                let d = d.map_location(parent);
-                InstructionArgument::Direct(d)
-            }
-            InstructionArgument::Indirect(i) => {
-                let i = i.map_location_only(parent);
-                InstructionArgument::Indirect(i)
-            }
-            InstructionArgument::Indexed { register, value } => {
-                let register = register.map_location_only(parent);
-                let value = value.map_location(parent);
-                InstructionArgument::Indexed { register, value }
-            }
-        }
-    }
 }
 
 /// Parse an instruction argument
 pub(crate) fn parse_instruction_argument<'a, Error: ParseError<&'a str>>(
     input: &'a str,
-) -> IResult<&'a str, InstructionArgument<RelativeLocation>, Error> {
+) -> IResult<&'a str, InstructionArgument, Error> {
     use InstructionArgument::{Register, Value};
     alt((
         context("immediate value", map(parse_expression, Value)),
@@ -199,7 +169,7 @@ pub enum DirectiveKind {
     Word,
 }
 
-impl<L> AstNode<L> for DirectiveKind {
+impl AstNode for DirectiveKind {
     fn kind(&self) -> NodeKind {
         NodeKind::DirectiveKind
     }
@@ -228,34 +198,17 @@ where
 
 /// Represents a directive argument
 #[derive(Clone, Debug, PartialEq, Display)]
-pub(crate) enum DirectiveArgument<L> {
+pub(crate) enum DirectiveArgument {
     /// A string literal (`.string` directive)
     #[display("{0:?}")]
     StringLiteral(String),
 
     /// An expression (`.addr`, `.word`, `.space` directives)
     #[display("{0}")]
-    Expression(Node<L>),
+    Expression(Node),
 }
 
-impl<L, P> MapLocation<P> for DirectiveArgument<L>
-where
-    L: MapLocation<P, Mapped = P>,
-{
-    type Mapped = DirectiveArgument<L::Mapped>;
-
-    fn map_location(self, parent: &P) -> Self::Mapped {
-        match self {
-            DirectiveArgument::StringLiteral(s) => DirectiveArgument::StringLiteral(s),
-            DirectiveArgument::Expression(n) => {
-                let n = n.map_location(parent);
-                DirectiveArgument::Expression(n)
-            }
-        }
-    }
-}
-
-impl<L: Clone> AstNode<L> for DirectiveArgument<L> {
+impl AstNode for DirectiveArgument {
     fn kind(&self) -> NodeKind {
         match self {
             DirectiveArgument::StringLiteral(_) => NodeKind::StringLiteral,
@@ -270,7 +223,7 @@ impl<L: Clone> AstNode<L> for DirectiveArgument<L> {
         }
     }
 
-    fn children(&self) -> Vec<crate::ast::Node<L>> {
+    fn children(&self) -> Vec<crate::ast::Node> {
         match self {
             DirectiveArgument::StringLiteral(_) => Vec::new(),
             DirectiveArgument::Expression(e) => e.children(),
@@ -281,7 +234,7 @@ impl<L: Clone> AstNode<L> for DirectiveArgument<L> {
 /// Parse a directive argument
 pub(crate) fn parse_directive_argument<'a, Error: ParseError<&'a str>>(
     input: &'a str,
-) -> IResult<&'a str, DirectiveArgument<RelativeLocation>, Error> {
+) -> IResult<&'a str, DirectiveArgument, Error> {
     alt((
         context(
             "string literal",
@@ -294,29 +247,29 @@ pub(crate) fn parse_directive_argument<'a, Error: ParseError<&'a str>>(
     ))(input)
 }
 
-impl<L> From<&str> for DirectiveArgument<L> {
+impl From<&str> for DirectiveArgument {
     fn from(literal: &str) -> Self {
         Self::StringLiteral(literal.to_string())
     }
 }
 
-impl<L> From<i128> for DirectiveArgument<L> {
+impl From<i128> for DirectiveArgument {
     fn from(value: i128) -> Self {
         Self::Expression(Node::Literal(value))
     }
 }
 
 #[derive(Error, Debug)]
-pub enum ComputeError<L> {
+pub enum ComputeError {
     #[error("could not evaluate argument")]
-    Evaluation(#[from] EvaluationError<L>),
+    Evaluation(#[from] EvaluationError),
 }
 
-impl<L: Clone> InstructionArgument<L> {
+impl InstructionArgument {
     pub(crate) fn evaluate<C: Context>(
         &self,
         context: &C,
-    ) -> Result<ImmRegDirIndIdx, ComputeError<L>> {
+    ) -> Result<ImmRegDirIndIdx, ComputeError> {
         match self {
             Self::Value(v) => {
                 let value = v.evaluate(context)?;
@@ -336,7 +289,7 @@ impl<L: Clone> InstructionArgument<L> {
     }
 }
 
-impl<L: Clone> AstNode<L> for InstructionArgument<L> {
+impl AstNode for InstructionArgument {
     fn kind(&self) -> NodeKind {
         match self {
             InstructionArgument::Value(e) => e.kind(),
@@ -354,7 +307,7 @@ impl<L: Clone> AstNode<L> for InstructionArgument<L> {
         }
     }
 
-    fn children(&self) -> Vec<crate::ast::Node<L>> {
+    fn children(&self) -> Vec<crate::ast::Node> {
         match self {
             InstructionArgument::Value(e) => e.children(),
             InstructionArgument::Register(_) => Vec::new(),
@@ -386,7 +339,7 @@ pub fn parse_register<'a, Error: ParseError<&'a str>>(
 
 fn parse_indexed<'a, Error: ParseError<&'a str>>(
     input: &'a str,
-) -> IResult<&'a str, InstructionArgument<RelativeLocation>, Error> {
+) -> IResult<&'a str, InstructionArgument, Error> {
     #[derive(Clone, Copy)]
     enum Sign {
         Plus,
@@ -399,7 +352,7 @@ fn parse_indexed<'a, Error: ParseError<&'a str>>(
 
     let start = rest;
     let (rest, register) = parse_register(rest)?;
-    let register = register.with_location((input, start, rest));
+    let register = register.with_location(input.offset(start)..input.offset(rest));
     let (rest, _) = space0(rest)?;
 
     let sign_start = rest;
@@ -411,9 +364,11 @@ fn parse_indexed<'a, Error: ParseError<&'a str>>(
 
     let value = match sign {
         Plus => value,
-        Minus => Node::Invert(Box::new(value).with_location((input, expression_start, rest))),
+        Minus => Node::Invert(
+            Box::new(value).with_location(input.offset(expression_start)..input.offset(rest)),
+        ),
     };
-    let value = value.with_location((input, sign_start, rest));
+    let value = value.with_location(input.offset(sign_start)..input.offset(rest));
 
     let (rest, _) = space0(rest)?;
     let (rest, _) = char(']')(rest)?;
@@ -423,12 +378,12 @@ fn parse_indexed<'a, Error: ParseError<&'a str>>(
 
 fn parse_direct<'a, Error: ParseError<&'a str>>(
     input: &'a str,
-) -> IResult<&'a str, InstructionArgument<RelativeLocation>, Error> {
+) -> IResult<&'a str, InstructionArgument, Error> {
     let (rest, _) = char('[')(input)?;
     let (rest, _) = space0(rest)?;
     let start = rest;
     let (rest, value) = parse_expression(rest)?;
-    let value = value.with_location((input, start, rest));
+    let value = value.with_location(input.offset(start)..input.offset(rest));
     let (rest, _) = space0(rest)?;
     let (rest, _) = char(']')(rest)?;
     Ok((rest, InstructionArgument::Direct(value)))
@@ -436,12 +391,12 @@ fn parse_direct<'a, Error: ParseError<&'a str>>(
 
 fn parse_indirect<'a, Error: ParseError<&'a str>>(
     input: &'a str,
-) -> IResult<&'a str, InstructionArgument<RelativeLocation>, Error> {
+) -> IResult<&'a str, InstructionArgument, Error> {
     let (rest, _) = char('[')(input)?;
     let (rest, _) = space0(rest)?;
     let start = rest;
     let (rest, register) = parse_register(rest)?;
-    let register = register.with_location((input, start, rest));
+    let register = register.with_location(input.offset(start)..input.offset(rest));
     let (rest, _) = space0(rest)?;
     let (rest, _) = char(']')(rest)?;
     Ok((rest, InstructionArgument::Indirect(register)))
@@ -466,7 +421,7 @@ mod tests {
         assert_eq!(input, "");
         assert_eq!(
             node,
-            InstructionArgument::Direct(Node::Literal(3).with_location((1, 1)))
+            InstructionArgument::Direct(Node::Literal(3).with_location(1..2))
         );
     }
 
@@ -476,7 +431,7 @@ mod tests {
         assert_eq!(input, "");
         assert_eq!(
             node,
-            InstructionArgument::Indirect(Reg::A.with_location((1, 2)))
+            InstructionArgument::Indirect(Reg::A.with_location(1..3))
         );
     }
 
@@ -487,8 +442,8 @@ mod tests {
         assert_eq!(
             node,
             InstructionArgument::Indexed {
-                register: Reg::A.with_location((1, 2)),
-                value: Node::Literal(2).with_location((3, 2)),
+                register: Reg::A.with_location(1..3),
+                value: Node::Literal(2).with_location(3..5),
             }
         );
     }

@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::io::Read;
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 use nom::combinator::all_consuming;
@@ -12,9 +13,7 @@ use crate::parser::condition::{
     parse_condition, Context as ConditionContext, EvaluationError as ConditionEvaluationError,
 };
 use crate::parser::expression::EmptyContext as EmptyExpressionContext;
-use crate::parser::location::{
-    AbsoluteLocation, Locatable, Located, MapLocation, RelativeLocation,
-};
+use crate::parser::location::{Locatable, Located};
 use crate::parser::preprocessor::{parse, Node};
 
 mod fs;
@@ -36,14 +35,14 @@ pub enum GetFileError {
     ParseError { message: String },
 }
 
-struct ParsedFile<L> {
-    chunks: Vec<Located<Node<L>, L>>,
+struct ParsedFile {
+    chunks: Vec<Located<Node>>,
 }
 
-impl<L> ParsedFile<L> {
+impl ParsedFile {
     fn walk<F>(&self, mut f: F)
     where
-        F: FnMut(&Node<L>),
+        F: FnMut(&Node),
     {
         for chunk in &self.chunks {
             chunk.inner.walk(&mut f);
@@ -51,26 +50,9 @@ impl<L> ParsedFile<L> {
     }
 }
 
-impl<P, L> MapLocation<P> for ParsedFile<L>
-where
-    L: MapLocation<P, Mapped = P>,
-{
-    type Mapped = ParsedFile<P>;
-
-    fn map_location(self, parent: &P) -> Self::Mapped {
-        let chunks = self
-            .chunks
-            .into_iter()
-            .map(|chunk| chunk.map_location(parent))
-            .collect();
-
-        ParsedFile { chunks }
-    }
-}
-
 #[derive(Default)]
 struct ParserCache {
-    files: HashMap<PathBuf, Result<ParsedFile<AbsoluteLocation<PathBuf>>, GetFileError>>,
+    files: HashMap<PathBuf, Result<ParsedFile, GetFileError>>,
     sources: HashMap<PathBuf, String>,
 }
 
@@ -81,10 +63,7 @@ impl ParserCache {
 }
 
 impl ParserCache {
-    fn get_file(
-        &self,
-        path: &Path,
-    ) -> &Result<ParsedFile<AbsoluteLocation<PathBuf>>, GetFileError> {
+    fn get_file(&self, path: &Path) -> &Result<ParsedFile, GetFileError> {
         self.files.get(path).expect("file not in cache")
     }
 
@@ -109,12 +88,7 @@ impl ParserCache {
                     message: convert_error(content.as_str(), e),
                 })?;
 
-            let parent = AbsoluteLocation {
-                offset: 0,
-                length: 0,
-                file: path.to_owned(),
-            };
-            Ok(ParsedFile { chunks }.map_location(&parent))
+            Ok(ParsedFile { chunks })
         })();
 
         let mut paths: Vec<PathBuf> = Vec::new();
@@ -137,22 +111,26 @@ impl ParserCache {
 }
 
 #[derive(Error, Debug)]
-pub enum PreprocessorError<L> {
+pub enum PreprocessorError {
     #[error("could not get file {path}: {inner}")]
     GetFile { path: PathBuf, inner: GetFileError },
 
     #[error("user error: {message}")]
-    UserError { location: L, message: String },
+    UserError {
+        location: Range<usize>,
+        message: String,
+    },
 
     #[error("invalid syntax in condition")]
-    ConditionParse { location: L },
+    ConditionParse { location: Range<usize> },
 
     #[error("could not evaluate condition")]
-    ConditionEvaluation(#[from] ConditionEvaluationError<L>),
+    ConditionEvaluation(#[from] ConditionEvaluationError),
 }
 
-impl<L> PreprocessorError<L> {
-    pub fn location(&self) -> Option<&L> {
+impl PreprocessorError {
+    #[must_use]
+    pub fn location(&self) -> Option<&Range<usize>> {
         match self {
             PreprocessorError::GetFile { .. } => None,
             PreprocessorError::UserError { location, .. }
@@ -188,11 +166,11 @@ impl Context {
         self.definitions.remove(key);
     }
 
-    fn replace<'a>(&'a self, input: &'a str) -> Vec<Located<&'a str, RelativeLocation>> {
+    fn replace<'a>(&'a self, input: &'a str) -> Vec<Located<&'a str>> {
         input
             .split_word_bounds()
             .filter_map(|word| {
-                let location = RelativeLocation::from((input.offset(word), word.len()));
+                let location = input.offset(word)..word.len();
                 let replaced = match self.definitions.get(word) {
                     Some(Some(r)) => r,
                     Some(None) => return None,
@@ -245,10 +223,7 @@ impl<FS> Preprocessor<FS> {
     /// This function will return an error if the file cannot be preprocessed,
     /// like if it has invalid syntax, can't be opened, includes an invalid
     /// file, etc.
-    pub fn preprocess(
-        &self,
-        entrypoint: &Path,
-    ) -> Result<String, PreprocessorError<AbsoluteLocation<PathBuf>>>
+    pub fn preprocess(&self, entrypoint: &Path) -> Result<String, PreprocessorError>
     where
         FS: Filesystem,
     {
@@ -263,7 +238,7 @@ impl<FS> Preprocessor<FS> {
         &self,
         path: &Path,
         ctx: &mut Context,
-    ) -> Result<Vec<String>, PreprocessorError<AbsoluteLocation<PathBuf>>>
+    ) -> Result<Vec<String>, PreprocessorError>
     where
         FS: Filesystem,
     {
@@ -287,10 +262,10 @@ impl<FS> Preprocessor<FS> {
 
     fn process_chunk(
         &self,
-        chunk: &Located<Node<AbsoluteLocation<PathBuf>>, AbsoluteLocation<PathBuf>>,
+        chunk: &Located<Node>,
         ctx: &mut Context,
         open_path: &Path,
-    ) -> Result<Vec<String>, PreprocessorError<AbsoluteLocation<PathBuf>>>
+    ) -> Result<Vec<String>, PreprocessorError>
     where
         FS: Filesystem,
     {
@@ -356,9 +331,7 @@ impl<FS> Preprocessor<FS> {
                             }
                         })?; // TODO: wrap the error
 
-                    let expression = expression
-                        .map_location(&branch.condition.location)
-                        .with_location(branch.condition.location.clone());
+                    let expression = expression.with_location(branch.condition.location.clone());
 
                     if expression.evaluate(ctx)? {
                         let mut buf = Vec::new();
@@ -464,9 +437,7 @@ mod tests {
         })
     }
 
-    fn preprocess<P: AsRef<Path>>(
-        path: P,
-    ) -> Result<String, PreprocessorError<AbsoluteLocation<PathBuf>>> {
+    fn preprocess<P: AsRef<Path>>(path: P) -> Result<String, PreprocessorError> {
         let fs = fs();
         let mut preprocessor = Preprocessor::new(fs);
         let path = path.as_ref();

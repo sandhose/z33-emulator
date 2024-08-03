@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
+use std::ops::Range;
 
 use thiserror::Error;
 use tracing::{debug, span, trace, Level};
@@ -14,28 +15,28 @@ use crate::runtime::arguments::{ArgConversionError, ImmRegDirIndIdx};
 use crate::runtime::{Cell, Instruction, Memory};
 
 #[derive(Debug, Error)]
-pub enum MemoryFillError<L> {
+pub enum MemoryFillError {
     #[error("could not evaluate expression")]
     Evaluation {
-        location: L,
-        source: ExpressionEvaluationError<L>,
+        location: Range<usize>,
+        source: ExpressionEvaluationError,
     },
 
     #[error("could not compute instruction argument")]
     Compute {
-        location: L,
-        source: ComputeError<L>,
+        location: Range<usize>,
+        source: ComputeError,
     },
 
     #[error("could not compile instruction")]
     InstructionCompilation {
-        location: L,
+        location: Range<usize>,
         source: InstructionCompilationError,
     },
 }
 
-impl<L> MemoryFillError<L> {
-    pub fn location(&self) -> &L {
+impl MemoryFillError {
+    pub fn location(&self) -> &Range<usize> {
         match self {
             MemoryFillError::Evaluation { location, .. }
             | MemoryFillError::Compute { location, .. }
@@ -287,10 +288,7 @@ fn compile_instruction(
 }
 
 #[tracing::instrument(skip(placement, labels))]
-fn compile_placement<L: Clone>(
-    labels: &Labels,
-    placement: &Placement<L>,
-) -> Result<Cell, MemoryFillError<L>> {
+fn compile_placement(labels: &Labels, placement: &Placement) -> Result<Cell, MemoryFillError> {
     use Placement as P;
 
     match placement {
@@ -360,7 +358,7 @@ fn compile_placement<L: Clone>(
 }
 
 #[tracing::instrument(skip(layout))]
-pub(crate) fn fill_memory<L: Clone>(layout: &Layout<L>) -> Result<Memory, MemoryFillError<L>> {
+pub(crate) fn fill_memory(layout: &Layout) -> Result<Memory, MemoryFillError> {
     debug!(
         placements = layout.memory.len(),
         labels = ?layout.labels,
@@ -368,7 +366,7 @@ pub(crate) fn fill_memory<L: Clone>(layout: &Layout<L>) -> Result<Memory, Memory
     );
     let mut memory = Memory::default();
 
-    let cells: Result<HashMap<C::Address, Cell>, MemoryFillError<L>> = layout
+    let cells: Result<HashMap<C::Address, Cell>, MemoryFillError> = layout
         .memory
         .iter()
         .map(|(index, placement)| {

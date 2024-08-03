@@ -7,7 +7,7 @@ use nom::bytes::complete::take_while1;
 use nom::combinator::{all_consuming, verify};
 use nom::{Finish, IResult};
 
-use self::location::{Locatable, Located, RelativeLocation};
+use self::location::{Locatable, Located};
 
 pub(crate) mod condition;
 mod errors;
@@ -49,19 +49,17 @@ pub(crate) fn parse_identifier<'a, Error: ParseError<&'a str>>(
 /// # Errors
 ///
 /// This function will return an error if the program is invalid
-pub fn parse(
-    input: &str,
-) -> Result<Located<Program<RelativeLocation>, RelativeLocation>, nom::error::VerboseError<&str>> {
+pub fn parse(input: &str) -> Result<Located<Program>, nom::error::VerboseError<&str>> {
     parse_new(input)
 }
 
 #[doc(hidden)]
 pub fn parse_new<'a, Error: ParseError<&'a str>>(
     input: &'a str,
-) -> Result<Located<Program<RelativeLocation>, RelativeLocation>, Error> {
+) -> Result<Located<Program>, Error> {
     // TODO: proper error handling & wrap those steps
     let (_, program) = all_consuming(self::line::parse_program)(input).finish()?;
-    let program = program.with_location((0, input.len()));
+    let program = program.with_location(0..input.len());
 
     Ok(program)
 }
