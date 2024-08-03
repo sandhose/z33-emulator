@@ -93,3 +93,41 @@ jobs:
       - name: Run Biome
         run: biome ci
         working-directory: web
+
+  typecheck:
+    name: Web app typecheck
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install stable
+          rustup default stable
+
+      - name: Setup Rust build cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install Node
+        uses: actions/setup-node@v4.0.3
+        with:
+          node-version: "20"
+          cache: "pnpm"
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install Node dependencies
+        run: pnpm i
+        working-directory: web
+
+      - name: Build the app
+        run: pnpm run build
+        working-directory: web
+
+      - name: Typecheck
+        run: pnpm run typecheck
+        working-directory: web

@@ -58,6 +58,8 @@ export const StepForm: React.FC<{ onStep: () => boolean }> = React.memo(
         const intervalId = setInterval(onStepCallback, 1000 / speed);
         return () => clearInterval(intervalId);
       }
+
+      return () => {};
     }, [speed, running, onStepCallback]);
 
     const form = useForm<z.infer<typeof formSchema>>({
