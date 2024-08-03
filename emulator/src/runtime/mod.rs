@@ -137,6 +137,18 @@ impl Computer {
         Ok(())
     }
 
+    /// Recover from an exception
+    ///
+    /// This will:
+    ///   - save the %pc and %sr registers in memory address 100 and 101 respectively
+    ///   - set the %sr.supervisor bit
+    ///   - set the %sr "interrupt enable"" bit if it is an hardware interrupt
+    ///   - save the exception code in memory address 102
+    ///   - set the %pc to the address of the exception handler (200)
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if any of the memory accesses fails.
     pub fn recover_from_exception(
         &mut self,
         exception: &Exception,

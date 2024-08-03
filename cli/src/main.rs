@@ -1,7 +1,3 @@
-#![forbid(unsafe_code)]
-#![deny(clippy::all, clippy::pedantic)]
-#![allow(clippy::module_name_repetitions)]
-
 use std::io::IsTerminal;
 use std::process::exit;
 

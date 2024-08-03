@@ -237,6 +237,12 @@ impl<FS> Preprocessor<FS> {
         self.cache.fill(&path, &self.fs);
     }
 
+    /// Preprocess a file, given the file name
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the file cannot be preprocessed,
+    /// like if it has invalid syntax, can't be opened, includes an invalid file, etc.
     pub fn preprocess(
         &self,
         entrypoint: &Path,
@@ -432,7 +438,7 @@ mod tests {
                     #if false
                     no fallback
                     #endif
-                    
+
                     #if false
                     nothing
                     #else

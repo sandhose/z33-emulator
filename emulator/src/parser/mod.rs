@@ -44,12 +44,18 @@ pub(crate) fn parse_identifier<'a, Error: ParseError<&'a str>>(
     })(input)
 }
 
+/// Parse a program
+///
+/// # Errors
+///
+/// This function will return an error if the program is invalid
 pub fn parse(
     input: &str,
 ) -> Result<Located<Program<RelativeLocation>, RelativeLocation>, nom::error::VerboseError<&str>> {
     parse_new(input)
 }
 
+#[doc(hidden)]
 pub fn parse_new<'a, Error: ParseError<&'a str>>(
     input: &'a str,
 ) -> Result<Located<Program<RelativeLocation>, RelativeLocation>, Error> {

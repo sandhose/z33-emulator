@@ -88,6 +88,8 @@ impl Cell {
 
     /// Extract an [`Instruction`] from the cell.
     ///
+    /// # Errors
+    ///
     /// Raises an error if it is any other type
     pub fn extract_instruction(&self) -> Result<&Instruction, CellError> {
         match self {
@@ -179,6 +181,8 @@ impl Default for Memory {
 
 impl Memory {
     /// Get a cell at an address
+    ///
+    /// # Errors
     ///
     /// It fails if the address is invalid or out of bounds.
     pub fn get(&self, address: Address) -> Result<&Cell, MemoryError> {

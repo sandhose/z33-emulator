@@ -30,6 +30,14 @@ pub enum CompilationError<L> {
     UnknownEntrypoint(String),
 }
 
+/// Construct the memory layout for a program
+///
+/// This will take the program AST and compute the memory layout for it,
+/// which includes the memory cells set as well as the labels defined in the program.
+///
+/// # Errors
+///
+/// This function will return an error if the program is invalid
 pub fn layout<L: Clone + Default>(
     program: Program<L>,
 ) -> Result<layout::Layout<L>, MemoryLayoutError<L>> {

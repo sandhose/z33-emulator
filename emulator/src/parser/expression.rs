@@ -278,6 +278,11 @@ pub enum EvaluationError<L> {
 }
 
 impl<L: Clone> Node<L> {
+    /// Evaluate a constant expression with a given context, returning a value
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the evaluation fails.
     pub fn evaluate<C: Context, V: TryFrom<Value>>(
         &self,
         context: &C,
@@ -367,6 +372,13 @@ impl<L: Clone> Node<L> {
 }
 
 impl<L: Clone> ChildNode<L> {
+    /// Evaluate an expression with a given context, returning a value
+    ///
+    /// This evaluate the inner node and attach the location to the error
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the evaluation fails.
     pub fn evaluate<C: Context, V: TryFrom<Value>>(
         &self,
         context: &C,
@@ -693,6 +705,10 @@ fn parse_parenthesis<'a, Error: ParseError<&'a str>>(
 }
 
 /// Parse an expression, returning its AST
+///
+/// # Errors
+///
+/// This function will return an error if the expression is invalid
 pub fn parse_expression<'a, Error: ParseError<&'a str>>(
     input: &'a str,
 ) -> IResult<&'a str, Node<RelativeLocation>, Error> {

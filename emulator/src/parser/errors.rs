@@ -85,13 +85,3 @@ impl<I> nom::error::FromExternalError<I, ParseIntError> for Error<I> {
         Self::ParseIntError { input, kind, inner }
     }
 }
-
-impl<I: std::fmt::Debug> Error<I> {
-    pub fn display<'a>(
-        &'a self,
-        _input: &'a str,
-        f: &mut std::fmt::Formatter<'_>,
-    ) -> std::fmt::Result {
-        write!(f, "{self:#?}")
-    }
-}

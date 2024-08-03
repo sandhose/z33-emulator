@@ -375,6 +375,11 @@ impl<L: Clone> AstNode<L> for InstructionArgument<L> {
     }
 }
 
+/// Parse a register
+///
+/// # Errors
+///
+/// This function will return an error if the input isn't a valid register
 pub fn parse_register<'a, Error: ParseError<&'a str>>(
     input: &'a str,
 ) -> IResult<&'a str, Reg, Error> {

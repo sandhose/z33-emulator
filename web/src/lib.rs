@@ -1,8 +1,4 @@
-#![forbid(unsafe_code)]
-#![deny(clippy::all, clippy::pedantic)]
 #![allow(
-    clippy::missing_errors_doc,
-    clippy::missing_panics_doc,
     /* Tsify derive generates this */
     clippy::empty_docs
 )]
@@ -49,6 +45,11 @@ impl InMemoryPreprocessor {
         Self { preprocessor }
     }
 
+    /// Preprocess the file at the given path
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the file could not be preprocessed.
     pub fn preprocess(&mut self, path: &str) -> Result<String, JsValue> {
         let path = PathBuf::from(path);
         self.preprocessor.load(&path);
@@ -71,6 +72,11 @@ pub struct Program {
 
 #[wasm_bindgen]
 impl Program {
+    /// Parse a program from a string
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the program could not be parsed.
     #[wasm_bindgen]
     pub fn parse(source: String) -> Result<Program, JsValue> {
         let program = z33_emulator::parser::parse_new::<z33_emulator::parser::Error<_>>(&source);
@@ -107,6 +113,11 @@ impl Program {
         )
     }
 
+    /// Compile the program at the given entrypoint
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the program could not be compiled.
     #[wasm_bindgen]
     pub fn compile(&self, entrypoint: &str) -> Result<Computer, JsValue> {
         tracing::info!("Compiling");
@@ -210,6 +221,11 @@ pub struct LabelsWithAddresses(BTreeMap<String, u32>);
 
 #[wasm_bindgen]
 impl Computer {
+    /// Run a single step of the computer
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the step could not be executed.
     pub fn step(&mut self) -> Result<bool, JsValue> {
         let res = match self.computer.step() {
             Ok(()) => Ok(false),

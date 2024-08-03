@@ -4,15 +4,24 @@ use std::{
     path::{Path, PathBuf},
 };
 
+/// Abstraction over a filesystem
 pub trait Filesystem {
+    /// The type of file that can be read
     type File: Read;
 
+    /// Open a file
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the file cannot be opened
     fn open(&self, path: &Path) -> std::io::Result<Self::File>;
 
+    /// Get the root path of the filesystem
     fn root(&self) -> PathBuf {
         PathBuf::new()
     }
 
+    /// Get the absolute path of a file relative to the root
     fn relative(&self, sibling: Option<&Path>, path: &Path) -> PathBuf {
         sibling
             .and_then(std::path::Path::parent)
@@ -49,6 +58,11 @@ pub struct NativeFilesystem {
 }
 
 impl NativeFilesystem {
+    /// Create a new filesystem from the current directory
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the current directory cannot be read
     pub fn from_env() -> std::io::Result<Self> {
         Ok(NativeFilesystem {
             root: std::env::current_dir()?,

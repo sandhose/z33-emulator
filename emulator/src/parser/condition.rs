@@ -299,6 +299,11 @@ impl<L: Clone> Node<L> {
 }
 
 impl<L: Clone> Located<Node<L>, L> {
+    /// Evaluate a condition AST node with a given context, returning a boolean value
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the evaluation fails.
     pub fn evaluate<C: Context>(&self, context: &C) -> Result<bool, EvaluationError<L>> {
         self.inner
             .evaluate(context)

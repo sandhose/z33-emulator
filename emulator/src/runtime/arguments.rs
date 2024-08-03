@@ -187,13 +187,34 @@ mod traits {
         InvalidAddress(#[from] std::num::TryFromIntError),
     }
 
+    /// Helper trait to extract values from instruction arguments
     pub trait ExtractValue {
+        /// Extract a cell from the instruction argument
+        ///
+        /// # Errors
+        ///
+        /// This function will return an error if the cell cannot be extracted,
+        /// e.g. invalid memory access
         fn extract_cell(&self, c: &Computer) -> Result<Cell, ExtractError>;
+
+        /// Extract a word from the instruction argument
+        ///
+        /// # Errors
+        ///
+        /// This function will return an error if the word cannot be extracted,
+        /// e.g. invalid memory access
         fn extract_word(&self, c: &Computer) -> Result<C::Word, ExtractError> {
             let cell = self.extract_cell(c)?;
             let word = cell.extract_word()?;
             Ok(word)
         }
+
+        /// Extract an address from the instruction argument
+        ///
+        /// # Errors
+        ///
+        /// This function will return an error if the address cannot be extracted,
+        /// e.g. invalid memory access
         fn extract_address(&self, c: &Computer) -> Result<C::Address, ExtractError> {
             let word = self.extract_word(c)?;
             let addr = C::Address::try_from(word)?;

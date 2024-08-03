@@ -1,11 +1,26 @@
 [workspace]
 resolver = "2"
 
-members = [
-  "emulator",
-  "cli",
-  "web",
-]
+members = ["emulator", "cli", "web"]
+
+[workspace.package]
+description = "An emulator for the Zorglub-33 architecture"
+homepage = "https://pdagog.gitlab.io/ens/z33refcard.pdf"
+repository = "https://github.com/sandhose/z33-emulator"
+version = "0.5.4"
+authors = ["Quentin Gliech <gliech@unistra.fr>"]
+edition = "2021"
+readme = "README.md"
+license = "MIT"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+
+module_name_repetitions = "allow"
 
 [profile.release]
 lto = true
