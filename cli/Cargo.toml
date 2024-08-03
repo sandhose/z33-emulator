@@ -14,17 +14,16 @@ publish = false
 workspace = true
 
 [dependencies]
-z33-emulator = { path = "../emulator" }
-
-anstyle = "1.0.7"
-anyhow = "1.0.86"
-clap = { version = "4.5.4", features = ["derive"] }
-clap_complete = "4.5.2"
-codespan-reporting = { git = "https://github.com/brendanzab/codespan.git" }
-nom = "7.1.3"
-rustyline = "14.0.0"
-rustyline-derive = "0.10.0"
-shell-words = "1.1.0"
-thiserror = "1.0.62"
-tracing = "0.1.40"
-tracing-subscriber = { version = "0.3.18", features = ["env-filter", "json"] }
+anstyle.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+clap_complete.workspace = true
+codespan-reporting.workspace = true
+nom.workspace = true
+rustyline.workspace = true
+rustyline-derive.workspace = true
+shell-words.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+z33-emulator.workspace = true
