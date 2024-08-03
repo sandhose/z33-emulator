@@ -44,8 +44,11 @@ jobs:
         with:
           shared-key: ${{ matrix.arch }}-macos
 
-      - name: Install zig and cargo-zigbuild
-        run: pip3 install ziglang cargo-zigbuild
+      - name: Install zig
+        uses: goto-bus-stop/setup-zig@v2
+
+      - name: Install cargo-zigbuild
+        run: pipx install cargo-zigbuild
 
       - name: Download the macOS SDK
         run: curl -L "https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacOSX11.3.sdk.tar.xz" | tar -J -x -C /opt
@@ -88,8 +91,11 @@ jobs:
         with:
           shared-key: ${{ matrix.arch }}-linux
 
-      - name: Install zig and cargo-zigbuild
-        run: pipx install ziglang cargo-zigbuild
+      - name: Install zig
+        uses: goto-bus-stop/setup-zig@v2
+
+      - name: Install cargo-zigbuild
+        run: pipx install cargo-zigbuild
 
       - name: Build the binary
         run: cargo zigbuild --release --target=${{ matrix.arch }}-unknown-linux-musl -p z33-cli
