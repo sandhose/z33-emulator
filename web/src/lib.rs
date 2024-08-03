@@ -10,15 +10,11 @@ use std::rc::Rc;
 use serde::{Deserialize, Serialize};
 use tsify::Tsify;
 use wasm_bindgen::prelude::*;
-
+use z33_emulator::compiler::compile;
 use z33_emulator::constants::Address;
-use z33_emulator::runtime::Memory;
-use z33_emulator::{
-    compiler::compile,
-    parser::location::{AbsoluteLocation, MapLocation, RelativeLocation},
-    preprocessor::{InMemoryFilesystem, Preprocessor},
-    runtime::ProcessorError,
-};
+use z33_emulator::parser::location::{AbsoluteLocation, MapLocation, RelativeLocation};
+use z33_emulator::preprocessor::{InMemoryFilesystem, Preprocessor};
+use z33_emulator::runtime::{Memory, ProcessorError};
 
 #[wasm_bindgen(start)]
 fn start() {

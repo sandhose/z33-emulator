@@ -1,13 +1,10 @@
 use std::path::PathBuf;
 
 use clap::{Parser, ValueHint};
-
 use tracing::{debug, info};
-use z33_emulator::{
-    parse,
-    parser::location::{AbsoluteLocation, MapLocation},
-    preprocessor::{NativeFilesystem, Preprocessor},
-};
+use z33_emulator::parse;
+use z33_emulator::parser::location::{AbsoluteLocation, MapLocation};
+use z33_emulator::preprocessor::{NativeFilesystem, Preprocessor};
 
 #[derive(Parser, Debug)]
 pub struct DumpOpt {

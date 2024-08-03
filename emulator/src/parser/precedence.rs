@@ -1,8 +1,9 @@
 //! Specify a node's precedence for display purposes
 //!
-//! This module helps correctly displaying parenthesis only when needed. This is done by knowing
-//! the parent node's precedence and comparing it to the current node. To do that, the node is
-//! wrapped in a [`ChildTree`] structure temporarily just during output.
+//! This module helps correctly displaying parenthesis only when needed. This is
+//! done by knowing the parent node's precedence and comparing it to the current
+//! node. To do that, the node is wrapped in a [`ChildTree`] structure
+//! temporarily just during output.
 
 use super::condition::Node as ConditionNode;
 use super::expression::Node as ExpressionNode;

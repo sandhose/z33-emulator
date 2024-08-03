@@ -1,36 +1,31 @@
 //! Program line parsing
 //!
-//! This module parses whole program lines, including the symbol definitions, the comments and the
-//! line content itself (either an instruction or a directive).
+//! This module parses whole program lines, including the symbol definitions,
+//! the comments and the line content itself (either an instruction or a
+//! directive).
 //!
-//! When parsing, this module does zero copy over the original input. All members of resulting Line
-//! structure reference part of the input, hence the associated lifetime on the structure tied to
-//! the original input. This allows some neat tricks, especially calculating the offset of
-//! a property from the input string.
+//! When parsing, this module does zero copy over the original input. All
+//! members of resulting Line structure reference part of the input, hence the
+//! associated lifetime on the structure tied to the original input. This allows
+//! some neat tricks, especially calculating the offset of a property from the
+//! input string.
 
-use nom::{
-    branch::alt,
-    bytes::complete::escaped,
-    character::complete::{char, line_ending, none_of, one_of, space0, space1},
-    combinator::{all_consuming, cut, eof, map, opt, peek, value},
-    error::context,
-    multi::separated_list1,
-    sequence::delimited,
-    IResult,
+use nom::branch::alt;
+use nom::bytes::complete::escaped;
+use nom::character::complete::{char, line_ending, none_of, one_of, space0, space1};
+use nom::combinator::{all_consuming, cut, eof, map, opt, peek, value};
+use nom::error::context;
+use nom::multi::separated_list1;
+use nom::sequence::delimited;
+use nom::IResult;
+
+use super::location::{Locatable, Located, MapLocation, RelativeLocation};
+use super::value::{
+    parse_directive_argument, parse_directive_kind, parse_instruction_argument,
+    parse_instruction_kind, DirectiveArgument, DirectiveKind, InstructionArgument, InstructionKind,
 };
-
+use super::{parse_identifier, ParseError};
 use crate::ast::{AstNode, Node, NodeKind};
-
-use super::{
-    location::{Locatable, Located, MapLocation, RelativeLocation},
-    parse_identifier,
-    value::{
-        parse_directive_argument, parse_directive_kind, parse_instruction_argument,
-        parse_instruction_kind, DirectiveArgument, DirectiveKind, InstructionArgument,
-        InstructionKind,
-    },
-    ParseError,
-};
 
 /// Holds the content of a line
 #[derive(Clone, Debug, PartialEq)]
@@ -124,8 +119,8 @@ impl<L> std::fmt::Display for LineContent<L> {
     }
 }
 
-/// Holds a whole line, with the symbol definitions (if any), the content (if any) and the comment
-/// (if any).
+/// Holds a whole line, with the symbol definitions (if any), the content (if
+/// any) and the comment (if any).
 ///
 /// Note that the `Default::default()` implementation represents an empty line.
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -323,10 +318,12 @@ fn parse_instruction_line<'a, Error: ParseError<&'a str>>(
             // Explicit typing is necessary here
             let (rest, succeded) = if arguments.is_empty() {
                 // The first argument needs at least one space before it
-                // This is not done before to avoid eating spaces if the instruction takes no argument
+                // This is not done before to avoid eating spaces if the instruction takes no
+                // argument
                 opt(value((), space1))(cursor)?
             } else {
-                // Later arguments are separated by a comma. This also eats the spaces around the comma
+                // Later arguments are separated by a comma. This also eats the spaces around
+                // the comma
                 opt(value((), delimited(space0, char(','), space0)))(cursor)?
             };
 
@@ -433,10 +430,9 @@ pub(crate) fn parse_program<'a, Error: ParseError<&'a str>>(
 mod tests {
     use pretty_assertions::assert_eq;
 
-    use crate::runtime::Reg;
-
     use super::super::location::Locatable;
     use super::*;
+    use crate::runtime::Reg;
 
     #[track_caller]
     fn fully_parsed<T>(result: IResult<&str, T>) -> T {

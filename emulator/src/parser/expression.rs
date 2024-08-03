@@ -15,30 +15,24 @@
 //! Expr    := Literal | '(' ConstExpr ')'
 //! ```
 //!
-//! All the calculation is done with the [`Value`](type.Value.html) type, then converted down using the
-//! `TryFrom` trait.
+//! All the calculation is done with the [`Value`](type.Value.html) type, then
+//! converted down using the `TryFrom` trait.
 
 use std::convert::{TryFrom, TryInto};
 
-use nom::{
-    branch::alt,
-    bytes::complete::tag,
-    character::complete::{char, space0},
-    combinator::{cut, map, not, opt, value},
-    error::context,
-    IResult, Offset,
-};
+use nom::branch::alt;
+use nom::bytes::complete::tag;
+use nom::character::complete::{char, space0};
+use nom::combinator::{cut, map, not, opt, value};
+use nom::error::context;
+use nom::{IResult, Offset};
 use thiserror::Error;
 
+use super::literal::parse_number_literal;
+use super::location::{Locatable, Located, MapLocation, RelativeLocation};
+use super::precedence::Precedence;
+use super::{parse_identifier, ParseError};
 use crate::ast::{AstNode, NodeKind};
-
-use super::{
-    literal::parse_number_literal,
-    location::{Locatable, Located, MapLocation, RelativeLocation},
-    parse_identifier,
-    precedence::Precedence,
-    ParseError,
-};
 
 type ChildNode<L> = Located<Box<Node<L>>, L>;
 
@@ -346,9 +340,9 @@ impl<L: Clone> Node<L> {
 
                 Node::BinaryNot(operand) => {
                     let _operand: Value = operand.inner.evaluate(context)?;
-                    // TODO: bit inversion is tricky because we're not supposed to know the word length
-                    // here. It's a bit opiniated, but for now it tries casting down to u16 before
-                    // negating.
+                    // TODO: bit inversion is tricky because we're not supposed to know the word
+                    // length here. It's a bit opiniated, but for now it tries
+                    // casting down to u16 before negating.
 
                     /*
                     u16::try_from(v) // try casting it down to u16
@@ -424,8 +418,8 @@ fn parse_or<'a, Error: ParseError<&'a str>>(
         // Wrap the "left" node with location information
         let left = Box::new(node).with_location((0, offset));
 
-        // The location embed in the `right` node is relative to the cursor, so we need to offset
-        // it by the offset between the input and the cursor
+        // The location embed in the `right` node is relative to the cursor, so we need
+        // to offset it by the offset between the input and the cursor
         let right = right.offset(offset);
 
         node = Node::BinaryOr(left, right);
@@ -464,8 +458,8 @@ fn parse_and<'a, Error: ParseError<&'a str>>(
         // Wrap the "left" node with location information
         let left = Box::new(node).with_location((0, offset));
 
-        // The location embed in the `right` node is relative to the cursor, so we need to offset
-        // it by the offset between the input and the cursor
+        // The location embed in the `right` node is relative to the cursor, so we need
+        // to offset it by the offset between the input and the cursor
         let right = right.offset(offset);
 
         node = Node::BinaryAnd(left, right);
@@ -514,8 +508,8 @@ fn parse_shift<'a, Error: ParseError<&'a str>>(
         // Wrap the "left" node with location information
         let left = Box::new(node).with_location((0, offset));
 
-        // The location embed in the `right` node is relative to the cursor, so we need to offset
-        // it by the offset between the input and the cursor
+        // The location embed in the `right` node is relative to the cursor, so we need
+        // to offset it by the offset between the input and the cursor
         let right = right.offset(offset);
 
         node = match op {
@@ -566,8 +560,8 @@ fn parse_sum<'a, Error: ParseError<&'a str>>(
         // Wrap the "left" node with location information
         let left = Box::new(node).with_location((0, offset));
 
-        // The location embed in the `right` node is relative to the cursor, so we need to offset
-        // it by the offset between the input and the cursor
+        // The location embed in the `right` node is relative to the cursor, so we need
+        // to offset it by the offset between the input and the cursor
         let right = right.offset(offset);
 
         node = match op {
@@ -618,8 +612,8 @@ fn parse_mul<'a, Error: ParseError<&'a str>>(
         // Wrap the "left" node with location information
         let left = Box::new(node).with_location((0, offset));
 
-        // The location embed in the `right` node is relative to the cursor, so we need to offset
-        // it by the offset between the input and the cursor
+        // The location embed in the `right` node is relative to the cursor, so we need
+        // to offset it by the offset between the input and the cursor
         let right = right.offset(offset);
 
         node = match op {
@@ -668,7 +662,8 @@ fn parse_unary<'a, Error: ParseError<&'a str>>(
     alt((parse_invert, parse_binary_not, parse_atom))(input)
 }
 
-/// Parse an atom of an expression: either a literal or a full expression within parenthesis
+/// Parse an atom of an expression: either a literal or a full expression within
+/// parenthesis
 fn parse_atom<'a, Error: ParseError<&'a str>>(
     input: &'a str,
 ) -> IResult<&'a str, Node<RelativeLocation>, Error> {

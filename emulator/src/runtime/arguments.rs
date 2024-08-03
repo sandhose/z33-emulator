@@ -1,18 +1,16 @@
 //! Structures to represent most of argument combinations
 
-use parse_display::Display;
-
-use self::conversions::ArgKind;
-
-use super::registers::Reg;
-
-use crate::constants as C;
-
 pub use conversions::ArgConversionError;
+use parse_display::Display;
 pub use traits::{ExtractError, ExtractValue, ResolveAddress};
 
+use self::conversions::ArgKind;
+use super::registers::Reg;
+use crate::constants as C;
+
 /**
- * First, individual argument types (`Reg` is defined in `crate::runtime::registers::Reg`)
+ * First, individual argument types (`Reg` is defined in
+ * `crate::runtime::registers::Reg`)
  */
 
 /// An immediate value
@@ -162,13 +160,10 @@ mod traits {
 
     use thiserror::Error;
 
-    use super::super::{
-        memory::{CellError, MemoryError},
-        registers::Reg,
-        Cell, Computer, Registers,
-    };
+    use super::super::memory::{CellError, MemoryError};
+    use super::super::registers::Reg;
+    use super::super::{Cell, Computer, Registers};
     use super::{Dir, DirIndIdx, Idx, Imm, ImmReg, ImmRegDirIndIdx, Ind, RegDirIndIdx};
-
     use crate::constants as C;
 
     pub trait ResolveAddress {
@@ -213,8 +208,8 @@ mod traits {
         ///
         /// # Errors
         ///
-        /// This function will return an error if the address cannot be extracted,
-        /// e.g. invalid memory access
+        /// This function will return an error if the address cannot be
+        /// extracted, e.g. invalid memory access
         fn extract_address(&self, c: &Computer) -> Result<C::Address, ExtractError> {
             let word = self.extract_word(c)?;
             let addr = C::Address::try_from(word)?;

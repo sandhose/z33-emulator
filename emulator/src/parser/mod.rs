@@ -1,11 +1,11 @@
 //! Program parsing logic
 //!
-//! This module is splitted in multiple submodules to make things easier to read. The parsing is
-//! handled by the `nom` library.
+//! This module is splitted in multiple submodules to make things easier to
+//! read. The parsing is handled by the `nom` library.
 
-use nom::{
-    bytes::complete::take_while1, combinator::all_consuming, combinator::verify, Finish, IResult,
-};
+use nom::bytes::complete::take_while1;
+use nom::combinator::{all_consuming, verify};
+use nom::{Finish, IResult};
 
 use self::location::{Locatable, Located, RelativeLocation};
 

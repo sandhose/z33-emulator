@@ -42,8 +42,8 @@ jobs:
 
       - name: Install Rust toolchain
         run: |
-          rustup toolchain install stable
-          rustup default stable
+          rustup toolchain install nightly
+          rustup default nightly
           rustup component add rustfmt
 
       - name: Run cargo fmt
@@ -58,8 +58,8 @@ jobs:
 
       - name: Install Rust toolchain
         run: |
-          rustup toolchain install 1.78.0
-          rustup default 1.78.0
+          rustup toolchain install 1.80.0
+          rustup default 1.80.0
           rustup component add clippy
 
       - name: Setup Rust build cache

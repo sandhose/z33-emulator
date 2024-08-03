@@ -3,9 +3,11 @@ use std::collections::BTreeMap;
 use thiserror::Error;
 use tracing::debug;
 
-use crate::{constants as C, parser::line::Program, runtime::Computer, runtime::Registers};
-
-use self::{layout::MemoryLayoutError, memory::MemoryFillError};
+use self::layout::MemoryLayoutError;
+use self::memory::MemoryFillError;
+use crate::constants as C;
+use crate::parser::line::Program;
+use crate::runtime::{Computer, Registers};
 
 pub mod layout;
 pub(crate) mod memory;
@@ -33,7 +35,8 @@ pub enum CompilationError<L> {
 /// Construct the memory layout for a program
 ///
 /// This will take the program AST and compute the memory layout for it,
-/// which includes the memory cells set as well as the labels defined in the program.
+/// which includes the memory cells set as well as the labels defined in the
+/// program.
 ///
 /// # Errors
 ///

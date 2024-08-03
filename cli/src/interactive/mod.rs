@@ -4,16 +4,14 @@
 //!   - rustyline, to handle the line-editting logic
 //!   - clap, to handle the parsing of those interactive commands
 //!
-//! Using Parser to do this is a bit of a hack, and requires some weird options to have it working
-//! but works nonetheless.
+//! Using Parser to do this is a bit of a hack, and requires some weird options
+//! to have it working but works nonetheless.
 
 use std::collections::{BTreeMap, HashSet};
 
 use clap::Parser;
-use rustyline::Behavior;
-use rustyline::{CompletionType, Config, EditMode, Editor};
+use rustyline::{Behavior, CompletionType, Config, EditMode, Editor};
 use tracing::{debug, info, warn};
-
 use z33_emulator::compiler::DebugInfo;
 use z33_emulator::constants as C;
 use z33_emulator::runtime::{Computer, Exception, Reg};
@@ -55,8 +53,8 @@ enum Command {
 
     /// Show the content of a block in memory
     Memory {
-        /// The address to show. Can be a direct address (number literal) or an indirect one
-        /// (register with an optional offset).
+        /// The address to show. Can be a direct address (number literal) or an
+        /// indirect one (register with an optional offset).
         #[clap(value_parser)]
         address: parse::Address,
 
@@ -175,8 +173,8 @@ impl Session {
             x => info!("{} breakpoints:", x),
         }
 
-        // This might be an unnecessary copy, but we want them to be sorted by address for
-        // readability
+        // This might be an unnecessary copy, but we want them to be sorted by address
+        // for readability
         let mut bp: Vec<_> = self.breakpoints.iter().copied().collect();
         bp.sort_unstable();
         for addr in bp {
@@ -203,8 +201,8 @@ impl Session {
             (false, false) => "  ",
         };
 
-        // Find the instruction in memory. This will be `None` if the address is to high or if the
-        // cell is not an instruction.
+        // Find the instruction in memory. This will be `None` if the address is to high
+        // or if the cell is not an instruction.
         let instruction = computer
             .memory
             .get(address)

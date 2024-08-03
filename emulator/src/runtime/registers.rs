@@ -2,12 +2,9 @@ use bitflags::bitflags;
 use parse_display::Display;
 use thiserror::Error;
 
-use crate::{
-    ast::{AstNode, NodeKind},
-    constants as C,
-};
-
 use super::memory::{Cell, CellError};
+use crate::ast::{AstNode, NodeKind};
+use crate::constants as C;
 
 bitflags! {
     #[derive(Default, Clone, Copy, PartialEq, Eq)]

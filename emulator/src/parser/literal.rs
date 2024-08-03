@@ -1,18 +1,17 @@
 //! Parse number and string literals.
 //!
-//! It parses base 10, base 16 (prefixed by `0x`), base 8 (prefixed by `0o`) and base 2 (prefixed
-//! by `01`) number literals.
+//! It parses base 10, base 16 (prefixed by `0x`), base 8 (prefixed by `0o`) and
+//! base 2 (prefixed by `01`) number literals.
 
-use std::{num::ParseIntError, str::FromStr};
+use std::num::ParseIntError;
+use std::str::FromStr;
 
-use nom::{
-    branch::alt,
-    bytes::complete::{escaped_transform, tag_no_case, take_while1},
-    character::complete::{char, line_ending, none_of},
-    combinator::{cut, map_res, value},
-    error::{FromExternalError, ParseError},
-    AsChar, Compare, IResult, InputTake, InputTakeAtPosition,
-};
+use nom::branch::alt;
+use nom::bytes::complete::{escaped_transform, tag_no_case, take_while1};
+use nom::character::complete::{char, line_ending, none_of};
+use nom::combinator::{cut, map_res, value};
+use nom::error::{FromExternalError, ParseError};
+use nom::{AsChar, Compare, IResult, InputTake, InputTakeAtPosition};
 
 /// Parse a string literal
 pub fn parse_string_literal<'a, Error: ParseError<&'a str>>(

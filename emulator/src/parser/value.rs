@@ -1,28 +1,19 @@
-use nom::{
-    branch::alt,
-    bytes::complete::tag_no_case,
-    character::complete::{char, space0},
-    combinator::{map, value},
-    error::context,
-    Compare, IResult, InputTake,
-};
+use nom::branch::alt;
+use nom::bytes::complete::tag_no_case;
+use nom::character::complete::{char, space0};
+use nom::combinator::{map, value};
+use nom::error::context;
+use nom::{Compare, IResult, InputTake};
 use parse_display::{Display, FromStr};
 use thiserror::Error;
 
-use super::{
-    expression::{parse_expression, Context, EvaluationError, Node},
-    literal::parse_string_literal,
-    location::Locatable,
-    location::{Located, MapLocation, RelativeLocation},
-    ParseError,
-};
-use crate::{
-    ast::{AstNode, NodeKind},
-    runtime::{
-        arguments::{Dir, Idx, Imm, ImmRegDirIndIdx, Ind},
-        Reg,
-    },
-};
+use super::expression::{parse_expression, Context, EvaluationError, Node};
+use super::literal::parse_string_literal;
+use super::location::{Locatable, Located, MapLocation, RelativeLocation};
+use super::ParseError;
+use crate::ast::{AstNode, NodeKind};
+use crate::runtime::arguments::{Dir, Idx, Imm, ImmRegDirIndIdx, Ind};
+use crate::runtime::Reg;
 
 #[derive(Display, FromStr, Clone, Copy, Debug, PartialEq)]
 #[display(style = "lowercase")]
@@ -82,7 +73,8 @@ where
 {
     use InstructionKind as K;
 
-    // `alt` only allows for 21-member tuples so we need to trick a bit by nesting them
+    // `alt` only allows for 21-member tuples so we need to trick a bit by nesting
+    // them
     alt((
         alt((
             context("add", value(K::Add, tag_no_case("add"))),

@@ -5,4 +5,5 @@ pub mod parser;
 pub mod preprocessor;
 pub mod runtime;
 
-pub use self::{compiler::compile, parser::parse};
+pub use self::compiler::compile;
+pub use self::parser::parse;

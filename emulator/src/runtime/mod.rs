@@ -1,6 +1,7 @@
 //! The actual emulator runtime
 
 use std::fmt::Debug;
+
 use thiserror::Error;
 use tracing::{debug, info, trace};
 
@@ -13,14 +14,13 @@ mod memory;
 mod registers;
 
 pub use self::arguments::ExtractValue;
+use self::arguments::{ExtractError, Ind, ResolveAddress};
 pub use self::exception::Exception;
 pub(crate) use self::instructions::Instruction;
 pub use self::memory::{Cell, Memory};
-pub use self::registers::{Reg, Registers};
-
-use self::arguments::{ExtractError, Ind, ResolveAddress};
 use self::memory::{CellError, MemoryError};
 use self::registers::StatusRegister;
+pub use self::registers::{Reg, Registers};
 
 #[derive(Error, Debug)]
 pub enum ProcessorError {
@@ -82,8 +82,8 @@ impl Computer {
 
     /// Set the value of a register
     ///
-    /// If the instruction tries to set the %sr register, it checks if the processor is running in
-    /// supervisor mode first.
+    /// If the instruction tries to set the %sr register, it checks if the
+    /// processor is running in supervisor mode first.
     #[tracing::instrument(skip(self))]
     pub(crate) fn set_register(&mut self, reg: &Reg, val: Cell) -> Result<()> {
         let reg = *reg;
@@ -118,7 +118,8 @@ impl Computer {
             tracing::Span::current().record("cost", cost);
             info!("Executing instruction \"{}\"", inst);
             // This clone is necessary as `inst` is borrowed from `self`.
-            // The computer might modify the cell where the instruction is stored when executing it.
+            // The computer might modify the cell where the instruction is stored when
+            // executing it.
             inst.clone().execute(c)?;
             Ok(cost)
         }
@@ -140,7 +141,8 @@ impl Computer {
     /// Recover from an exception
     ///
     /// This will:
-    ///   - save the %pc and %sr registers in memory address 100 and 101 respectively
+    ///   - save the %pc and %sr registers in memory address 100 and 101
+    ///     respectively
     ///   - set the %sr.supervisor bit
     ///   - set the %sr "interrupt enable"" bit if it is an hardware interrupt
     ///   - save the exception code in memory address 102
@@ -216,10 +218,9 @@ mod tests {
     // This is fine in tests
     #![allow(clippy::cast_possible_truncation)]
 
-    use crate::constants::Word;
-
     use super::arguments::{Idx, Imm, ImmRegDirIndIdx};
     use super::*;
+    use crate::constants::Word;
 
     #[test]
     fn inst_execute_test() {

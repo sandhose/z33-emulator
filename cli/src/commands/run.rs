@@ -1,19 +1,16 @@
 use std::collections::HashMap;
-use std::{path::PathBuf, process::exit};
+use std::path::PathBuf;
+use std::process::exit;
 
 use clap::{ArgAction, Parser, ValueHint};
 use codespan_reporting::diagnostic::{Diagnostic, Label};
 use codespan_reporting::files::SimpleFiles;
 use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
 use tracing::{debug, error, info};
-use z33_emulator::preprocessor::Preprocessor;
-use z33_emulator::{
-    compile,
-    compiler::CompilationError,
-    parse,
-    parser::location::{AbsoluteLocation, MapLocation},
-    preprocessor::NativeFilesystem,
-};
+use z33_emulator::compiler::CompilationError;
+use z33_emulator::parser::location::{AbsoluteLocation, MapLocation};
+use z33_emulator::preprocessor::{NativeFilesystem, Preprocessor};
+use z33_emulator::{compile, parse};
 
 use crate::interactive::run_interactive;
 

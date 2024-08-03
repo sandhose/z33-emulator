@@ -3,15 +3,14 @@ use std::convert::TryInto;
 use parse_display::Display;
 use tracing::{debug, info};
 
-use crate::constants::{Word, INTERRUPT_PC_SAVE, INTERRUPT_SR_SAVE};
-
-use super::{
-    arguments::{DirIndIdx, ExtractValue, ImmReg, ImmRegDirIndIdx, RegDirIndIdx, ResolveAddress},
-    exception::Exception,
-    memory::Cell,
-    registers::{Reg, StatusRegister},
-    Computer, ProcessorError,
+use super::arguments::{
+    DirIndIdx, ExtractValue, ImmReg, ImmRegDirIndIdx, RegDirIndIdx, ResolveAddress,
 };
+use super::exception::Exception;
+use super::memory::Cell;
+use super::registers::{Reg, StatusRegister};
+use super::{Computer, ProcessorError};
+use crate::constants::{Word, INTERRUPT_PC_SAVE, INTERRUPT_SR_SAVE};
 
 #[derive(Debug, Clone, PartialEq, Eq, Display)]
 pub enum Instruction {
@@ -456,7 +455,8 @@ impl Instruction {
 
     /// Get the total cost of an instruction in terms of CPU cycles
     pub(crate) const fn cost(&self) -> usize {
-        // All instruction cost one CPU cycle itself, plus the cost of each of its arguments
+        // All instruction cost one CPU cycle itself, plus the cost of each of its
+        // arguments
         match self {
             Self::DebugReg => 0, // The only exception being `debugreg`, which costs nothing
 

@@ -4,16 +4,15 @@ use std::marker::PhantomData;
 
 use anstyle::Style;
 use clap::{Command, CommandFactory};
-use rustyline::{
-    completion::Completer,
-    highlight::Highlighter,
-    hint::Hinter,
-    validate::{ValidationContext, ValidationResult, Validator},
-    Context,
-};
+use rustyline::completion::Completer;
+use rustyline::highlight::Highlighter;
+use rustyline::hint::Hinter;
+use rustyline::validate::{ValidationContext, ValidationResult, Validator};
+use rustyline::Context;
 use rustyline_derive::Helper;
 
-/// Rustyline helper, that handles interactive completion, highlighting and hinting.
+/// Rustyline helper, that handles interactive completion, highlighting and
+/// hinting.
 #[derive(Helper, Debug)]
 pub(crate) struct RunHelper<T: CommandFactory> {
     app: PhantomData<T>,
@@ -27,8 +26,8 @@ impl<T: CommandFactory> RunHelper<T> {
 
 fn suggest(command: &Command, input: &[String]) -> (usize, HashSet<String>) {
     // We're building the suggestions here
-    // The only downside is that it's wasted work if we're not on the first word (second pattern of
-    // the match bellow)
+    // The only downside is that it's wasted work if we're not on the first word
+    // (second pattern of the match bellow)
     let mut suggestions: HashSet<_> = command
         .get_subcommands()
         .flat_map(|cmd| {
@@ -90,7 +89,8 @@ impl<T: CommandFactory> Completer for RunHelper<T> {
         if let Ok(mut words) = shell_words::split(line) {
             let app = T::command();
 
-            // If the last char was a space, insert an empty word to autocomplete the next word
+            // If the last char was a space, insert an empty word to autocomplete the next
+            // word
             if complete {
                 words.push(String::new());
             }
@@ -139,7 +139,8 @@ impl<T: CommandFactory> Hinter for RunHelper<T> {
             .is_some(); // Line is considered "complete" if the last char is a space
         let mut words = shell_words::split(line).ok()?;
 
-        // If the last char was a space, insert an empty word to autocomplete the next word
+        // If the last char was a space, insert an empty word to autocomplete the next
+        // word
         if complete {
             words.push(String::new());
         }

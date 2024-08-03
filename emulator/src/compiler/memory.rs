@@ -1,24 +1,17 @@
-use std::convert::TryFrom;
-use std::{collections::HashMap, convert::TryInto};
+use std::collections::HashMap;
+use std::convert::{TryFrom, TryInto};
 
 use thiserror::Error;
 use tracing::{debug, span, trace, Level};
 
-use crate::{
-    constants as C,
-    parser::expression::EvaluationError as ExpressionEvaluationError,
-    parser::line::LineContent,
-    parser::{
-        location::Located,
-        value::{ComputeError, DirectiveArgument, DirectiveKind, InstructionKind},
-    },
-    runtime::{
-        arguments::{ArgConversionError, ImmRegDirIndIdx},
-        Cell, Instruction, Memory,
-    },
-};
-
 use super::layout::{Labels, Layout, Placement};
+use crate::constants as C;
+use crate::parser::expression::EvaluationError as ExpressionEvaluationError;
+use crate::parser::line::LineContent;
+use crate::parser::location::Located;
+use crate::parser::value::{ComputeError, DirectiveArgument, DirectiveKind, InstructionKind};
+use crate::runtime::arguments::{ArgConversionError, ImmRegDirIndIdx};
+use crate::runtime::{Cell, Instruction, Memory};
 
 #[derive(Debug, Error)]
 pub enum MemoryFillError<L> {

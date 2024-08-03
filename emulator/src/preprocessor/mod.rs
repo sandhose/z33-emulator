@@ -1,21 +1,21 @@
-use std::{
-    collections::HashMap,
-    io::Read,
-    path::{Path, PathBuf},
-};
+use std::collections::HashMap;
+use std::io::Read;
+use std::path::{Path, PathBuf};
 
-use nom::{combinator::all_consuming, error::convert_error, Finish, Offset};
+use nom::combinator::all_consuming;
+use nom::error::convert_error;
+use nom::{Finish, Offset};
 use thiserror::Error;
 use unicode_segmentation::UnicodeSegmentation;
 
-use crate::parser::{
-    condition::{
-        parse_condition, Context as ConditionContext, EvaluationError as ConditionEvaluationError,
-    },
-    expression::EmptyContext as EmptyExpressionContext,
-    location::{AbsoluteLocation, Locatable, Located, MapLocation, RelativeLocation},
-    preprocessor::{parse, Node},
+use crate::parser::condition::{
+    parse_condition, Context as ConditionContext, EvaluationError as ConditionEvaluationError,
 };
+use crate::parser::expression::EmptyContext as EmptyExpressionContext;
+use crate::parser::location::{
+    AbsoluteLocation, Locatable, Located, MapLocation, RelativeLocation,
+};
+use crate::parser::preprocessor::{parse, Node};
 
 mod fs;
 
@@ -25,8 +25,9 @@ pub use fs::{Filesystem, InMemoryFilesystem, NativeFilesystem};
 pub enum GetFileError {
     /// An error from the underlying filesystem
     ///
-    /// The inner error is wrapped around a `std::arc::Arc` because `std::io::Error` does not implement
-    /// Clone, but this error needs to be clonable, since it is stored in the parser cache and
+    /// The inner error is wrapped around a `std::arc::Arc` because
+    /// `std::io::Error` does not implement Clone, but this error needs to
+    /// be clonable, since it is stored in the parser cache and
     /// might be returned multiple times.
     #[error("i/o error: {0}")]
     IO(#[from] std::sync::Arc<std::io::Error>),
@@ -242,7 +243,8 @@ impl<FS> Preprocessor<FS> {
     /// # Errors
     ///
     /// This function will return an error if the file cannot be preprocessed,
-    /// like if it has invalid syntax, can't be opened, includes an invalid file, etc.
+    /// like if it has invalid syntax, can't be opened, includes an invalid
+    /// file, etc.
     pub fn preprocess(
         &self,
         entrypoint: &Path,

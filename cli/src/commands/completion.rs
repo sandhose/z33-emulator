@@ -1,9 +1,6 @@
 use clap::{ArgAction, Command, CommandFactory, Parser, ValueEnum};
-use clap_complete::{
-    generate,
-    shells::{Bash, Elvish, Fish, PowerShell, Zsh},
-    Generator,
-};
+use clap_complete::shells::{Bash, Elvish, Fish, PowerShell, Zsh};
+use clap_complete::{generate, Generator};
 
 use crate::Opt;
 

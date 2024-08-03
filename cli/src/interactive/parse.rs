@@ -1,21 +1,15 @@
 use std::str::FromStr;
 
-use nom::{
-    branch::alt,
-    character::complete::char,
-    combinator::{all_consuming, map, value},
-    error::{convert_error, VerboseError},
-    Finish, IResult,
-};
+use nom::branch::alt;
+use nom::character::complete::char;
+use nom::combinator::{all_consuming, map, value};
+use nom::error::{convert_error, VerboseError};
+use nom::{Finish, IResult};
 use thiserror::Error;
-
-use z33_emulator::{
-    constants as C,
-    parser::{
-        location::Locatable, parse_expression, parse_register, ExpressionContext, ExpressionNode,
-    },
-    runtime::{Computer, ExtractValue, Reg},
-};
+use z33_emulator::constants as C;
+use z33_emulator::parser::location::Locatable;
+use z33_emulator::parser::{parse_expression, parse_register, ExpressionContext, ExpressionNode};
+use z33_emulator::runtime::{Computer, ExtractValue, Reg};
 
 #[derive(Debug, Clone)]
 pub enum Address {

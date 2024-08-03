@@ -16,25 +16,20 @@
 //! Note: to simplify a bit, it might accept some weird conditions.
 //! For example, `!4 > 3` is evaluated like `!(4 > 3)`.
 
-use nom::{
-    branch::alt,
-    bytes::complete::tag,
-    bytes::complete::tag_no_case,
-    character::complete::{char, space0},
-    combinator::{cut, map, opt, value},
-    IResult, Offset,
-};
+use nom::branch::alt;
+use nom::bytes::complete::{tag, tag_no_case};
+use nom::character::complete::{char, space0};
+use nom::combinator::{cut, map, opt, value};
+use nom::{IResult, Offset};
 use thiserror::Error;
 
-use super::literal::parse_bool_literal;
-use super::{
-    expression::{
-        parse_expression, Context as ExpressionContext, EmptyContext as EmptyExpressionContext,
-        EvaluationError as ExpressionEvaluationError, Node as ENode,
-    },
-    location::{Locatable, Located, MapLocation, RelativeLocation},
-    precedence::Precedence,
+use super::expression::{
+    parse_expression, Context as ExpressionContext, EmptyContext as EmptyExpressionContext,
+    EvaluationError as ExpressionEvaluationError, Node as ENode,
 };
+use super::literal::parse_bool_literal;
+use super::location::{Locatable, Located, MapLocation, RelativeLocation};
+use super::precedence::Precedence;
 use super::{parse_identifier, ParseError};
 
 type ChildNode<L> = Located<Box<Node<L>>, L>;
@@ -299,7 +294,8 @@ impl<L: Clone> Node<L> {
 }
 
 impl<L: Clone> Located<Node<L>, L> {
-    /// Evaluate a condition AST node with a given context, returning a boolean value
+    /// Evaluate a condition AST node with a given context, returning a boolean
+    /// value
     ///
     /// # Errors
     ///
@@ -347,8 +343,8 @@ fn parse_logical_or<'a, Error: ParseError<&'a str>>(
         // Wrap the "left" node with location information
         let left = Box::new(node).with_location((0, offset));
 
-        // The location embed in the `right` node is relative to the cursor, so we need to offset
-        // it by the offset between the input and the cursor
+        // The location embed in the `right` node is relative to the cursor, so we need
+        // to offset it by the offset between the input and the cursor
         let right = right.offset(offset);
 
         node = Node::Or(left, right);
@@ -385,8 +381,8 @@ fn parse_logical_and<'a, Error: ParseError<&'a str>>(
         // Wrap the "left" node with location information
         let left = Box::new(node).with_location((0, offset));
 
-        // The location embed in the `right` node is relative to the cursor, so we need to offset
-        // it by the offset between the input and the cursor
+        // The location embed in the `right` node is relative to the cursor, so we need
+        // to offset it by the offset between the input and the cursor
         let right = right.offset(offset);
 
         node = Node::And(left, right);
@@ -421,8 +417,9 @@ fn parse_atom<'a, Error: ParseError<&'a str>>(
 ) -> IResult<&'a str, Node<RelativeLocation>, Error> {
     let (input, _) = space0(input)?; // TODO: why does this eat leading spaces
 
-    // Order is important here. Since in numerical expressions, opening parenthesis, bool literals
-    // and the `defined` keyword would get parsed, number comparison need to be last
+    // Order is important here. Since in numerical expressions, opening parenthesis,
+    // bool literals and the `defined` keyword would get parsed, number
+    // comparison need to be last
     alt((
         parse_parenthesis,
         map(parse_defined, Node::Defined),

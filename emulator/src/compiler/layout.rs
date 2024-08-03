@@ -4,18 +4,14 @@ use parse_display::Display;
 use thiserror::Error;
 use tracing::{debug, trace};
 
-use crate::parser::{
-    expression::{
-        Context as ExpressionContext, EmptyContext as EmptyExpressionContext,
-        EvaluationError as ExpressionEvaluationError,
-    },
-    line::{Line, LineContent},
-    value::{DirectiveArgument, DirectiveKind},
+use crate::constants::{Address, PROGRAM_START};
+use crate::parser::expression::{
+    Context as ExpressionContext, EmptyContext as EmptyExpressionContext,
+    EvaluationError as ExpressionEvaluationError,
 };
-use crate::{
-    constants::{Address, PROGRAM_START},
-    parser::location::Located,
-};
+use crate::parser::line::{Line, LineContent};
+use crate::parser::location::Located;
+use crate::parser::value::{DirectiveArgument, DirectiveKind};
 
 pub(crate) type Labels = BTreeMap<String, Address>;
 
@@ -139,7 +135,8 @@ pub(crate) fn layout_memory<L: Clone + Default>(
                 | LineContent::Instruction { .. } => {
                     layout.insert_placement(position, Placement::Line(content.inner.clone()))?;
                     trace!(position, content = %content.inner, "Inserting line");
-                    position += 1; // Instructions and word directives take one memory cell
+                    position += 1; // Instructions and word directives take one
+                                   // memory cell
                 }
 
                 LineContent::Directive {
@@ -217,16 +214,14 @@ pub(crate) fn layout_memory<L: Clone + Default>(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::parser::{
-        expression::Node,
-        line::Line,
-        location::RelativeLocation,
-        value::{InstructionArgument, InstructionKind},
-    };
-    use crate::runtime::Reg;
-
     use InstructionKind::{Add, Jmp};
+
+    use super::*;
+    use crate::parser::expression::Node;
+    use crate::parser::line::Line;
+    use crate::parser::location::RelativeLocation;
+    use crate::parser::value::{InstructionArgument, InstructionKind};
+    use crate::runtime::Reg;
 
     #[test]
     fn place_labels_simple_test() {
@@ -401,7 +396,7 @@ mod tests {
     fn memory_overlap_test() {
         let program: Vec<Line<RelativeLocation>> = vec![
             Line::default().directive(DirectiveKind::Addr, 10),
-            Line::default().directive(DirectiveKind::String, "hello"), // This takes 5 chars, so fills cells 10 to 15
+            Line::default().directive(DirectiveKind::String, "hello"), /* This takes 5 chars, so fills cells 10 to 15 */
             Line::default().directive(DirectiveKind::Addr, 14),
             Line::default().directive(DirectiveKind::Word, 0), // This overlaps with the second "l"
         ];

@@ -1,8 +1,7 @@
 use thiserror::Error;
 
-use crate::constants::Word;
-
 use super::memory::MemoryError;
+use crate::constants::Word;
 
 #[derive(Error, Debug)]
 pub enum Exception {

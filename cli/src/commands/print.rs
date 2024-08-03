@@ -2,10 +2,8 @@ use std::path::PathBuf;
 
 use clap::{Parser, ValueHint};
 use tracing::{debug, info};
-use z33_emulator::{
-    parse,
-    preprocessor::{NativeFilesystem, Preprocessor},
-};
+use z33_emulator::parse;
+use z33_emulator::preprocessor::{NativeFilesystem, Preprocessor};
 
 #[derive(Parser, Debug)]
 pub struct PrintOpt {

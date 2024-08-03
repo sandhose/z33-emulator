@@ -1,17 +1,13 @@
-use nom::{
-    branch::alt,
-    bytes::complete::{tag, take_till},
-    character::complete::{char, line_ending, not_line_ending, space0, space1},
-    combinator::{map, not, opt},
-    sequence::preceded,
-    IResult, Offset,
-};
+use nom::branch::alt;
+use nom::bytes::complete::{tag, take_till};
+use nom::character::complete::{char, line_ending, not_line_ending, space0, space1};
+use nom::combinator::{map, not, opt};
+use nom::sequence::preceded;
+use nom::{IResult, Offset};
 
-use super::{
-    literal::parse_string_literal,
-    location::{Locatable, Located, MapLocation, RelativeLocation},
-    parse_identifier, ParseError,
-};
+use super::literal::parse_string_literal;
+use super::location::{Locatable, Located, MapLocation, RelativeLocation};
+use super::{parse_identifier, ParseError};
 
 type Children<L> = Vec<Located<Node<L>, L>>;
 
@@ -111,7 +107,8 @@ impl<L> Node<L> {
     }
 }
 
-/// Eats the end of a line, including trailing spaces, inline comments and the line ending
+/// Eats the end of a line, including trailing spaces, inline comments and the
+/// line ending
 fn eat_end_of_line<'a, Error: ParseError<&'a str>>(input: &'a str) -> IResult<&'a str, (), Error> {
     let (rest, _) = space0(input)?;
     let (rest, _) = opt(preceded(tag("//"), not_line_ending))(rest)?;
@@ -294,7 +291,8 @@ fn parse_condition<'a, Error: ParseError<&'a str>>(
         let (rest, ()) = eat_end_of_line(rest)?;
 
         // We've got an "#end" directive, get out of the loop
-        // We don't update the cursor here since we will be re-parsing the #end directive afterward
+        // We don't update the cursor here since we will be re-parsing the #end
+        // directive afterward
         if let EndIf = directive {
             break;
         }

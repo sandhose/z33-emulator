@@ -1,8 +1,6 @@
-use std::{
-    collections::HashMap,
-    io::{Cursor, Read},
-    path::{Path, PathBuf},
-};
+use std::collections::HashMap;
+use std::io::{Cursor, Read};
+use std::path::{Path, PathBuf};
 
 /// Abstraction over a filesystem
 pub trait Filesystem {
@@ -62,7 +60,8 @@ impl NativeFilesystem {
     ///
     /// # Errors
     ///
-    /// This function will return an error if the current directory cannot be read
+    /// This function will return an error if the current directory cannot be
+    /// read
     pub fn from_env() -> std::io::Result<Self> {
         Ok(NativeFilesystem {
             root: std::env::current_dir()?,
