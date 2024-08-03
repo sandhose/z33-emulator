@@ -5,7 +5,6 @@ import { Uri } from "monaco-editor/esm/vs/editor/editor.api.js";
 import type * as React from "react";
 import { useState, useSyncExternalStore } from "react";
 import { useForm } from "react-hook-form";
-import { useMediaQuery } from "usehooks-ts";
 import { type Computer, InMemoryPreprocessor, Program } from "z33-web-bindings";
 import { z } from "zod";
 import { Button } from "./components/ui/button";
