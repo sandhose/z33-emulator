@@ -3,8 +3,9 @@ import type { Computer } from "z33-web-bindings";
 import { ComputerView } from "./computer";
 import { MultiFileEditor } from "./multi-file-editor";
 
-const initialFiles = import.meta.glob("../../samples/*.S", {
-  as: "raw",
+const initialFiles = import.meta.glob<string>("../../samples/*.S", {
+  query: "?raw",
+  import: "default",
   eager: true,
 });
 const initialFilesMap = new Map(Object.entries(initialFiles));

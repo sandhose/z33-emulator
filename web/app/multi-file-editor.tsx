@@ -3,7 +3,7 @@ import { Editor, type Monaco, useMonaco } from "@monaco-editor/react";
 import { FilePlusIcon, TrashIcon, UploadIcon } from "@radix-ui/react-icons";
 import { Uri } from "monaco-editor/esm/vs/editor/editor.api.js";
 import type * as React from "react";
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { useForm } from "react-hook-form";
 import { useMediaQuery } from "usehooks-ts";
 import { type Computer, InMemoryPreprocessor, Program } from "z33-web-bindings";
@@ -135,6 +135,8 @@ const UploadFileForm: React.FC<{
   );
 };
 
+const darkMediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+
 export const MultiFileEditor: React.FC<Props> = ({
   initialFiles,
   initialSelected,
@@ -144,7 +146,13 @@ export const MultiFileEditor: React.FC<Props> = ({
   const [fileName, setFileName] = useState(Uri.file(initialSelected));
   const [fileNames, setFileNames] = useState<Uri[]>([]);
   const [program, setProgram] = useState<Program | null>(null);
-  const darkMode = useMediaQuery("(prefers-color-scheme: dark)");
+  const darkMode = useSyncExternalStore(
+    (callback) => {
+      darkMediaQuery.addEventListener("change", callback);
+      return () => darkMediaQuery.removeEventListener("change", callback);
+    },
+    () => darkMediaQuery.matches,
+  );
 
   function sync() {
     if (!monaco) {
