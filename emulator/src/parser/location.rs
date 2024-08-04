@@ -1,13 +1,18 @@
 use std::ops::Range;
 
-use nom::Offset;
-use parse_display::Display;
-
-#[derive(Clone, Debug, PartialEq, Eq, Display)]
-#[display("{inner}", bound(T))]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Located<T> {
     pub inner: T,
     pub(crate) location: Range<usize>,
+}
+
+impl<T> std::fmt::Display for Located<T>
+where
+    T: std::fmt::Display,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.inner.fmt(f)
+    }
 }
 
 impl<T> Located<T> {
@@ -32,38 +37,3 @@ pub trait Locatable: Sized {
 }
 
 impl<T> Locatable for T {}
-
-#[derive(Clone, Debug, PartialEq, Eq, Default)]
-pub struct RelativeLocation {
-    offset: usize,
-    length: usize,
-}
-
-impl From<()> for RelativeLocation {
-    fn from((): ()) -> Self {
-        Self::default()
-    }
-}
-
-impl From<(usize, usize)> for RelativeLocation {
-    fn from((offset, length): (usize, usize)) -> Self {
-        RelativeLocation { offset, length }
-    }
-}
-
-impl<T> From<(T, T, T)> for RelativeLocation
-where
-    T: Offset,
-{
-    fn from((full, start, end): (T, T, T)) -> Self {
-        let offset = full.offset(&start);
-        let length = start.offset(&end);
-        RelativeLocation { offset, length }
-    }
-}
-
-impl std::fmt::Display for RelativeLocation {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}..{}", self.offset, self.offset + self.length)
-    }
-}

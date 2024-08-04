@@ -1,5 +1,4 @@
-use std::path::PathBuf;
-
+use camino::Utf8PathBuf;
 use clap::{Parser, ValueHint};
 use tracing::{debug, info};
 use z33_emulator::parse;
@@ -9,7 +8,7 @@ use z33_emulator::preprocessor::{NativeFilesystem, Preprocessor};
 pub struct PrintOpt {
     /// Input file
     #[clap(value_parser, value_hint = ValueHint::FilePath)]
-    input: PathBuf,
+    input: Utf8PathBuf,
 }
 
 impl PrintOpt {

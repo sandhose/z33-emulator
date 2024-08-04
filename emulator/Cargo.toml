@@ -15,7 +15,9 @@ workspace = true
 
 [dependencies]
 bitflags.workspace = true
+camino.workspace = true
 thiserror.workspace = true
+miette.workspace = true
 nom.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true

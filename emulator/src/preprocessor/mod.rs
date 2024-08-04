@@ -1,8 +1,8 @@
 use std::collections::HashMap;
-use std::io::Read;
 use std::ops::Range;
-use std::path::{Path, PathBuf};
 
+use camino::{Utf8Path, Utf8PathBuf};
+use miette::NamedSource;
 use nom::combinator::all_consuming;
 use nom::error::convert_error;
 use nom::{Finish, Offset};
@@ -36,6 +36,7 @@ pub enum GetFileError {
 }
 
 struct ParsedFile {
+    source: NamedSource<String>,
     chunks: Vec<Located<Node>>,
 }
 
@@ -52,8 +53,7 @@ impl ParsedFile {
 
 #[derive(Default)]
 struct ParserCache {
-    files: HashMap<PathBuf, Result<ParsedFile, GetFileError>>,
-    sources: HashMap<PathBuf, String>,
+    files: HashMap<Utf8PathBuf, Result<ParsedFile, GetFileError>>,
 }
 
 impl ParserCache {
@@ -63,35 +63,30 @@ impl ParserCache {
 }
 
 impl ParserCache {
-    fn get_file(&self, path: &Path) -> &Result<ParsedFile, GetFileError> {
+    fn get_file(&self, path: &Utf8Path) -> &Result<ParsedFile, GetFileError> {
         self.files.get(path).expect("file not in cache")
     }
 
-    fn fill<FS: Filesystem>(&mut self, path: &Path, fs: &FS) {
+    fn fill<FS: Filesystem>(&mut self, path: &Utf8Path, fs: &FS) {
         if self.files.contains_key(path) {
             return;
         }
 
         let res = (|| {
-            let content = {
-                let mut f = fs.open(path).map_err(std::sync::Arc::new)?;
-                let mut buf = String::new();
-                f.read_to_string(&mut buf).map_err(std::sync::Arc::new)?;
-                buf
-            };
+            let source = fs.read(path).map_err(std::sync::Arc::new)?;
 
-            self.sources.insert(path.to_path_buf(), content.clone());
-
-            let (_, chunks) = all_consuming(parse)(content.as_str())
+            let (_, chunks) = all_consuming(parse)(source.as_str())
                 .finish()
                 .map_err(|e| GetFileError::ParseError {
-                    message: convert_error(content.as_str(), e),
+                    message: convert_error(source.as_str(), e),
                 })?;
 
-            Ok(ParsedFile { chunks })
+            let source = NamedSource::new(path, source);
+
+            Ok(ParsedFile { source, chunks })
         })();
 
-        let mut paths: Vec<PathBuf> = Vec::new();
+        let mut paths: Vec<Utf8PathBuf> = Vec::new();
         if let Ok(ref file) = res {
             file.walk(|node| {
                 if let Node::Inclusion { path: inclusion } = node {
@@ -113,7 +108,10 @@ impl ParserCache {
 #[derive(Error, Debug)]
 pub enum PreprocessorError {
     #[error("could not get file {path}: {inner}")]
-    GetFile { path: PathBuf, inner: GetFileError },
+    GetFile {
+        path: Utf8PathBuf,
+        inner: GetFileError,
+    },
 
     #[error("user error: {message}")]
     UserError {
@@ -196,7 +194,7 @@ impl<FS> Preprocessor<FS> {
     }
 
     #[must_use]
-    pub fn and_load(mut self, entrypoint: &Path) -> Self
+    pub fn and_load(mut self, entrypoint: &Utf8Path) -> Self
     where
         FS: Filesystem,
     {
@@ -204,11 +202,7 @@ impl<FS> Preprocessor<FS> {
         self
     }
 
-    pub fn sources(&self) -> &HashMap<PathBuf, String> {
-        &self.cache.sources
-    }
-
-    pub fn load(&mut self, entrypoint: &Path)
+    pub fn load(&mut self, entrypoint: &Utf8Path)
     where
         FS: Filesystem,
     {
@@ -223,7 +217,7 @@ impl<FS> Preprocessor<FS> {
     /// This function will return an error if the file cannot be preprocessed,
     /// like if it has invalid syntax, can't be opened, includes an invalid
     /// file, etc.
-    pub fn preprocess(&self, entrypoint: &Path) -> Result<String, PreprocessorError>
+    pub fn preprocess(&self, entrypoint: &Utf8Path) -> Result<String, PreprocessorError>
     where
         FS: Filesystem,
     {
@@ -236,7 +230,7 @@ impl<FS> Preprocessor<FS> {
 
     fn preprocess_path(
         &self,
-        path: &Path,
+        path: &Utf8Path,
         ctx: &mut Context,
     ) -> Result<Vec<String>, PreprocessorError>
     where
@@ -264,7 +258,7 @@ impl<FS> Preprocessor<FS> {
         &self,
         chunk: &Located<Node>,
         ctx: &mut Context,
-        open_path: &Path,
+        open_path: &Utf8Path,
     ) -> Result<Vec<String>, PreprocessorError>
     where
         FS: Filesystem,
@@ -308,7 +302,7 @@ impl<FS> Preprocessor<FS> {
 
             Node::Inclusion { path: ref include } => {
                 // Include a file
-                let include: PathBuf = include.inner.clone().into();
+                let include: Utf8PathBuf = include.inner.clone().into();
                 // First resolve its path
                 let path = self.fs.relative(Some(open_path), &include);
                 // Then process it
@@ -437,7 +431,7 @@ mod tests {
         })
     }
 
-    fn preprocess<P: AsRef<Path>>(path: P) -> Result<String, PreprocessorError> {
+    fn preprocess<P: AsRef<Utf8Path>>(path: P) -> Result<String, PreprocessorError> {
         let fs = fs();
         let mut preprocessor = Preprocessor::new(fs);
         let path = path.as_ref();

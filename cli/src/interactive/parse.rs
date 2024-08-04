@@ -4,7 +4,7 @@ use nom::branch::alt;
 use nom::character::complete::char;
 use nom::combinator::{all_consuming, map, value};
 use nom::error::{convert_error, VerboseError};
-use nom::{Finish, IResult};
+use nom::{Finish, IResult, Offset};
 use thiserror::Error;
 use z33_emulator::constants as C;
 use z33_emulator::parser::location::Locatable;
@@ -34,7 +34,7 @@ impl Address {
                     reg.extract_word(computer)?,
                 )))
                 .with_location(0..0),
-                Box::new(node).with_location(0..0):w,
+                Box::new(node).with_location(0..0),
             ),
         };
 

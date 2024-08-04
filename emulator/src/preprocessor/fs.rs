@@ -1,58 +1,53 @@
 use std::collections::HashMap;
-use std::io::{Cursor, Read};
-use std::path::{Path, PathBuf};
+
+use camino::{Utf8Path, Utf8PathBuf};
 
 /// Abstraction over a filesystem
 pub trait Filesystem {
-    /// The type of file that can be read
-    type File: Read;
-
-    /// Open a file
+    /// Read the content of a file
     ///
     /// # Errors
     ///
-    /// This function will return an error if the file cannot be opened
-    fn open(&self, path: &Path) -> std::io::Result<Self::File>;
+    /// This function will return an error if the file cannot be opened or read
+    fn read(&self, path: &Utf8Path) -> std::io::Result<String>;
 
     /// Get the root path of the filesystem
-    fn root(&self) -> PathBuf {
-        PathBuf::new()
+    fn root(&self) -> &Utf8Path {
+        Utf8Path::new("")
     }
 
     /// Get the absolute path of a file relative to the root
-    fn relative(&self, sibling: Option<&Path>, path: &Path) -> PathBuf {
+    fn relative(&self, sibling: Option<&Utf8Path>, path: &Utf8Path) -> Utf8PathBuf {
         sibling
-            .and_then(std::path::Path::parent)
-            .map_or_else(|| self.root(), ToOwned::to_owned) // Default to the "root" path
+            .and_then(Utf8Path::parent)
+            .unwrap_or(self.root()) // Default to the "root" path
             .join(path) // And join relative to that
     }
 }
 
 #[derive(Debug)]
 pub struct InMemoryFilesystem {
-    files: HashMap<PathBuf, String>,
+    files: HashMap<Utf8PathBuf, String>,
 }
 
 impl InMemoryFilesystem {
     #[must_use]
-    pub const fn new(files: HashMap<PathBuf, String>) -> Self {
+    pub const fn new(files: HashMap<Utf8PathBuf, String>) -> Self {
         InMemoryFilesystem { files }
     }
 }
 
 impl Filesystem for InMemoryFilesystem {
-    type File = Cursor<String>;
-
-    fn open(&self, path: &Path) -> std::io::Result<Self::File> {
+    fn read(&self, path: &Utf8Path) -> std::io::Result<String> {
         self.files
             .get(path)
             .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "file not found"))
-            .map(|content| Cursor::new(content.clone()))
+            .cloned()
     }
 }
 
 pub struct NativeFilesystem {
-    root: PathBuf,
+    root: Utf8PathBuf,
 }
 
 impl NativeFilesystem {
@@ -64,19 +59,19 @@ impl NativeFilesystem {
     /// read
     pub fn from_env() -> std::io::Result<Self> {
         Ok(NativeFilesystem {
-            root: std::env::current_dir()?,
+            root: std::env::current_dir()?
+                .try_into()
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?,
         })
     }
 }
 
 impl Filesystem for NativeFilesystem {
-    type File = std::fs::File;
-
-    fn open(&self, path: &Path) -> std::io::Result<Self::File> {
-        std::fs::File::open(path)
+    fn read(&self, path: &Utf8Path) -> std::io::Result<String> {
+        std::fs::read_to_string(path)
     }
 
-    fn root(&self) -> PathBuf {
-        self.root.clone()
+    fn root(&self) -> &Utf8Path {
+        &self.root
     }
 }
