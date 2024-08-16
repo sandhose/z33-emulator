@@ -7,7 +7,7 @@ use codespan_reporting::files::SimpleFiles;
 use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
 use tracing::{debug, error, info};
 use z33_emulator::compiler::CompilationError;
-use z33_emulator::preprocessor::{NativeFilesystem, Preprocessor};
+use z33_emulator::preprocessor::{NativeFilesystem, Workspace};
 use z33_emulator::{compile, parse};
 
 use crate::interactive::run_interactive;
@@ -35,11 +35,11 @@ fn char_offset(a: &str, b: &str) -> usize {
 
 impl RunOpt {
     #[allow(clippy::too_many_lines)]
-    pub fn exec(&self) -> anyhow::Result<()> {
+    pub fn exec(self) -> anyhow::Result<()> {
         let fs = NativeFilesystem::from_env()?;
         info!(path = ?self.input, "Reading program");
-        let preprocessor = Preprocessor::new(fs).and_load(&self.input);
-        let source = match preprocessor.preprocess(&self.input) {
+        let preprocessor = Workspace::new(&fs, self.input);
+        let source = match preprocessor.preprocess() {
             Ok(p) => p,
             Err(e) => {
                 for error in anyhow::Chain::new(&e) {

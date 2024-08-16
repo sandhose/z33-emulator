@@ -1,5 +1,6 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ops::Range;
+use std::sync::Arc;
 
 use camino::{Utf8Path, Utf8PathBuf};
 use miette::NamedSource;
@@ -21,87 +22,231 @@ mod fs;
 pub use fs::{Filesystem, InMemoryFilesystem, NativeFilesystem};
 
 #[derive(Debug, Error, Clone)]
-pub enum GetFileError {
-    /// An error from the underlying filesystem
-    ///
-    /// The inner error is wrapped around a `std::arc::Arc` because
-    /// `std::io::Error` does not implement Clone, but this error needs to
-    /// be clonable, since it is stored in the parser cache and
-    /// might be returned multiple times.
-    #[error("i/o error: {0}")]
-    IO(#[from] std::sync::Arc<std::io::Error>),
-
-    #[error("parse error: {message}")]
-    ParseError { message: String },
+#[error("parse error: {message}")]
+pub struct ParseError {
+    message: String,
 }
 
-struct ParsedFile {
+struct ProcessedFile {
+    #[allow(dead_code)]
     source: NamedSource<String>,
+    content: Result<FileContent, ParseError>,
+}
+
+struct FileContent {
     chunks: Vec<Located<Node>>,
+    references: HashMap<Utf8PathBuf, Utf8PathBuf>,
 }
 
-impl ParsedFile {
-    fn walk<F>(&self, mut f: F)
-    where
-        F: FnMut(&Node),
-    {
-        for chunk in &self.chunks {
-            chunk.inner.walk(&mut f);
-        }
-    }
+/// A [`Workspace`] holds parsed files loaded from a filesystem
+pub struct Workspace {
+    entrypoint: Utf8PathBuf,
+    files: HashMap<Utf8PathBuf, Result<ProcessedFile, Arc<std::io::Error>>>,
 }
 
-#[derive(Default)]
-struct ParserCache {
-    files: HashMap<Utf8PathBuf, Result<ParsedFile, GetFileError>>,
-}
+impl Workspace {
+    /// Create a new [`Workspace`] and load the entrypoint from the given
+    /// [`Filesystem`]
+    pub fn new<FS: Filesystem>(fs: &FS, entrypoint: Utf8PathBuf) -> Self {
+        let mut this = Self {
+            entrypoint,
+            files: HashMap::new(),
+        };
 
-impl ParserCache {
-    fn new() -> Self {
-        Self::default()
-    }
-}
+        let path = fs.relative(None, &this.entrypoint);
+        this.load(fs, &path);
 
-impl ParserCache {
-    fn get_file(&self, path: &Utf8Path) -> &Result<ParsedFile, GetFileError> {
-        self.files.get(path).expect("file not in cache")
+        this
     }
 
-    fn fill<FS: Filesystem>(&mut self, path: &Utf8Path, fs: &FS) {
+    fn load<FS: Filesystem>(&mut self, fs: &FS, path: &Utf8Path) -> &mut Self {
+        // If we already loaded the path, return early
         if self.files.contains_key(path) {
-            return;
+            return self;
         }
 
-        let res = (|| {
-            let source = fs.read(path).map_err(std::sync::Arc::new)?;
+        // Try to read the file from the FS
+        let source = match fs.read(path) {
+            Ok(s) => s,
+            Err(e) => {
+                // If it failed, store the error
+                self.files.insert(path.to_owned(), Err(Arc::new(e)));
+                return self;
+            }
+        };
 
-            let (_, chunks) = all_consuming(parse)(source.as_str())
-                .finish()
-                .map_err(|e| GetFileError::ParseError {
-                    message: convert_error(source.as_str(), e),
-                })?;
-
-            let source = NamedSource::new(path, source);
-
-            Ok(ParsedFile { source, chunks })
-        })();
-
-        let mut paths: Vec<Utf8PathBuf> = Vec::new();
-        if let Ok(ref file) = res {
-            file.walk(|node| {
-                if let Node::Inclusion { path: inclusion } = node {
-                    paths.push(inclusion.inner.clone().into());
+        // Parse the file content
+        let content = all_consuming(parse)(source.as_str())
+            .finish()
+            .map(|(_rest, chunks)| {
+                // We parsed the chunks, now we find inclusions and resolve them
+                let mut references = HashMap::new();
+                for chunk in &chunks {
+                    chunk.inner.walk(&mut |node| {
+                        if let Node::Inclusion { path: inclusion } = node {
+                            let reference = Utf8PathBuf::from(inclusion.inner.clone());
+                            let resolved = fs.relative(Some(path), &reference);
+                            references.insert(reference, resolved);
+                        }
+                    });
                 }
+                FileContent { chunks, references }
+            })
+            .map_err(|e| ParseError {
+                message: convert_error(source.as_str(), e),
             });
+
+        // Copy the list of files to load, as it is annoying to borrow it after insert
+        let to_load: HashSet<_> = content
+            .as_ref()
+            .iter()
+            .flat_map(|c| c.references.values())
+            .cloned()
+            .collect();
+
+        // Save the file
+        let source = NamedSource::new(path, source);
+        let file = ProcessedFile { source, content };
+        self.files.insert(path.to_owned(), Ok(file));
+
+        // And load recursively files referenced by it
+        for path in to_load {
+            self.load(fs, &path);
         }
 
-        self.files.insert(path.to_path_buf(), res);
+        self
+    }
 
-        let parent = path;
-        for path in paths {
-            let path = fs.relative(Some(parent), &path);
-            self.fill(&path, fs);
+    /// Preprocess a file, given the file name
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the file cannot be preprocessed,
+    /// like if it has invalid syntax, can't be opened, includes an invalid
+    /// file, etc.
+    pub fn preprocess(&self) -> Result<String, PreprocessorError> {
+        let mut ctx = Context::default();
+        let chunks = self.preprocess_path(&self.entrypoint, &mut ctx)?;
+
+        Ok(chunks.join(""))
+    }
+
+    fn preprocess_path(
+        &self,
+        path: &Utf8Path,
+        ctx: &mut Context,
+    ) -> Result<Vec<String>, PreprocessorError> {
+        let Some(file) = self.files.get(path) else {
+            // The file is not loaded, this shouldn't happen
+            todo!()
+        };
+
+        let Ok(file) = file else {
+            // The file had an error loading it
+            todo!()
+        };
+
+        let Ok(content) = &file.content else {
+            // The file had an error parsing it
+            todo!()
+        };
+
+        let mut buf = Vec::new();
+        self.process_chunks(&mut buf, &content.chunks, &content.references, ctx)?;
+        Ok(buf)
+    }
+
+    fn process_chunks(
+        &self,
+        buf: &mut Vec<String>,
+        chunks: &[Located<Node>],
+        references: &HashMap<Utf8PathBuf, Utf8PathBuf>,
+        ctx: &mut Context,
+    ) -> Result<(), PreprocessorError> {
+        'outer: for chunk in chunks {
+            match &chunk.inner {
+                Node::Raw { ref content } => {
+                    // Replace the definitions in the content
+                    let replaced = ctx.replace(content);
+                    buf.extend(replaced.into_iter().map(|l| l.inner.to_owned()));
+                    buf.push("\n".to_owned());
+                }
+
+                Node::Error { ref message } => {
+                    // Return the user-defined error
+                    return Err(PreprocessorError::UserError {
+                        message: message.inner.clone(),
+                        location: message.location.clone(),
+                    });
+                }
+
+                Node::Undefine { ref key } => {
+                    // Remove a definition
+                    let key = &key.inner;
+                    ctx.undefine(key);
+                }
+
+                Node::Definition {
+                    ref key,
+                    ref content,
+                } => {
+                    // Add a definition
+                    let key = key.inner.clone();
+                    let content = content.as_ref().map(|i| &i.inner);
+                    // First replace existing definitions in the content
+                    let content =
+                        content.map(|c| ctx.replace(c).into_iter().map(|l| l.inner).collect());
+                    // Then add the definition
+                    ctx.define(key, content);
+                }
+
+                Node::Inclusion { path: ref include } => {
+                    // Include a file
+                    let path = Utf8Path::new(&include.inner);
+
+                    // Resolve the path
+                    let Some(resolved) = references.get(path) else {
+                        // The file references wasn't resolved, this shouldn't happen
+                        todo!()
+                    };
+
+                    // Then process it
+                    let content = self.preprocess_path(resolved, ctx)?;
+                    buf.extend(content);
+                }
+
+                Node::Condition { branches, fallback } => {
+                    for branch in branches {
+                        let condition: String = ctx
+                            .replace(&branch.condition.inner)
+                            .into_iter()
+                            .map(|l| l.inner)
+                            .collect();
+
+                        let (_, expression) =
+                            parse_condition(&condition).finish().map_err(|(): ()| {
+                                PreprocessorError::ConditionParse {
+                                    location: branch.condition.location.clone(),
+                                }
+                            })?; // TODO: wrap the error
+
+                        let expression =
+                            expression.with_location(branch.condition.location.clone());
+
+                        if expression.evaluate(ctx)? {
+                            self.process_chunks(buf, &branch.body.inner, references, ctx)?;
+                            continue 'outer;
+                        }
+                    }
+
+                    if let Some(ref body) = fallback {
+                        self.process_chunks(buf, &body.inner, references, ctx)?;
+                    }
+                }
+            }
         }
+
+        Ok(())
     }
 }
 
@@ -110,7 +255,7 @@ pub enum PreprocessorError {
     #[error("could not get file {path}: {inner}")]
     GetFile {
         path: Utf8PathBuf,
-        inner: GetFileError,
+        inner: ParseError,
     },
 
     #[error("user error: {message}")]
@@ -177,178 +322,6 @@ impl Context {
                 Some(replaced.with_location(location))
             })
             .collect()
-    }
-}
-
-pub struct Preprocessor<FS> {
-    cache: ParserCache,
-    fs: FS,
-}
-
-impl<FS> Preprocessor<FS> {
-    pub fn new(fs: FS) -> Self {
-        Self {
-            cache: ParserCache::new(),
-            fs,
-        }
-    }
-
-    #[must_use]
-    pub fn and_load(mut self, entrypoint: &Utf8Path) -> Self
-    where
-        FS: Filesystem,
-    {
-        self.load(entrypoint);
-        self
-    }
-
-    pub fn load(&mut self, entrypoint: &Utf8Path)
-    where
-        FS: Filesystem,
-    {
-        let path = self.fs.relative(None, entrypoint);
-        self.cache.fill(&path, &self.fs);
-    }
-
-    /// Preprocess a file, given the file name
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if the file cannot be preprocessed,
-    /// like if it has invalid syntax, can't be opened, includes an invalid
-    /// file, etc.
-    pub fn preprocess(&self, entrypoint: &Utf8Path) -> Result<String, PreprocessorError>
-    where
-        FS: Filesystem,
-    {
-        let path = self.fs.relative(None, entrypoint);
-        let mut ctx = Context::default();
-        let chunks = self.preprocess_path(&path, &mut ctx)?;
-
-        Ok(chunks.join("\n"))
-    }
-
-    fn preprocess_path(
-        &self,
-        path: &Utf8Path,
-        ctx: &mut Context,
-    ) -> Result<Vec<String>, PreprocessorError>
-    where
-        FS: Filesystem,
-    {
-        let mut buf = Vec::new();
-        let file =
-            self.cache
-                .get_file(path)
-                .as_ref()
-                .map_err(|inner| PreprocessorError::GetFile {
-                    path: path.to_path_buf(),
-                    inner: inner.clone(),
-                })?;
-
-        for chunk in &file.chunks {
-            let content = self.process_chunk(chunk, ctx, path)?;
-            buf.extend(content);
-        }
-
-        Ok(buf)
-    }
-
-    fn process_chunk(
-        &self,
-        chunk: &Located<Node>,
-        ctx: &mut Context,
-        open_path: &Utf8Path,
-    ) -> Result<Vec<String>, PreprocessorError>
-    where
-        FS: Filesystem,
-    {
-        match &chunk.inner {
-            Node::Raw { ref content } => {
-                // Replace the definitions in the content
-                let replaced = ctx.replace(content);
-                Ok(vec![replaced.into_iter().map(|l| l.inner).collect()])
-            }
-
-            Node::Error { ref message } => {
-                // Return the user-defined error
-                Err(PreprocessorError::UserError {
-                    message: message.inner.clone(),
-                    location: message.location.clone(),
-                })
-            }
-
-            Node::Undefine { ref key } => {
-                // Remove a definition
-                let key = &key.inner;
-                ctx.undefine(key);
-                Ok(Vec::new()) // Generates no text
-            }
-
-            Node::Definition {
-                ref key,
-                ref content,
-            } => {
-                // Add a definition
-                let key = key.inner.clone();
-                let content = content.as_ref().map(|i| &i.inner);
-                // First replace existing definitions in the content
-                let content =
-                    content.map(|c| ctx.replace(c).into_iter().map(|l| l.inner).collect());
-                // Then add the definition
-                ctx.define(key, content);
-                Ok(Vec::new()) // Generates no text
-            }
-
-            Node::Inclusion { path: ref include } => {
-                // Include a file
-                let include: Utf8PathBuf = include.inner.clone().into();
-                // First resolve its path
-                let path = self.fs.relative(Some(open_path), &include);
-                // Then process it
-                let content = self.preprocess_path(&path, ctx)?;
-                Ok(content)
-            }
-
-            Node::Condition { branches, fallback } => {
-                for branch in branches {
-                    let condition: String = ctx
-                        .replace(&branch.condition.inner)
-                        .into_iter()
-                        .map(|l| l.inner)
-                        .collect();
-
-                    let (_, expression) =
-                        parse_condition(&condition).finish().map_err(|(): ()| {
-                            PreprocessorError::ConditionParse {
-                                location: branch.condition.location.clone(),
-                            }
-                        })?; // TODO: wrap the error
-
-                    let expression = expression.with_location(branch.condition.location.clone());
-
-                    if expression.evaluate(ctx)? {
-                        let mut buf = Vec::new();
-                        for chunk in &branch.body.inner {
-                            let chunks = self.process_chunk(chunk, ctx, open_path)?;
-                            buf.extend(chunks);
-                        }
-                        return Ok(buf);
-                    }
-                }
-
-                if let Some(ref body) = fallback {
-                    let mut buf = Vec::new();
-                    for chunk in &body.inner {
-                        let chunks = self.process_chunk(chunk, ctx, open_path)?;
-                        buf.extend(chunks);
-                    }
-                    return Ok(buf);
-                }
-
-                Ok(Vec::new())
-            }
-        }
     }
 }
 
@@ -433,10 +406,8 @@ mod tests {
 
     fn preprocess<P: AsRef<Utf8Path>>(path: P) -> Result<String, PreprocessorError> {
         let fs = fs();
-        let mut preprocessor = Preprocessor::new(fs);
-        let path = path.as_ref();
-        preprocessor.load(path);
-        preprocessor.preprocess(path)
+        let preprocessor = Workspace::new(&fs, path.as_ref().to_owned());
+        preprocessor.preprocess()
     }
 
     #[test]

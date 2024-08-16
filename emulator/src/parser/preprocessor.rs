@@ -1,7 +1,7 @@
 use nom::branch::alt;
 use nom::bytes::complete::{tag, take_till};
 use nom::character::complete::{char, line_ending, not_line_ending, space0, space1};
-use nom::combinator::{map, not, opt};
+use nom::combinator::{fail, map, not, opt};
 use nom::sequence::preceded;
 use nom::{IResult, Offset};
 
@@ -42,9 +42,9 @@ pub(crate) enum Node {
 }
 
 impl Node {
-    pub(crate) fn walk<F>(&self, f: &mut F)
+    pub(crate) fn walk<'a, F>(&'a self, f: &mut F)
     where
-        F: FnMut(&Self),
+        F: FnMut(&'a Self),
     {
         f(self);
 
@@ -299,6 +299,12 @@ fn parse_raw<'a, Error: ParseError<&'a str>>(input: &'a str) -> IResult<&'a str,
 }
 
 fn parse_chunk<'a, Error: ParseError<&'a str>>(input: &'a str) -> IResult<&'a str, Node, Error> {
+    // If we're at the end of the input, just stop parsing,
+    // so that we don't emit an empty raw node
+    if input.is_empty() {
+        return fail(input);
+    }
+
     alt((
         parse_definition, // #define X [Y]
         parse_undefine,   // #undefine X
@@ -480,10 +486,6 @@ mod tests {
                     content: None,
                 }
                 .with_location(77..89),
-                Raw {
-                    content: String::new(),
-                }
-                .with_location(90..90),
             ]
         );
     }
@@ -546,10 +548,6 @@ mod tests {
                     content: "empty line".to_string()
                 }
                 .with_location(154..164),
-                Raw {
-                    content: String::new()
-                }
-                .with_location(165..165),
             ]
         );
     }

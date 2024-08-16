@@ -2,7 +2,7 @@ use camino::Utf8PathBuf;
 use clap::{Parser, ValueHint};
 use tracing::{debug, info};
 use z33_emulator::parse;
-use z33_emulator::preprocessor::{NativeFilesystem, Preprocessor};
+use z33_emulator::preprocessor::{NativeFilesystem, Workspace};
 
 #[derive(Parser, Debug)]
 pub struct PrintOpt {
@@ -12,12 +12,12 @@ pub struct PrintOpt {
 }
 
 impl PrintOpt {
-    pub fn exec(&self) -> anyhow::Result<()> {
+    pub fn exec(self) -> anyhow::Result<()> {
         let fs = NativeFilesystem::from_env()?;
         info!(path = ?self.input, "Reading program");
-        let preprocessor = Preprocessor::new(fs).and_load(&self.input);
+        let preprocessor = Workspace::new(&fs, self.input);
 
-        let source = preprocessor.preprocess(&self.input)?;
+        let source = preprocessor.preprocess()?;
         let source = source.as_str();
 
         debug!("Parsing program");
