@@ -32,8 +32,10 @@ pub struct InMemoryFilesystem {
 
 impl InMemoryFilesystem {
     #[must_use]
-    pub const fn new(files: HashMap<Utf8PathBuf, String>) -> Self {
-        InMemoryFilesystem { files }
+    pub fn new<T: Into<HashMap<Utf8PathBuf, String>>>(files: T) -> Self {
+        InMemoryFilesystem {
+            files: files.into(),
+        }
     }
 }
 

@@ -37,7 +37,7 @@ impl InMemoryPreprocessor {
     pub fn new(files: InputFiles, entrypoint: String) -> Self {
         let fs = InMemoryFilesystem::new(files.0);
         let entrypoint = Utf8PathBuf::from(entrypoint);
-        let preprocessor = Workspace::new(&fs, entrypoint);
+        let preprocessor = Workspace::new(&fs, &entrypoint);
         Self { preprocessor }
     }
 

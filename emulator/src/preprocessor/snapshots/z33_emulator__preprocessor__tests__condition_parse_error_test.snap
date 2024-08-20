@@ -1,0 +1,13 @@
+---
+source: emulator/src/preprocessor/mod.rs
+expression: report
+---
+  x Invalid syntax in condition
+  `->   x invalid syntax
+      
+   ,-[/invalid.S:2:5]
+ 1 | hello
+ 2 | #if (1 + 5
+   :     ^^^^^^
+ 3 | #endif
+   `----

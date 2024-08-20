@@ -15,7 +15,7 @@ impl DumpOpt {
     pub fn exec(self) -> anyhow::Result<()> {
         let fs = NativeFilesystem::from_env()?;
         info!(path = ?self.input, "Reading program");
-        let preprocessor = Workspace::new(&fs, self.input);
+        let preprocessor = Workspace::new(&fs, &self.input);
 
         let source = preprocessor.preprocess()?;
         let source = source.as_str();

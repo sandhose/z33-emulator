@@ -1,0 +1,20 @@
+---
+source: emulator/src/preprocessor/mod.rs
+expression: report
+---
+  x Failed to process included file
+  `->   x Failed to parse file
+      
+      Error:   x invalid syntax
+         ,-[/invalid.S:2:1]
+       1 | hello
+       2 | #else
+         : ^
+         : `-- here
+         `----
+      
+   ,-[/include.S:1:10]
+ 1 | #include "invalid.S"
+   :          ^^^^^|^^^^^
+   :               `-- File included here
+   `----

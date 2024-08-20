@@ -38,35 +38,12 @@ impl RunOpt {
     pub fn exec(self) -> anyhow::Result<()> {
         let fs = NativeFilesystem::from_env()?;
         info!(path = ?self.input, "Reading program");
-        let preprocessor = Workspace::new(&fs, self.input);
+        let preprocessor = Workspace::new(&fs, &self.input);
         let source = match preprocessor.preprocess() {
             Ok(p) => p,
             Err(e) => {
-                for error in anyhow::Chain::new(&e) {
-                    // TODO: get the location of individual errors
-                    error!("{}", error);
-                }
-
-                let msg = format!("{e}");
-                let files = SimpleFiles::<String, String>::new();
-                let labels = Vec::new();
-
-                /*
-                if let Some(location) = e.location() {
-                    labels.push(Label::primary(file_ids[&location.file], *location));
-                }
-                */
-
-                let diagnostic = Diagnostic::error().with_message(msg).with_labels(labels);
-
-                let writer = StandardStream::stderr(ColorChoice::Auto);
-                let config = codespan_reporting::term::Config {
-                    before_label_lines: 3,
-                    after_label_lines: 3,
-                    ..Default::default()
-                };
-
-                codespan_reporting::term::emit(&mut writer.lock(), &config, &files, &diagnostic)?;
+                let report = miette::Report::new(e);
+                eprintln!("{report:?}");
                 exit(1);
             }
         };

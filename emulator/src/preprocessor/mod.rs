@@ -3,39 +3,102 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use camino::{Utf8Path, Utf8PathBuf};
-use miette::NamedSource;
+use miette::{Diagnostic, NamedSource, SourceSpan};
 use nom::combinator::all_consuming;
-use nom::error::convert_error;
 use nom::{Finish, Offset};
 use thiserror::Error;
+use tracing::warn;
 use unicode_segmentation::UnicodeSegmentation;
 
-use crate::parser::condition::{
-    parse_condition, Context as ConditionContext, EvaluationError as ConditionEvaluationError,
-};
-use crate::parser::expression::EmptyContext as EmptyExpressionContext;
+use crate::parser::condition::{parse_condition, Context as ConditionContext};
+use crate::parser::expression::{EmptyContext as EmptyExpressionContext, EvaluationError};
 use crate::parser::location::{Locatable, Located};
 use crate::parser::preprocessor::{parse, Node};
 
 mod fs;
 
-pub use fs::{Filesystem, InMemoryFilesystem, NativeFilesystem};
+pub use self::fs::{Filesystem, InMemoryFilesystem, NativeFilesystem};
 
 #[derive(Debug, Error, Clone)]
-#[error("parse error: {message}")]
-pub struct ParseError {
-    message: String,
+#[error(transparent)]
+pub struct SharedParseError {
+    inner: Arc<dyn Diagnostic + Send + Sync>,
+}
+
+// It's annoying, but miette doesn't look like it's implementing Diagnostic for
+// many containers, including Box and Arc, so we have to do it manually if we
+// want to share the errors and copy it arround
+impl Diagnostic for SharedParseError {
+    fn code<'a>(&'a self) -> Option<Box<dyn std::fmt::Display + 'a>> {
+        self.inner.code()
+    }
+
+    fn severity(&self) -> Option<miette::Severity> {
+        self.inner.severity()
+    }
+
+    fn help<'a>(&'a self) -> Option<Box<dyn std::fmt::Display + 'a>> {
+        self.inner.help()
+    }
+
+    fn url<'a>(&'a self) -> Option<Box<dyn std::fmt::Display + 'a>> {
+        self.inner.url()
+    }
+
+    fn source_code(&self) -> Option<&dyn miette::SourceCode> {
+        self.inner.source_code()
+    }
+
+    fn labels(&self) -> Option<Box<dyn Iterator<Item = miette::LabeledSpan> + '_>> {
+        self.inner.labels()
+    }
+
+    fn related<'a>(&'a self) -> Option<Box<dyn Iterator<Item = &'a dyn Diagnostic> + 'a>> {
+        self.inner.related()
+    }
+
+    fn diagnostic_source(&self) -> Option<&dyn Diagnostic> {
+        self.inner.diagnostic_source()
+    }
 }
 
 struct ProcessedFile {
-    #[allow(dead_code)]
     source: NamedSource<String>,
-    content: Result<FileContent, ParseError>,
+    content: Result<FileContent, SharedParseError>,
 }
 
 struct FileContent {
     chunks: Vec<Located<Node>>,
     references: HashMap<Utf8PathBuf, Utf8PathBuf>,
+}
+
+struct Stack<'a> {
+    source: &'a NamedSource<String>,
+    span: Range<usize>,
+}
+
+impl<'a> Stack<'a> {
+    fn push<'t, T>(&self, node: &'t Located<T>) -> (Stack<'a>, &'t T) {
+        let span = Range {
+            start: self.span.start + node.location.start,
+            end: self.span.start + node.location.end,
+        };
+
+        if span.start > self.span.end || span.end > self.span.end {
+            warn!("span out of bounds");
+        }
+
+        let new = Stack {
+            source: self.source,
+            span,
+        };
+
+        (new, &node.inner)
+    }
+
+    fn context(&self) -> (NamedSource<String>, SourceSpan) {
+        (self.source.clone(), self.span.clone().into())
+    }
 }
 
 /// A [`Workspace`] holds parsed files loaded from a filesystem
@@ -47,14 +110,14 @@ pub struct Workspace {
 impl Workspace {
     /// Create a new [`Workspace`] and load the entrypoint from the given
     /// [`Filesystem`]
-    pub fn new<FS: Filesystem>(fs: &FS, entrypoint: Utf8PathBuf) -> Self {
+    pub fn new<FS: Filesystem, P: AsRef<Utf8Path>>(fs: &FS, entrypoint: P) -> Self {
+        let entrypoint = fs.relative(None, entrypoint.as_ref());
         let mut this = Self {
-            entrypoint,
+            entrypoint: entrypoint.clone(),
             files: HashMap::new(),
         };
 
-        let path = fs.relative(None, &this.entrypoint);
-        this.load(fs, &path);
+        this.load(fs, &entrypoint);
 
         this
     }
@@ -76,7 +139,8 @@ impl Workspace {
         };
 
         // Parse the file content
-        let content = all_consuming(parse)(source.as_str())
+        let source_str = source.as_str();
+        let content = all_consuming(parse)(source_str)
             .finish()
             .map(|(_rest, chunks)| {
                 // We parsed the chunks, now we find inclusions and resolve them
@@ -92,8 +156,9 @@ impl Workspace {
                 }
                 FileContent { chunks, references }
             })
-            .map_err(|e| ParseError {
-                message: convert_error(source.as_str(), e),
+            .map_err(|e: crate::parser::Error<&str>| {
+                let inner = e.to_miette_diagnostic(&source_str, 0).into();
+                SharedParseError { inner }
             });
 
         // Copy the list of files to load, as it is annoying to borrow it after insert
@@ -138,21 +203,29 @@ impl Workspace {
     ) -> Result<Vec<String>, PreprocessorError> {
         let Some(file) = self.files.get(path) else {
             // The file is not loaded, this shouldn't happen
-            todo!()
+            unreachable!("file {path} is not loaded");
         };
 
-        let Ok(file) = file else {
-            // The file had an error loading it
-            todo!()
+        let file = file.as_ref().map_err(|err| PreprocessorError::LoadFile {
+            path: path.to_owned(),
+            inner: err.clone(),
+        })?;
+
+        let stack = Stack {
+            source: &file.source,
+            span: 0..file.source.inner().len(),
         };
 
-        let Ok(content) = &file.content else {
-            // The file had an error parsing it
-            todo!()
-        };
+        let content = file.content.as_ref().map_err(|err| {
+            let (src, _span) = stack.context();
+            PreprocessorError::ParseFile {
+                src,
+                inner: vec![err.clone()],
+            }
+        })?;
 
         let mut buf = Vec::new();
-        self.process_chunks(&mut buf, &content.chunks, &content.references, ctx)?;
+        self.process_chunks(&mut buf, &content.chunks, &content.references, ctx, &stack)?;
         Ok(buf)
     }
 
@@ -162,9 +235,12 @@ impl Workspace {
         chunks: &[Located<Node>],
         references: &HashMap<Utf8PathBuf, Utf8PathBuf>,
         ctx: &mut Context,
+        stack: &Stack<'_>,
     ) -> Result<(), PreprocessorError> {
         'outer: for chunk in chunks {
-            match &chunk.inner {
+            let (stack, chunk) = stack.push(chunk);
+
+            match chunk {
                 Node::Raw { ref content } => {
                     // Replace the definitions in the content
                     let replaced = ctx.replace(content);
@@ -173,16 +249,21 @@ impl Workspace {
                 }
 
                 Node::Error { ref message } => {
+                    let (stack, message) = stack.push(message);
+                    let (src, span) = stack.context();
+
                     // Return the user-defined error
                     return Err(PreprocessorError::UserError {
-                        message: message.inner.clone(),
-                        location: message.location.clone(),
+                        src,
+                        span,
+                        message: message.clone(),
                     });
                 }
 
                 Node::Undefine { ref key } => {
+                    let (_stack, key) = stack.push(key);
+
                     // Remove a definition
-                    let key = &key.inner;
                     ctx.undefine(key);
                 }
 
@@ -191,18 +272,19 @@ impl Workspace {
                     ref content,
                 } => {
                     // Add a definition
-                    let key = key.inner.clone();
+                    let (_stack, key) = stack.push(key);
                     let content = content.as_ref().map(|i| &i.inner);
                     // First replace existing definitions in the content
                     let content =
                         content.map(|c| ctx.replace(c).into_iter().map(|l| l.inner).collect());
                     // Then add the definition
-                    ctx.define(key, content);
+                    ctx.define(key.clone(), content);
                 }
 
                 Node::Inclusion { path: ref include } => {
                     // Include a file
-                    let path = Utf8Path::new(&include.inner);
+                    let (stack, include) = stack.push(include);
+                    let path = Utf8Path::new(include);
 
                     // Resolve the path
                     let Some(resolved) = references.get(path) else {
@@ -211,36 +293,51 @@ impl Workspace {
                     };
 
                     // Then process it
-                    let content = self.preprocess_path(resolved, ctx)?;
+                    let content = self.preprocess_path(resolved, ctx).map_err(|inner| {
+                        let (src, span) = stack.context();
+                        PreprocessorError::InInclude {
+                            src,
+                            span,
+                            inner: Box::new(inner),
+                        }
+                    })?;
+
                     buf.extend(content);
                 }
 
                 Node::Condition { branches, fallback } => {
                     for branch in branches {
+                        let (condition_stack, condition) = stack.push(&branch.condition);
                         let condition: String = ctx
-                            .replace(&branch.condition.inner)
+                            .replace(condition)
                             .into_iter()
                             .map(|l| l.inner)
                             .collect();
 
-                        let (_, expression) =
-                            parse_condition(&condition).finish().map_err(|(): ()| {
-                                PreprocessorError::ConditionParse {
-                                    location: branch.condition.location.clone(),
-                                }
-                            })?; // TODO: wrap the error
+                        let condition = condition.as_str();
+                        let (_, expression) = parse_condition(condition).finish().map_err(
+                            |err: crate::parser::Error<&str>| {
+                                let (src, span) = condition_stack.context();
+                                let inner = err.to_miette_diagnostic(&condition, span.offset());
+                                PreprocessorError::ConditionParse { src, span, inner }
+                            },
+                        )?;
 
-                        let expression =
-                            expression.with_location(branch.condition.location.clone());
+                        let result = expression.evaluate(ctx).map_err(|inner| {
+                            let (src, span) = condition_stack.context();
+                            PreprocessorError::ConditionEvaluation { src, span, inner }
+                        })?;
 
-                        if expression.evaluate(ctx)? {
-                            self.process_chunks(buf, &branch.body.inner, references, ctx)?;
+                        if result {
+                            let (stack, body) = stack.push(&branch.body);
+                            self.process_chunks(buf, body, references, ctx, &stack)?;
                             continue 'outer;
                         }
                     }
 
                     if let Some(ref body) = fallback {
-                        self.process_chunks(buf, &body.inner, references, ctx)?;
+                        let (stack, body) = stack.push(body);
+                        self.process_chunks(buf, body, references, ctx, &stack)?;
                     }
                 }
             }
@@ -250,37 +347,73 @@ impl Workspace {
     }
 }
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Diagnostic)]
 pub enum PreprocessorError {
-    #[error("could not get file {path}: {inner}")]
-    GetFile {
-        path: Utf8PathBuf,
-        inner: ParseError,
+    #[error("Failed to process included file")]
+    InInclude {
+        #[source_code]
+        src: NamedSource<String>,
+
+        #[label("File included here")]
+        span: SourceSpan,
+
+        #[source]
+        #[diagnostic_source]
+        inner: Box<dyn Diagnostic + Send + Sync>,
     },
 
-    #[error("user error: {message}")]
+    #[error("Failed to load file {path:?}")]
+    LoadFile {
+        path: Utf8PathBuf,
+
+        #[source]
+        inner: Arc<std::io::Error>,
+    },
+
+    #[error("Failed to parse file")]
+    ParseFile {
+        #[source_code]
+        src: NamedSource<String>,
+
+        #[related]
+        inner: Vec<SharedParseError>,
+    },
+
+    #[error("User error: {message}")]
     UserError {
-        location: Range<usize>,
+        #[source_code]
+        src: NamedSource<String>,
+
+        #[label = "'#error' preprocessor directive used here"]
+        span: SourceSpan,
+
         message: String,
     },
 
-    #[error("invalid syntax in condition")]
-    ConditionParse { location: Range<usize> },
+    #[error("Invalid syntax in condition")]
+    ConditionParse {
+        #[source_code]
+        src: NamedSource<String>,
 
-    #[error("could not evaluate condition")]
-    ConditionEvaluation(#[from] ConditionEvaluationError),
-}
+        #[label]
+        span: SourceSpan,
 
-impl PreprocessorError {
-    #[must_use]
-    pub fn location(&self) -> Option<&Range<usize>> {
-        match self {
-            PreprocessorError::GetFile { .. } => None,
-            PreprocessorError::UserError { location, .. }
-            | PreprocessorError::ConditionParse { location } => Some(location),
-            PreprocessorError::ConditionEvaluation(e) => Some(e.location()),
-        }
-    }
+        #[source]
+        #[diagnostic_source]
+        inner: Box<dyn Diagnostic + Send + Sync>,
+    },
+
+    #[error("Could not evaluate condition")]
+    ConditionEvaluation {
+        #[source_code]
+        src: NamedSource<String>,
+
+        #[label("{inner}")]
+        span: SourceSpan,
+
+        #[source]
+        inner: EvaluationError,
+    },
 }
 
 #[derive(Default)]
@@ -327,6 +460,8 @@ impl Context {
 
 #[cfg(test)]
 mod tests {
+    use miette::Report;
+
     use super::*;
 
     fn fs() -> InMemoryFilesystem {
@@ -406,7 +541,7 @@ mod tests {
 
     fn preprocess<P: AsRef<Utf8Path>>(path: P) -> Result<String, PreprocessorError> {
         let fs = fs();
-        let preprocessor = Workspace::new(&fs, path.as_ref().to_owned());
+        let preprocessor = Workspace::new(&fs, path.as_ref());
         preprocessor.preprocess()
     }
 
@@ -471,5 +606,89 @@ mod tests {
         } else {
             panic!("not a UserError");
         }
+    }
+
+    fn install_handler() {
+        let _ = miette::set_hook(Box::new(|_| {
+            Box::new(
+                miette::MietteHandlerOpts::new()
+                    .force_graphical(false)
+                    .force_narrated(false)
+                    .color(false)
+                    .terminal_links(false)
+                    .with_cause_chain()
+                    .unicode(false)
+                    .build(),
+            )
+        }));
+    }
+
+    #[test]
+    fn unknown_include_error_test() {
+        install_handler();
+        let fs = InMemoryFilesystem::new([("/include.S".into(), r#"#include "foo.S""#.into())]);
+        let workspace = Workspace::new(&fs, "/include.S");
+        let res = workspace.preprocess();
+        let err = res.expect_err("should have failed");
+        let report = Report::new(err);
+        let report = format!("{report:?}");
+        insta::assert_snapshot!(report);
+    }
+
+    #[test]
+    fn user_error_in_include_test() {
+        install_handler();
+        let fs = InMemoryFilesystem::new([
+            ("/include.S".into(), r#"#include "error.S""#.into()),
+            ("/error.S".into(), r#"#error "message""#.into()),
+        ]);
+        let workspace = Workspace::new(&fs, "/include.S");
+        let res = workspace.preprocess();
+        let err = res.expect_err("should have failed");
+        let report = Report::new(err);
+        let report = format!("{report:?}");
+        insta::assert_snapshot!(report);
+    }
+
+    #[test]
+    fn parse_error_in_include_test() {
+        install_handler();
+        let fs = InMemoryFilesystem::new([
+            ("/include.S".into(), r#"#include "invalid.S""#.into()),
+            (
+                "/invalid.S".into(),
+                indoc::indoc! {r"
+                    hello
+                    #else
+                "}
+                .into(),
+            ),
+        ]);
+        let workspace = Workspace::new(&fs, "/include.S");
+        let res = workspace.preprocess();
+        let err = res.expect_err("should have failed");
+        let report = Report::new(err);
+        let report = format!("{report:?}");
+        insta::assert_snapshot!(report);
+    }
+
+    #[test]
+    fn condition_parse_error_test() {
+        install_handler();
+        let fs = InMemoryFilesystem::new([(
+            "/invalid.S".into(),
+            indoc::indoc! {r"
+                    hello
+                    #if (1 + 5
+                    #endif
+                "}
+            .into(),
+        )]);
+        let workspace = Workspace::new(&fs, "/invalid.S");
+        let res = workspace.preprocess();
+        let err = res.expect_err("should have failed");
+        let report = Report::new(err);
+        let report = format!("{report:?}");
+        insta::assert_snapshot!(report);
     }
 }
