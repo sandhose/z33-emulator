@@ -245,7 +245,14 @@ impl Workspace {
                     // Replace the definitions in the content
                     let replaced = ctx.replace(content);
                     buf.extend(replaced.into_iter().map(|l| l.inner.to_owned()));
-                    buf.push("\n".to_owned());
+                }
+
+                Node::NewLine { crlf } => {
+                    if *crlf {
+                        buf.push("\r\n".to_owned());
+                    } else {
+                        buf.push("\n".to_owned());
+                    }
                 }
 
                 Node::Error { ref message } => {
@@ -460,6 +467,7 @@ impl Context {
 
 #[cfg(test)]
 mod tests {
+    use insta::assert_snapshot;
     use miette::Report;
 
     use super::*;
@@ -548,60 +556,29 @@ mod tests {
     #[test]
     fn inclusion_test() {
         let res = preprocess("/inclusion.S").unwrap();
-        assert_eq!(
-            res,
-            indoc::indoc! {r"
-                this is before foo.S
-                this is foo.S
-                this is after foo.S
-            "}
-        );
+        assert_snapshot!(res);
     }
 
     #[test]
     fn condition_test() {
         let res = preprocess("/condition.S").unwrap();
-        assert_eq!(
-            res,
-            indoc::indoc! {r"
-                simple
-
-
-                fallback
-
-                definition
-
-                nested
-            "}
-        );
+        assert_snapshot!(res);
     }
 
     #[test]
     fn definition_test() {
         let res = preprocess("/define.S").unwrap();
-        assert_eq!(
-            res,
-            indoc::indoc! {r"
-                hello world
-                helloFOO
-                hello FOO
-            "}
-        );
+        assert_snapshot!(res);
 
         let res = preprocess("/double-define.S").unwrap();
-        assert_eq!(
-            res,
-            indoc::indoc! {r"
-                hello world
-            "}
-        );
+        assert_snapshot!(res);
     }
 
     #[test]
     fn user_error_test() {
         let res = preprocess("/error.S");
-        assert!(res.is_err());
-        if let Err(PreprocessorError::UserError { message, .. }) = res {
+        let err = res.expect_err("an error");
+        if let PreprocessorError::UserError { message, .. } = err {
             assert_eq!(message, "custom".to_string());
         } else {
             panic!("not a UserError");

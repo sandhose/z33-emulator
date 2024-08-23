@@ -1,0 +1,5 @@
+---
+source: emulator/src/preprocessor/mod.rs
+expression: res
+---
+hello world
