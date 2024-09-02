@@ -1,0 +1,7 @@
+---
+source: emulator/src/preprocessor/mod.rs
+expression: res
+---
+this is before foo.S
+this is foo.S
+this is after foo.S

@@ -20,12 +20,13 @@ wasm-opt = ["-Oz", "--enable-mutable-globals"]
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-z33-emulator.workspace = true
-wasm-bindgen.workspace = true
+camino.workspace = true
+console_error_panic_hook.workspace = true
+js-sys.workspace = true
 serde.workspace = true
 serde-wasm-bindgen.workspace = true
 tsify.workspace = true
-console_error_panic_hook.workspace = true
 tracing.workspace = true
 tracing-wasm.workspace = true
-js-sys.workspace = true
+wasm-bindgen.workspace = true
+z33-emulator.workspace = true

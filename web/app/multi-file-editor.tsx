@@ -172,8 +172,8 @@ export const MultiFileEditor: React.FC<Props> = ({
       models.map((model) => [model.uri.path, model.getValue()]),
     );
 
-    const preprocessor = new InMemoryPreprocessor(files);
-    const preprocessed = preprocessor.preprocess(fileName.path);
+    const preprocessor = new InMemoryPreprocessor(files, fileName.path);
+    const preprocessed = preprocessor.preprocess();
     const newProgram = Program.parse(preprocessed);
     setProgram(newProgram);
   }

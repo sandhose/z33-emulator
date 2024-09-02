@@ -111,11 +111,13 @@ jobs:
         with:
           node-version: "20"
           cache: "pnpm"
+          cache-dependency-path: web/pnpm-lock.yaml
 
       - name: Install Rust toolchain
         run: |
           rustup toolchain install stable
           rustup default stable
+          rustup target add wasm32-unknown-unknown
 
       - name: Setup Rust build cache
         uses: Swatinem/rust-cache@v2

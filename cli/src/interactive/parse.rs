@@ -4,7 +4,7 @@ use nom::branch::alt;
 use nom::character::complete::char;
 use nom::combinator::{all_consuming, map, value};
 use nom::error::{convert_error, VerboseError};
-use nom::{Finish, IResult};
+use nom::{Finish, IResult, Offset};
 use thiserror::Error;
 use z33_emulator::constants as C;
 use z33_emulator::parser::location::Locatable;
@@ -33,8 +33,8 @@ impl Address {
                 Box::new(ExpressionNode::Literal(i128::from(
                     reg.extract_word(computer)?,
                 )))
-                .with_location(()),
-                Box::new(node).with_location(()),
+                .with_location(0..0),
+                Box::new(node).with_location(0..0),
             ),
         };
 
@@ -74,7 +74,9 @@ fn parse_indexed(input: &str) -> IResult<&str, Address, VerboseError<&str>> {
     let (rest, mut expr) = parse_expression(rest)?;
 
     if let Minus = sign {
-        expr = ExpressionNode::Invert(Box::new(expr).with_location((input, start, rest)));
+        expr = ExpressionNode::Invert(
+            Box::new(expr).with_location(input.offset(start)..input.offset(rest)),
+        );
     };
 
     Ok((rest, Address::Indexed(reg, expr)))

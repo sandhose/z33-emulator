@@ -16,9 +16,10 @@ workspace = true
 [dependencies]
 anstyle.workspace = true
 anyhow.workspace = true
+camino.workspace = true
 clap.workspace = true
 clap_complete.workspace = true
-codespan-reporting.workspace = true
+miette = { workspace = true, features = ["fancy"] }
 nom.workspace = true
 rustyline.workspace = true
 rustyline-derive.workspace = true

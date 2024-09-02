@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, HashMap};
+use std::ops::Range;
 
 use parse_display::Display;
 use thiserror::Error;
@@ -22,7 +23,7 @@ impl ExpressionContext for Labels {
 }
 
 #[derive(Display)]
-pub(crate) enum Placement<L> {
+pub(crate) enum Placement {
     /// A memory cell filled by .space
     #[display("SPACE")]
     Reserved,
@@ -37,21 +38,21 @@ pub(crate) enum Placement<L> {
 
     /// A instruction or a .word directive
     #[display("{0}")]
-    Line(LineContent<L>),
+    Line(Located<LineContent>),
 }
 
 #[derive(Default)]
-pub struct Layout<L> {
+pub struct Layout {
     pub labels: Labels,
-    pub(crate) memory: HashMap<Address, Placement<L>>,
+    pub(crate) memory: HashMap<Address, Placement>,
 }
 
-impl<L> Layout<L> {
+impl Layout {
     fn insert_placement(
         &mut self,
         address: Address,
-        placement: Placement<L>,
-    ) -> Result<(), MemoryLayoutError<L>> {
+        placement: Placement,
+    ) -> Result<(), MemoryLayoutError> {
         if self.memory.contains_key(&address) {
             return Err(MemoryLayoutError::MemoryOverlap { address });
         }
@@ -62,9 +63,9 @@ impl<L> Layout<L> {
 
     fn insert_label(
         &mut self,
-        label: Located<String, L>,
+        label: Located<String>,
         address: Address,
-    ) -> Result<(), MemoryLayoutError<L>> {
+    ) -> Result<(), MemoryLayoutError> {
         if self.labels.contains_key(&label.inner) {
             return Err(MemoryLayoutError::DuplicateLabel {
                 label: label.inner,
@@ -78,25 +79,32 @@ impl<L> Layout<L> {
 }
 
 #[derive(Debug, Error, PartialEq)]
-pub enum MemoryLayoutError<L> {
-    #[error("duplicate label {label}")]
-    DuplicateLabel { label: String, location: L },
+pub enum MemoryLayoutError {
+    #[error("duplicate label {label:?}")]
+    DuplicateLabel {
+        label: String,
+        location: Range<usize>,
+    },
 
-    #[error("invalid argument for directive .{kind}")]
-    InvalidDirectiveArgument { kind: DirectiveKind, location: L },
+    #[error("invalid argument for directive \".{kind}\"")]
+    InvalidDirectiveArgument {
+        kind: DirectiveKind,
+        location: Range<usize>,
+    },
 
-    #[error("failed to evaluate argument for directive .{kind}")]
+    #[error("failed to evaluate argument for directive \".{kind}\"")]
     DirectiveArgumentEvaluation {
         kind: DirectiveKind,
-        source: ExpressionEvaluationError<L>,
+        source: ExpressionEvaluationError,
     },
 
     #[error("address {address} is already filled")]
     MemoryOverlap { address: Address },
 }
 
-impl<L> MemoryLayoutError<L> {
-    pub fn location(&self) -> Option<&L> {
+impl MemoryLayoutError {
+    #[must_use]
+    pub fn location(&self) -> Option<&Range<usize>> {
         match self {
             MemoryLayoutError::DuplicateLabel { location, .. }
             | MemoryLayoutError::InvalidDirectiveArgument { location, .. } => Some(location),
@@ -110,30 +118,35 @@ impl<L> MemoryLayoutError<L> {
 ///
 /// It places the labels & prepare a hashmap of cells to be filled.
 #[tracing::instrument(skip(program))]
-pub(crate) fn layout_memory<L: Clone + Default>(
-    program: &[Line<L>],
-) -> Result<Layout<L>, MemoryLayoutError<L>> {
+pub(crate) fn layout_memory(program: &[Located<Line>]) -> Result<Layout, MemoryLayoutError> {
     use DirectiveKind::{Addr, Space, String, Word};
     use MemoryLayoutError::{DirectiveArgumentEvaluation, InvalidDirectiveArgument};
 
     debug!(lines = program.len(), "Laying out memory");
-    let mut layout: Layout<L> = Layout::default();
+    let mut layout: Layout = Layout::default();
     let mut position = PROGRAM_START;
 
     for line in program {
+        let offset = line.location.start;
+        let line = &line.inner;
         for key in line.symbols.clone() {
+            let key = key.offset(offset);
             trace!(key = %key.inner, position, "Inserting label");
             layout.insert_label(key, position)?;
         }
 
         if let Some(ref content) = line.content {
+            let offset = offset + content.location.start;
             match &content.inner {
                 LineContent::Directive {
                     kind: Located { inner: Word, .. },
                     ..
                 }
                 | LineContent::Instruction { .. } => {
-                    layout.insert_placement(position, Placement::Line(content.inner.clone()))?;
+                    layout.insert_placement(
+                        position,
+                        Placement::Line(content.clone().offset(offset)),
+                    )?;
                     trace!(position, content = %content.inner, "Inserting line");
                     position += 1; // Instructions and word directives take one
                                    // memory cell
@@ -202,7 +215,10 @@ pub(crate) fn layout_memory<L: Clone + Default>(
                 LineContent::Directive { kind, .. } => {
                     return Err(InvalidDirectiveArgument {
                         kind: kind.inner,
-                        location: kind.location.clone(),
+                        location: Range {
+                            start: kind.location.start + offset,
+                            end: kind.location.end + offset,
+                        },
                     });
                 }
             }
@@ -219,21 +235,20 @@ mod tests {
     use super::*;
     use crate::parser::expression::Node;
     use crate::parser::line::Line;
-    use crate::parser::location::RelativeLocation;
     use crate::parser::value::{InstructionArgument, InstructionKind};
     use crate::runtime::Reg;
 
     #[test]
     fn place_labels_simple_test() {
-        let program: Vec<Line<RelativeLocation>> = vec![
-            Line::default().symbol("main").instruction(
+        let program: Vec<Located<Line>> = vec![
+            Line::empty().symbol("main").instruction(
                 Add,
                 vec![
                     InstructionArgument::Register(Reg::A),
                     InstructionArgument::Register(Reg::B),
                 ],
             ),
-            Line::default().symbol("loop").instruction(
+            Line::empty().symbol("loop").instruction(
                 Jmp,
                 vec![InstructionArgument::Value(Node::Variable("main".into()))],
             ),
@@ -249,9 +264,9 @@ mod tests {
 
     #[test]
     fn place_labels_addr_test() {
-        let program: Vec<Line<RelativeLocation>> = vec![
-            Line::default().directive(DirectiveKind::Addr, 10),
-            Line::default().symbol("main").instruction(
+        let program: Vec<Located<Line>> = vec![
+            Line::empty().directive(DirectiveKind::Addr, 10),
+            Line::empty().symbol("main").instruction(
                 Jmp,
                 vec![InstructionArgument::Value(Node::Variable("main".into()))],
             ),
@@ -264,14 +279,14 @@ mod tests {
 
     #[test]
     fn place_labels_space_test() {
-        let program: Vec<Line<RelativeLocation>> = vec![
-            Line::default()
+        let program: Vec<Located<Line>> = vec![
+            Line::empty()
                 .symbol("first")
                 .directive(DirectiveKind::Space, 10),
-            Line::default()
+            Line::empty()
                 .symbol("second")
                 .directive(DirectiveKind::Space, 5),
-            Line::default().symbol("main").instruction(
+            Line::empty().symbol("main").instruction(
                 Jmp,
                 vec![InstructionArgument::Value(Node::Variable("main".into()))],
             ),
@@ -289,14 +304,14 @@ mod tests {
 
     #[test]
     fn place_labels_word_test() {
-        let program: Vec<Line<RelativeLocation>> = vec![
-            Line::default()
+        let program: Vec<Located<Line>> = vec![
+            Line::empty()
                 .symbol("first")
                 .directive(DirectiveKind::Word, 123),
-            Line::default()
+            Line::empty()
                 .symbol("second")
                 .directive(DirectiveKind::Word, 456),
-            Line::default().symbol("main").instruction(
+            Line::empty().symbol("main").instruction(
                 Jmp,
                 vec![InstructionArgument::Value(Node::Variable("main".into()))],
             ),
@@ -314,14 +329,14 @@ mod tests {
 
     #[test]
     fn place_labels_string_test() {
-        let program: Vec<Line<RelativeLocation>> = vec![
-            Line::default()
+        let program: Vec<Located<Line>> = vec![
+            Line::empty()
                 .symbol("first")
                 .directive(DirectiveKind::String, "hello"),
-            Line::default()
+            Line::empty()
                 .symbol("second")
                 .directive(DirectiveKind::String, "Émoticône: 🚙"), // length: 12 chars
-            Line::default().symbol("main").instruction(
+            Line::empty().symbol("main").instruction(
                 Jmp,
                 vec![InstructionArgument::Value(Node::Variable("main".into()))],
             ),
@@ -339,54 +354,50 @@ mod tests {
 
     #[test]
     fn duplicate_label_test() {
-        let program: Vec<Line<RelativeLocation>> = vec![
-            Line::default().symbol("hello"),
-            Line::default().symbol("hello"),
-        ];
+        let program: Vec<Located<Line>> =
+            vec![Line::empty().symbol("hello"), Line::empty().symbol("hello")];
 
         assert_eq!(
             layout_memory(&program).err(),
             Some(MemoryLayoutError::DuplicateLabel {
                 label: "hello".into(),
-                location: RelativeLocation::default(),
+                location: 0..0
             })
         );
     }
 
     #[test]
     fn invalid_directive_argument_test() {
-        let program: Vec<Line<RelativeLocation>> =
-            vec![Line::default().directive(DirectiveKind::String, 3)];
+        let program: Vec<Located<Line>> = vec![Line::empty().directive(DirectiveKind::String, 3)];
 
         assert_eq!(
             layout_memory(&program).err(),
             Some(MemoryLayoutError::InvalidDirectiveArgument {
                 kind: DirectiveKind::String,
-                location: RelativeLocation::default(),
-                // argument: 3.into(),
+                location: 0..0 // argument: 3.into(),
             })
         );
 
-        let program: Vec<Line<RelativeLocation>> =
-            vec![Line::default().directive(DirectiveKind::Space, "hello")];
+        let program: Vec<Located<Line>> =
+            vec![Line::empty().directive(DirectiveKind::Space, "hello")];
 
         assert_eq!(
             layout_memory(&program).err(),
             Some(MemoryLayoutError::InvalidDirectiveArgument {
                 kind: DirectiveKind::Space,
-                location: RelativeLocation::default(),
+                location: 0..0,
                 // argument: "hello".into(),
             })
         );
 
-        let program: Vec<Line<RelativeLocation>> =
-            vec![Line::default().directive(DirectiveKind::Addr, "hello")];
+        let program: Vec<Located<Line>> =
+            vec![Line::empty().directive(DirectiveKind::Addr, "hello")];
 
         assert_eq!(
             layout_memory(&program).err(),
             Some(MemoryLayoutError::InvalidDirectiveArgument {
                 kind: DirectiveKind::Addr,
-                location: RelativeLocation::default(),
+                location: 0..0,
                 // argument: "hello".into(),
             })
         );
@@ -394,11 +405,12 @@ mod tests {
 
     #[test]
     fn memory_overlap_test() {
-        let program: Vec<Line<RelativeLocation>> = vec![
-            Line::default().directive(DirectiveKind::Addr, 10),
-            Line::default().directive(DirectiveKind::String, "hello"), /* This takes 5 chars, so fills cells 10 to 15 */
-            Line::default().directive(DirectiveKind::Addr, 14),
-            Line::default().directive(DirectiveKind::Word, 0), // This overlaps with the second "l"
+        let program: Vec<Located<Line>> = vec![
+            Line::empty().directive(DirectiveKind::Addr, 10),
+            // This takes 5 chars, so fills cells 10 to 15
+            Line::empty().directive(DirectiveKind::String, "hello"),
+            Line::empty().directive(DirectiveKind::Addr, 14),
+            Line::empty().directive(DirectiveKind::Word, 0), // This overlaps with the second "l"
         ];
 
         assert_eq!(

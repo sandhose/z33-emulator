@@ -17,9 +17,9 @@ use nom::combinator::{all_consuming, cut, eof, map, opt, peek, value};
 use nom::error::context;
 use nom::multi::separated_list1;
 use nom::sequence::delimited;
-use nom::IResult;
+use nom::{IResult, Offset};
 
-use super::location::{Locatable, Located, MapLocation, RelativeLocation};
+use super::location::{Locatable, Located};
 use super::value::{
     parse_directive_argument, parse_directive_kind, parse_instruction_argument,
     parse_instruction_kind, DirectiveArgument, DirectiveKind, InstructionArgument, InstructionKind,
@@ -29,54 +29,27 @@ use crate::ast::{AstNode, Node, NodeKind};
 
 /// Holds the content of a line
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) enum LineContent<L> {
+pub(crate) enum LineContent {
     /// Represents an instruction, with its opcode and list of arguments
     Instruction {
-        kind: Located<InstructionKind, L>,
-        arguments: Vec<Located<InstructionArgument<L>, L>>,
+        kind: Located<InstructionKind>,
+        arguments: Vec<Located<InstructionArgument>>,
     },
     /// Represents a directive, with its type and argument
     Directive {
-        kind: Located<DirectiveKind, L>,
-        argument: Located<DirectiveArgument<L>, L>,
+        kind: Located<DirectiveKind>,
+        argument: Located<DirectiveArgument>,
     },
 }
 
-impl<L> LineContent<L> {
+impl LineContent {
     /// Check if the line is a directive
     pub(crate) fn is_directive(&self) -> bool {
         matches!(self, Self::Directive { .. })
     }
 }
 
-impl<L, P> MapLocation<P> for LineContent<L>
-where
-    L: MapLocation<P, Mapped = P>,
-{
-    type Mapped = LineContent<L::Mapped>;
-
-    fn map_location(self, parent: &P) -> Self::Mapped {
-        match self {
-            LineContent::Instruction { kind, arguments } => {
-                let kind = kind.map_location_only(parent);
-                let arguments = arguments
-                    .into_iter()
-                    .map(|a| a.map_location(parent))
-                    .collect();
-
-                LineContent::Instruction { kind, arguments }
-            }
-            LineContent::Directive { kind, argument } => {
-                let kind = kind.map_location_only(parent);
-                let argument = argument.map_location(parent);
-
-                LineContent::Directive { kind, argument }
-            }
-        }
-    }
-}
-
-impl<L: Clone> AstNode<L> for LineContent<L> {
+impl AstNode for LineContent {
     fn kind(&self) -> NodeKind {
         match self {
             LineContent::Instruction { .. } => NodeKind::Instruction,
@@ -84,7 +57,7 @@ impl<L: Clone> AstNode<L> for LineContent<L> {
         }
     }
 
-    fn children(&self) -> Vec<Node<L>> {
+    fn children(&self) -> Vec<Node> {
         match self {
             LineContent::Instruction { kind, arguments } => std::iter::once(kind.to_node())
                 .chain(arguments.iter().map(Located::to_node))
@@ -94,7 +67,7 @@ impl<L: Clone> AstNode<L> for LineContent<L> {
     }
 }
 
-impl<L> std::fmt::Display for LineContent<L> {
+impl std::fmt::Display for LineContent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             LineContent::Instruction { kind, arguments } => {
@@ -124,35 +97,17 @@ impl<L> std::fmt::Display for LineContent<L> {
 ///
 /// Note that the `Default::default()` implementation represents an empty line.
 #[derive(Debug, Clone, PartialEq, Default)]
-pub(crate) struct Line<L> {
-    pub symbols: Vec<Located<String, L>>,
-    pub content: Option<Located<LineContent<L>, L>>,
+pub(crate) struct Line {
+    pub symbols: Vec<Located<String>>,
+    pub content: Option<Located<LineContent>>,
 }
 
-impl<L, P> MapLocation<P> for Line<L>
-where
-    L: MapLocation<P, Mapped = P>,
-{
-    type Mapped = Line<L::Mapped>;
-
-    fn map_location(self, parent: &P) -> Self::Mapped {
-        let symbols = self
-            .symbols
-            .into_iter()
-            .map(|line| line.map_location_only(parent))
-            .collect();
-        let content = self.content.map(|c| c.map_location(parent));
-
-        Line { symbols, content }
-    }
-}
-
-impl<L: Clone> AstNode<L> for Line<L> {
+impl AstNode for Line {
     fn kind(&self) -> NodeKind {
         NodeKind::Line
     }
 
-    fn children(&self) -> Vec<Node<L>> {
+    fn children(&self) -> Vec<Node> {
         let mut children = Vec::new();
 
         children.extend(
@@ -167,7 +122,7 @@ impl<L: Clone> AstNode<L> for Line<L> {
     }
 }
 
-impl<L> std::fmt::Display for Line<L> {
+impl std::fmt::Display for Line {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut had_something = false;
         for symbol in &self.symbols {
@@ -186,29 +141,19 @@ impl<L> std::fmt::Display for Line<L> {
     }
 }
 
-impl<L> Line<L>
-where
-    L: From<()>,
-{
+impl Line {
+    #[cfg(test)] // Only used in tests for now
+    pub(crate) fn empty() -> Located<Self> {
+        Self::default().with_location(0..0)
+    }
+}
+
+impl Located<Line> {
     #[cfg(test)] // Only used in tests for now
     pub(crate) fn symbol(mut self, symbol: &str) -> Self {
-        self.symbols.push(symbol.to_string().with_location(()));
-        self
-    }
-
-    #[cfg(test)] // Only used in tests for now
-    pub(crate) fn directive<T: Into<DirectiveArgument<L>>>(
-        mut self,
-        kind: DirectiveKind,
-        argument: T,
-    ) -> Self {
-        self.content = Some(
-            LineContent::Directive {
-                kind: kind.with_location(()),
-                argument: argument.into().with_location(()),
-            }
-            .with_location(()),
-        );
+        self.inner
+            .symbols
+            .push(symbol.to_string().with_location(0..0));
         self
     }
 
@@ -216,25 +161,44 @@ where
     pub(crate) fn instruction(
         mut self,
         kind: InstructionKind,
-        arguments: Vec<InstructionArgument<L>>,
+        arguments: Vec<InstructionArgument>,
     ) -> Self {
-        self.content = Some(
+        self.inner.content = Some(
             LineContent::Instruction {
-                kind: kind.with_location(()),
-                arguments: arguments.into_iter().map(|a| a.with_location(())).collect(),
+                kind: kind.with_location(0..0),
+                arguments: arguments
+                    .into_iter()
+                    .map(|a| a.with_location(0..0))
+                    .collect(),
             }
-            .with_location(()),
+            .with_location(0..0),
+        );
+        self
+    }
+
+    #[cfg(test)] // Only used in tests for now
+    pub(crate) fn directive<T: Into<DirectiveArgument>>(
+        mut self,
+        kind: DirectiveKind,
+        argument: T,
+    ) -> Self {
+        self.inner.content = Some(
+            LineContent::Directive {
+                kind: kind.with_location(0..0),
+                argument: argument.into().with_location(0..0),
+            }
+            .with_location(0..0),
         );
         self
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Program<L> {
-    pub(crate) lines: Vec<Located<Line<L>, L>>,
+pub struct Program {
+    pub(crate) lines: Vec<Located<Line>>,
 }
 
-impl<L> Program<L> {
+impl Program {
     #[must_use]
     pub fn labels(&self) -> Vec<&str> {
         self.lines
@@ -244,33 +208,17 @@ impl<L> Program<L> {
     }
 }
 
-impl<L, P> MapLocation<P> for Program<L>
-where
-    L: MapLocation<P, Mapped = P>,
-{
-    type Mapped = Program<L::Mapped>;
-    fn map_location(self, parent: &P) -> Self::Mapped {
-        let lines = self
-            .lines
-            .into_iter()
-            .map(|line| line.map_location(parent))
-            .collect();
-
-        Program { lines }
-    }
-}
-
-impl<L: Clone> AstNode<L> for Program<L> {
+impl AstNode for Program {
     fn kind(&self) -> NodeKind {
         NodeKind::Program
     }
 
-    fn children(&self) -> Vec<Node<L>> {
+    fn children(&self) -> Vec<Node> {
         self.lines.iter().map(Located::to_node).collect()
     }
 }
 
-impl<L> std::fmt::Display for Program<L> {
+impl std::fmt::Display for Program {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for line in &self.lines {
             writeln!(f, "{}", line.inner)?;
@@ -283,19 +231,19 @@ impl<L> std::fmt::Display for Program<L> {
 /// Parses a directive
 fn parse_directive_line<'a, Error: ParseError<&'a str>>(
     input: &'a str,
-) -> IResult<&'a str, LineContent<RelativeLocation>, Error> {
+) -> IResult<&'a str, LineContent, Error> {
     let (rest, _) = char('.')(input)?;
 
     cut(|rest: &'a str| {
         let start = rest;
         let (rest, kind) = parse_directive_kind(rest)?;
-        let kind = kind.with_location((input, start, rest));
+        let kind = kind.with_location(input.offset(start)..input.offset(rest));
 
         let (rest, _) = space1(rest)?;
 
         let start = rest;
         let (rest, argument) = parse_directive_argument(rest)?;
-        let argument = argument.with_location((input, start, rest));
+        let argument = argument.with_location(input.offset(start)..input.offset(rest));
 
         Ok((rest, LineContent::Directive { kind, argument }))
     })(rest)
@@ -304,12 +252,12 @@ fn parse_directive_line<'a, Error: ParseError<&'a str>>(
 /// Parses an instruction
 fn parse_instruction_line<'a, Error: ParseError<&'a str>>(
     input: &'a str,
-) -> IResult<&'a str, LineContent<RelativeLocation>, Error> {
+) -> IResult<&'a str, LineContent, Error> {
     // First parse the opcode
     let (rest, kind) = parse_instruction_kind(input)?;
 
     cut(move |rest: &'a str| {
-        let kind = kind.with_location((input, input, rest));
+        let kind = kind.with_location(input.offset(input)..input.offset(rest));
         // Then loop to parse the list of arguments
         let mut cursor = rest;
         let mut arguments = Vec::with_capacity(2); // Instructions usually have <= 2 arguments
@@ -333,7 +281,7 @@ fn parse_instruction_line<'a, Error: ParseError<&'a str>>(
 
                 // Then continue parsing the argument
                 if let (rest, Some(argument)) = opt(parse_instruction_argument)(rest)? {
-                    let argument = argument.with_location((input, start, rest));
+                    let argument = argument.with_location(input.offset(start)..input.offset(rest));
                     arguments.push(argument);
                     // Only update the cursor here, in case it fails earlier
                     cursor = rest;
@@ -350,7 +298,7 @@ fn parse_instruction_line<'a, Error: ParseError<&'a str>>(
 /// Parses the content of a line: an instruction or a directive
 fn parse_line_content<'a, Error: ParseError<&'a str>>(
     input: &'a str,
-) -> IResult<&'a str, LineContent<RelativeLocation>, Error> {
+) -> IResult<&'a str, LineContent, Error> {
     alt((
         context("directive", parse_directive_line),
         context("instruction", parse_instruction_line),
@@ -368,9 +316,7 @@ fn parse_symbol_definition<'a, Error: ParseError<&'a str>>(
 }
 
 /// Parses a whole line
-fn parse_line<'a, Error: ParseError<&'a str>>(
-    input: &'a str,
-) -> IResult<&'a str, Line<RelativeLocation>, Error> {
+fn parse_line<'a, Error: ParseError<&'a str>>(input: &'a str) -> IResult<&'a str, Line, Error> {
     let (rest, _) = space0(input)?;
 
     // Extract the list of symbol definitions
@@ -378,7 +324,7 @@ fn parse_line<'a, Error: ParseError<&'a str>>(
     let mut symbols = Vec::new();
     while let (rest, Some(symbol)) = opt(parse_symbol_definition)(cursor)? {
         // TODO: symbol location includes the colon, maybe we don't want that
-        let symbol = symbol.with_location((input, cursor, rest));
+        let symbol = symbol.with_location(input.offset(cursor)..input.offset(rest));
         let (rest, _) = space0(rest)?;
         symbols.push(symbol);
         cursor = rest;
@@ -388,7 +334,7 @@ fn parse_line<'a, Error: ParseError<&'a str>>(
     // Extract the line content
     let start = rest;
     let (rest, content) = opt(parse_line_content)(rest)?;
-    let content = content.map(|line| line.with_location((input, start, rest))); // Save location information
+    let content = content.map(|line| line.with_location(input.offset(start)..input.offset(rest))); // Save location information
     let (rest, _) = space0(rest)?;
 
     // Build the line
@@ -412,14 +358,14 @@ fn split_lines<'a, Error: ParseError<&'a str>>(
 
 pub(crate) fn parse_program<'a, Error: ParseError<&'a str>>(
     input: &'a str,
-) -> IResult<&'a str, Program<RelativeLocation>, Error> {
+) -> IResult<&'a str, Program, Error> {
     let (rest, lines) = split_lines(input)?;
     // TODO: bubble up more detailed errors here
     let lines: Result<_, _> = lines
         .into_iter()
         .map(|start| {
             context("line", all_consuming(parse_line))(start)
-                .map(|(end, line)| line.with_location((input, start, end)))
+                .map(|(end, line)| line.with_location(input.offset(start)..input.offset(end)))
         })
         .collect();
     let lines = lines?;
@@ -454,10 +400,10 @@ mod tests {
             line,
             Line {
                 symbols: vec![
-                    "hello".to_string().with_location((0, 6)),
-                    "world".to_string().with_location((6, 7)),
-                    "duplicate".to_string().with_location((14, 10)),
-                    "duplicate".to_string().with_location((25, 10))
+                    "hello".to_string().with_location(0..6),
+                    "world".to_string().with_location(6..13),
+                    "duplicate".to_string().with_location(14..24),
+                    "duplicate".to_string().with_location(25..35)
                 ],
                 ..Default::default()
             }
@@ -472,19 +418,19 @@ mod tests {
             line,
             Line {
                 symbols: vec![
-                    "foo".to_string().with_location((0, 4)),
-                    "bar".to_string().with_location((5, 4)),
+                    "foo".to_string().with_location(0..4),
+                    "bar".to_string().with_location(5..9),
                 ],
                 content: Some(
                     LineContent::Directive {
-                        kind: DirectiveKind::Space.with_location((1, 5)),
+                        kind: DirectiveKind::Space.with_location(1..6),
                         argument: DirectiveArgument::Expression(Node::Sum(
-                            Box::new(Node::Literal(30)).with_location((0, 2)),
-                            Box::new(Node::Literal(5)).with_location((5, 1))
+                            Box::new(Node::Literal(30)).with_location(0..2),
+                            Box::new(Node::Literal(5)).with_location(5..6)
                         ))
-                        .with_location((7, 6)),
+                        .with_location(7..13),
                     }
-                    .with_location((10, 13))
+                    .with_location(10..23)
                 ),
             }
         );
@@ -525,52 +471,52 @@ main:
             program,
             Program {
                 lines: vec![
-                    Line::default().with_location((0, 0)),
+                    Line::default().with_location(0..0),
                     Line {
-                        symbols: vec!["str".to_string().with_location((0, 4))],
+                        symbols: vec!["str".to_string().with_location(0..4)],
                         content: Some(
                             LineContent::Directive {
-                                kind: Space.with_location((1, 5)),
+                                kind: Space.with_location(1..6),
                                 argument: DirectiveArgument::StringLiteral(
                                     "some multiline string".to_string()
                                 )
-                                .with_location((7, 25))
+                                .with_location(7..32)
                             }
-                            .with_location((5, 32))
+                            .with_location(5..37)
                         ),
                     }
-                    .with_location((1, 37)),
+                    .with_location(1..38),
                     Line {
-                        symbols: vec!["main".to_string().with_location((0, 5))],
+                        symbols: vec!["main".to_string().with_location(0..5)],
                         ..Default::default()
                     }
-                    .with_location((39, 5)),
+                    .with_location(39..44),
                     Line {
                         content: Some(
                             LineContent::Instruction {
-                                kind: Add.with_location((0, 3)),
+                                kind: Add.with_location(0..3),
                                 arguments: vec![
-                                    InstructionArgument::Register(Reg::A).with_location((4, 2)),
-                                    InstructionArgument::Register(Reg::B).with_location((8, 2)),
+                                    InstructionArgument::Register(Reg::A).with_location(4..6),
+                                    InstructionArgument::Register(Reg::B).with_location(8..10),
                                 ],
                             }
-                            .with_location((4, 10))
+                            .with_location(4..14)
                         ),
                         ..Default::default()
                     }
-                    .with_location((45, 14)),
+                    .with_location(45..59),
                     Line {
                         content: Some(
                             LineContent::Instruction {
-                                kind: Reset.with_location((0, 5)),
+                                kind: Reset.with_location(0..5),
                                 arguments: vec![],
                             }
-                            .with_location((4, 5))
+                            .with_location(4..9)
                         ),
                         ..Default::default()
                     }
-                    .with_location((60, 9)),
-                    Line::default().with_location((70, 8)),
+                    .with_location(60..69),
+                    Line::default().with_location(70..78),
                 ]
             }
         );
@@ -582,7 +528,7 @@ main:
         assert_eq!(
             program,
             Program {
-                lines: vec![Line::default().with_location((0, 0))]
+                lines: vec![Line::default().with_location(0..0)]
             }
         );
     }

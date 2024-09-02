@@ -1,15 +1,10 @@
-use std::collections::HashMap;
-use std::path::PathBuf;
 use std::process::exit;
 
+use camino::Utf8PathBuf;
 use clap::{ArgAction, Parser, ValueHint};
-use codespan_reporting::diagnostic::{Diagnostic, Label};
-use codespan_reporting::files::SimpleFiles;
-use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
 use tracing::{debug, error, info};
 use z33_emulator::compiler::CompilationError;
-use z33_emulator::parser::location::{AbsoluteLocation, MapLocation};
-use z33_emulator::preprocessor::{NativeFilesystem, Preprocessor};
+use z33_emulator::preprocessor::{NativeFilesystem, Workspace};
 use z33_emulator::{compile, parse};
 
 use crate::interactive::run_interactive;
@@ -18,7 +13,7 @@ use crate::interactive::run_interactive;
 pub struct RunOpt {
     /// Input file
     #[clap(value_parser, value_hint = ValueHint::FilePath)]
-    input: PathBuf,
+    input: Utf8PathBuf,
 
     /// Start label
     #[clap(value_parser)]
@@ -37,94 +32,38 @@ fn char_offset(a: &str, b: &str) -> usize {
 
 impl RunOpt {
     #[allow(clippy::too_many_lines)]
-    pub fn exec(&self) -> anyhow::Result<()> {
+    pub fn exec(self) -> anyhow::Result<()> {
         let fs = NativeFilesystem::from_env()?;
         info!(path = ?self.input, "Reading program");
-        let preprocessor = Preprocessor::new(fs).and_load(&self.input);
-        let source = match preprocessor.preprocess(&self.input) {
+        let preprocessor = Workspace::new(&fs, &self.input);
+        let (source_map, source) = match preprocessor.preprocess() {
             Ok(p) => p,
             Err(e) => {
-                for error in anyhow::Chain::new(&e) {
-                    // TODO: get the location of individual errors
-                    error!("{}", error);
-                }
-
-                let msg = format!("{e}");
-                let mut files = SimpleFiles::new();
-                let file_ids: HashMap<_, _> = preprocessor
-                    .sources()
-                    .iter()
-                    .map(|(name, source)| {
-                        (
-                            name.clone(),
-                            files.add(name.to_string_lossy().into_owned(), source),
-                        )
-                    })
-                    .collect();
-
-                let mut labels = Vec::new();
-
-                if let Some(location) = e.location() {
-                    labels.push(Label::primary(
-                        file_ids[&location.file],
-                        location.offset..(location.offset + location.length),
-                    ));
-                }
-
-                let diagnostic = Diagnostic::error().with_message(msg).with_labels(labels);
-
-                let writer = StandardStream::stderr(ColorChoice::Auto);
-                let config = codespan_reporting::term::Config {
-                    before_label_lines: 3,
-                    after_label_lines: 3,
-                    ..Default::default()
-                };
-
-                codespan_reporting::term::emit(&mut writer.lock(), &config, &files, &diagnostic)?;
+                let report = miette::Report::new(e);
+                eprintln!("{report:?}");
                 exit(1);
             }
         };
         let source = source.as_str();
 
-        let mut files = SimpleFiles::new();
-        let file_id = files.add("preprocessed", source);
-
         debug!("Parsing program");
         let program = match parse(source) {
             Ok(p) => p,
             Err(e) => {
-                let msg = format!("{e}");
-                let labels: Vec<_> = e
-                    .errors
-                    .iter()
-                    .map(|(location, kind)| {
-                        let message = match kind {
-                            nom::error::VerboseErrorKind::Context(s) => (*s).to_owned(),
-                            nom::error::VerboseErrorKind::Char(c) => format!("expected '{c}'"),
-                            nom::error::VerboseErrorKind::Nom(code) => format!("{code:?}"),
-                        };
-                        let offset = char_offset(source, location);
-
-                        Label::primary(file_id, offset..offset).with_message(message)
-                    })
-                    .collect();
-
-                let diagnostic = Diagnostic::error().with_message(msg).with_labels(labels);
-
-                let writer = StandardStream::stderr(ColorChoice::Auto);
-                let config = codespan_reporting::term::Config {
-                    before_label_lines: 3,
-                    after_label_lines: 3,
-                    ..Default::default()
-                };
-
-                codespan_reporting::term::emit(&mut writer.lock(), &config, &files, &diagnostic)?;
+                // The nom errors are… bad. Let's just print the first location
+                let (location, _kind) = e.errors.first().expect("at least one error");
+                let offset = char_offset(source, location);
+                // Find the corresponding span from the source map
+                let span = source_map
+                    .find(offset)
+                    .expect("source info to be available");
+                let labels = vec![miette::LabeledSpan::underline(span.span.clone())];
+                let report = miette::miette!(labels = labels, "Failed to parse program")
+                    .with_source_code(span.source.clone());
+                eprintln!("{report:?}");
                 exit(1);
             }
         };
-
-        let parent = AbsoluteLocation::<()>::default();
-        let program = program.map_location(&parent);
 
         debug!(entrypoint = %self.entrypoint, "Building computer");
         let (mut computer, debug_info) = match compile(program.inner, &self.entrypoint) {
@@ -147,28 +86,26 @@ impl RunOpt {
                 };
 
                 if let Some(location) = location {
-                    let label = Label::primary(
-                        file_id,
-                        location.offset..(location.offset + location.length),
-                    );
+                    // Find the spans for the start and the end of the error
+                    let start = source_map
+                        .find(location.start)
+                        .expect("source info to be available");
+                    let end = source_map
+                        .find(location.end)
+                        .expect("source info to be available");
 
-                    let diagnostic = Diagnostic::error()
-                        .with_message(msg)
-                        .with_labels(vec![label]);
-
-                    let writer = StandardStream::stderr(ColorChoice::Auto);
-                    let config = codespan_reporting::term::Config {
-                        before_label_lines: 3,
-                        after_label_lines: 3,
-                        ..Default::default()
+                    // Both spans should be in the same file. If not, we just use the start span
+                    let range = if start.source == end.source {
+                        start.span.start..end.span.end
+                    } else {
+                        start.span.clone()
                     };
+                    let source = start.source;
 
-                    codespan_reporting::term::emit(
-                        &mut writer.lock(),
-                        &config,
-                        &files,
-                        &diagnostic,
-                    )?;
+                    let labels = vec![miette::LabeledSpan::at(range, msg)];
+                    let report = miette::miette!(labels = labels, "Failed to compile program")
+                        .with_source_code(source.clone());
+                    eprintln!("{report:?}");
                 }
                 exit(1);
             }

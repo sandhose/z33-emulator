@@ -1,25 +1,23 @@
-use std::path::PathBuf;
-
+use camino::Utf8PathBuf;
 use clap::{Parser, ValueHint};
 use tracing::{debug, info};
 use z33_emulator::parse;
-use z33_emulator::parser::location::{AbsoluteLocation, MapLocation};
-use z33_emulator::preprocessor::{NativeFilesystem, Preprocessor};
+use z33_emulator::preprocessor::{NativeFilesystem, Workspace};
 
 #[derive(Parser, Debug)]
 pub struct DumpOpt {
     /// Input file
     #[clap(value_parser, value_hint = ValueHint::FilePath)]
-    input: PathBuf,
+    input: Utf8PathBuf,
 }
 
 impl DumpOpt {
-    pub fn exec(&self) -> anyhow::Result<()> {
+    pub fn exec(self) -> anyhow::Result<()> {
         let fs = NativeFilesystem::from_env()?;
         info!(path = ?self.input, "Reading program");
-        let preprocessor = Preprocessor::new(fs).and_load(&self.input);
+        let preprocessor = Workspace::new(&fs, &self.input);
 
-        let source = preprocessor.preprocess(&self.input)?;
+        let (_source_map, source) = preprocessor.preprocess()?;
         let source = source.as_str();
 
         debug!("Parsing program");
@@ -27,9 +25,6 @@ impl DumpOpt {
 
         debug!("Transforming AST");
         let ast = program.to_node();
-
-        // Transform the AST relative locations to absolute ones
-        let ast = ast.map_location(&AbsoluteLocation::default());
 
         println!("{ast}");
 

@@ -1,93 +1,54 @@
 use nom::branch::alt;
 use nom::bytes::complete::{tag, take_till};
 use nom::character::complete::{char, line_ending, not_line_ending, space0, space1};
-use nom::combinator::{map, not, opt};
+use nom::combinator::{fail, map, not, opt};
 use nom::sequence::preceded;
 use nom::{IResult, Offset};
 
 use super::literal::parse_string_literal;
-use super::location::{Locatable, Located, MapLocation, RelativeLocation};
+use super::location::{Locatable, Located};
 use super::{parse_identifier, ParseError};
 
-type Children<L> = Vec<Located<Node<L>, L>>;
+type Children = Vec<Located<Node>>;
 
 #[derive(Debug, PartialEq)]
-pub(crate) struct ConditionBranch<L> {
-    pub condition: Located<String, L>,
-    pub body: Located<Children<L>, L>,
-}
-
-impl<P, L> MapLocation<P> for ConditionBranch<L>
-where
-    L: MapLocation<P, Mapped = P>,
-{
-    type Mapped = ConditionBranch<P>;
-
-    fn map_location(self, parent: &P) -> Self::Mapped {
-        let condition = self.condition.map_location_only(parent);
-        let body = self.body.map_location(parent);
-        ConditionBranch { condition, body }
-    }
+pub(crate) struct ConditionBranch {
+    pub condition: Located<String>,
+    pub body: Located<Children>,
 }
 
 #[derive(Debug, PartialEq)]
-pub(crate) enum Node<L> {
+pub(crate) enum Node {
     Raw {
         content: String,
     },
+    NewLine {
+        // Whether the line ending a '\r\n'
+        crlf: bool,
+    },
     Error {
-        message: Located<String, L>,
+        message: Located<String>,
     },
     Undefine {
-        key: Located<String, L>,
+        key: Located<String>,
     },
     Definition {
-        key: Located<String, L>,
-        content: Option<Located<String, L>>,
+        key: Located<String>,
+        content: Option<Located<String>>,
     },
     Inclusion {
-        path: Located<String, L>,
+        path: Located<String>,
     },
     Condition {
-        branches: Vec<ConditionBranch<L>>,
-        fallback: Option<Located<Children<L>, L>>,
+        branches: Vec<ConditionBranch>,
+        fallback: Option<Located<Children>>,
     },
 }
 
-impl<P, L> MapLocation<P> for Node<L>
-where
-    L: MapLocation<P, Mapped = P>,
-{
-    type Mapped = Node<P>;
-
-    fn map_location(self, parent: &P) -> Self::Mapped {
-        match self {
-            Self::Raw { content } => Node::Raw { content },
-            Self::Error { message } => Node::Error {
-                message: message.map_location_only(parent),
-            },
-            Self::Undefine { key } => Node::Undefine {
-                key: key.map_location_only(parent),
-            },
-            Self::Definition { key, content } => Node::Definition {
-                key: key.map_location_only(parent),
-                content: content.map(|c| c.map_location_only(parent)),
-            },
-            Self::Inclusion { path } => Node::Inclusion {
-                path: path.map_location_only(parent),
-            },
-            Self::Condition { branches, fallback } => Node::Condition {
-                branches: branches.map_location(parent),
-                fallback: fallback.map_location(parent),
-            },
-        }
-    }
-}
-
-impl<L> Node<L> {
-    pub(crate) fn walk<F>(&self, f: &mut F)
+impl Node {
+    pub(crate) fn walk<'a, F>(&'a self, f: &mut F)
     where
-        F: FnMut(&Self),
+        F: FnMut(&'a Self),
     {
         f(self);
 
@@ -104,6 +65,12 @@ impl<L> Node<L> {
                 }
             }
         }
+    }
+
+    /// Returns `true` if we should record line endings after the node
+    #[must_use]
+    fn should_record_line_ending(&self) -> bool {
+        matches!(self, Self::Raw { .. } | Self::Inclusion { .. })
     }
 }
 
@@ -156,20 +123,24 @@ fn parse_directive_argument<'a, Error: ParseError<&'a str>>(
 
 fn parse_definition<'a, Error: ParseError<&'a str>>(
     input: &'a str,
-) -> IResult<&'a str, Node<RelativeLocation>, Error> {
+) -> IResult<&'a str, Node, Error> {
     let (rest, _) = char('#')(input)?;
     let (rest, _) = space0(rest)?;
     let (rest, _) = tag("define")(rest)?;
     let (rest, _) = space1(rest)?;
     let start = rest;
     let (rest, key) = parse_identifier(rest)?;
-    let key = key.to_owned().with_location((input, start, rest));
+    let key = key
+        .to_owned()
+        .with_location(input.offset(start)..input.offset(rest));
 
     let (rest, content) = opt(|rest| {
         let (rest, _) = space1(rest)?;
         let start = rest;
         let (rest, content) = parse_directive_argument(rest)?;
-        let content = content.to_owned().with_location((input, start, rest));
+        let content = content
+            .to_owned()
+            .with_location(input.offset(start)..input.offset(rest));
         Ok((rest, content))
     })(rest)?;
 
@@ -178,9 +149,7 @@ fn parse_definition<'a, Error: ParseError<&'a str>>(
     Ok((rest, Node::Definition { key, content }))
 }
 
-fn parse_undefine<'a, Error: ParseError<&'a str>>(
-    input: &'a str,
-) -> IResult<&'a str, Node<RelativeLocation>, Error> {
+fn parse_undefine<'a, Error: ParseError<&'a str>>(input: &'a str) -> IResult<&'a str, Node, Error> {
     let (rest, _) = char('#')(input)?;
     let (rest, _) = space0(rest)?;
     let (rest, _) = tag("undefine")(rest)?;
@@ -188,7 +157,9 @@ fn parse_undefine<'a, Error: ParseError<&'a str>>(
 
     let start = rest;
     let (rest, key) = parse_identifier(rest)?;
-    let key = key.to_owned().with_location((input, start, rest));
+    let key = key
+        .to_owned()
+        .with_location(input.offset(start)..input.offset(rest));
 
     let (rest, ()) = eat_end_of_line(rest)?;
 
@@ -197,7 +168,7 @@ fn parse_undefine<'a, Error: ParseError<&'a str>>(
 
 fn parse_inclusion<'a, Error: ParseError<&'a str>>(
     input: &'a str,
-) -> IResult<&'a str, Node<RelativeLocation>, Error> {
+) -> IResult<&'a str, Node, Error> {
     // Parse "#include"
     let (rest, _) = char('#')(input)?;
     let (rest, _) = space0(rest)?;
@@ -207,16 +178,14 @@ fn parse_inclusion<'a, Error: ParseError<&'a str>>(
     // Parse the argument
     let start = rest;
     let (rest, path) = parse_string_literal(rest)?;
-    let path = path.with_location((input, start, rest));
+    let path = path.with_location(input.offset(start)..input.offset(rest));
 
     let (rest, ()) = eat_end_of_line(rest)?;
 
     Ok((rest, Node::Inclusion { path }))
 }
 
-fn parse_error<'a, Error: ParseError<&'a str>>(
-    input: &'a str,
-) -> IResult<&'a str, Node<RelativeLocation>, Error> {
+fn parse_error<'a, Error: ParseError<&'a str>>(input: &'a str) -> IResult<&'a str, Node, Error> {
     // Parse "#error"
     let (rest, _) = char('#')(input)?;
     let (rest, _) = space0(rest)?;
@@ -226,7 +195,7 @@ fn parse_error<'a, Error: ParseError<&'a str>>(
     // Parse the argument
     let start = rest;
     let (rest, message) = parse_string_literal(rest)?;
-    let message = message.with_location((input, start, rest));
+    let message = message.with_location(input.offset(start)..input.offset(rest));
 
     let (rest, ()) = eat_end_of_line(rest)?;
 
@@ -235,11 +204,11 @@ fn parse_error<'a, Error: ParseError<&'a str>>(
 
 fn parse_condition<'a, Error: ParseError<&'a str>>(
     input: &'a str,
-) -> IResult<&'a str, Node<RelativeLocation>, Error> {
+) -> IResult<&'a str, Node, Error> {
     // This structure helps parsing the else/elif/end directives
     enum BranchDirective {
         Else,
-        ElseIf(Located<String, RelativeLocation>),
+        ElseIf(Located<String>),
         EndIf,
     }
     use BranchDirective::{Else, ElseIf, EndIf};
@@ -253,7 +222,9 @@ fn parse_condition<'a, Error: ParseError<&'a str>>(
     // Then parse the first condition
     let start = rest;
     let (rest, condition) = parse_directive_argument(rest)?;
-    let condition = condition.to_string().with_location((input, start, rest));
+    let condition = condition
+        .to_string()
+        .with_location(input.offset(start)..input.offset(rest));
 
     let (rest, ()) = eat_end_of_line(rest)?;
     let (rest, _) = line_ending(rest)?;
@@ -261,7 +232,7 @@ fn parse_condition<'a, Error: ParseError<&'a str>>(
     // Parse its body
     let start = rest;
     let (rest, body) = parse(rest)?;
-    let body = body.with_location((input, start, rest));
+    let body = body.with_location(input.offset(start)..input.offset(rest));
 
     // We have the first branch parsed, let's parse the others
     let branch = ConditionBranch { condition, body };
@@ -282,7 +253,9 @@ fn parse_condition<'a, Error: ParseError<&'a str>>(
                 let (rest, _) = space1(rest)?;
                 let start = rest;
                 let (rest, condition) = parse_directive_argument(rest)?;
-                let condition = condition.to_string().with_location((input, start, rest));
+                let condition = condition
+                    .to_string()
+                    .with_location(input.offset(start)..input.offset(rest));
                 Ok((rest, ElseIf(condition)))
             },
             map(tag("else"), |_| Else),
@@ -290,8 +263,8 @@ fn parse_condition<'a, Error: ParseError<&'a str>>(
 
         let (rest, ()) = eat_end_of_line(rest)?;
 
-        // We've got an "#end" directive, get out of the loop
-        // We don't update the cursor here since we will be re-parsing the #end
+        // We've got an "#endif" directive, get out of the loop
+        // We don't update the cursor here since we will be re-parsing the #endif
         // directive afterward
         if let EndIf = directive {
             break;
@@ -301,7 +274,7 @@ fn parse_condition<'a, Error: ParseError<&'a str>>(
 
         let start = rest;
         let (rest, body) = parse(rest)?;
-        let body = body.with_location((input, start, rest));
+        let body = body.with_location(input.offset(start)..input.offset(rest));
 
         cursor = rest;
 
@@ -322,9 +295,7 @@ fn parse_condition<'a, Error: ParseError<&'a str>>(
     Ok((rest, Node::Condition { branches, fallback }))
 }
 
-fn parse_raw<'a, Error: ParseError<&'a str>>(
-    input: &'a str,
-) -> IResult<&'a str, Node<RelativeLocation>, Error> {
+fn parse_raw<'a, Error: ParseError<&'a str>>(input: &'a str) -> IResult<&'a str, Node, Error> {
     let (rest, ()) = not(char('#'))(input)?;
     let (rest, content) = not_line_ending(rest)?;
     // Strip the comment from the content
@@ -337,9 +308,13 @@ fn parse_raw<'a, Error: ParseError<&'a str>>(
     Ok((rest, Node::Raw { content }))
 }
 
-fn parse_chunk<'a, Error: ParseError<&'a str>>(
-    input: &'a str,
-) -> IResult<&'a str, Node<RelativeLocation>, Error> {
+fn parse_chunk<'a, Error: ParseError<&'a str>>(input: &'a str) -> IResult<&'a str, Node, Error> {
+    // If we're at the end of the input, just stop parsing,
+    // so that we don't emit an empty raw node
+    if input.is_empty() {
+        return fail(input);
+    }
+
     alt((
         parse_definition, // #define X [Y]
         parse_undefine,   // #undefine X
@@ -352,18 +327,32 @@ fn parse_chunk<'a, Error: ParseError<&'a str>>(
 
 pub(crate) fn parse<'a, Error: ParseError<&'a str>>(
     input: &'a str,
-) -> IResult<&'a str, Children<RelativeLocation>, Error> {
+) -> IResult<&'a str, Children, Error> {
     let mut chunks = Vec::new();
     let mut cursor = input;
 
     while let (rest, Some(chunk)) = opt(parse_chunk)(cursor)? {
-        let chunk = chunk.with_location((input, cursor, rest));
+        let record_line_ending = chunk.should_record_line_ending();
+        let chunk = chunk.with_location(input.offset(cursor)..input.offset(rest));
         chunks.push(chunk);
 
-        if let Ok((rest, _)) = line_ending::<_, nom::error::Error<_>>(rest) {
+        cursor = rest;
+
+        if let Ok((rest, ending)) = line_ending::<_, nom::error::Error<_>>(rest) {
+            // We want to record line ending nodes only if we got a Raw or Inclusion node
+            // just before. This is because we echo those, and want to keep location
+            // information for them
+            if record_line_ending {
+                let chunk = Node::NewLine {
+                    crlf: ending.len() == 2,
+                }
+                .with_location(input.offset(cursor)..input.offset(rest));
+
+                chunks.push(chunk);
+            }
+
             cursor = rest;
         } else {
-            cursor = rest;
             // Got no linebreak, get out of the loop
             break;
         }
@@ -392,8 +381,8 @@ mod tests {
             (
                 "",
                 Node::Definition {
-                    key: "foo".to_owned().with_location((8, 3)),
-                    content: Some("bar".to_owned().with_location((12, 3))),
+                    key: "foo".to_owned().with_location(8..11),
+                    content: Some("bar".to_owned().with_location(12..15)),
                 }
             )
         );
@@ -404,7 +393,7 @@ mod tests {
             (
                 "",
                 Node::Definition {
-                    key: "foo".to_owned().with_location((8, 3)),
+                    key: "foo".to_owned().with_location(8..11),
                     content: None,
                 }
             )
@@ -416,7 +405,7 @@ mod tests {
             (
                 "",
                 Node::Definition {
-                    key: "trailing".to_owned().with_location((8, 8)),
+                    key: "trailing".to_owned().with_location(8..16),
                     content: None,
                 }
             )
@@ -431,7 +420,7 @@ mod tests {
             (
                 "",
                 Node::Inclusion {
-                    path: "foo".to_string().with_location((9, 5))
+                    path: "foo".to_string().with_location(9..14)
                 }
             )
         );
@@ -475,7 +464,7 @@ mod tests {
 
     #[test]
     fn parse_simple_test() {
-        use Node::{Definition, Error, Inclusion, Raw, Undefine};
+        use Node::{Definition, Error, Inclusion, NewLine, Raw, Undefine};
         let (rest, body) = parse::<()>(indoc::indoc! {r#"
             hello
             #include "foo"
@@ -494,44 +483,43 @@ mod tests {
                 Raw {
                     content: "hello".to_string()
                 }
-                .with_location((0, 5)),
+                .with_location(0..5),
+                NewLine { crlf: false }.with_location(5..6),
                 Inclusion {
-                    path: "foo".to_string().with_location((9, 5))
+                    path: "foo".to_string().with_location(9..14)
                 }
-                .with_location((6, 14)),
+                .with_location(6..20),
+                NewLine { crlf: false }.with_location(20..21),
                 Definition {
-                    key: "bar".to_string().with_location((8, 3)),
-                    content: Some("baz".to_string().with_location((12, 3)))
+                    key: "bar".to_string().with_location(8..11),
+                    content: Some("baz".to_string().with_location(12..15))
                 }
-                .with_location((21, 15)),
+                .with_location(21..36),
                 Raw {
                     content: "world".to_string()
                 }
-                .with_location((37, 5)),
+                .with_location(37..42),
+                NewLine { crlf: false }.with_location(42..43),
                 Error {
-                    message: "deprecated".to_string().with_location((7, 12))
+                    message: "deprecated".to_string().with_location(7..19)
                 }
-                .with_location((43, 19)),
+                .with_location(43..62),
                 Undefine {
-                    key: "bar".to_string().with_location((10, 3)),
+                    key: "bar".to_string().with_location(10..13)
                 }
-                .with_location((63, 13)),
+                .with_location(63..76),
                 Definition {
-                    key: "test".to_string().with_location((8, 4)),
+                    key: "test".to_string().with_location(8..12),
                     content: None,
                 }
-                .with_location((77, 12)),
-                Raw {
-                    content: String::new(),
-                }
-                .with_location((90, 0))
+                .with_location(77..89),
             ]
         );
     }
 
     #[test]
     fn parse_weird_test() {
-        use Node::{Definition, Error, Inclusion, Raw, Undefine};
+        use Node::{Definition, Error, Inclusion, NewLine, Raw, Undefine};
         let (rest, body) = parse::<()>(indoc::indoc! {r#"
             hello
             #  include   "foo"//comment
@@ -552,52 +540,53 @@ mod tests {
                 Raw {
                     content: "hello".to_string()
                 }
-                .with_location((0, 5)),
+                .with_location(0..5),
+                NewLine { crlf: false }.with_location(5..6),
                 Inclusion {
-                    path: "foo".to_string().with_location((13, 5))
+                    path: "foo".to_string().with_location(13..18)
                 }
-                .with_location((6, 27)),
+                .with_location(6..33),
+                NewLine { crlf: false }.with_location(33..34),
                 Definition {
-                    key: "bar".to_string().with_location((11, 3)),
-                    content: Some("baz".to_string().with_location((17, 3)))
+                    key: "bar".to_string().with_location(11..14),
+                    content: Some("baz".to_string().with_location(17..20))
                 }
-                .with_location((34, 32)),
+                .with_location(34..66),
                 Raw {
                     content: "world".to_string()
                 }
-                .with_location((67, 5)),
+                .with_location(67..72),
+                NewLine { crlf: false }.with_location(72..73),
                 Error {
-                    message: "deprecated".to_string().with_location((13, 12))
+                    message: "deprecated".to_string().with_location(13..25)
                 }
-                .with_location((73, 25)),
+                .with_location(73..98),
                 Undefine {
-                    key: "bar".to_string().with_location((12, 3)),
+                    key: "bar".to_string().with_location(12..15),
                 }
-                .with_location((99, 25)),
+                .with_location(99..124),
                 Definition {
-                    key: "test".to_string().with_location((12, 4)),
+                    key: "test".to_string().with_location(12..16),
                     content: None,
                 }
-                .with_location((125, 27)),
+                .with_location(125..152),
                 Raw {
                     content: String::new()
                 }
-                .with_location((153, 0)),
+                .with_location(153..153),
+                NewLine { crlf: false }.with_location(153..154),
                 Raw {
                     content: "empty line".to_string()
                 }
-                .with_location((154, 10)),
-                Raw {
-                    content: String::new()
-                }
-                .with_location((165, 0)),
+                .with_location(154..164),
+                NewLine { crlf: false }.with_location(164..165),
             ]
         );
     }
 
     #[test]
     fn parse_condition_test() {
-        use Node::{Condition, Raw};
+        use Node::{Condition, NewLine, Raw};
         let input = indoc::indoc! {r"
             #if true
             foo
@@ -627,34 +616,41 @@ mod tests {
             Condition {
                 branches: vec![
                     ConditionBranch {
-                        condition: "true".to_string().with_location((4, 4)),
+                        condition: "true".to_string().with_location(4..8),
                         body: vec![
                             Raw {
                                 content: "foo".to_string()
                             }
-                            .with_location((0, 3)),
+                            .with_location(0..3),
+                            NewLine { crlf: false }.with_location(3..4),
                             Condition {
                                 branches: vec![ConditionBranch {
-                                    condition: "false".to_string().with_location((4, 5)),
-                                    body: vec![Raw {
-                                        content: "bar".to_string()
-                                    }
-                                    .with_location((0, 3))]
-                                    .with_location((10, 4))
+                                    condition: "false".to_string().with_location(4..9),
+                                    body: vec![
+                                        Raw {
+                                            content: "bar".to_string()
+                                        }
+                                        .with_location(0..3),
+                                        NewLine { crlf: false }.with_location(3..4)
+                                    ]
+                                    .with_location(10..14)
                                 },],
                                 fallback: None,
                             }
-                            .with_location((4, 20)),
+                            .with_location(4..24),
                         ]
-                        .with_location((9, 25))
+                        .with_location(9..34)
                     },
                     ConditionBranch {
-                        condition: "true".to_string().with_location((40, 4)),
-                        body: vec![Raw {
-                            content: "foobar".to_string()
-                        }
-                        .with_location((0, 6))]
-                        .with_location((63, 7))
+                        condition: "true".to_string().with_location(40..44),
+                        body: vec![
+                            Raw {
+                                content: "foobar".to_string()
+                            }
+                            .with_location(0..6),
+                            NewLine { crlf: false }.with_location(6..7),
+                        ]
+                        .with_location(63..70)
                     }
                 ],
                 fallback: Some(
@@ -663,9 +659,10 @@ mod tests {
                         Raw {
                             content: "baz".to_string()
                         }
-                        .with_location((0, 3))
+                        .with_location(0..3),
+                        NewLine { crlf: false }.with_location(3..4),
                     ]
-                    .with_location((76, 4))
+                    .with_location(76..80)
                 )
             }
         );

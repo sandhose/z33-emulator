@@ -4,16 +4,15 @@
 )]
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
-use std::path::PathBuf;
 use std::rc::Rc;
 
+use camino::Utf8PathBuf;
 use serde::{Deserialize, Serialize};
 use tsify::Tsify;
 use wasm_bindgen::prelude::*;
 use z33_emulator::compiler::compile;
 use z33_emulator::constants::Address;
-use z33_emulator::parser::location::{AbsoluteLocation, MapLocation, RelativeLocation};
-use z33_emulator::preprocessor::{InMemoryFilesystem, Preprocessor};
+use z33_emulator::preprocessor::{InMemoryFilesystem, Workspace};
 use z33_emulator::runtime::{Memory, ProcessorError};
 
 #[wasm_bindgen(start)]
@@ -24,20 +23,21 @@ fn start() {
 
 #[wasm_bindgen]
 pub struct InMemoryPreprocessor {
-    preprocessor: Preprocessor<InMemoryFilesystem>,
+    preprocessor: Workspace,
 }
 
 #[derive(Default, Deserialize, Tsify)]
 #[tsify(from_wasm_abi)]
-pub struct InputFiles(HashMap<PathBuf, String>);
+pub struct InputFiles(HashMap<Utf8PathBuf, String>);
 
 #[wasm_bindgen]
 impl InMemoryPreprocessor {
     #[wasm_bindgen(constructor)]
     #[must_use]
-    pub fn new(files: InputFiles) -> Self {
+    pub fn new(files: InputFiles, entrypoint: String) -> Self {
         let fs = InMemoryFilesystem::new(files.0);
-        let preprocessor = Preprocessor::new(fs);
+        let entrypoint = Utf8PathBuf::from(entrypoint);
+        let preprocessor = Workspace::new(&fs, &entrypoint);
         Self { preprocessor }
     }
 
@@ -46,12 +46,10 @@ impl InMemoryPreprocessor {
     /// # Errors
     ///
     /// Returns an error if the file could not be preprocessed.
-    pub fn preprocess(&mut self, path: &str) -> Result<String, JsValue> {
-        let path = PathBuf::from(path);
-        self.preprocessor.load(&path);
-        let source = self.preprocessor.preprocess(&path);
+    pub fn preprocess(&mut self) -> Result<String, JsValue> {
+        let source = self.preprocessor.preprocess();
         match source {
-            Ok(s) => Ok(s),
+            Ok((_source_map, source)) => Ok(source),
             Err(e) => Err(format!("{e}").into()),
         }
     }
@@ -60,10 +58,7 @@ impl InMemoryPreprocessor {
 #[wasm_bindgen]
 pub struct Program {
     source: String,
-    program: z33_emulator::parser::location::Located<
-        z33_emulator::parser::Program<RelativeLocation>,
-        RelativeLocation,
-    >,
+    program: z33_emulator::parser::location::Located<z33_emulator::parser::Program>,
 }
 
 #[wasm_bindgen]
@@ -92,7 +87,6 @@ impl Program {
     #[must_use]
     pub fn ast(&self) -> String {
         let ast = self.program.to_node();
-        let ast = ast.map_location(&AbsoluteLocation::default());
         format!("{ast}")
     }
 

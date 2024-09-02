@@ -117,7 +117,7 @@ impl Reg {
     }
 }
 
-impl<L> AstNode<L> for Reg {
+impl AstNode for Reg {
     fn kind(&self) -> NodeKind {
         NodeKind::Register
     }
