@@ -17,7 +17,7 @@ ignore = []
 
 [licenses]
 version = 2
-allow = ["Apache-2.0", "BSL-1.0", "MIT", "Unicode-DFS-2016"]
+allow = ["Apache-2.0", "BSL-1.0", "MIT", "ISC", "Unicode-DFS-2016"]
 
 [bans]
 multiple-versions = "deny"
@@ -25,6 +25,10 @@ skip = [
     # Both are because of the `matchers` dependency in `tracing-subscriber`
     { name = "regex-automata", version = "0.1.10" },
     { name = "regex-syntax", version = "0.6.29" },
+]
+skip-tree = [
+    # miette -> terminal_size depends on this old version
+    { name = "windows-sys", version = "0.48.0" },
 ]
 
 [sources]
