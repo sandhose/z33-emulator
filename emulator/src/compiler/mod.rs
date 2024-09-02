@@ -32,27 +32,12 @@ pub enum CompilationError {
     UnknownEntrypoint(String),
 }
 
-/// Construct the memory layout for a program
-///
-/// This will take the program AST and compute the memory layout for it,
-/// which includes the memory cells set as well as the labels defined in the
-/// program.
-///
-/// # Errors
-///
-/// This function will return an error if the program is invalid
-pub fn layout(program: Program) -> Result<layout::Layout, MemoryLayoutError> {
-    let lines: Vec<_> = program.lines.into_iter().map(|l| l.inner).collect();
-    self::layout::layout_memory(&lines)
-}
-
 #[tracing::instrument(skip(program))]
 pub fn compile(
     program: Program,
     entrypoint: &str,
 ) -> Result<(Computer, DebugInfo), CompilationError> {
-    let lines: Vec<_> = program.lines.into_iter().map(|l| l.inner).collect();
-    let layout = self::layout::layout_memory(&lines)?;
+    let layout = self::layout::layout_memory(&program.lines)?;
     let memory = self::memory::fill_memory(&layout)?;
 
     // Lookup the entrypoint

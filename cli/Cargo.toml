@@ -19,7 +19,6 @@ anyhow.workspace = true
 camino.workspace = true
 clap.workspace = true
 clap_complete.workspace = true
-codespan-reporting.workspace = true
 miette.workspace = true
 nom.workspace = true
 rustyline.workspace = true

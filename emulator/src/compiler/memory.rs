@@ -300,17 +300,21 @@ fn compile_placement(labels: &Labels, placement: &Placement) -> Result<Cell, Mem
         P::Char(c) => Ok(Cell::Word(u32::from(*c).into())),
 
         // A .word directive (don't mind the weird destructuring)
-        P::Line(LineContent::Directive {
-            kind:
-                Located {
-                    inner: DirectiveKind::Word,
-                    ..
+        P::Line(Located {
+            inner:
+                LineContent::Directive {
+                    kind:
+                        Located {
+                            inner: DirectiveKind::Word,
+                            ..
+                        },
+                    argument:
+                        Located {
+                            inner: DirectiveArgument::Expression(expression),
+                            location,
+                        },
                 },
-            argument:
-                Located {
-                    inner: DirectiveArgument::Expression(expression),
-                    location,
-                },
+            location: line_location,
         }) => {
             debug!(%expression, "Evaluating directive");
             let value =
@@ -318,17 +322,26 @@ fn compile_placement(labels: &Labels, placement: &Placement) -> Result<Cell, Mem
                     .evaluate(labels)
                     .map_err(|source| MemoryFillError::Evaluation {
                         source,
-                        location: location.clone(),
+                        location: Range {
+                            start: location.start + line_location.start,
+                            end: location.end + line_location.end,
+                        },
                     })?;
             Ok(Cell::Word(value))
         }
 
         // We should not have any other directives other than "word" at this point
-        P::Line(LineContent::Directive { .. }) => {
+        P::Line(Located {
+            inner: LineContent::Directive { .. },
+            ..
+        }) => {
             unreachable!();
         }
 
-        P::Line(LineContent::Instruction { kind, arguments }) => {
+        P::Line(Located {
+            inner: LineContent::Instruction { kind, arguments },
+            location: line_location,
+        }) => {
             let span = span!(Level::TRACE, "line", %kind);
             let _guard = span.enter();
             let arguments: Result<Vec<_>, _> = arguments
@@ -340,7 +353,10 @@ fn compile_placement(labels: &Labels, placement: &Placement) -> Result<Cell, Mem
                         .inner
                         .evaluate(labels)
                         .map_err(|source| MemoryFillError::Compute {
-                            location: argument.location.clone(),
+                            location: Range {
+                                start: argument.location.start + line_location.start,
+                                end: argument.location.end + line_location.end,
+                            },
                             source,
                         })
                 })
@@ -348,7 +364,10 @@ fn compile_placement(labels: &Labels, placement: &Placement) -> Result<Cell, Mem
             let arguments = arguments?;
             let instruction = compile_instruction(&kind.inner, arguments).map_err(|source| {
                 MemoryFillError::InstructionCompilation {
-                    location: kind.location.clone(),
+                    location: Range {
+                        start: kind.location.start + line_location.start,
+                        end: kind.location.end + line_location.end,
+                    },
                     source,
                 }
             })?;

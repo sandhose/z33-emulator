@@ -17,12 +17,7 @@ ignore = []
 
 [licenses]
 version = 2
-allow = [
-    "Apache-2.0",
-    "BSL-1.0",
-    "MIT",
-    "Unicode-DFS-2016",
-]
+allow = ["Apache-2.0", "BSL-1.0", "MIT", "Unicode-DFS-2016"]
 
 [bans]
 multiple-versions = "deny"
@@ -36,4 +31,3 @@ skip = [
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-allow-git = ["https://github.com/brendanzab/codespan"]

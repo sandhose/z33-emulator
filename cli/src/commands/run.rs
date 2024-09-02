@@ -2,9 +2,6 @@ use std::process::exit;
 
 use camino::Utf8PathBuf;
 use clap::{ArgAction, Parser, ValueHint};
-use codespan_reporting::diagnostic::{Diagnostic, Label};
-use codespan_reporting::files::SimpleFiles;
-use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
 use tracing::{debug, error, info};
 use z33_emulator::compiler::CompilationError;
 use z33_emulator::preprocessor::{NativeFilesystem, Workspace};
@@ -49,9 +46,6 @@ impl RunOpt {
         };
         let source = source.as_str();
 
-        let mut files = SimpleFiles::new();
-        let file_id = files.add("preprocessed", source);
-
         debug!("Parsing program");
         let program = match parse(source) {
             Ok(p) => p,
@@ -92,25 +86,26 @@ impl RunOpt {
                 };
 
                 if let Some(location) = location {
-                    let label = Label::primary(file_id, location.clone());
+                    // Find the spans for the start and the end of the error
+                    let start = source_map
+                        .find(location.start)
+                        .expect("source info to be available");
+                    let end = source_map
+                        .find(location.end)
+                        .expect("source info to be available");
 
-                    let diagnostic = Diagnostic::error()
-                        .with_message(msg)
-                        .with_labels(vec![label]);
-
-                    let writer = StandardStream::stderr(ColorChoice::Auto);
-                    let config = codespan_reporting::term::Config {
-                        before_label_lines: 3,
-                        after_label_lines: 3,
-                        ..Default::default()
+                    // Both spans should be in the same file. If not, we just use the start span
+                    let range = if start.source == end.source {
+                        start.span.start..end.span.end
+                    } else {
+                        start.span.clone()
                     };
+                    let source = start.source;
 
-                    codespan_reporting::term::emit(
-                        &mut writer.lock(),
-                        &config,
-                        &files,
-                        &diagnostic,
-                    )?;
+                    let labels = vec![miette::LabeledSpan::at(range, msg)];
+                    let report = miette::miette!(labels = labels, "Failed to compile program")
+                        .with_source_code(source.clone());
+                    eprintln!("{report:?}");
                 }
                 exit(1);
             }

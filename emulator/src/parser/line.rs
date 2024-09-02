@@ -143,24 +143,17 @@ impl std::fmt::Display for Line {
 
 impl Line {
     #[cfg(test)] // Only used in tests for now
-    pub(crate) fn symbol(mut self, symbol: &str) -> Self {
-        self.symbols.push(symbol.to_string().with_location(0..0));
-        self
+    pub(crate) fn empty() -> Located<Self> {
+        Self::default().with_location(0..0)
     }
+}
 
+impl Located<Line> {
     #[cfg(test)] // Only used in tests for now
-    pub(crate) fn directive<T: Into<DirectiveArgument>>(
-        mut self,
-        kind: DirectiveKind,
-        argument: T,
-    ) -> Self {
-        self.content = Some(
-            LineContent::Directive {
-                kind: kind.with_location(0..0),
-                argument: argument.into().with_location(0..0),
-            }
-            .with_location(0..0),
-        );
+    pub(crate) fn symbol(mut self, symbol: &str) -> Self {
+        self.inner
+            .symbols
+            .push(symbol.to_string().with_location(0..0));
         self
     }
 
@@ -170,13 +163,29 @@ impl Line {
         kind: InstructionKind,
         arguments: Vec<InstructionArgument>,
     ) -> Self {
-        self.content = Some(
+        self.inner.content = Some(
             LineContent::Instruction {
                 kind: kind.with_location(0..0),
                 arguments: arguments
                     .into_iter()
                     .map(|a| a.with_location(0..0))
                     .collect(),
+            }
+            .with_location(0..0),
+        );
+        self
+    }
+
+    #[cfg(test)] // Only used in tests for now
+    pub(crate) fn directive<T: Into<DirectiveArgument>>(
+        mut self,
+        kind: DirectiveKind,
+        argument: T,
+    ) -> Self {
+        self.inner.content = Some(
+            LineContent::Directive {
+                kind: kind.with_location(0..0),
+                argument: argument.into().with_location(0..0),
             }
             .with_location(0..0),
         );
