@@ -296,7 +296,7 @@ impl Workspace {
                     // Resolve the path
                     let Some(resolved) = references.get(path) else {
                         // The file references wasn't resolved, this shouldn't happen
-                        todo!()
+                        unreachable!("Referenced file wasn't resolved")
                     };
 
                     // Then process it
@@ -316,7 +316,7 @@ impl Workspace {
                     for branch in branches {
                         let (condition_stack, condition) = stack.push(&branch.condition);
                         let condition: String = ctx
-                            .replace(condition)
+                            .replace_for_if_expression(condition)
                             .into_iter()
                             .map(|l| l.inner)
                             .collect();
@@ -436,8 +436,56 @@ impl ConditionContext for Context {
     }
 
     fn is_defined(&self, variable: &str) -> bool {
+        // XXX: this does not work. Because we replace in #if expressions with
+        // definitions first, `defined(XXXX)` become `defined()`, which will never work
         self.definitions.contains_key(variable)
     }
+}
+
+/// Check if the given string is full of spaces
+fn is_space(s: &str) -> bool {
+    s.chars().all(|c| c.is_ascii_whitespace())
+}
+
+/// Check if the given input is a valid `defined(XXXX)` expression
+fn valid_defined_expr(input: &[&str]) -> bool {
+    let mut iter = input.iter().peekable();
+    let Some(&"defined") = iter.next() else {
+        return false;
+    };
+
+    if iter.peek().map_or(false, |&token| is_space(token)) {
+        // Skip the space
+        iter.next();
+    }
+
+    let Some(&"(") = iter.next() else {
+        return false;
+    };
+
+    if iter.peek().map_or(false, |&token| is_space(token)) {
+        // Skip the space
+        iter.next();
+    }
+
+    let Some(&token) = iter.next() else {
+        return false;
+    };
+
+    if !token.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        return false;
+    }
+
+    if iter.peek().map_or(false, |&token| is_space(token)) {
+        // Skip the space
+        iter.next();
+    }
+
+    let Some(&")") = iter.next() else {
+        return false;
+    };
+
+    true
 }
 
 impl Context {
@@ -447,6 +495,45 @@ impl Context {
 
     fn undefine(&mut self, key: &str) {
         self.definitions.remove(key);
+    }
+
+    fn replace_for_if_expression<'a>(&'a self, input: &'a str) -> Vec<Located<&'a str>> {
+        // We first store words in a Vec, so that it's easier to peek for next/previous
+        // entries
+        let words: Vec<&str> = input.split_word_bounds().collect();
+
+        let mut result = Vec::with_capacity(words.len());
+
+        let mut ignore_during_defined = false;
+        for (index, word) in words.iter().enumerate() {
+            if valid_defined_expr(&words[index..]) {
+                // Go to ignore mode, until we find the closing parenthesis
+                ignore_during_defined = true;
+            }
+
+            if *word == ")" {
+                ignore_during_defined = false;
+            }
+
+            let location = input.offset(word)..word.len();
+            if ignore_during_defined {
+                result.push((*word).with_location(location));
+            } else {
+                let replaced = match self.definitions.get(*word) {
+                    Some(Some(r)) => r.as_str(),
+                    Some(None) => continue,
+                    None => *word,
+                };
+                result.push(replaced.with_location(location));
+            }
+        }
+
+        if ignore_during_defined {
+            // We got an invalid `defined` expression but still detected it?
+            unreachable!("Invalid `defined` expression");
+        }
+
+        result
     }
 
     fn replace<'a>(&'a self, input: &'a str) -> Vec<Located<&'a str>> {
@@ -571,6 +658,28 @@ mod tests {
         assert_snapshot!(res);
 
         let res = preprocess("/double-define.S").unwrap();
+        assert_snapshot!(res);
+    }
+
+    #[test]
+    fn if_defined_test() {
+        let fs = InMemoryFilesystem::new([(
+            "/defined.S".into(),
+            indoc::indoc! {r"
+                #define FOO
+                #if defined(FOO)
+                _FOO_ is defined
+                #endif
+
+                #if defined(BAR)
+                _BAR_ is defined
+                #endif
+            "}
+            .into(),
+        )]);
+        let workspace = Workspace::new(&fs, "/defined.S");
+        let res = workspace.preprocess();
+        let res = res.expect("preprocessed");
         assert_snapshot!(res);
     }
 
