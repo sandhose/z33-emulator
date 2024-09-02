@@ -15,7 +15,7 @@ impl PreprocessOpt {
         let fs = NativeFilesystem::from_env()?;
         info!(path = ?self.input, "Reading program");
         let preprocessor = Workspace::new(&fs, &self.input);
-        let source = preprocessor.preprocess()?;
+        let (_source_map, source) = preprocessor.preprocess()?;
         println!("{source}");
         Ok(())
     }

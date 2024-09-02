@@ -39,7 +39,7 @@ impl RunOpt {
         let fs = NativeFilesystem::from_env()?;
         info!(path = ?self.input, "Reading program");
         let preprocessor = Workspace::new(&fs, &self.input);
-        let source = match preprocessor.preprocess() {
+        let (source_map, source) = match preprocessor.preprocess() {
             Ok(p) => p,
             Err(e) => {
                 let report = miette::Report::new(e);
@@ -56,32 +56,17 @@ impl RunOpt {
         let program = match parse(source) {
             Ok(p) => p,
             Err(e) => {
-                let msg = format!("{e}");
-                let labels: Vec<_> = e
-                    .errors
-                    .iter()
-                    .map(|(location, kind)| {
-                        let message = match kind {
-                            nom::error::VerboseErrorKind::Context(s) => (*s).to_owned(),
-                            nom::error::VerboseErrorKind::Char(c) => format!("expected '{c}'"),
-                            nom::error::VerboseErrorKind::Nom(code) => format!("{code:?}"),
-                        };
-                        let offset = char_offset(source, location);
-
-                        Label::primary(file_id, offset..offset).with_message(message)
-                    })
-                    .collect();
-
-                let diagnostic = Diagnostic::error().with_message(msg).with_labels(labels);
-
-                let writer = StandardStream::stderr(ColorChoice::Auto);
-                let config = codespan_reporting::term::Config {
-                    before_label_lines: 3,
-                    after_label_lines: 3,
-                    ..Default::default()
-                };
-
-                codespan_reporting::term::emit(&mut writer.lock(), &config, &files, &diagnostic)?;
+                // The nom errors are… bad. Let's just print the first location
+                let (location, _kind) = e.errors.first().expect("at least one error");
+                let offset = char_offset(source, location);
+                // Find the corresponding span from the source map
+                let span = source_map
+                    .find(offset)
+                    .expect("source info to be available");
+                let labels = vec![miette::LabeledSpan::underline(span.span.clone())];
+                let report = miette::miette!(labels = labels, "Failed to parse program")
+                    .with_source_code(span.source.clone());
+                eprintln!("{report:?}");
                 exit(1);
             }
         };

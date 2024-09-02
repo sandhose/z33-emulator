@@ -49,7 +49,7 @@ impl InMemoryPreprocessor {
     pub fn preprocess(&mut self) -> Result<String, JsValue> {
         let source = self.preprocessor.preprocess();
         match source {
-            Ok(s) => Ok(s),
+            Ok((_source_map, source)) => Ok(source),
             Err(e) => Err(format!("{e}").into()),
         }
     }

@@ -17,7 +17,7 @@ impl DumpOpt {
         info!(path = ?self.input, "Reading program");
         let preprocessor = Workspace::new(&fs, &self.input);
 
-        let source = preprocessor.preprocess()?;
+        let (_source_map, source) = preprocessor.preprocess()?;
         let source = source.as_str();
 
         debug!("Parsing program");

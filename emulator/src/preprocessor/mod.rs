@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Range;
 use std::sync::Arc;
 
@@ -72,13 +72,30 @@ struct FileContent {
     references: HashMap<Utf8PathBuf, Utf8PathBuf>,
 }
 
-struct Stack<'a> {
-    source: &'a NamedSource<String>,
-    span: Range<usize>,
+#[derive(Debug, Default)]
+pub struct SourceMap<'a> {
+    // A map of spans, from their starting position to the span
+    spans: BTreeMap<usize, Span<'a>>,
 }
 
-impl<'a> Stack<'a> {
-    fn push<'t, T>(&self, node: &'t Located<T>) -> (Stack<'a>, &'t T) {
+impl SourceMap<'_> {
+    #[must_use]
+    pub fn find(&self, position: usize) -> Option<&Span<'_>> {
+        self.spans
+            .range(..=position)
+            .next_back()
+            .map(|(_, span)| span)
+    }
+}
+
+#[derive(Debug)]
+pub struct Span<'a> {
+    pub source: &'a NamedSource<String>,
+    pub span: Range<usize>,
+}
+
+impl<'a> Span<'a> {
+    fn push<'t, T>(&self, node: &'t Located<T>) -> (Span<'a>, &'t T) {
         let span = Range {
             start: self.span.start + node.location.start,
             end: self.span.start + node.location.end,
@@ -86,9 +103,13 @@ impl<'a> Stack<'a> {
 
         if span.start > self.span.end || span.end > self.span.end {
             warn!("span out of bounds");
+
+            // In debug mode, panic, because this should not happen
+            #[cfg(debug_assertions)]
+            panic!("span out of bounds");
         }
 
-        let new = Stack {
+        let new = Span {
             source: self.source,
             span,
         };
@@ -189,18 +210,27 @@ impl Workspace {
     /// This function will return an error if the file cannot be preprocessed,
     /// like if it has invalid syntax, can't be opened, includes an invalid
     /// file, etc.
-    pub fn preprocess(&self) -> Result<String, PreprocessorError> {
+    pub fn preprocess(&self) -> Result<(SourceMap, String), PreprocessorError> {
         let mut ctx = Context::default();
         let chunks = self.preprocess_path(&self.entrypoint, &mut ctx)?;
+        let (string, source_map, _) = chunks.into_iter().fold(
+            (String::new(), SourceMap::default(), 0),
+            |(mut string, mut source_map, offset), (stack, content)| {
+                string.push_str(&content);
+                source_map.spans.insert(offset, stack);
 
-        Ok(chunks.join(""))
+                (string, source_map, offset + content.len())
+            },
+        );
+
+        Ok((source_map, string))
     }
 
     fn preprocess_path(
         &self,
         path: &Utf8Path,
         ctx: &mut Context,
-    ) -> Result<Vec<String>, PreprocessorError> {
+    ) -> Result<Vec<(Span<'_>, String)>, PreprocessorError> {
         let Some(file) = self.files.get(path) else {
             // The file is not loaded, this shouldn't happen
             unreachable!("file {path} is not loaded");
@@ -211,7 +241,7 @@ impl Workspace {
             inner: err.clone(),
         })?;
 
-        let stack = Stack {
+        let stack = Span {
             source: &file.source,
             span: 0..file.source.inner().len(),
         };
@@ -229,13 +259,13 @@ impl Workspace {
         Ok(buf)
     }
 
-    fn process_chunks(
-        &self,
-        buf: &mut Vec<String>,
+    fn process_chunks<'a>(
+        &'a self,
+        buf: &mut Vec<(Span<'a>, String)>,
         chunks: &[Located<Node>],
         references: &HashMap<Utf8PathBuf, Utf8PathBuf>,
         ctx: &mut Context,
-        stack: &Stack<'_>,
+        stack: &Span<'a>,
     ) -> Result<(), PreprocessorError> {
         'outer: for chunk in chunks {
             let (stack, chunk) = stack.push(chunk);
@@ -244,14 +274,17 @@ impl Workspace {
                 Node::Raw { ref content } => {
                     // Replace the definitions in the content
                     let replaced = ctx.replace(content);
-                    buf.extend(replaced.into_iter().map(|l| l.inner.to_owned()));
+                    buf.extend(replaced.into_iter().map(|l| {
+                        let (stack, content) = stack.push(&l);
+                        (stack, (*content).to_owned())
+                    }));
                 }
 
                 Node::NewLine { crlf } => {
                     if *crlf {
-                        buf.push("\r\n".to_owned());
+                        buf.push((stack, "\r\n".to_owned()));
                     } else {
-                        buf.push("\n".to_owned());
+                        buf.push((stack, "\n".to_owned()));
                     }
                 }
 
@@ -637,7 +670,8 @@ mod tests {
     fn preprocess<P: AsRef<Utf8Path>>(path: P) -> Result<String, PreprocessorError> {
         let fs = fs();
         let preprocessor = Workspace::new(&fs, path.as_ref());
-        preprocessor.preprocess()
+        let (_source_map, res) = preprocessor.preprocess()?;
+        Ok(res)
     }
 
     #[test]
@@ -679,7 +713,7 @@ mod tests {
         )]);
         let workspace = Workspace::new(&fs, "/defined.S");
         let res = workspace.preprocess();
-        let res = res.expect("preprocessed");
+        let (_source_map, res) = res.expect("preprocessed");
         assert_snapshot!(res);
     }
 
