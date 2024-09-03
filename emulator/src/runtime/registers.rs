@@ -71,7 +71,13 @@ impl Registers {
         }
     }
 
-    pub(crate) fn set(&mut self, reg: Reg, value: Cell) -> Result<(), CellError> {
+    /// Set a register value
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if an invalid address is set to the
+    /// %pc or %sp register, or an invalid value is given to the %sr register.
+    pub fn set(&mut self, reg: Reg, value: Cell) -> Result<(), CellError> {
         match reg {
             Reg::A => self.a = value,
             Reg::B => self.b = value,

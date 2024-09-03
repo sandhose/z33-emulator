@@ -14,7 +14,7 @@ use rustyline::{Behavior, CompletionType, Config, EditMode, Editor};
 use tracing::{debug, info, warn};
 use z33_emulator::compiler::DebugInfo;
 use z33_emulator::constants as C;
-use z33_emulator::runtime::{Computer, Exception, Reg};
+use z33_emulator::runtime::{Cell, Computer, Exception, Reg};
 
 mod helper;
 mod parse;
@@ -36,6 +36,7 @@ An empty line re-runs the last valid command."#;
 /// Interactive mode commands
 enum Command {
     /// Execute the next instructions
+    #[command(alias = "s")]
     Step {
         /// Number of steps to execute
         #[clap(value_parser, default_value = "1")]
@@ -56,11 +57,22 @@ enum Command {
         /// The address to show. Can be a direct address (number literal) or an
         /// indirect one (register with an optional offset).
         #[clap(value_parser)]
-        address: parse::Address,
+        address: parse::Argument,
 
         /// Number of memory cells to show.
         #[clap(value_parser, default_value = "1")]
         number: i32,
+    },
+
+    /// Set a value in memory
+    Set {
+        /// The address or register to set.
+        #[clap(value_parser)]
+        target: parse::AssignmentTarget,
+
+        /// The value to set
+        #[clap(value_parser)]
+        value: parse::Argument,
     },
 
     /// Trigger a hardware interrupt
@@ -77,14 +89,14 @@ enum Command {
     Break {
         /// The address where to set the breakpoint
         #[clap(value_parser)]
-        address: parse::Address,
+        address: parse::Argument,
     },
 
     /// Remove a breakpoint
     Unbreak {
         /// The address of the breakpoint to remove
         #[clap(value_parser)]
-        address: parse::Address,
+        address: parse::Argument,
     },
 
     /// Continue the program until the next breakpoint or reset
@@ -311,7 +323,7 @@ pub(crate) fn run_interactive(
             }
 
             (Command::Memory { address, number }, _) => {
-                let address = address.clone().evaluate(computer, &session.labels)?;
+                let address: C::Address = address.clone().evaluate(computer, &session.labels)?;
 
                 if number.is_positive() {
                     for i in 0..(number.unsigned_abs() as C::Address) {
@@ -324,6 +336,25 @@ pub(crate) fn run_interactive(
                         let address = address - i;
                         let cell = computer.memory.get(address)?;
                         info!(address, value = %cell);
+                    }
+                }
+            }
+
+            (Command::Set { target, value }, false) => {
+                // TODO: recover from errors
+                match &target {
+                    parse::AssignmentTarget::Address(node) => {
+                        let address = node.evaluate(&session.labels)?;
+                        let value = value.clone().evaluate(computer, &session.labels)?;
+                        info!("Setting memory at address {address} to {value}");
+                        let cell = computer.memory.get_mut(address)?;
+                        *cell = Cell::Word(value);
+                    }
+
+                    parse::AssignmentTarget::Register(reg) => {
+                        let value = value.clone().evaluate(computer, &session.labels)?;
+                        info!("Setting register {reg} to {value}");
+                        computer.registers.set(*reg, Cell::Word(value))?;
                     }
                 }
             }

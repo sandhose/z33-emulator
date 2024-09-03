@@ -196,8 +196,10 @@ impl Memory {
 
     /// Get a mutable reference to a cell at an address
     ///
+    /// # Errors
+    ///
     /// It fails if the address is invalid or out of bounds.
-    pub(crate) fn get_mut(&mut self, address: Address) -> Result<&mut Cell, MemoryError> {
+    pub fn get_mut(&mut self, address: Address) -> Result<&mut Cell, MemoryError> {
         let addr: usize = address
             .try_into()
             .map_err(|_e| MemoryError::InvalidAddress(address))?;
