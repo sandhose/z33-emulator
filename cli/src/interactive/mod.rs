@@ -256,6 +256,7 @@ pub(crate) fn run_interactive(
     rl.set_helper(Some(h));
 
     let mut last_command = None;
+    let mut halted = false;
 
     loop {
         let readline = rl.readline(">> ")?;
@@ -280,17 +281,20 @@ pub(crate) fn run_interactive(
 
         debug!("Executing command: {:?}", command);
 
-        match &command {
-            Command::Exit => break,
-            Command::Step { number } => {
-                // TODO: recover from errors
-                for _ in 0..*number {
-                    computer.step()?;
-                }
-
+        match (&command, halted) {
+            (Command::Exit, _) => break,
+            (Command::Step { number }, false) => {
                 session.reset_list();
+
+                for _ in 0..*number {
+                    if let Err(e) = computer.step() {
+                        warn!(error = &e as &dyn std::error::Error, "Halted");
+                        halted = true;
+                        break;
+                    }
+                }
             }
-            Command::Registers { register } => {
+            (Command::Registers { register }, _) => {
                 if let Some(reg) = register {
                     match reg {
                         Reg::SR => {
@@ -305,7 +309,8 @@ pub(crate) fn run_interactive(
                     info!("Registers: {}", computer.registers);
                 }
             }
-            Command::Memory { address, number } => {
+
+            (Command::Memory { address, number }, _) => {
                 let address = address.clone().evaluate(computer, &session.labels)?;
 
                 if number.is_positive() {
@@ -323,12 +328,12 @@ pub(crate) fn run_interactive(
                 }
             }
 
-            Command::Interrupt => {
+            (Command::Interrupt, false) => {
                 computer.recover_from_exception(&Exception::HardwareInterrupt)?;
                 session.reset_list();
             }
 
-            Command::List { number } => {
+            (Command::List { number }, _) => {
                 let addr = session.offset_list(computer, *number);
                 for i in 0..*number {
                     let addr = addr + i;
@@ -336,28 +341,30 @@ pub(crate) fn run_interactive(
                 }
             }
 
-            Command::Break { address } => {
+            (Command::Break { address }, false) => {
                 let address = address.clone().evaluate(computer, &session.labels)?;
                 session.add_breakpoint(address);
             }
 
-            Command::Unbreak { address } => {
+            (Command::Unbreak { address }, false) => {
                 let address = address.clone().evaluate(computer, &session.labels)?;
                 session.remove_breakpoint(address);
             }
 
-            Command::Continue => {
-                loop {
-                    // TODO: recover from error
-                    computer.step()?;
-                    if session.has_breakpoint(computer.registers.pc) {
-                        break;
-                    }
+            (Command::Continue, false) => loop {
+                if let Err(e) = computer.step() {
+                    warn!(error = &e as &dyn std::error::Error, "Halted");
+                    halted = true;
+                    break;
                 }
-                info!(address = computer.registers.pc, "Stopped at a breakpoint");
-            }
 
-            Command::Info { sub } => match sub {
+                if session.has_breakpoint(computer.registers.pc) {
+                    info!(address = computer.registers.pc, "Stopped at a breakpoint");
+                    break;
+                }
+            },
+
+            (Command::Info { sub }, _) => match sub {
                 Some(InfoCommand::Breakpoints) => {
                     session.display_breakpoints(computer);
                 }
@@ -375,6 +382,11 @@ pub(crate) fn run_interactive(
                     Session::display_cycles(computer);
                 }
             },
+
+            (_, true) => {
+                // Computer is halted but the user asked to continue, we just warn
+                warn!("Computer is halted. Use \"exit\" to quit");
+            }
         };
 
         last_command = Some(command);
