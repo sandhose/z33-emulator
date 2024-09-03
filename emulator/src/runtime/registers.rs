@@ -7,7 +7,7 @@ use crate::ast::{AstNode, NodeKind};
 use crate::constants as C;
 
 bitflags! {
-    #[derive(Default, Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq)]
     pub struct StatusRegister: C::Word {
         const CARRY            = 0b000_0000_0001;
         const ZERO             = 0b000_0000_0010;
@@ -15,6 +15,13 @@ bitflags! {
         const OVERFLOW         = 0b000_0000_1000;
         const INTERRUPT_ENABLE = 0b001_0000_0000;
         const SUPERVISOR       = 0b010_0000_0000;
+    }
+}
+
+impl Default for StatusRegister {
+    fn default() -> Self {
+        // On startup, only the supervisor bit is set
+        StatusRegister::SUPERVISOR
     }
 }
 
