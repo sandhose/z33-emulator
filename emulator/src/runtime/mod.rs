@@ -155,6 +155,17 @@ impl Computer {
         &mut self,
         exception: &Exception,
     ) -> std::result::Result<(), Exception> {
+        // Special case: if we're already on the handler, and the exception is an
+        // 'invalid instruction', we just return, as this means there is no handler
+        // setup. The '+ 1' is because we always move the PC by one after decoding the
+        // instruction
+        if self.registers.pc == C::INTERRUPT_HANDLER + 1
+            && matches!(exception, &Exception::InvalidInstruction)
+        {
+            info!("'Invalid instruction' exception within the exception handler, ignoring");
+            return Err(exception.clone());
+        }
+
         debug!(exception = %exception, "Recovering from exception");
         *(self.memory.get_mut(C::INTERRUPT_PC_SAVE)?) = self.registers.get(&Reg::PC);
         *(self.memory.get_mut(C::INTERRUPT_SR_SAVE)?) = self.registers.get(&Reg::SR);
