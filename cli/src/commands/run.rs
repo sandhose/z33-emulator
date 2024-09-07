@@ -113,7 +113,7 @@ impl RunOpt {
 
         info!("Running program");
         if self.interactive {
-            run_interactive(&mut computer, debug_info)?;
+            run_interactive(&mut computer, debug_info);
         } else {
             computer.run()?;
         }
