@@ -144,7 +144,7 @@ impl TryFrom<&Cell> for Address {
 }
 
 /// Represents errors related to memory manipulations
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Clone, Copy)]
 pub enum MemoryError {
     /// The given address was invalid
     #[error("invalid address {0}")]

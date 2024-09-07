@@ -3,7 +3,7 @@ use thiserror::Error;
 use super::memory::MemoryError;
 use crate::constants::Word;
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Clone)]
 pub enum Exception {
     #[error("hardware interrupt")]
     HardwareInterrupt,

@@ -155,6 +155,16 @@ impl Computer {
         &mut self,
         exception: &Exception,
     ) -> std::result::Result<(), Exception> {
+        // We don't want to recover from the exception if there is no handler setup
+        let handler = self.memory.get(C::INTERRUPT_HANDLER)?;
+        if handler.extract_instruction().is_err() {
+            tracing::warn!(
+                "No exception handler at address 200 for exception {:?}",
+                exception
+            );
+            return Err(exception.clone());
+        }
+
         debug!(exception = %exception, "Recovering from exception");
         *(self.memory.get_mut(C::INTERRUPT_PC_SAVE)?) = self.registers.get(&Reg::PC);
         *(self.memory.get_mut(C::INTERRUPT_SR_SAVE)?) = self.registers.get(&Reg::SR);
