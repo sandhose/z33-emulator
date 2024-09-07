@@ -6,30 +6,29 @@ use nom::combinator::{all_consuming, map, value};
 use nom::error::{convert_error, VerboseError};
 use nom::{Finish, IResult, Offset};
 use thiserror::Error;
-use z33_emulator::constants as C;
 use z33_emulator::parser::location::Locatable;
 use z33_emulator::parser::{parse_expression, parse_register, ExpressionContext, ExpressionNode};
 use z33_emulator::runtime::{Computer, ExtractValue, Reg};
 
 #[derive(Debug, Clone)]
-pub enum Address {
+pub enum Argument {
     Direct(ExpressionNode),
     Indirect(Reg),
     Indexed(Reg, ExpressionNode),
 }
 
-impl Address {
-    pub fn evaluate<Ctx: ExpressionContext>(
+impl Argument {
+    pub fn evaluate<Ctx: ExpressionContext, V: TryFrom<i128>>(
         self,
         computer: &Computer,
         context: &Ctx,
-    ) -> Result<C::Address, anyhow::Error> {
+    ) -> Result<V, anyhow::Error> {
         let node = match self {
-            Address::Direct(node) => node,
-            Address::Indirect(reg) => {
+            Argument::Direct(node) => node,
+            Argument::Indirect(reg) => {
                 ExpressionNode::Literal(i128::from(reg.extract_address(computer)?))
             }
-            Address::Indexed(reg, node) => ExpressionNode::Sum(
+            Argument::Indexed(reg, node) => ExpressionNode::Sum(
                 Box::new(ExpressionNode::Literal(i128::from(
                     reg.extract_word(computer)?,
                 )))
@@ -45,17 +44,17 @@ impl Address {
 
 #[derive(Debug, Error)]
 #[error("could not parse expression: {0}")]
-pub struct ParseAddressError(String);
+pub struct ParseError(String);
 
-impl FromStr for Address {
-    type Err = ParseAddressError;
+impl FromStr for Argument {
+    type Err = ParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        parse_address(s).map_err(|e| ParseAddressError(convert_error(s, e)))
+        parse_address(s).map_err(|e| ParseError(convert_error(s, e)))
     }
 }
 
-fn parse_indexed(input: &str) -> IResult<&str, Address, VerboseError<&str>> {
+fn parse_indexed(input: &str) -> IResult<&str, Argument, VerboseError<&str>> {
     #[derive(Clone, Copy)]
     enum Sign {
         Plus,
@@ -79,18 +78,46 @@ fn parse_indexed(input: &str) -> IResult<&str, Address, VerboseError<&str>> {
         );
     };
 
-    Ok((rest, Address::Indexed(reg, expr)))
+    Ok((rest, Argument::Indexed(reg, expr)))
 }
 
-fn parse_address_inner(input: &str) -> IResult<&str, Address, VerboseError<&str>> {
+fn parse_address_inner(input: &str) -> IResult<&str, Argument, VerboseError<&str>> {
     alt((
-        map(parse_expression, Address::Direct),
+        map(parse_expression, Argument::Direct),
         parse_indexed,
-        map(parse_register, Address::Indirect),
+        map(parse_register, Argument::Indirect),
     ))(input)
 }
 
-fn parse_address(input: &str) -> Result<Address, VerboseError<&str>> {
+fn parse_address(input: &str) -> Result<Argument, VerboseError<&str>> {
     let (_, ret) = all_consuming(parse_address_inner)(input).finish()?;
+    Ok(ret)
+}
+
+#[derive(Debug, Clone)]
+pub enum AssignmentTarget {
+    Address(ExpressionNode),
+    Register(Reg),
+}
+
+impl FromStr for AssignmentTarget {
+    type Err = ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        parse_assignment_target(s).map_err(|e| ParseError(convert_error(s, e)))
+    }
+}
+
+fn parse_assignment_target_inner(
+    input: &str,
+) -> IResult<&str, AssignmentTarget, VerboseError<&str>> {
+    alt((
+        map(parse_expression, AssignmentTarget::Address),
+        map(parse_register, AssignmentTarget::Register),
+    ))(input)
+}
+
+fn parse_assignment_target(input: &str) -> Result<AssignmentTarget, VerboseError<&str>> {
+    let (_, ret) = all_consuming(parse_assignment_target_inner)(input).finish()?;
     Ok(ret)
 }

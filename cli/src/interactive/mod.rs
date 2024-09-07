@@ -14,7 +14,7 @@ use rustyline::{Behavior, CompletionType, Config, EditMode, Editor};
 use tracing::{debug, info, warn};
 use z33_emulator::compiler::DebugInfo;
 use z33_emulator::constants as C;
-use z33_emulator::runtime::{Computer, Exception, Reg};
+use z33_emulator::runtime::{Cell, Computer, Exception, Reg};
 
 mod helper;
 mod parse;
@@ -36,6 +36,7 @@ An empty line re-runs the last valid command."#;
 /// Interactive mode commands
 enum Command {
     /// Execute the next instructions
+    #[command(alias = "s")]
     Step {
         /// Number of steps to execute
         #[clap(value_parser, default_value = "1")]
@@ -56,11 +57,22 @@ enum Command {
         /// The address to show. Can be a direct address (number literal) or an
         /// indirect one (register with an optional offset).
         #[clap(value_parser)]
-        address: parse::Address,
+        address: parse::Argument,
 
         /// Number of memory cells to show.
         #[clap(value_parser, default_value = "1")]
         number: i32,
+    },
+
+    /// Set a value in memory
+    Set {
+        /// The address or register to set.
+        #[clap(value_parser)]
+        target: parse::AssignmentTarget,
+
+        /// The value to set
+        #[clap(value_parser)]
+        value: parse::Argument,
     },
 
     /// Trigger a hardware interrupt
@@ -77,14 +89,14 @@ enum Command {
     Break {
         /// The address where to set the breakpoint
         #[clap(value_parser)]
-        address: parse::Address,
+        address: parse::Argument,
     },
 
     /// Remove a breakpoint
     Unbreak {
         /// The address of the breakpoint to remove
         #[clap(value_parser)]
-        address: parse::Address,
+        address: parse::Argument,
     },
 
     /// Continue the program until the next breakpoint or reset
@@ -236,10 +248,7 @@ impl Session {
 }
 
 #[allow(clippy::too_many_lines)]
-pub(crate) fn run_interactive(
-    computer: &mut Computer,
-    debug_info: DebugInfo,
-) -> anyhow::Result<()> {
+pub(crate) fn run_interactive(computer: &mut Computer, debug_info: DebugInfo) {
     info!("Running in interactive mode. Type \"help\" to list available commands.");
     let config = Config::builder()
         .history_ignore_space(true)
@@ -252,48 +261,65 @@ pub(crate) fn run_interactive(
     let mut session = Session::from_debug_info(debug_info);
 
     let h: RunHelper<Command> = RunHelper::new();
-    let mut rl = Editor::with_config(config)?;
+    let mut rl = Editor::with_config(config).expect("Initialize terminal input");
     rl.set_helper(Some(h));
 
-    let mut last_command = None;
+    let mut last_command: Option<Command> = None;
     let mut halted = false;
 
-    loop {
-        let readline = rl.readline(">> ")?;
+    'read: loop {
+        // A macro to unwrap an error, log it and continue the loop
+        macro_rules! warn_and_continue {
+            ($e:expr) => {
+                match $e {
+                    Ok(o) => o,
+                    Err(e) => {
+                        tracing::warn!(error = %e);
+                        continue 'read;
+                    }
+                }
+            };
+        }
+
+        let Ok(readline) = rl.readline(">> ") else {
+            info!("EOF, exitting");
+            return;
+        };
 
         let command = if readline.is_empty() {
-            if let Some(command) = last_command {
-                command
+            if let Some(command) = &last_command {
+                command.clone()
             } else {
                 info!("Type \"help\" to get the list of available commands");
-                continue;
+                continue 'read;
             }
         } else {
-            let words = shell_words::split(readline.as_str())?;
-            match Command::try_parse_from(words) {
-                Ok(c) => c,
-                Err(e) => {
-                    eprintln!("{e}");
-                    continue;
-                }
-            }
+            let Ok(words) = shell_words::split(readline.as_str()) else {
+                warn!("Invalid input");
+                continue 'read;
+            };
+
+            let command = warn_and_continue!(Command::try_parse_from(words));
+            last_command = Some(command.clone());
+            command
         };
 
         debug!("Executing command: {:?}", command);
 
-        match (&command, halted) {
+        match (command, halted) {
             (Command::Exit, _) => break,
             (Command::Step { number }, false) => {
                 session.reset_list();
 
-                for _ in 0..*number {
+                for _ in 0..number {
                     if let Err(e) = computer.step() {
                         warn!(error = &e as &dyn std::error::Error, "Halted");
                         halted = true;
-                        break;
+                        continue 'read;
                     }
                 }
             }
+
             (Command::Registers { register }, _) => {
                 if let Some(reg) = register {
                     match reg {
@@ -301,7 +327,7 @@ pub(crate) fn run_interactive(
                             info!("Register %sr = {:?}", computer.registers.sr);
                         }
                         reg => {
-                            let cell = computer.registers.get(reg);
+                            let cell = computer.registers.get(&reg);
                             info!("Register {} = {}", reg, cell);
                         }
                     }
@@ -311,43 +337,65 @@ pub(crate) fn run_interactive(
             }
 
             (Command::Memory { address, number }, _) => {
-                let address = address.clone().evaluate(computer, &session.labels)?;
+                let address: C::Address =
+                    warn_and_continue!(address.evaluate(computer, &session.labels));
 
                 if number.is_positive() {
                     for i in 0..(number.unsigned_abs() as C::Address) {
                         let address = address + i;
-                        let cell = computer.memory.get(address)?;
+                        let cell = warn_and_continue!(computer.memory.get(address));
                         info!(address, value = %cell);
                     }
                 } else {
                     for i in 0..(number.unsigned_abs() as C::Address) {
                         let address = address - i;
-                        let cell = computer.memory.get(address)?;
+                        let cell = warn_and_continue!(computer.memory.get(address));
                         info!(address, value = %cell);
                     }
                 }
             }
 
+            (Command::Set { target, value }, false) => match &target {
+                parse::AssignmentTarget::Address(node) => {
+                    let address = warn_and_continue!(node.evaluate(&session.labels));
+                    let value = warn_and_continue!(value.evaluate(computer, &session.labels));
+                    info!("Setting memory at address {address} to {value}");
+                    let cell = warn_and_continue!(computer.memory.get_mut(address));
+                    *cell = Cell::Word(value);
+                }
+
+                parse::AssignmentTarget::Register(reg) => {
+                    let value = warn_and_continue!(value.evaluate(computer, &session.labels));
+                    info!("Setting register {reg} to {value}");
+                    warn_and_continue!(computer.registers.set(*reg, Cell::Word(value)));
+                }
+            },
+
             (Command::Interrupt, false) => {
-                computer.recover_from_exception(&Exception::HardwareInterrupt)?;
+                if let Err(e) = computer.recover_from_exception(&Exception::HardwareInterrupt) {
+                    warn!(error = &e as &dyn std::error::Error, "Halted");
+                    halted = true;
+                    continue 'read;
+                }
+
                 session.reset_list();
             }
 
             (Command::List { number }, _) => {
-                let addr = session.offset_list(computer, *number);
-                for i in 0..*number {
+                let addr = session.offset_list(computer, number);
+                for i in 0..number {
                     let addr = addr + i;
                     session.display_instruction(computer, addr);
                 }
             }
 
             (Command::Break { address }, false) => {
-                let address = address.clone().evaluate(computer, &session.labels)?;
+                let address = warn_and_continue!(address.evaluate(computer, &session.labels));
                 session.add_breakpoint(address);
             }
 
             (Command::Unbreak { address }, false) => {
-                let address = address.clone().evaluate(computer, &session.labels)?;
+                let address = warn_and_continue!(address.evaluate(computer, &session.labels));
                 session.remove_breakpoint(address);
             }
 
@@ -355,7 +403,7 @@ pub(crate) fn run_interactive(
                 if let Err(e) = computer.step() {
                     warn!(error = &e as &dyn std::error::Error, "Halted");
                     halted = true;
-                    break;
+                    continue 'read;
                 }
 
                 if session.has_breakpoint(computer.registers.pc) {
@@ -388,9 +436,5 @@ pub(crate) fn run_interactive(
                 warn!("Computer is halted. Use \"exit\" to quit");
             }
         };
-
-        last_command = Some(command);
     }
-
-    Ok(())
 }
