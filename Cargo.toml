@@ -31,7 +31,7 @@ clap = { version = "4.5.16", features = ["derive"] }
 clap_complete = "4.5.24"
 console_error_panic_hook = "0.1.7"
 indoc = "2.0.5"
-insta = "1.39.0"
+insta = "1.40.0"
 js-sys = "0.3.70"
 miette = "7.2.0"
 nom = "7.1.3"
