@@ -58,8 +58,8 @@ jobs:
 
       - name: Install Rust toolchain
         run: |
-          rustup toolchain install 1.80.0
-          rustup default 1.80.0
+          rustup toolchain install 1.81.0
+          rustup default 1.81.0
           rustup component add clippy
 
       - name: Setup Rust build cache
