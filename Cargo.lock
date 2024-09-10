@@ -1276,6 +1276,7 @@ dependencies = [
  "camino",
  "console_error_panic_hook",
  "js-sys",
+ "miette",
  "serde",
  "serde-wasm-bindgen",
  "tracing",
