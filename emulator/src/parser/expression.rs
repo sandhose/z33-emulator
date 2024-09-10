@@ -218,7 +218,7 @@ impl Context for EmptyContext {
 
 #[derive(Error, Debug, PartialEq)]
 pub enum EvaluationError {
-    #[error("undefined variable {variable:?}")]
+    #[error("undefined label or macro {variable:?}")]
     UndefinedVariable { variable: String },
 
     #[error("could not downcast value")]
