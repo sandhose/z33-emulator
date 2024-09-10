@@ -1233,7 +1233,7 @@ checksum = "09041cd90cf85f7f8b2df60c646f853b7f535ce68f85244eb6731cf89fa498ec"
 
 [[package]]
 name = "z33-cli"
-version = "0.5.4"
+version = "0.6.0"
 dependencies = [
  "anstyle",
  "anyhow",
@@ -1253,7 +1253,7 @@ dependencies = [
 
 [[package]]
 name = "z33-emulator"
-version = "0.5.4"
+version = "0.6.0"
 dependencies = [
  "bitflags",
  "camino",
@@ -1271,7 +1271,7 @@ dependencies = [
 
 [[package]]
 name = "z33-web"
-version = "0.5.4"
+version = "0.6.0"
 dependencies = [
  "camino",
  "console_error_panic_hook",

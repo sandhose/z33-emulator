@@ -75,7 +75,7 @@ Releasing a new version is done by running doing the following steps:
    ```
  - Commit the changes
    ```sh
-   git commit -m "${VERSION}" ./Cargo.lock ./{web,emulator,cli}/Cargo.toml
+   git commit -m "${VERSION}" ./Cargo.lock ./Cargo.toml
    git push
    ```
  - Create a new git tag and push it
@@ -91,7 +91,7 @@ Releasing a new version is done by running doing the following steps:
 ```sh
 cargo set-version --bump patch
 VERSION="v$(cargo metadata --format-version=1 | jq -r '.packages[] | select(.name == "z33-cli").version')"
-git commit -m "${VERSION}" ./Cargo.lock ./{web,emulator,cli}/Cargo.toml
+git commit -m "${VERSION}" ./Cargo.lock ./Cargo.toml
 git push
 git tag -s "${VERSION}"
 git push --tags
