@@ -23,6 +23,7 @@ crate-type = ["cdylib", "rlib"]
 camino.workspace = true
 console_error_panic_hook.workspace = true
 js-sys.workspace = true
+miette.workspace = true
 serde.workspace = true
 serde-wasm-bindgen.workspace = true
 tsify.workspace = true

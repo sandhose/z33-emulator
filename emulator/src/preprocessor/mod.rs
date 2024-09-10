@@ -88,10 +88,51 @@ impl SourceMap<'_> {
     }
 }
 
+#[derive(Clone)]
+pub struct ReferencingSourceMap {
+    spans: BTreeMap<usize, ReferencingSpan>,
+}
+
+impl ReferencingSourceMap {
+    #[must_use]
+    pub fn find(&self, position: usize) -> Option<&ReferencingSpan> {
+        self.spans
+            .range(..=position)
+            .next_back()
+            .map(|(_, span)| span)
+    }
+}
+
+impl From<SourceMap<'_>> for ReferencingSourceMap {
+    fn from(value: SourceMap<'_>) -> Self {
+        let spans = value
+            .spans
+            .into_iter()
+            .map(|(index, span)| (index, span.into()))
+            .collect();
+        Self { spans }
+    }
+}
+
 #[derive(Debug)]
 pub struct Span<'a> {
     pub source: &'a NamedSource<String>,
     pub span: Range<usize>,
+}
+
+#[derive(Clone)]
+pub struct ReferencingSpan {
+    pub name: String,
+    pub span: Range<usize>,
+}
+
+impl From<Span<'_>> for ReferencingSpan {
+    fn from(value: Span<'_>) -> Self {
+        Self {
+            name: value.source.name().to_owned(),
+            span: value.span,
+        }
+    }
 }
 
 impl<'a> Span<'a> {

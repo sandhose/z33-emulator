@@ -7,18 +7,22 @@ use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
 
 use camino::Utf8PathBuf;
+use miette::JSONReportHandler;
 use serde::{Deserialize, Serialize};
 use tsify::Tsify;
 use wasm_bindgen::prelude::*;
 use z33_emulator::compiler::compile;
 use z33_emulator::constants::Address;
-use z33_emulator::preprocessor::{InMemoryFilesystem, Workspace};
+use z33_emulator::preprocessor::{
+    InMemoryFilesystem, PreprocessorError, ReferencingSourceMap, Workspace,
+};
 use z33_emulator::runtime::{Memory, ProcessorError};
 
 #[wasm_bindgen(start)]
 fn start() {
     console_error_panic_hook::set_once();
     tracing_wasm::set_as_global_default();
+    miette::set_hook(Box::new(|_| Box::new(JSONReportHandler))).unwrap();
 }
 
 #[wasm_bindgen]
@@ -31,6 +35,68 @@ pub struct InMemoryPreprocessor {
 pub struct InputFiles(HashMap<Utf8PathBuf, String>);
 
 #[wasm_bindgen]
+pub struct CompilationResult {
+    program: Option<Program>,
+    preprocessor: Option<miette::Report>,
+    compilation: Option<miette::Report>,
+}
+
+impl CompilationResult {
+    fn preprocessor_error(v: PreprocessorError) -> Self {
+        Self {
+            program: None,
+            preprocessor: Some(miette::Report::new(v)),
+            compilation: None,
+        }
+    }
+
+    fn compilation_error(v: miette::Report) -> Self {
+        Self {
+            program: None,
+            preprocessor: None,
+            compilation: Some(v),
+        }
+    }
+
+    fn new(v: Program) -> Self {
+        Self {
+            program: Some(v),
+            preprocessor: None,
+            compilation: None,
+        }
+    }
+}
+
+#[wasm_bindgen]
+impl CompilationResult {
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn program(&self) -> Option<Program> {
+        self.program.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn report(&self) -> Option<String> {
+        if let Some(report) = &self.preprocessor {
+            return Some(format!("{report:?}"));
+        }
+
+        if let Some(report) = &self.compilation {
+            return Some(format!("{report:?}"));
+        }
+
+        None
+    }
+}
+
+fn char_offset(a: &str, b: &str) -> usize {
+    let a = a.as_ptr();
+    let b = b.as_ptr();
+    b as usize - a as usize
+}
+
+#[wasm_bindgen]
 impl InMemoryPreprocessor {
     #[wasm_bindgen(constructor)]
     #[must_use]
@@ -41,48 +107,50 @@ impl InMemoryPreprocessor {
         Self { preprocessor }
     }
 
-    /// Preprocess the file at the given path
+    /// Compile the given file
     ///
     /// # Errors
     ///
-    /// Returns an error if the file could not be preprocessed.
-    pub fn preprocess(&mut self) -> Result<String, JsValue> {
-        let source = self.preprocessor.preprocess();
-        match source {
-            Ok((_source_map, source)) => Ok(source),
-            Err(e) => Err(format!("{e}").into()),
+    /// Returns an error if the file could not be preprocessed or compiled.
+    #[allow(clippy::missing_panics_doc)]
+    pub fn compile(&mut self) -> CompilationResult {
+        let (source_map, source) = match self.preprocessor.preprocess() {
+            Ok(o) => o,
+            Err(e) => return CompilationResult::preprocessor_error(e),
+        };
+        let source_str = &source;
+        let program = z33_emulator::parser::parse(source_str);
+        match program {
+            Ok(program) => CompilationResult::new(Program {
+                source_map: source_map.into(),
+                program,
+            }),
+            Err(e) => {
+                // The nom errors are… bad. Let's just print the first location
+                let (location, _kind) = e.errors.first().expect("at least one error");
+                let offset = char_offset(source_str, location);
+                // Find the corresponding span from the source map
+                let span = source_map
+                    .find(offset)
+                    .expect("source info to be available");
+                let labels = vec![miette::LabeledSpan::underline(span.span.clone())];
+                let report = miette::miette!(labels = labels, "Failed to parse program")
+                    .with_source_code(span.source.clone());
+                CompilationResult::compilation_error(report)
+            }
         }
     }
 }
 
 #[wasm_bindgen]
+#[derive(Clone)]
 pub struct Program {
-    source: String,
+    source_map: ReferencingSourceMap,
     program: z33_emulator::parser::location::Located<z33_emulator::parser::Program>,
 }
 
 #[wasm_bindgen]
 impl Program {
-    /// Parse a program from a string
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the program could not be parsed.
-    #[wasm_bindgen]
-    pub fn parse(source: String) -> Result<Program, JsValue> {
-        let program = z33_emulator::parser::parse_new::<z33_emulator::parser::Error<_>>(&source);
-        match program {
-            Ok(program) => Ok(Self { source, program }),
-            Err(e) => Err(format!("{e:#?}").into()),
-        }
-    }
-
-    #[wasm_bindgen(getter)]
-    #[must_use]
-    pub fn source(&self) -> String {
-        self.source.clone()
-    }
-
     #[wasm_bindgen(getter)]
     #[must_use]
     pub fn ast(&self) -> String {

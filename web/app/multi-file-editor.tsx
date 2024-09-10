@@ -136,6 +136,29 @@ const UploadFileForm: React.FC<{
 
 const darkMediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
 
+const baseReportSchema = z.object({
+  message: z.string(),
+  severity: z.enum(["error", "warning", "advice"]),
+  causes: z.array(z.string()),
+  filename: z.string(),
+  labels: z.array(
+    z.object({
+      span: z.object({
+        offset: z.number(),
+        length: z.number(),
+      }),
+    }),
+  ),
+});
+
+type ReportSchema = z.infer<typeof baseReportSchema> & {
+  related: ReportSchema[];
+};
+
+export const reportSchema: z.ZodType<ReportSchema> = baseReportSchema.extend({
+  related: z.lazy(() => reportSchema.array()),
+});
+
 export const MultiFileEditor: React.FC<Props> = ({
   initialFiles,
   initialSelected,
@@ -173,9 +196,19 @@ export const MultiFileEditor: React.FC<Props> = ({
     );
 
     const preprocessor = new InMemoryPreprocessor(files, fileName.path);
-    const preprocessed = preprocessor.preprocess();
-    const newProgram = Program.parse(preprocessed);
-    setProgram(newProgram);
+    const result = preprocessor.compile();
+    const program = result.program;
+    const report = result.report;
+    if ((program && report) || (!program && !report)) {
+      throw Error("Invalid return value");
+    }
+
+    if (program) {
+      setProgram(program);
+    } else if (report) {
+      const reportObject = reportSchema.parse(JSON.parse(report));
+      console.log(reportObject);
+    }
   }
 
   function handleEditorWillMount(monaco: Monaco) {
