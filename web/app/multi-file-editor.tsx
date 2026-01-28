@@ -3,7 +3,7 @@ import { Editor, type Monaco, useMonaco } from "@monaco-editor/react";
 import { FilePlusIcon, TrashIcon, UploadIcon } from "lucide-react";
 import { Uri } from "monaco-editor/esm/vs/editor/editor.api.js";
 import type * as React from "react";
-import { useState, useSyncExternalStore } from "react";
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import {
   type Computer,
@@ -29,6 +29,7 @@ import {
 import { Separator } from "./components/ui/separator";
 import { EntrypointSelector } from "./entrypoint-selector";
 import { reportSchema, toMonacoDecoration } from "./report";
+import { useTheme } from "./components/theme-provider";
 
 type Props = {
   initialFiles: Map<string, string>;
@@ -139,8 +140,6 @@ const UploadFileForm: React.FC<{
   );
 };
 
-const darkMediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-
 export const MultiFileEditor: React.FC<Props> = ({
   initialFiles,
   initialSelected,
@@ -150,13 +149,7 @@ export const MultiFileEditor: React.FC<Props> = ({
   const [fileName, setFileName] = useState(Uri.file(initialSelected));
   const [fileNames, setFileNames] = useState<Uri[]>([]);
   const [program, setProgram] = useState<Program | null>(null);
-  const darkMode = useSyncExternalStore(
-    (callback) => {
-      darkMediaQuery.addEventListener("change", callback);
-      return () => darkMediaQuery.removeEventListener("change", callback);
-    },
-    () => darkMediaQuery.matches,
-  );
+  const theme = useTheme();
 
   function sync() {
     if (!monaco) {
@@ -317,7 +310,7 @@ export const MultiFileEditor: React.FC<Props> = ({
       <div className="flex-1">
         <Editor
           className="editor"
-          theme={darkMode ? "vs-dark" : "light"}
+          theme={theme.effective === "dark" ? "vs-dark" : "light"}
           path={fileName.path}
           beforeMount={handleEditorWillMount}
           onMount={() => sync()}

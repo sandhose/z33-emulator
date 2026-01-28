@@ -3,6 +3,7 @@ import "./monaco.ts";
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import { TooltipProvider } from "./components/ui/tooltip.tsx";
+import { ThemeProvider } from "./components/theme-provider.tsx";
 
 const rootElement = document.getElementById("root");
 if (!rootElement) {
@@ -11,7 +12,9 @@ if (!rootElement) {
 const root = createRoot(rootElement);
 
 root.render(
-  <TooltipProvider delay={400}>
-    <App />
-  </TooltipProvider>,
+  <ThemeProvider>
+    <TooltipProvider delay={400}>
+      <App />
+    </TooltipProvider>
+  </ThemeProvider>,
 );

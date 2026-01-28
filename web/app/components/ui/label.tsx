@@ -5,7 +5,6 @@ import { cn } from "@/lib/utils";
 function Label({
   className,
   htmlFor,
-  children,
   ...props
 }: React.ComponentProps<"label">) {
   return (
@@ -17,9 +16,7 @@ function Label({
       )}
       htmlFor={htmlFor}
       {...props}
-    >
-      {children}
-    </label>
+    />
   );
 }
 
