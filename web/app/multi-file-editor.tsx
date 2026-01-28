@@ -5,7 +5,11 @@ import { Uri } from "monaco-editor/esm/vs/editor/editor.api.js";
 import type * as React from "react";
 import { useState, useSyncExternalStore } from "react";
 import { useForm } from "react-hook-form";
-import { type Computer, InMemoryPreprocessor, Program } from "z33-web-bindings";
+import {
+  type Computer,
+  InMemoryPreprocessor,
+  type Program,
+} from "z33-web-bindings";
 import * as z from "zod";
 import { Button } from "./components/ui/button";
 import {

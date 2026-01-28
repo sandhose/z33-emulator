@@ -1,5 +1,5 @@
-import * as z from "zod";
 import type * as monaco from "monaco-editor";
+import * as z from "zod";
 
 const spanSchema = z.object({
   offset: z.number().min(0).int(),
