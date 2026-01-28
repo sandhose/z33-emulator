@@ -11,7 +11,7 @@ if (!rootElement) {
 const root = createRoot(rootElement);
 
 root.render(
-  <TooltipProvider delayDuration={400} skipDelayDuration={200}>
+  <TooltipProvider delay={400}>
     <App />
   </TooltipProvider>,
 );

@@ -1,11 +1,11 @@
-import {
-  Crosshair1Icon,
-  DoubleArrowLeftIcon,
-  DoubleArrowRightIcon,
-  MinusIcon,
-  PlusIcon,
-} from "@radix-ui/react-icons";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import {
+  CrosshairIcon,
+  SkipBackIcon,
+  SkipForwardIcon,
+  StepBackIcon,
+  StepForwardIcon,
+} from "lucide-react";
 import type * as React from "react";
 import {
   forwardRef,
@@ -183,9 +183,9 @@ const MemoryViewer = memo(
                         labels={labels}
                       />
                     </div>
-                    {...(labels
+                    {...labels
                       .get(virtualItem.index)
-                      ?.map((l) => <Label key={l} label={l} />) || [])}
+                      ?.map((l) => <Label key={l} label={l} />) || []}
                   </>
                 )}
               </div>
@@ -322,15 +322,17 @@ export const ProgramCounterSection: React.FC<{
       <div className="flex justify-between items-center">
         <Title>Program counter</Title>
         <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="secondary"
-              size="icon"
-              onClick={() => ref.current?.recenter()}
-            >
-              <Crosshair1Icon />
-            </Button>
-          </TooltipTrigger>
+          <TooltipTrigger
+            render={
+              <Button
+                variant="secondary"
+                size="icon"
+                onClick={() => ref.current?.recenter()}
+              >
+                <CrosshairIcon />
+              </Button>
+            }
+          />
           <TooltipContent>Recenter</TooltipContent>
         </Tooltip>
       </div>
@@ -359,15 +361,17 @@ export const StackPointerSection: React.FC<{
       <div className="flex justify-between items-center">
         <Title>Stack pointer</Title>
         <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="secondary"
-              size="icon"
-              onClick={() => ref.current?.recenter()}
-            >
-              <Crosshair1Icon />
-            </Button>
-          </TooltipTrigger>
+          <TooltipTrigger
+            render={
+              <Button
+                variant="secondary"
+                size="icon"
+                onClick={() => ref.current?.recenter()}
+              >
+                <CrosshairIcon />
+              </Button>
+            }
+          />
           <TooltipContent>Recenter</TooltipContent>
         </Tooltip>
       </div>
@@ -423,7 +427,7 @@ export const MemoryViewSection: React.FC<{
             size="icon"
             onClick={minus10}
           >
-            <DoubleArrowLeftIcon />
+            <SkipBackIcon />
           </Button>
           <Button
             variant="outline"
@@ -431,7 +435,7 @@ export const MemoryViewSection: React.FC<{
             size="icon"
             onClick={minus1}
           >
-            <MinusIcon />
+            <StepBackIcon />
           </Button>
           <Input
             type="number"
@@ -444,7 +448,7 @@ export const MemoryViewSection: React.FC<{
             size="icon"
             onClick={plus1}
           >
-            <PlusIcon />
+            <StepForwardIcon />
           </Button>
           <Button
             variant="outline"
@@ -452,7 +456,7 @@ export const MemoryViewSection: React.FC<{
             size="icon"
             onClick={plus10}
           >
-            <DoubleArrowRightIcon />
+            <SkipForwardIcon />
           </Button>
         </div>
       </div>

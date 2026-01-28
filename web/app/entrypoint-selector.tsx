@@ -8,11 +8,11 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Select } from "@radix-ui/react-select";
 import * as React from "react";
 import { useForm } from "react-hook-form";
 import { Button } from "./components/ui/button";
 import {
+  Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
@@ -37,7 +37,7 @@ export const EntrypointSelector: React.FC<Props> = ({
   entrypoints,
   onRun,
 }: Props) => {
-  const form = useForm<z.infer<typeof formSchema>>({
+  const form = useForm({
     resolver: zodResolver(formSchema),
   });
 
@@ -87,7 +87,7 @@ export const EntrypointSelector: React.FC<Props> = ({
           )}
         />
 
-        <Button variant="success" type="submit">
+        <Button variant="outline" type="submit">
           Run
         </Button>
       </form>

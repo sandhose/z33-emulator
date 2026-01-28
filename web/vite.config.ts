@@ -1,4 +1,5 @@
 import { fileURLToPath } from "node:url";
+import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react-swc";
 import rust from "@wasm-tool/rollup-plugin-rust";
 import { defineConfig } from "vite";
@@ -17,10 +18,11 @@ export default defineConfig({
     },
   },
   plugins: [
+    tailwindcss(),
     react(),
     rust({
+      nodejs: false,
       experimental: {
-        directExports: true,
         typescriptDeclarationDir: "types",
       },
     }),
