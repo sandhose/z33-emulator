@@ -1,5 +1,3 @@
-import type * as LabelPrimitive from "@radix-ui/react-label";
-import { Slot } from "@radix-ui/react-slot";
 import * as React from "react";
 import {
   Controller,
@@ -87,7 +85,7 @@ FormItem.displayName = "FormItem";
 const FormLabel = ({
   className,
   ...props
-}: React.ComponentPropsWithoutRef<typeof LabelPrimitive.Root>) => {
+}: React.ComponentPropsWithoutRef<typeof Label>) => {
   const { error, formItemId } = useFormField();
 
   return (
@@ -100,12 +98,12 @@ const FormLabel = ({
 };
 FormLabel.displayName = "FormLabel";
 
-const FormControl = (props: React.ComponentPropsWithoutRef<typeof Slot>) => {
+const FormControl = (props: React.ComponentPropsWithoutRef<"div">) => {
   const { error, formItemId, formDescriptionId, formMessageId } =
     useFormField();
 
   return (
-    <Slot
+    <div
       id={formItemId}
       aria-describedby={
         !error
