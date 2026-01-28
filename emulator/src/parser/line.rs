@@ -17,7 +17,7 @@ use nom::combinator::{all_consuming, cut, eof, map, opt, peek, value};
 use nom::error::context;
 use nom::multi::separated_list1;
 use nom::sequence::delimited;
-use nom::{IResult, Offset};
+use nom::{IResult, Offset, Parser};
 
 use super::location::{Locatable, Located};
 use super::value::{
@@ -246,7 +246,8 @@ fn parse_directive_line<'a, Error: ParseError<&'a str>>(
         let argument = argument.with_location(input.offset(start)..input.offset(rest));
 
         Ok((rest, LineContent::Directive { kind, argument }))
-    })(rest)
+    })
+    .parse(rest)
 }
 
 /// Parses an instruction
@@ -268,11 +269,11 @@ fn parse_instruction_line<'a, Error: ParseError<&'a str>>(
                 // The first argument needs at least one space before it
                 // This is not done before to avoid eating spaces if the instruction takes no
                 // argument
-                opt(value((), space1))(cursor)?
+                opt(value((), space1)).parse(cursor)?
             } else {
                 // Later arguments are separated by a comma. This also eats the spaces around
                 // the comma
-                opt(value((), delimited(space0, char(','), space0)))(cursor)?
+                opt(value((), delimited(space0, char(','), space0))).parse(cursor)?
             };
 
             // First check it has the right prefix
@@ -280,7 +281,7 @@ fn parse_instruction_line<'a, Error: ParseError<&'a str>>(
                 let start = rest; // Save the start of the argument for location information
 
                 // Then continue parsing the argument
-                if let (rest, Some(argument)) = opt(parse_instruction_argument)(rest)? {
+                if let (rest, Some(argument)) = opt(parse_instruction_argument).parse(rest)? {
                     let argument = argument.with_location(input.offset(start)..input.offset(rest));
                     arguments.push(argument);
                     // Only update the cursor here, in case it fails earlier
@@ -292,7 +293,8 @@ fn parse_instruction_line<'a, Error: ParseError<&'a str>>(
         }
 
         Ok((cursor, LineContent::Instruction { kind, arguments }))
-    })(rest)
+    })
+    .parse(rest)
 }
 
 /// Parses the content of a line: an instruction or a directive
@@ -302,7 +304,8 @@ fn parse_line_content<'a, Error: ParseError<&'a str>>(
     alt((
         context("directive", parse_directive_line),
         context("instruction", parse_instruction_line),
-    ))(input)
+    ))
+    .parse(input)
 }
 
 /// Parses symbol definitions
@@ -322,7 +325,7 @@ fn parse_line<'a, Error: ParseError<&'a str>>(input: &'a str) -> IResult<&'a str
     // Extract the list of symbol definitions
     let mut cursor = rest;
     let mut symbols = Vec::new();
-    while let (rest, Some(symbol)) = opt(parse_symbol_definition)(cursor)? {
+    while let (rest, Some(symbol)) = opt(parse_symbol_definition).parse(cursor)? {
         // TODO: symbol location includes the colon, maybe we don't want that
         let symbol = symbol.with_location(input.offset(cursor)..input.offset(rest));
         let (rest, _) = space0(rest)?;
@@ -333,7 +336,7 @@ fn parse_line<'a, Error: ParseError<&'a str>>(input: &'a str) -> IResult<&'a str
 
     // Extract the line content
     let start = rest;
-    let (rest, content) = opt(parse_line_content)(rest)?;
+    let (rest, content) = opt(parse_line_content).parse(rest)?;
     let content = content.map(|line| line.with_location(input.offset(start)..input.offset(rest))); // Save location information
     let (rest, _) = space0(rest)?;
 
@@ -353,7 +356,7 @@ fn split_lines<'a, Error: ParseError<&'a str>>(
         // or an empty line (just peek for the line ending & make the result zero-length)
         map(peek(line_ending), |i: &str| &i[..0]),
     ));
-    separated_list1(line_ending, line_parser)(input)
+    separated_list1(line_ending, line_parser).parse(input)
 }
 
 pub(crate) fn parse_program<'a, Error: ParseError<&'a str>>(
@@ -364,7 +367,8 @@ pub(crate) fn parse_program<'a, Error: ParseError<&'a str>>(
     let lines: Result<_, _> = lines
         .into_iter()
         .map(|start| {
-            context("line", all_consuming(parse_line))(start)
+            context("line", all_consuming(parse_line))
+                .parse(start)
                 .map(|(end, line)| line.with_location(input.offset(start)..input.offset(end)))
         })
         .collect();
@@ -516,7 +520,7 @@ main:
                         ..Default::default()
                     }
                     .with_location(60..69),
-                    Line::default().with_location(70..78),
+                    Line::default().with_location(70..70),
                 ]
             }
         );

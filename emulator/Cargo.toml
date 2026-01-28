@@ -19,6 +19,7 @@ camino.workspace = true
 thiserror.workspace = true
 miette.workspace = true
 nom.workspace = true
+nom-language.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 unicode-segmentation.workspace = true

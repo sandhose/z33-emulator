@@ -3,7 +3,7 @@ use nom::bytes::complete::tag_no_case;
 use nom::character::complete::{char, space0};
 use nom::combinator::{map, value};
 use nom::error::context;
-use nom::{Compare, IResult, InputTake, Offset};
+use nom::{Compare, IResult, Input, Offset, Parser};
 use parse_display::{Display, FromStr};
 use thiserror::Error;
 
@@ -64,12 +64,10 @@ impl AstNode for InstructionKind {
     }
 }
 
-pub(crate) fn parse_instruction_kind<Input, Error>(
-    input: Input,
-) -> IResult<Input, InstructionKind, Error>
+pub(crate) fn parse_instruction_kind<I, Error>(input: I) -> IResult<I, InstructionKind, Error>
 where
-    Input: InputTake + Compare<&'static str> + Clone,
-    Error: nom::error::ParseError<Input> + nom::error::ContextError<Input>,
+    I: Input + Compare<&'static str>,
+    Error: nom::error::ParseError<I> + nom::error::ContextError<I>,
 {
     use InstructionKind as K;
 
@@ -114,7 +112,8 @@ where
             context("xor", value(K::Xor, tag_no_case("xor"))),
             context("debugreg", value(K::DebugReg, tag_no_case("debugreg"))),
         )),
-    ))(input)
+    ))
+    .parse(input)
 }
 
 /// Represents an instruction argument
@@ -157,7 +156,8 @@ pub(crate) fn parse_instruction_argument<'a, Error: ParseError<&'a str>>(
         context("indexed memory access", parse_indexed),
         context("indirect memory access", parse_indirect),
         context("direct memory access", parse_direct),
-    ))(input)
+    ))
+    .parse(input)
 }
 
 #[derive(Display, FromStr, Clone, Copy, Debug, PartialEq, Eq)]
@@ -179,12 +179,10 @@ impl AstNode for DirectiveKind {
     }
 }
 
-pub(crate) fn parse_directive_kind<Input, Error>(
-    input: Input,
-) -> IResult<Input, DirectiveKind, Error>
+pub(crate) fn parse_directive_kind<I, Error>(input: I) -> IResult<I, DirectiveKind, Error>
 where
-    Input: InputTake + Compare<&'static str> + Clone,
-    Error: nom::error::ParseError<Input> + nom::error::ContextError<Input>,
+    I: Input + Compare<&'static str>,
+    Error: nom::error::ParseError<I> + nom::error::ContextError<I>,
 {
     use DirectiveKind as K;
 
@@ -193,7 +191,8 @@ where
         context("space", value(K::Space, tag_no_case("space"))),
         context("string", value(K::String, tag_no_case("string"))),
         context("word", value(K::Word, tag_no_case("word"))),
-    ))(input)
+    ))
+    .parse(input)
 }
 
 /// Represents a directive argument
@@ -244,7 +243,8 @@ pub(crate) fn parse_directive_argument<'a, Error: ParseError<&'a str>>(
             "expression",
             map(parse_expression, DirectiveArgument::Expression),
         ),
-    ))(input)
+    ))
+    .parse(input)
 }
 
 impl From<&str> for DirectiveArgument {
@@ -334,7 +334,8 @@ pub fn parse_register<'a, Error: ParseError<&'a str>>(
         context("%pc", value(Reg::PC, tag_no_case("%pc"))),
         context("%sp", value(Reg::SP, tag_no_case("%sp"))),
         context("%sr", value(Reg::SR, tag_no_case("%sr"))),
-    ))(input)
+    ))
+    .parse(input)
 }
 
 fn parse_indexed<'a, Error: ParseError<&'a str>>(
@@ -356,7 +357,7 @@ fn parse_indexed<'a, Error: ParseError<&'a str>>(
     let (rest, _) = space0(rest)?;
 
     let sign_start = rest;
-    let (rest, sign) = alt((value(Plus, char('+')), value(Minus, char('-'))))(rest)?;
+    let (rest, sign) = alt((value(Plus, char('+')), value(Minus, char('-')))).parse(rest)?;
     let (rest, _) = space0(rest)?;
 
     let expression_start = rest;
@@ -371,7 +372,7 @@ fn parse_indexed<'a, Error: ParseError<&'a str>>(
     let value = value.with_location(input.offset(sign_start)..input.offset(rest));
 
     let (rest, _) = space0(rest)?;
-    let (rest, _) = char(']')(rest)?;
+    let (rest, _) = char(']').parse(rest)?;
 
     Ok((rest, InstructionArgument::Indexed { register, value }))
 }

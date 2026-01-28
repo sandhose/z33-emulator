@@ -3,8 +3,8 @@ use std::str::FromStr;
 use nom::branch::alt;
 use nom::character::complete::char;
 use nom::combinator::{all_consuming, map, value};
-use nom::error::{convert_error, VerboseError};
-use nom::{Finish, IResult, Offset};
+use nom::{Finish, IResult, Offset, Parser};
+use nom_language::error::{convert_error, VerboseError};
 use thiserror::Error;
 use z33_emulator::parser::location::Locatable;
 use z33_emulator::parser::{parse_expression, parse_register, ExpressionContext, ExpressionNode};
@@ -67,7 +67,8 @@ fn parse_indexed(input: &str) -> IResult<&str, Argument, VerboseError<&str>> {
     let (rest, sign) = alt((
         value(Plus, char('+')),  // "%a + …"
         value(Minus, char('-')), // "%a - …"
-    ))(rest)?;
+    ))
+    .parse(rest)?;
 
     let start = rest;
     let (rest, mut expr) = parse_expression(rest)?;
@@ -86,11 +87,12 @@ fn parse_address_inner(input: &str) -> IResult<&str, Argument, VerboseError<&str
         map(parse_expression, Argument::Direct),
         parse_indexed,
         map(parse_register, Argument::Indirect),
-    ))(input)
+    ))
+    .parse(input)
 }
 
 fn parse_address(input: &str) -> Result<Argument, VerboseError<&str>> {
-    let (_, ret) = all_consuming(parse_address_inner)(input).finish()?;
+    let (_, ret) = all_consuming(parse_address_inner).parse(input).finish()?;
     Ok(ret)
 }
 
@@ -114,10 +116,13 @@ fn parse_assignment_target_inner(
     alt((
         map(parse_expression, AssignmentTarget::Address),
         map(parse_register, AssignmentTarget::Register),
-    ))(input)
+    ))
+    .parse(input)
 }
 
 fn parse_assignment_target(input: &str) -> Result<AssignmentTarget, VerboseError<&str>> {
-    let (_, ret) = all_consuming(parse_assignment_target_inner)(input).finish()?;
+    let (_, ret) = all_consuming(parse_assignment_target_inner)
+        .parse(input)
+        .finish()?;
     Ok(ret)
 }
