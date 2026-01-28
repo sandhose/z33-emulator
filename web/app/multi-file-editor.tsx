@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Editor, type Monaco, useMonaco } from "@monaco-editor/react";
-import { FilePlusIcon, TrashIcon, UploadIcon } from "@radix-ui/react-icons";
+import { FilePlusIcon, TrashIcon, UploadIcon } from "lucide-react";
 import { Uri } from "monaco-editor/esm/vs/editor/editor.api.js";
 import type * as React from "react";
 import { useState, useSyncExternalStore } from "react";
@@ -300,9 +300,7 @@ export const MultiFileEditor: React.FC<Props> = ({
           onOpenChange={(open) => (open ? compile() : setProgram(null))}
           open={!!program}
         >
-          <PopoverTrigger asChild>
-            <Button type="button">Compile</Button>
-          </PopoverTrigger>
+          <PopoverTrigger render={<Button type="button">Compile</Button>} />
           <PopoverContent>
             {program && (
               <EntrypointSelector
