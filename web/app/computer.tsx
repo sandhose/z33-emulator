@@ -183,9 +183,9 @@ const MemoryViewer = memo(
                         labels={labels}
                       />
                     </div>
-                    {...labels
+                    {...(labels
                       .get(virtualItem.index)
-                      ?.map((l) => <Label key={l} label={l} />) || []}
+                      ?.map((l) => <Label key={l} label={l} />) || [])}
                   </>
                 )}
               </div>
