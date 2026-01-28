@@ -6,7 +6,7 @@ import type * as React from "react";
 import { useState, useSyncExternalStore } from "react";
 import { useForm } from "react-hook-form";
 import { type Computer, InMemoryPreprocessor, Program } from "z33-web-bindings";
-import { z } from "zod";
+import * as z from "zod";
 import { Button } from "./components/ui/button";
 import {
   Form,
@@ -24,6 +24,7 @@ import {
 } from "./components/ui/popover";
 import { Separator } from "./components/ui/separator";
 import { EntrypointSelector } from "./entrypoint-selector";
+import { reportSchema, toMonacoDecoration } from "./report";
 
 type Props = {
   initialFiles: Map<string, string>;
@@ -136,29 +137,6 @@ const UploadFileForm: React.FC<{
 
 const darkMediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
 
-const baseReportSchema = z.object({
-  message: z.string(),
-  severity: z.enum(["error", "warning", "advice"]),
-  causes: z.array(z.string()),
-  filename: z.string(),
-  labels: z.array(
-    z.object({
-      span: z.object({
-        offset: z.number(),
-        length: z.number(),
-      }),
-    }),
-  ),
-});
-
-type ReportSchema = z.infer<typeof baseReportSchema> & {
-  related: ReportSchema[];
-};
-
-export const reportSchema: z.ZodType<ReportSchema> = baseReportSchema.extend({
-  related: z.lazy(() => reportSchema.array()),
-});
-
 export const MultiFileEditor: React.FC<Props> = ({
   initialFiles,
   initialSelected,
@@ -206,8 +184,17 @@ export const MultiFileEditor: React.FC<Props> = ({
     if (program) {
       setProgram(program);
     } else if (report) {
-      const reportObject = reportSchema.parse(JSON.parse(report));
-      console.log(reportObject);
+      try {
+        const reportObject = reportSchema.parse(JSON.parse(report));
+        for (const model of monaco.editor.getModels()) {
+          const decorations = toMonacoDecoration(model, reportObject);
+          console.log(decorations);
+          model.deltaDecorations([], decorations);
+        }
+      } catch (e: unknown) {
+        console.log((e as z.ZodError).toString());
+        return;
+      }
     }
   }
 
