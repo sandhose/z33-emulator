@@ -17,8 +17,8 @@ import { Input } from "./components/ui/input";
 import { Progress } from "./components/ui/progress";
 
 const formSchema = z.object({
-  speed: z.coerce.number().min(1).max(100).default(1),
-  steps: z.coerce.number().min(1).max(1000).default(1),
+  speed: z.number().min(1).max(100).default(1),
+  steps: z.number().min(1).max(1000).default(1),
 });
 
 export const StepForm: React.FC<{ onStep: () => boolean }> = React.memo(
@@ -62,7 +62,7 @@ export const StepForm: React.FC<{ onStep: () => boolean }> = React.memo(
       return () => {};
     }, [speed, running, onStepCallback]);
 
-    const form = useForm<z.infer<typeof formSchema>>({
+    const form = useForm({
       resolver: zodResolver(formSchema),
       defaultValues: { steps: 1, speed: 20 },
     });
