@@ -85,8 +85,7 @@ impl Computer {
     /// If the instruction tries to set the %sr register, it checks if the
     /// processor is running in supervisor mode first.
     #[tracing::instrument(skip(self))]
-    pub(crate) fn set_register(&mut self, reg: &Reg, val: Cell) -> Result<()> {
-        let reg = *reg;
+    pub(crate) fn set_register(&mut self, reg: Reg, val: Cell) -> Result<()> {
         if reg == Reg::SR {
             self.check_privileged()?;
         }

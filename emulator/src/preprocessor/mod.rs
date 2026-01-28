@@ -1,3 +1,5 @@
+#![expect(unused_assignments, reason = "Miette derive generates this")]
+
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Range;
 use std::sync::Arc;
@@ -251,7 +253,7 @@ impl Workspace {
     /// This function will return an error if the file cannot be preprocessed,
     /// like if it has invalid syntax, can't be opened, includes an invalid
     /// file, etc.
-    pub fn preprocess(&self) -> Result<(SourceMap, String), PreprocessorError> {
+    pub fn preprocess(&self) -> Result<(SourceMap<'_>, String), PreprocessorError> {
         let mut ctx = Context::default();
         let chunks = self.preprocess_path(&self.entrypoint, &mut ctx)?;
         let (string, source_map, _) = chunks.into_iter().fold(
@@ -528,7 +530,7 @@ fn valid_defined_expr(input: &[&str]) -> bool {
         return false;
     };
 
-    if iter.peek().map_or(false, |&token| is_space(token)) {
+    if iter.peek().is_some_and(|&token| is_space(token)) {
         // Skip the space
         iter.next();
     }
@@ -537,7 +539,7 @@ fn valid_defined_expr(input: &[&str]) -> bool {
         return false;
     };
 
-    if iter.peek().map_or(false, |&token| is_space(token)) {
+    if iter.peek().is_some_and(|&token| is_space(token)) {
         // Skip the space
         iter.next();
     }
@@ -550,7 +552,7 @@ fn valid_defined_expr(input: &[&str]) -> bool {
         return false;
     }
 
-    if iter.peek().map_or(false, |&token| is_space(token)) {
+    if iter.peek().is_some_and(|&token| is_space(token)) {
         // Skip the space
         iter.next();
     }

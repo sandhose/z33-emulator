@@ -108,8 +108,9 @@ fn get_none(args: Vec<ImmRegDirIndIdx>) -> Result<(), InstructionCompilationErro
 }
 
 #[tracing::instrument]
+#[expect(clippy::too_many_lines)]
 fn compile_instruction(
-    kind: &InstructionKind,
+    kind: InstructionKind,
     arguments: Vec<ImmRegDirIndIdx>,
 ) -> Result<Instruction, InstructionCompilationError> {
     use InstructionKind as K;
@@ -362,7 +363,7 @@ fn compile_placement(labels: &Labels, placement: &Placement) -> Result<Cell, Mem
                 })
                 .collect();
             let arguments = arguments?;
-            let instruction = compile_instruction(&kind.inner, arguments).map_err(|source| {
+            let instruction = compile_instruction(kind.inner, arguments).map_err(|source| {
                 MemoryFillError::InstructionCompilation {
                     location: Range {
                         start: kind.location.start + line_location.start,

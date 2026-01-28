@@ -1,7 +1,3 @@
-#![allow(
-    /* Tsify derive generates this */
-    clippy::empty_docs
-)]
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
@@ -145,6 +141,7 @@ impl InMemoryPreprocessor {
 #[wasm_bindgen]
 #[derive(Clone)]
 pub struct Program {
+    #[allow(dead_code)]
     source_map: ReferencingSourceMap,
     program: z33_emulator::parser::location::Located<z33_emulator::parser::Program>,
 }
@@ -180,7 +177,7 @@ impl Program {
     pub fn compile(&self, entrypoint: &str) -> Result<Computer, JsValue> {
         tracing::info!("Compiling");
         let (computer, debug_info) =
-            compile(self.program.inner.clone(), entrypoint).map_err(|e| format!("{e}"))?;
+            compile(&self.program.inner, entrypoint).map_err(|e| format!("{e}"))?;
 
         let registers = Observable::new(Registers {
             a: Cell::from_runtime_cell(&computer.registers.a),
@@ -201,7 +198,7 @@ impl Program {
 
         Ok(Computer {
             debug_info,
-            computer,
+            inner: computer,
             cycles,
             registers,
             memory,
@@ -220,7 +217,7 @@ pub struct Labels(Vec<String>);
 #[wasm_bindgen]
 pub struct Computer {
     debug_info: z33_emulator::compiler::DebugInfo,
-    computer: z33_emulator::runtime::Computer,
+    inner: z33_emulator::runtime::Computer,
     cycles: Observable<Cycles>,
     registers: Observable<Registers>,
     memory: MemoryObserver,
@@ -285,22 +282,22 @@ impl Computer {
     ///
     /// Returns an error if the step could not be executed.
     pub fn step(&mut self) -> Result<bool, JsValue> {
-        let res = match self.computer.step() {
+        let res = match self.inner.step() {
             Ok(()) => Ok(false),
             Err(ProcessorError::Reset) => Ok(true),
             Err(e) => Err(format!("{e}").into()),
         };
 
         let registers = Registers {
-            a: Cell::from_runtime_cell(&self.computer.registers.a),
-            b: Cell::from_runtime_cell(&self.computer.registers.b),
-            pc: self.computer.registers.pc,
-            sp: self.computer.registers.sp,
-            sr: self.computer.registers.sr.bits(),
+            a: Cell::from_runtime_cell(&self.inner.registers.a),
+            b: Cell::from_runtime_cell(&self.inner.registers.b),
+            pc: self.inner.registers.pc,
+            sp: self.inner.registers.sp,
+            sr: self.inner.registers.sr.bits(),
         };
         self.registers.set(registers);
-        self.cycles.set(Cycles(self.computer.cycles));
-        self.memory.set(self.computer.memory.clone());
+        self.cycles.set(Cycles(self.inner.cycles));
+        self.memory.set(self.inner.memory.clone());
 
         res
     }

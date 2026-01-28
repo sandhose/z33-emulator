@@ -66,7 +66,7 @@ impl RunOpt {
         };
 
         debug!(entrypoint = %self.entrypoint, "Building computer");
-        let (mut computer, debug_info) = match compile(program.inner, &self.entrypoint) {
+        let (mut computer, debug_info) = match compile(&program.inner, &self.entrypoint) {
             Ok(p) => p,
             Err(e) => {
                 // TODO: some cleanup needed

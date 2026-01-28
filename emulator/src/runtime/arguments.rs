@@ -8,9 +8,8 @@ use self::conversions::ArgKind;
 use super::registers::Reg;
 use crate::constants as C;
 
-/**
- * First, individual argument types (`Reg` is defined in
- * `crate::runtime::registers::Reg`)
+/* First, individual argument types
+ * (`Reg` is defined in `crate::runtime::registers::Reg`)
  */
 
 /// An immediate value

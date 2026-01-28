@@ -180,6 +180,7 @@ pub trait Context {
 }
 
 /// An empty context that has no variable defined
+#[allow(unused)]
 pub(crate) struct EmptyContext;
 impl Context for EmptyContext {
     type ExpressionContext = EmptyExpressionContext;

@@ -435,6 +435,6 @@ pub(crate) fn run_interactive(computer: &mut Computer, debug_info: DebugInfo) {
                 // Computer is halted but the user asked to continue, we just warn
                 warn!("Computer is halted. Use \"exit\" to quit");
             }
-        };
+        }
     }
 }

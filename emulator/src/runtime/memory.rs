@@ -27,6 +27,10 @@ pub enum CellError {
 /// Represents a cell in memory and in general purpose registers
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum Cell {
+    /// An empty cell, no value was ever set here,
+    #[default]
+    Empty,
+
     /// An instruction
     ///
     /// The instruction can be a big type, so only a reference is saved here.
@@ -36,10 +40,6 @@ pub enum Cell {
     ///
     /// In contrast, a word is small enough to be copied.
     Word(Word),
-
-    /// An empty cell, no value was ever set here,
-    #[default]
-    Empty,
 }
 
 impl std::fmt::Display for Cell {
@@ -173,7 +173,10 @@ const DEFAULT_CELL_VALUE: Cell = Cell::Empty;
 impl Default for Memory {
     fn default() -> Self {
         Self {
-            inner: Box::new([DEFAULT_CELL_VALUE; MEMORY_SIZE as _]),
+            inner: vec![DEFAULT_CELL_VALUE; MEMORY_SIZE as _]
+                .into_boxed_slice()
+                .try_into()
+                .unwrap(),
         }
     }
 }

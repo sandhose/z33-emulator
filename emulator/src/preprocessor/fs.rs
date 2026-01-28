@@ -63,7 +63,7 @@ impl NativeFilesystem {
         Ok(NativeFilesystem {
             root: std::env::current_dir()?
                 .try_into()
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?,
+                .map_err(std::io::Error::other)?,
         })
     }
 }
