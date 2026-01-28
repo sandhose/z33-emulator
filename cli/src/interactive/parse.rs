@@ -76,7 +76,7 @@ fn parse_indexed(input: &str) -> IResult<&str, Argument, VerboseError<&str>> {
         expr = ExpressionNode::Invert(
             Box::new(expr).with_location(input.offset(start)..input.offset(rest)),
         );
-    };
+    }
 
     Ok((rest, Argument::Indexed(reg, expr)))
 }

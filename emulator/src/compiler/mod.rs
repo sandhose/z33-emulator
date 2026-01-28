@@ -34,7 +34,7 @@ pub enum CompilationError {
 
 #[tracing::instrument(skip(program))]
 pub fn compile(
-    program: Program,
+    program: &Program,
     entrypoint: &str,
 ) -> Result<(Computer, DebugInfo), CompilationError> {
     let layout = self::layout::layout_memory(&program.lines)?;
@@ -61,7 +61,7 @@ pub fn compile(
         labels: layout
             .labels
             .iter()
-            .map(|(key, value)| (key.to_string(), *value))
+            .map(|(key, value)| (key.clone(), *value))
             .collect(),
     };
 

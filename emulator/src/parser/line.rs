@@ -343,7 +343,7 @@ fn parse_line<'a, Error: ParseError<&'a str>>(input: &'a str) -> IResult<&'a str
 
 fn split_lines<'a, Error: ParseError<&'a str>>(
     input: &'a str,
-) -> IResult<&'a str, Vec<&str>, Error> {
+) -> IResult<&'a str, Vec<&'a str>, Error> {
     let line_parser = escaped(none_of("\\\r\n"), '\\', one_of("\\\r\nrnt\""));
     let line_parser = alt((
         // either we have an escaped line

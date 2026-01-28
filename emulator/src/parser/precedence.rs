@@ -17,7 +17,7 @@ pub(crate) trait Precedence: Sized {
     fn precedence(&self) -> usize;
 
     /// Wrap the node in a [`ChildTree`] for display
-    fn with_parent<T: Precedence>(&self, parent: &T) -> ChildTree<Self> {
+    fn with_parent<T: Precedence>(&self, parent: &T) -> ChildTree<'_, Self> {
         ChildTree {
             parent_precedence: parent.precedence(),
             inner: self,
@@ -25,13 +25,13 @@ pub(crate) trait Precedence: Sized {
     }
 }
 
-impl<'a, T: Precedence> ChildTree<'a, T> {
+impl<T: Precedence> ChildTree<'_, T> {
     fn needs_parenthesis(&self) -> bool {
         self.parent_precedence < self.inner.precedence()
     }
 }
 
-impl<'a, T: std::fmt::Display + Precedence> std::fmt::Display for ChildTree<'a, T> {
+impl<T: std::fmt::Display + Precedence> std::fmt::Display for ChildTree<'_, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.needs_parenthesis() {
             write!(f, "({})", self.inner)

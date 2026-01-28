@@ -153,6 +153,7 @@ pub enum Instruction {
 impl Instruction {
     /// Execute the instruction
     #[tracing::instrument(skip(computer))]
+    #[allow(clippy::too_many_lines)]
     pub(crate) fn execute(&self, computer: &mut Computer) -> Result<(), ProcessorError> {
         match self {
             Self::Add(arg, reg) => {
@@ -160,7 +161,7 @@ impl Instruction {
                 let b = reg.extract_word(computer)?;
                 let (res, overflow) = a.overflowing_add(b);
                 debug!("{} + {} = {}", a, b, res);
-                computer.set_register(reg, res.into())?;
+                computer.set_register(*reg, res.into())?;
 
                 computer
                     .registers
@@ -173,7 +174,7 @@ impl Instruction {
                 let b = reg.extract_word(computer)?;
                 let res = a & b;
                 debug!("{} & {} = {}", a, b, res);
-                computer.set_register(reg, res.into())?;
+                computer.set_register(*reg, res.into())?;
             }
 
             Self::Call(arg) => {
@@ -206,7 +207,7 @@ impl Instruction {
                 let b = reg.extract_word(computer)?;
                 let res = b.checked_div(a).ok_or(Exception::DivByZero)?;
                 debug!("{} / {} = {}", b, a, res);
-                computer.set_register(reg, res.into())?;
+                computer.set_register(*reg, res.into())?;
             }
 
             Self::Fas(addr, reg) => {
@@ -214,7 +215,7 @@ impl Instruction {
                 let cell = computer.memory.get_mut(addr)?;
                 let val = cell.clone();
                 *cell = Cell::Word(1);
-                computer.set_register(reg, val)?;
+                computer.set_register(*reg, val)?;
             }
 
             Self::In(_, _) => {
@@ -286,7 +287,7 @@ impl Instruction {
 
             Self::Ld(arg, reg) => {
                 let val = arg.extract_cell(computer)?;
-                computer.set_register(reg, val)?;
+                computer.set_register(*reg, val)?;
             }
 
             Self::Mul(arg, reg) => {
@@ -294,7 +295,7 @@ impl Instruction {
                 let b = reg.extract_word(computer)?;
                 let (res, overflow) = a.overflowing_mul(b);
                 debug!("{} * {} = {}", a, b, res);
-                computer.set_register(reg, res.into())?;
+                computer.set_register(*reg, res.into())?;
 
                 computer
                     .registers
@@ -307,7 +308,7 @@ impl Instruction {
                 let res = -val;
                 let res = res as Word;
                 debug!("-{} = {}", val, res);
-                computer.set_register(reg, res.into())?;
+                computer.set_register(*reg, res.into())?;
             }
 
             Self::Nop => {}
@@ -316,7 +317,7 @@ impl Instruction {
                 let val = reg.extract_word(computer)?;
                 let res = !val;
                 debug!("!{} = {}", val, res);
-                computer.set_register(reg, res.into())?;
+                computer.set_register(*reg, res.into())?;
             }
 
             Self::Or(arg, reg) => {
@@ -324,7 +325,7 @@ impl Instruction {
                 let b = reg.extract_word(computer)?;
                 let res = a | b;
                 debug!("{} | {} = {}", a, b, res);
-                computer.set_register(reg, res.into())?;
+                computer.set_register(*reg, res.into())?;
             }
 
             Self::Out(_, _) => {
@@ -335,7 +336,7 @@ impl Instruction {
             Self::Pop(reg) => {
                 let val = computer.pop()?.clone();
                 debug!("pop => {:?}", val);
-                computer.set_register(reg, val)?;
+                computer.set_register(*reg, val)?;
             }
 
             Self::Push(val) => {
@@ -376,7 +377,7 @@ impl Instruction {
                 let res = a.checked_shl(b).ok_or(Exception::InvalidInstruction)?;
 
                 debug!("{} << {} = {}", a, b, res);
-                computer.set_register(reg, res.into())?;
+                computer.set_register(*reg, res.into())?;
             }
 
             Self::Shr(arg, reg) => {
@@ -387,7 +388,7 @@ impl Instruction {
                 let res = a.checked_shr(b).ok_or(Exception::InvalidInstruction)?;
 
                 debug!("{} >> {} = {}", a, b, res);
-                computer.set_register(reg, res.into())?;
+                computer.set_register(*reg, res.into())?;
             }
 
             Self::St(reg, address) => {
@@ -400,7 +401,7 @@ impl Instruction {
                 let a = arg.extract_word(computer)?;
                 let b = reg.extract_word(computer)?;
                 let (res, overflow) = b.overflowing_sub(a);
-                computer.set_register(reg, res.into())?;
+                computer.set_register(*reg, res.into())?;
 
                 debug!("{} - {} = {}", b, a, res);
 
@@ -416,12 +417,12 @@ impl Instruction {
                 let value2 = reg.extract_cell(computer)?;
 
                 // And set the value of the register specified by the second argument
-                computer.set_register(reg, value)?;
+                computer.set_register(*reg, value)?;
 
                 // Then handle the two kind of cases: a register and a memory address
                 if let RegDirIndIdx::Reg(arg) = arg {
                     // Set the value of the register by the first argument
-                    computer.set_register(arg, value2)?;
+                    computer.set_register(*arg, value2)?;
                 } else {
                     // Convert the reg/dir/ind/idx arg to only dir/ind/idx, since we already
                     // handled the reg case. Despite the unwrap, this should never fail.
@@ -442,13 +443,13 @@ impl Instruction {
                 let b = reg.extract_word(computer)?;
                 let res = a ^ b;
                 debug!("{} ^ {} = {}", a, b, res);
-                computer.set_register(reg, res.into())?;
+                computer.set_register(*reg, res.into())?;
             }
 
             Self::DebugReg => {
                 info!("debugreg: {}", computer.registers);
             }
-        };
+        }
 
         Ok(())
     }

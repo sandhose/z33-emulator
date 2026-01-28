@@ -88,7 +88,7 @@ impl Registers {
                 self.sp = C::Address::try_from(&value)?;
             }
             Reg::SR => self.sr = StatusRegister::from_bits_retain(C::Word::try_from(&value)?),
-        };
+        }
         Ok(())
     }
 }

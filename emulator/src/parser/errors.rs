@@ -1,3 +1,8 @@
+#![expect(
+    unused_assignments,
+    reason = "Looks like miette error derive generates this"
+)]
+
 use std::num::ParseIntError;
 
 use miette::SourceOffset;
