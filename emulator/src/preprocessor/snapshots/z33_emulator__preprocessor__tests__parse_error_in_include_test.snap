@@ -5,7 +5,8 @@ expression: report
   x Failed to process included file
   `->   x Failed to parse file
       
-      Error:   x invalid syntax
+      Error:
+        x invalid syntax
          ,-[/invalid.S:2:1]
        1 | hello
        2 | #else

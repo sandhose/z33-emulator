@@ -3,7 +3,7 @@ use nom::bytes::complete::{tag, take_till};
 use nom::character::complete::{char, line_ending, not_line_ending, space0, space1};
 use nom::combinator::{fail, map, not, opt};
 use nom::sequence::preceded;
-use nom::{IResult, Offset};
+use nom::{IResult, Offset, Parser};
 
 use super::literal::parse_string_literal;
 use super::location::{Locatable, Located};
@@ -78,7 +78,7 @@ impl Node {
 /// line ending
 fn eat_end_of_line<'a, Error: ParseError<&'a str>>(input: &'a str) -> IResult<&'a str, (), Error> {
     let (rest, _) = space0(input)?;
-    let (rest, _) = opt(preceded(tag("//"), not_line_ending))(rest)?;
+    let (rest, _) = opt(preceded(tag("//"), not_line_ending)).parse(rest)?;
     Ok((rest, ()))
 }
 
@@ -141,8 +141,10 @@ fn parse_definition<'a, Error: ParseError<&'a str>>(
         let content = content
             .to_owned()
             .with_location(input.offset(start)..input.offset(rest));
+
         Ok((rest, content))
-    })(rest)?;
+    })
+    .parse(rest)?;
 
     let (rest, ()) = eat_end_of_line(rest)?;
 
@@ -259,7 +261,8 @@ fn parse_condition<'a, Error: ParseError<&'a str>>(
                 Ok((rest, ElseIf(condition)))
             },
             map(tag("else"), |_| Else),
-        ))(rest)?;
+        ))
+        .parse(rest)?;
 
         let (rest, ()) = eat_end_of_line(rest)?;
 
@@ -296,7 +299,7 @@ fn parse_condition<'a, Error: ParseError<&'a str>>(
 }
 
 fn parse_raw<'a, Error: ParseError<&'a str>>(input: &'a str) -> IResult<&'a str, Node, Error> {
-    let (rest, ()) = not(char('#'))(input)?;
+    let (rest, ()) = not(char('#')).parse(input)?;
     let (rest, content) = not_line_ending(rest)?;
     // Strip the comment from the content
     let content = if let Some(i) = content.find("//") {
@@ -312,7 +315,7 @@ fn parse_chunk<'a, Error: ParseError<&'a str>>(input: &'a str) -> IResult<&'a st
     // If we're at the end of the input, just stop parsing,
     // so that we don't emit an empty raw node
     if input.is_empty() {
-        return fail(input);
+        return fail().parse(input);
     }
 
     alt((
@@ -322,7 +325,8 @@ fn parse_chunk<'a, Error: ParseError<&'a str>>(input: &'a str) -> IResult<&'a st
         parse_condition,  // #if X ... [#elif Y ...] [#else Z ...] #endif
         parse_error,      // #error "X"
         parse_raw,        // anything else
-    ))(input)
+    ))
+    .parse(input)
 }
 
 pub(crate) fn parse<'a, Error: ParseError<&'a str>>(
@@ -331,7 +335,7 @@ pub(crate) fn parse<'a, Error: ParseError<&'a str>>(
     let mut chunks = Vec::new();
     let mut cursor = input;
 
-    while let (rest, Some(chunk)) = opt(parse_chunk)(cursor)? {
+    while let (rest, Some(chunk)) = opt(parse_chunk).parse(cursor)? {
         let record_line_ending = chunk.should_record_line_ending();
         let chunk = chunk.with_location(input.offset(cursor)..input.offset(rest));
         chunks.push(chunk);

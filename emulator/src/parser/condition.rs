@@ -22,7 +22,7 @@ use nom::branch::alt;
 use nom::bytes::complete::{tag, tag_no_case};
 use nom::character::complete::{char, space0};
 use nom::combinator::{cut, map, opt, value};
-use nom::{IResult, Offset};
+use nom::{IResult, Offset, Parser};
 use thiserror::Error;
 
 use super::expression::{
@@ -298,7 +298,8 @@ fn parse_logical_or_rec<'a, Error: ParseError<&'a str>>(
         let (rest, node) = parse_logical_and(rest)?;
         let node = Box::new(node).with_location(input.offset(start)..input.offset(rest));
         Ok((rest, node))
-    })(rest)
+    })
+    .parse(rest)
 }
 
 /// Parse a logical "or" operation
@@ -307,7 +308,7 @@ fn parse_logical_or<'a, Error: ParseError<&'a str>>(
 ) -> IResult<&'a str, Node, Error> {
     let (mut cursor, mut node) = parse_logical_and(input)?;
 
-    while let (rest, Some(right)) = opt(parse_logical_or_rec)(cursor)? {
+    while let (rest, Some(right)) = opt(parse_logical_or_rec).parse(cursor)? {
         let offset = input.offset(cursor);
         // Wrap the "left" node with location information
         let left = Box::new(node).with_location(0..offset);
@@ -336,7 +337,8 @@ fn parse_logical_and_rec<'a, Error: ParseError<&'a str>>(
         let (rest, node) = parse_logical_expression(rest)?;
         let node = Box::new(node).with_location(input.offset(start)..input.offset(rest));
         Ok((rest, node))
-    })(rest)
+    })
+    .parse(rest)
 }
 
 /// Parse a logical "and" operation
@@ -345,7 +347,7 @@ fn parse_logical_and<'a, Error: ParseError<&'a str>>(
 ) -> IResult<&'a str, Node, Error> {
     let (mut cursor, mut node) = parse_logical_expression(input)?;
 
-    while let (rest, Some(right)) = opt(parse_logical_and_rec)(cursor)? {
+    while let (rest, Some(right)) = opt(parse_logical_and_rec).parse(cursor)? {
         let offset = input.offset(cursor);
         // Wrap the "left" node with location information
         let left = Box::new(node).with_location(0..offset);
@@ -372,13 +374,14 @@ fn parse_logical_not<'a, Error: ParseError<&'a str>>(
         let (rest, node) = parse_atom(rest)?;
         let node = Box::new(node).with_location(input.offset(start)..input.offset(rest));
         Ok((rest, Node::Not(node)))
-    })(rest)
+    })
+    .parse(rest)
 }
 
 fn parse_logical_expression<'a, Error: ParseError<&'a str>>(
     input: &'a str,
 ) -> IResult<&'a str, Node, Error> {
-    alt((parse_logical_not, parse_atom))(input)
+    alt((parse_logical_not, parse_atom)).parse(input)
 }
 
 fn parse_atom<'a, Error: ParseError<&'a str>>(input: &'a str) -> IResult<&'a str, Node, Error> {
@@ -392,7 +395,8 @@ fn parse_atom<'a, Error: ParseError<&'a str>>(input: &'a str) -> IResult<&'a str
         map(parse_defined, Node::Defined),
         map(parse_bool_literal, Node::Literal),
         parse_number_comparison,
-    ))(input)
+    ))
+    .parse(input)
 }
 
 fn parse_number_comparison<'a, Error: ParseError<&'a str>>(
@@ -420,7 +424,8 @@ fn parse_number_comparison<'a, Error: ParseError<&'a str>>(
         value(Comparison::GreaterThan, tag(">")),
         value(Comparison::LesserOrEqual, tag("<=")),
         value(Comparison::LesserThan, tag("<")),
-    ))(rest)?;
+    ))
+    .parse(rest)?;
     let (rest, _) = space0(rest)?;
 
     cut(move |rest: &'a str| {
@@ -440,7 +445,8 @@ fn parse_number_comparison<'a, Error: ParseError<&'a str>>(
         };
 
         Ok((rest, node))
-    })(rest)
+    })
+    .parse(rest)
 }
 
 fn parse_defined<'a, Error: ParseError<&'a str>>(
@@ -460,7 +466,8 @@ fn parse_defined<'a, Error: ParseError<&'a str>>(
         let (rest, _) = space0(rest)?;
         let (rest, _) = char(')')(rest)?;
         Ok((rest, identifier))
-    })(rest)
+    })
+    .parse(rest)
 }
 
 fn parse_parenthesis<'a, Error: ParseError<&'a str>>(
@@ -478,7 +485,8 @@ fn parse_parenthesis<'a, Error: ParseError<&'a str>>(
         let (rest, _) = space0(rest)?;
         let (rest, _) = char(')')(rest)?;
         Ok((rest, value))
-    })(rest)
+    })
+    .parse(rest)
 }
 
 #[cfg(test)]

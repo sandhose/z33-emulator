@@ -7,7 +7,7 @@ use std::sync::Arc;
 use camino::{Utf8Path, Utf8PathBuf};
 use miette::{Diagnostic, NamedSource, SourceSpan};
 use nom::combinator::all_consuming;
-use nom::{Finish, Offset};
+use nom::{Finish, Offset, Parser};
 use thiserror::Error;
 use tracing::warn;
 use unicode_segmentation::UnicodeSegmentation;
@@ -204,7 +204,8 @@ impl Workspace {
 
         // Parse the file content
         let source_str = source.as_str();
-        let content = all_consuming(parse)(source_str)
+        let content = all_consuming(parse)
+            .parse(source_str)
             .finish()
             .map(|(_rest, chunks)| {
                 // We parsed the chunks, now we find inclusions and resolve them

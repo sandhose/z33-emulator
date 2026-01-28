@@ -11,7 +11,7 @@ use nom::bytes::complete::{escaped_transform, tag_no_case, take_while1};
 use nom::character::complete::{char, line_ending, none_of};
 use nom::combinator::{cut, map_res, value};
 use nom::error::{FromExternalError, ParseError};
-use nom::{AsChar, Compare, IResult, InputTake, InputTakeAtPosition};
+use nom::{AsChar, Compare, IResult, Input, Parser};
 
 /// Parse a string literal
 pub fn parse_string_literal<'a, Error: ParseError<&'a str>>(
@@ -24,7 +24,8 @@ pub fn parse_string_literal<'a, Error: ParseError<&'a str>>(
             value("\\", char('\\')),
             value("\"", char('"')),
             value("\n", char('n')),
-        ))(input)
+        ))
+        .parse(input)
     })(input)?;
     let (input, _) = char('"')(input)?;
     Ok((input, string))
@@ -33,12 +34,13 @@ pub fn parse_string_literal<'a, Error: ParseError<&'a str>>(
 /// Parse a bool literal (true or false)
 pub fn parse_bool_literal<I, Error: ParseError<I>>(input: I) -> IResult<I, bool, Error>
 where
-    I: InputTake + Compare<&'static str> + Clone,
+    I: Input + Compare<&'static str>,
 {
     alt((
         value(true, tag_no_case("true")),
         value(false, tag_no_case("false")),
-    ))(input)
+    ))
+    .parse(input)
 }
 
 /// Parse a decimal number
@@ -70,12 +72,12 @@ fn is_hex_digit<C: AsChar>(c: C) -> bool {
 /// Extract a hexadecimal literal
 fn parse_hexadecimal_literal<I, Error>(input: I) -> IResult<I, u64, Error>
 where
-    I: InputTakeAtPosition + InputTake + Compare<&'static str> + AsRef<str> + Clone,
-    <I as InputTakeAtPosition>::Item: AsChar,
+    I: Input + Compare<&'static str> + AsRef<str>,
+    <I as Input>::Item: AsChar,
     Error: ParseError<I> + FromExternalError<I, ParseIntError>,
 {
     let (input, _) = tag_no_case("0x")(input)?;
-    cut(map_res(take_while1(is_hex_digit), from_hexadecimal))(input)
+    cut(map_res(take_while1(is_hex_digit), from_hexadecimal)).parse(input)
 }
 
 /// Parse an octal number
@@ -94,12 +96,12 @@ fn is_oct_digit<C: AsChar>(c: C) -> bool {
 /// Extract an octal literal
 fn parse_octal_literal<I, Error>(input: I) -> IResult<I, u64, Error>
 where
-    I: InputTakeAtPosition + InputTake + Compare<&'static str> + AsRef<str> + Clone,
-    <I as InputTakeAtPosition>::Item: AsChar,
+    I: Input + Compare<&'static str> + AsRef<str>,
+    <I as Input>::Item: AsChar,
     Error: ParseError<I> + FromExternalError<I, ParseIntError>,
 {
     let (input, _) = tag_no_case("0o")(input)?;
-    cut(map_res(take_while1(is_oct_digit), from_octal))(input)
+    cut(map_res(take_while1(is_oct_digit), from_octal)).parse(input)
 }
 
 /// Parse a binary number
@@ -118,19 +120,19 @@ fn is_bin_digit<C: AsChar>(c: C) -> bool {
 /// Extract a binary literal
 fn parse_binary_literal<I, Error>(input: I) -> IResult<I, u64, Error>
 where
-    I: InputTakeAtPosition + InputTake + Compare<&'static str> + AsRef<str> + Clone,
-    <I as InputTakeAtPosition>::Item: AsChar,
+    I: Input + Compare<&'static str> + AsRef<str>,
+    <I as Input>::Item: AsChar,
     Error: ParseError<I> + FromExternalError<I, ParseIntError>,
 {
     let (input, _) = tag_no_case("0b")(input)?;
-    cut(map_res(take_while1(is_bin_digit), from_binary))(input)
+    cut(map_res(take_while1(is_bin_digit), from_binary)).parse(input)
 }
 
 /// Parse a number literal
 pub fn parse_number_literal<I, Error>(input: I) -> IResult<I, u64, Error>
 where
-    I: InputTakeAtPosition + InputTake + Compare<&'static str> + AsRef<str> + Clone,
-    <I as InputTakeAtPosition>::Item: AsChar,
+    I: Input + Compare<&'static str> + AsRef<str>,
+    <I as Input>::Item: AsChar,
     Error: ParseError<I> + FromExternalError<I, ParseIntError>,
 {
     alt((
@@ -138,7 +140,7 @@ where
         parse_octal_literal,
         parse_binary_literal,
         map_res(take_while1(is_digit), from_decimal),
-    ))(input)
+    )).parse(input)
 }
 
 #[cfg(test)]

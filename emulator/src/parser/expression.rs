@@ -26,7 +26,7 @@ use nom::bytes::complete::tag;
 use nom::character::complete::{char, space0};
 use nom::combinator::{cut, map, not, opt, value};
 use nom::error::context;
-use nom::{IResult, Offset};
+use nom::{IResult, Offset, Parser};
 use thiserror::Error;
 
 use super::literal::parse_number_literal;
@@ -365,7 +365,7 @@ fn parse_or_rec<'a, Error: ParseError<&'a str>>(
     let (rest, _) = space0(input)?;
     let (rest, _) = char('|')(rest)?;
     // Check if it's not a "||" to avoid conflict with boolean operations
-    let (rest, ()) = not(char('|'))(rest)?;
+    let (rest, ()) = not(char('|')).parse(rest)?;
     let (rest, _) = space0(rest)?;
 
     cut(move |rest: &'a str| {
@@ -373,14 +373,15 @@ fn parse_or_rec<'a, Error: ParseError<&'a str>>(
         let (rest, node) = parse_and(rest)?;
         let node = Box::new(node).with_location(input.offset(start)..input.offset(rest));
         Ok((rest, node))
-    })(rest)
+    })
+    .parse(rest)
 }
 
 /// Parse a bitwise "or" operation
 fn parse_or<'a, Error: ParseError<&'a str>>(input: &'a str) -> IResult<&'a str, Node, Error> {
     let (mut cursor, mut node) = parse_and(input)?;
 
-    while let (rest, Some(right)) = opt(parse_or_rec)(cursor)? {
+    while let (rest, Some(right)) = opt(parse_or_rec).parse(cursor)? {
         let offset = input.offset(cursor);
         // Wrap the "left" node with location information
         let left = Box::new(node).with_location(0..offset);
@@ -403,7 +404,7 @@ fn parse_and_rec<'a, Error: ParseError<&'a str>>(
     let (rest, _) = space0(input)?;
     let (rest, _) = char('&')(rest)?;
     // Check if it's not a "&&" to avoid conflict with boolean operations
-    let (rest, ()) = not(char('&'))(rest)?;
+    let (rest, ()) = not(char('&')).parse(rest)?;
     let (rest, _) = space0(rest)?;
 
     cut(move |rest: &'a str| {
@@ -411,14 +412,15 @@ fn parse_and_rec<'a, Error: ParseError<&'a str>>(
         let (rest, node) = parse_shift(rest)?;
         let node = Box::new(node).with_location(input.offset(start)..input.offset(rest));
         Ok((rest, node))
-    })(rest)
+    })
+    .parse(rest)
 }
 
 /// Parse a bitwise "and" operation
 fn parse_and<'a, Error: ParseError<&'a str>>(input: &'a str) -> IResult<&'a str, Node, Error> {
     let (mut cursor, mut node) = parse_shift(input)?;
 
-    while let (rest, Some(right)) = opt(parse_and_rec)(cursor)? {
+    while let (rest, Some(right)) = opt(parse_and_rec).parse(cursor)? {
         let offset = input.offset(cursor);
         // Wrap the "left" node with location information
         let left = Box::new(node).with_location(0..offset);
@@ -451,7 +453,8 @@ fn parse_shift_rec<'a, Error: ParseError<&'a str>>(
     let (rest, op) = alt((
         context(">>", value(ShiftOp::Right, tag(">>"))),
         context("<<", value(ShiftOp::Left, tag("<<"))),
-    ))(rest)?;
+    ))
+    .parse(rest)?;
     let (rest, _) = space0(rest)?;
 
     cut(move |rest: &'a str| {
@@ -459,14 +462,15 @@ fn parse_shift_rec<'a, Error: ParseError<&'a str>>(
         let (rest, node) = parse_sum(rest)?;
         let node = Box::new(node).with_location(input.offset(start)..input.offset(rest));
         Ok((rest, (op, node)))
-    })(rest)
+    })
+    .parse(rest)
 }
 
 /// Parse a bitshift operation
 fn parse_shift<'a, Error: ParseError<&'a str>>(input: &'a str) -> IResult<&'a str, Node, Error> {
     let (mut cursor, mut node) = parse_sum(input)?;
 
-    if let (rest, Some((op, right))) = opt(parse_shift_rec)(cursor)? {
+    if let (rest, Some((op, right))) = opt(parse_shift_rec).parse(cursor)? {
         let offset = input.offset(cursor);
         // Wrap the "left" node with location information
         let left = Box::new(node).with_location(0..offset);
@@ -501,7 +505,8 @@ fn parse_sum_rec<'a, Error: ParseError<&'a str>>(
     let (rest, op) = alt((
         value(SumOp::Sum, char('+')), // Add
         value(SumOp::Sub, char('-')), // Substract
-    ))(rest)?;
+    ))
+    .parse(rest)?;
     let (rest, _) = space0(rest)?;
 
     cut(move |rest: &'a str| {
@@ -509,14 +514,15 @@ fn parse_sum_rec<'a, Error: ParseError<&'a str>>(
         let (rest, node) = parse_mul(rest)?;
         let node = Box::new(node).with_location(input.offset(start)..input.offset(rest));
         Ok((rest, (op, node)))
-    })(rest)
+    })
+    .parse(rest)
 }
 
 /// Parse a sum/sub operation
 fn parse_sum<'a, Error: ParseError<&'a str>>(input: &'a str) -> IResult<&'a str, Node, Error> {
     let (mut cursor, mut node) = parse_mul(input)?;
 
-    while let (rest, Some((op, right))) = opt(parse_sum_rec)(cursor)? {
+    while let (rest, Some((op, right))) = opt(parse_sum_rec).parse(cursor)? {
         let offset = input.offset(cursor);
         // Wrap the "left" node with location information
         let left = Box::new(node).with_location(0..offset);
@@ -551,7 +557,8 @@ fn parse_mul_rec<'a, Error: ParseError<&'a str>>(
     let (rest, op) = alt((
         value(MulOp::Mul, char('*')), // Multiply
         value(MulOp::Div, char('/')), // Divide
-    ))(rest)?;
+    ))
+    .parse(rest)?;
     let (rest, _) = space0(rest)?;
 
     cut(move |rest: &'a str| {
@@ -559,14 +566,15 @@ fn parse_mul_rec<'a, Error: ParseError<&'a str>>(
         let (rest, node) = parse_unary(rest)?;
         let node = Box::new(node).with_location(input.offset(start)..input.offset(rest));
         Ok((rest, (op, node)))
-    })(rest)
+    })
+    .parse(rest)
 }
 
 /// Parse a multiply/divide operation
 fn parse_mul<'a, Error: ParseError<&'a str>>(input: &'a str) -> IResult<&'a str, Node, Error> {
     let (mut cursor, mut node) = parse_unary(input)?;
 
-    while let (rest, Some((op, right))) = opt(parse_mul_rec)(cursor)? {
+    while let (rest, Some((op, right))) = opt(parse_mul_rec).parse(cursor)? {
         let offset = input.offset(cursor);
         // Wrap the "left" node with location information
         let left = Box::new(node).with_location(0..offset);
@@ -595,7 +603,8 @@ fn parse_invert<'a, Error: ParseError<&'a str>>(input: &'a str) -> IResult<&'a s
         let (rest, node) = parse_atom(rest)?;
         let node = Box::new(node).with_location(input.offset(start)..input.offset(rest));
         Ok((rest, Node::Invert(node)))
-    })(rest)
+    })
+    .parse(rest)
 }
 
 fn parse_binary_not<'a, Error: ParseError<&'a str>>(
@@ -609,12 +618,13 @@ fn parse_binary_not<'a, Error: ParseError<&'a str>>(
         let (rest, node) = parse_atom(rest)?;
         let node = Box::new(node).with_location(input.offset(start)..input.offset(rest));
         Ok((rest, Node::BinaryNot(node)))
-    })(rest)
+    })
+    .parse(rest)
 }
 
 /// Parse unary operations (negation and bit inversion)
 fn parse_unary<'a, Error: ParseError<&'a str>>(input: &'a str) -> IResult<&'a str, Node, Error> {
-    alt((parse_invert, parse_binary_not, parse_atom))(input)
+    alt((parse_invert, parse_binary_not, parse_atom)).parse(input)
 }
 
 /// Parse an atom of an expression: either a literal or a full expression within
@@ -630,7 +640,8 @@ fn parse_atom<'a, Error: ParseError<&'a str>>(input: &'a str) -> IResult<&'a str
             map(parse_identifier, |i| Node::Variable(i.into())),
         ),
         parse_parenthesis,
-    ))(input)
+    ))
+    .parse(input)
 }
 
 /// Parse an expression surrounded by parenthesis
@@ -649,7 +660,8 @@ fn parse_parenthesis<'a, Error: ParseError<&'a str>>(
         let (rest, _) = space0(rest)?;
         let (rest, _) = char(')')(rest)?;
         Ok((rest, value))
-    })(rest)
+    })
+    .parse(rest)
 }
 
 /// Parse an expression, returning its AST
