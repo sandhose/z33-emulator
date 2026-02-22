@@ -25,15 +25,15 @@ module_name_repetitions = "allow"
 
 [workspace.dependencies]
 anstyle = "1.0.13"
-anyhow = "1.0.100"
-bitflags = "2.10.0"
+anyhow = "1.0.102"
+bitflags = "2.11.0"
 camino = { version = "1.2.2", features = ["serde1"] }
-clap = { version = "4.5.55", features = ["derive"] }
-clap_complete = "4.5.65"
+clap = { version = "4.5.60", features = ["derive"] }
+clap_complete = "4.5.66"
 console_error_panic_hook = "0.1.7"
 indoc = "2.0.7"
-insta = "1.46.1"
-js-sys = "0.3.85"
+insta = "1.46.3"
+js-sys = "0.3.88"
 miette = "7.6.0"
 nom = "8.0.0"
 nom-language = "0.1.0"
@@ -50,7 +50,7 @@ tracing-subscriber = { version = "0.3.22", features = ["env-filter", "json"] }
 tracing-wasm = "0.2.1"
 tsify = { version = "0.5.6", features = ["js"], default-features = false }
 unicode-segmentation = "1.12.0"
-wasm-bindgen = "0.2.108"
+wasm-bindgen = "0.2.111"
 z33-emulator = { path = "emulator" }
 
 [profile.release]
