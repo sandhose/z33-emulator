@@ -144,7 +144,7 @@ export const FileSidebar: React.FC<FileSidebarProps> = ({
 
   return (
     <div className="flex flex-col w-48 border-r border-border">
-      <div className="flex items-center justify-between px-2 py-1">
+      <div className="flex items-center justify-between px-3 py-2">
         <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Files
         </span>
@@ -205,7 +205,7 @@ export const FileSidebar: React.FC<FileSidebarProps> = ({
           >
             <button
               type="button"
-              className="flex-1 px-2 py-1 text-left text-sm font-mono truncate"
+              className="flex-1 px-3 py-1.5 text-left text-sm font-mono truncate"
               onClick={() => setActiveFile(name)}
             >
               {name}

@@ -221,7 +221,7 @@ const App = () => {
             </div>
             {compilationStatus !== "idle" &&
               compilationStatus !== "pending" && (
-                <div className="px-3 py-1.5 border-t border-border text-xs flex items-center gap-1.5 shrink-0">
+                <div className="px-6 py-4 border-t border-border text-xs flex items-center gap-2 shrink-0">
                   {compilationStatus === "error" ? (
                     <>
                       <XCircleIcon className="shrink-0 size-3.5 text-destructive" />
