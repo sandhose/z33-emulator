@@ -1,6 +1,6 @@
 import { XIcon } from "lucide-react";
 import { memo } from "react";
-import type { Computer, SourceMap } from "z33-web-bindings";
+import type { SourceMap } from "z33-web-bindings";
 import { Button } from "./components/ui/button";
 import {
   Table,
@@ -11,16 +11,11 @@ import {
   TableRow,
 } from "./components/ui/table";
 import { CellView, type Labels, Word, useRegisters } from "./computer";
-
-type DebugSidebarProps = {
-  computer: Computer;
-  sourceMap: SourceMap;
-  labels: Labels;
-  onClose: () => void;
-};
+import type { ComputerInterface } from "./computer";
+import { useAppStore } from "./stores/app-store";
 
 const SourceLocationSection: React.FC<{
-  computer: Computer;
+  computer: ComputerInterface;
   sourceMap: SourceMap;
 }> = ({ computer, sourceMap }) => {
   const registers = useRegisters(computer);
@@ -50,7 +45,7 @@ const SourceLocationSection: React.FC<{
 };
 
 const RegisterSection: React.FC<{
-  computer: Computer;
+  computer: ComputerInterface;
   labels: Labels;
 }> = ({ computer, labels }) => {
   const registers = useRegisters(computer);
@@ -101,7 +96,7 @@ const RegisterSection: React.FC<{
 };
 
 const LabelSection: React.FC<{
-  computer: Computer;
+  computer: ComputerInterface;
 }> = ({ computer }) => (
   <div className="px-3 py-2">
     <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">
@@ -118,24 +113,31 @@ const LabelSection: React.FC<{
   </div>
 );
 
-export const DebugSidebar: React.FC<DebugSidebarProps> = memo(
-  ({ computer, sourceMap, labels, onClose }) => (
-    <div className="flex flex-col h-full overflow-auto border-l border-border">
-      <div className="flex items-center justify-between px-3 py-1 border-b border-border bg-muted/30">
-        <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Debug
-        </span>
-        <Button variant="ghost" size="icon-xs" onClick={onClose}>
-          <XIcon />
-        </Button>
-      </div>
+export const DebugSidebar: React.FC<{ onClose: () => void }> = memo(
+  ({ onClose }) => {
+    const mode = useAppStore((s) => s.mode);
 
-      <div className="flex-1 overflow-auto divide-y divide-border">
-        <SourceLocationSection computer={computer} sourceMap={sourceMap} />
-        <RegisterSection computer={computer} labels={labels} />
-        <LabelSection computer={computer} />
+    if (mode.type !== "debug") return null;
+    const { computer, sourceMap, labels } = mode;
+
+    return (
+      <div className="flex flex-col h-full overflow-auto border-l border-border">
+        <div className="flex items-center justify-between px-3 py-1 border-b border-border bg-muted/30">
+          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Debug
+          </span>
+          <Button variant="ghost" size="icon-xs" onClick={onClose}>
+            <XIcon />
+          </Button>
+        </div>
+
+        <div className="flex-1 overflow-auto divide-y divide-border">
+          <SourceLocationSection computer={computer} sourceMap={sourceMap} />
+          <RegisterSection computer={computer} labels={labels} />
+          <LabelSection computer={computer} />
+        </div>
       </div>
-    </div>
-  ),
+    );
+  },
 );
 DebugSidebar.displayName = "DebugSidebar";

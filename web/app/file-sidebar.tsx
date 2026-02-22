@@ -1,4 +1,3 @@
-import type { Monaco } from "@monaco-editor/react";
 import {
   FilePlusIcon,
   RotateCcwIcon,
@@ -6,16 +5,26 @@ import {
   TrashIcon,
   UploadIcon,
 } from "lucide-react";
-import type { Uri } from "monaco-editor/esm/vs/editor/editor.api.js";
 import type * as React from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "./components/ui/button";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "./components/ui/tooltip";
-import { saveWorkspace } from "./file-store";
+import { useAppStore } from "./stores/app-store";
+import { useFileStore } from "./stores/file-store";
+
+const sampleFiles = Object.fromEntries(
+  Object.entries(
+    import.meta.glob<string>("../../samples/*.S", {
+      query: "?raw",
+      import: "default",
+      eager: true,
+    }),
+  ).map(([path, content]) => [path.replace(/^.*[\\/]/, ""), content]),
+);
 
 const InlineFileInput: React.FC<{
   onSubmit: (filename: string) => void;
@@ -51,72 +60,49 @@ const InlineFileInput: React.FC<{
   );
 };
 
-function collectFiles(monaco: Monaco): Map<string, string> {
-  const files = new Map<string, string>();
-  for (const model of monaco.editor.getModels()) {
-    files.set(model.uri.path, model.getValue());
-  }
-  return files;
-}
-
 type FileSidebarProps = {
-  monaco: Monaco | null;
-  fileName: Uri;
-  fileNames: Uri[];
-  onSwitchFile: (uri: Uri) => void;
   onCompileAndRun: () => void;
-  isDebugging: boolean;
-  onStopDebug: () => void;
-  sampleFiles: () => Map<string, string>;
-  onSync: () => void;
 };
 
 export const FileSidebar: React.FC<FileSidebarProps> = ({
-  monaco,
-  fileName,
-  fileNames,
-  onSwitchFile,
   onCompileAndRun,
-  isDebugging,
-  onStopDebug,
-  sampleFiles,
-  onSync,
 }) => {
+  const files = useFileStore((s) => s.files);
+  const activeFile = useFileStore((s) => s.activeFile);
+  const setActiveFile = useFileStore((s) => s.setActiveFile);
+  const createFile = useFileStore((s) => s.createFile);
+  const deleteFile = useFileStore((s) => s.deleteFile);
+  const resetFiles = useFileStore((s) => s.resetFiles);
+  const setContent = useFileStore((s) => s.setContent);
+
+  const mode = useAppStore((s) => s.mode);
+  const stopDebug = useAppStore((s) => s.stopDebug);
+  const isDebugging = mode.type === "debug";
+
   const [isCreatingFile, setIsCreatingFile] = useState(false);
   const uploadInputRef = useRef<HTMLInputElement>(null);
 
-  const persistWorkspace = useCallback(() => {
-    if (!monaco) return;
-    saveWorkspace(collectFiles(monaco));
-  }, [monaco]);
+  // Filter to touched files during debug, show all during edit
+  const displayedFiles = useMemo(() => {
+    const allFiles = Object.keys(files);
+    if (mode.type !== "debug") return allFiles;
+    const touchedFiles = new Set(
+      Array.from(mode.sourceMap.values()).map((loc) =>
+        loc.file.replace(/^\//, ""),
+      ),
+    );
+    return allFiles.filter((name) => touchedFiles.has(name));
+  }, [mode, files]);
 
-  function switchFile(name: Uri) {
-    onSwitchFile(name);
-  }
-
-  function resetToSamples() {
-    if (!monaco) return;
+  const resetToSamples = useCallback(() => {
     if (
       !confirm(
         "Reset all files to the built-in samples? Your changes will be lost.",
       )
     )
       return;
-
-    for (const model of monaco.editor.getModels()) {
-      model.dispose();
-    }
-
-    const samples = sampleFiles();
-    for (const [name, content] of samples) {
-      monaco.editor.createModel(content, "z33", monaco.Uri.file(name));
-    }
-
-    const defaultFile = monaco.Uri.file("fact.S");
-    onSwitchFile(defaultFile);
-    persistWorkspace();
-    onSync();
-  }
+    resetFiles(sampleFiles, "fact.S");
+  }, [resetFiles]);
 
   return (
     <div className="flex flex-col w-48 border-r border-border">
@@ -173,35 +159,25 @@ export const FileSidebar: React.FC<FileSidebarProps> = ({
       </div>
 
       <div className="flex-1 flex flex-col overflow-auto">
-        {fileNames.map((name) => (
+        {displayedFiles.map((name) => (
           <div
             className="group flex items-center rounded-sm hover:bg-muted/50 data-[state=selected]:bg-muted"
-            key={name.path}
-            data-state={name.path === fileName.path ? "selected" : ""}
+            key={name}
+            data-state={name === activeFile ? "selected" : ""}
           >
             <button
               type="button"
               className="flex-1 px-2 py-1 text-left text-sm font-mono truncate"
-              onClick={() => switchFile(name)}
+              onClick={() => setActiveFile(name)}
             >
-              {name.path.replace(/^\//, "")}
+              {name}
             </button>
             {!isDebugging && (
               <Button
                 variant="ghost"
                 size="icon-xs"
                 className="opacity-0 group-hover:opacity-100 mr-1"
-                onClick={() => {
-                  if (!monaco) return;
-                  for (const model of monaco.editor.getModels()) {
-                    if (model.uri.path === name.path) {
-                      model.dispose();
-                      break;
-                    }
-                  }
-                  persistWorkspace();
-                  onSync();
-                }}
+                onClick={() => deleteFile(name)}
               >
                 <TrashIcon />
               </Button>
@@ -212,14 +188,7 @@ export const FileSidebar: React.FC<FileSidebarProps> = ({
         {isCreatingFile && (
           <InlineFileInput
             onSubmit={(filename) => {
-              if (!monaco) return;
-              const uri = monaco.Uri.file(filename);
-              if (!monaco.editor.getModel(uri)) {
-                monaco.editor.createModel("", "z33", uri);
-              }
-              switchFile(uri);
-              persistWorkspace();
-              onSync();
+              createFile(filename, "");
               setIsCreatingFile(false);
             }}
             onCancel={() => setIsCreatingFile(false)}
@@ -233,7 +202,7 @@ export const FileSidebar: React.FC<FileSidebarProps> = ({
             type="button"
             variant="destructive"
             className="w-full"
-            onClick={onStopDebug}
+            onClick={stopDebug}
           >
             <SquareIcon className="mr-2 h-4 w-4" />
             Stop Debug
@@ -251,21 +220,14 @@ export const FileSidebar: React.FC<FileSidebarProps> = ({
         multiple
         className="hidden"
         onChange={(e) => {
-          const files = e.target.files;
-          if (!files || !monaco) return;
-          for (const file of files) {
+          const uploadedFiles = e.target.files;
+          if (!uploadedFiles) return;
+          for (const file of uploadedFiles) {
             const reader = new FileReader();
             reader.onload = () => {
-              const uri = monaco.Uri.file(file.name);
-              const existing = monaco.editor.getModel(uri);
-              if (existing) {
-                existing.setValue(reader.result as string);
-              } else {
-                monaco.editor.createModel(reader.result as string, "z33", uri);
-              }
-              switchFile(uri);
-              persistWorkspace();
-              onSync();
+              const content = reader.result as string;
+              setContent(file.name, content);
+              setActiveFile(file.name);
             };
             reader.readAsText(file);
           }

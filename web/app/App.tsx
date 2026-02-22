@@ -1,153 +1,62 @@
 import { useMonaco } from "@monaco-editor/react";
 import type * as monaco from "monaco-editor";
-import { Uri } from "monaco-editor/esm/vs/editor/editor.api.js";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Group, Panel } from "react-resizable-panels";
-import type { Computer, Program, SourceMap } from "z33-web-bindings";
+import type { SourceMap } from "z33-web-bindings";
 import { InMemoryPreprocessor } from "z33-web-bindings";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "./components/ui/popover";
-import type { Labels } from "./computer";
+import type { ComputerInterface, Labels } from "./computer";
 import { DebugSidebar } from "./debug-sidebar";
 import { DebugToolbar } from "./debug-toolbar";
 import { EntrypointSelector } from "./entrypoint-selector";
 import { FileSidebar } from "./file-sidebar";
-import {
-  loadActiveFile,
-  loadWorkspace,
-  saveActiveFile,
-  saveWorkspace,
-} from "./file-store";
+import { getMonacoFiles, initMonacoSync } from "./lib/monaco-sync";
 import { MemoryPanel } from "./memory-panel";
 import { MultiFileEditor } from "./multi-file-editor";
 import { ResizeHandle } from "./panel-resize-handle";
 import { reportSchema, toMonacoDecoration } from "./report";
+import { useAppStore } from "./stores/app-store";
+import { useFileStore } from "./stores/file-store";
 import { useSourceHighlight } from "./use-source-highlight";
-
-const sampleFiles = import.meta.glob<string>("../../samples/*.S", {
-  query: "?raw",
-  import: "default",
-  eager: true,
-});
-
-function getSampleFiles(): Map<string, string> {
-  return new Map(
-    Object.entries(sampleFiles).map(([path, content]) => [
-      path.replace(/^.*[\\/]/, ""),
-      content,
-    ]),
-  );
-}
-
-function getInitialFiles(): { files: Map<string, string>; selected: string } {
-  const stored = loadWorkspace();
-  if (stored && stored.size > 0) {
-    const active = loadActiveFile() ?? stored.keys().next().value ?? "";
-    return { files: stored, selected: active };
-  }
-
-  const files = getSampleFiles();
-  saveWorkspace(files);
-  return { files, selected: "fact.S" };
-}
-
-const { files: initialFiles, selected: initialSelected } = getInitialFiles();
-
-type DebugSession = {
-  computer: Computer;
-  sourceMap: SourceMap;
-  labels: Labels;
-};
 
 const App = () => {
   const monacoInstance = useMonaco();
-  const [debugSession, setDebugSession] = useState<DebugSession | null>(null);
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
-  const [compilePopoverOpen, setCompilePopoverOpen] = useState(false);
-  const [compiledProgram, setCompiledProgram] = useState<{
-    labels: string[];
-    compile: (entrypoint: string) => Computer;
-  } | null>(null);
 
-  const [fileName, setFileName] = useState(Uri.file(initialSelected));
-  const [fileNames, setFileNames] = useState<Uri[]>([]);
+  const activeFile = useFileStore((s) => s.activeFile);
+  const startCompile = useAppStore((s) => s.startCompile);
+  const confirmEntrypoint = useAppStore((s) => s.confirmEntrypoint);
+  const stopDebug = useAppStore((s) => s.stopDebug);
+  const mode = useAppStore((s) => s.mode);
 
-  const syncFileNames = useCallback(() => {
-    if (!monacoInstance) return;
-    setFileNames(monacoInstance.editor.getModels().map((m) => m.uri));
-  }, [monacoInstance]);
-
-  const compiledFileNames = useMemo(() => {
-    if (!debugSession) return fileNames;
-    const touchedFiles = new Set(
-      Array.from(debugSession.sourceMap.values()).map((loc) => loc.file),
-    );
-    return fileNames.filter((uri) => touchedFiles.has(uri.path));
-  }, [debugSession, fileNames]);
-
-  // Auto-save workspace on content changes
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const persistWorkspace = useCallback(() => {
-    if (!monacoInstance) return;
-    const files = new Map<string, string>();
-    for (const model of monacoInstance.editor.getModels()) {
-      files.set(model.uri.path, model.getValue());
-    }
-    saveWorkspace(files);
-  }, [monacoInstance]);
-
+  // Initialize Monaco sync once after Monaco loads
   useEffect(() => {
-    if (!monacoInstance || debugSession) return;
+    if (!monacoInstance) return;
+    return initMonacoSync(monacoInstance);
+  }, [monacoInstance]);
 
-    const disposables: { dispose(): void }[] = [];
-    const debouncedSave = () => {
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = setTimeout(() => {
-        persistWorkspace();
-        saveTimerRef.current = null;
-      }, 500);
-    };
+  const handleCompileAndRun = useCallback(() => {
+    if (!monacoInstance) return;
 
-    for (const model of monacoInstance.editor.getModels()) {
-      disposables.push(model.onDidChangeContent(debouncedSave));
-    }
-    const sub = monacoInstance.editor.onDidCreateModel((model) => {
-      disposables.push(model.onDidChangeContent(debouncedSave));
-    });
-    disposables.push(sub);
+    const filesRecord = getMonacoFiles();
+    const files = new Map(Object.entries(filesRecord));
+    const entrypoint = `/${activeFile}`;
 
-    return () => {
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-      for (const d of disposables) d.dispose();
-    };
-  }, [monacoInstance, debugSession, persistWorkspace]);
-
-  const handleSwitchFile = useCallback((uri: Uri) => {
-    setFileName(uri);
-    saveActiveFile(uri.path);
-  }, []);
-
-  const compile = useCallback((): Program | null => {
-    if (!monacoInstance) return null;
-
-    const models = monacoInstance.editor.getModels();
-    const files = new Map(
-      models.map((model) => [model.uri.path, model.getValue()]),
-    );
-
-    const preprocessor = new InMemoryPreprocessor(files, fileName.path);
+    const preprocessor = new InMemoryPreprocessor(files, entrypoint);
     const result = preprocessor.compile();
     const prog = result.program;
     const report = result.report;
+
     if ((prog && report) || (!prog && !report)) {
       throw Error("Invalid return value");
     }
 
     if (prog) {
-      return prog;
+      startCompile(prog.labels, (ep: string) => prog.compile(ep));
     }
 
     if (report) {
@@ -161,102 +70,46 @@ const App = () => {
         console.log(String(e));
       }
     }
-
-    return null;
-  }, [monacoInstance, fileName.path]);
-
-  const handleCompileAndRun = useCallback(() => {
-    const program = compile();
-    if (program) {
-      setCompiledProgram({
-        labels: program.labels,
-        compile: (entrypoint: string) => program.compile(entrypoint),
-      });
-      setCompilePopoverOpen(true);
-    }
-  }, [compile]);
-
-  const handleRunEntrypoint = useCallback(
-    (entrypoint: string) => {
-      if (!compiledProgram) return;
-      const computer = compiledProgram.compile(entrypoint);
-      const sourceMap = computer.source_map;
-
-      const labels: Labels = new Map();
-      for (const [label, address] of computer.labels) {
-        const values = labels.get(address) || [];
-        labels.set(address, [...values, label]);
-      }
-
-      setDebugSession({ computer, sourceMap, labels });
-      setCompilePopoverOpen(false);
-      setCompiledProgram(null);
-    },
-    [compiledProgram],
-  );
-
-  const handleStopDebug = useCallback(() => {
-    setDebugSession(null);
-  }, []);
+  }, [monacoInstance, activeFile, startCompile]);
 
   const handleEditorMount = useCallback(
     (editor: monaco.editor.IStandaloneCodeEditor) => {
       editorRef.current = editor;
-      syncFileNames();
     },
-    [syncFileNames],
+    [],
   );
+
+  const isDebugging = mode.type === "debug";
 
   return (
     <main className="flex h-screen bg-background">
-      <FileSidebar
-        monaco={monacoInstance}
-        fileName={fileName}
-        fileNames={compiledFileNames}
-        onSwitchFile={handleSwitchFile}
-        onCompileAndRun={handleCompileAndRun}
-        isDebugging={debugSession !== null}
-        onStopDebug={handleStopDebug}
-        sampleFiles={getSampleFiles}
-        onSync={syncFileNames}
-      />
+      <FileSidebar onCompileAndRun={handleCompileAndRun} />
 
       <div className="flex-1 min-w-0">
-        {debugSession ? (
-          <DebugLayout
-            debugSession={debugSession}
-            initialFiles={initialFiles}
-            fileName={fileName}
-            onSwitchFile={handleSwitchFile}
-            onEditorMount={handleEditorMount}
-            onStopDebug={handleStopDebug}
-          />
+        {isDebugging ? (
+          <DebugLayout onEditorMount={handleEditorMount} />
         ) : (
           <MultiFileEditor
-            initialFiles={initialFiles}
-            fileName={fileName}
+            filePath={activeFile}
             onEditorMount={handleEditorMount}
           />
         )}
       </div>
 
       <Popover
-        open={compilePopoverOpen}
+        open={mode.type === "pending-entrypoint"}
         onOpenChange={(open) => {
-          if (!open) {
-            setCompilePopoverOpen(false);
-            setCompiledProgram(null);
-          }
+          if (!open) stopDebug();
         }}
       >
         <PopoverTrigger
           render={<span className="fixed top-4 left-1/2 w-0 h-0" />}
         />
         <PopoverContent>
-          {compiledProgram && (
+          {mode.type === "pending-entrypoint" && (
             <EntrypointSelector
-              entrypoints={compiledProgram.labels}
-              onRun={handleRunEntrypoint}
+              entrypoints={mode.labels}
+              onRun={confirmEntrypoint}
             />
           )}
         </PopoverContent>
@@ -266,23 +119,46 @@ const App = () => {
 };
 
 type DebugLayoutProps = {
-  debugSession: DebugSession;
-  initialFiles: Map<string, string>;
-  fileName: Uri;
-  onSwitchFile: (uri: Uri) => void;
   onEditorMount: (editor: monaco.editor.IStandaloneCodeEditor) => void;
+};
+
+/** Outer shell: reads mode from store and passes concrete values to DebugLayoutInner */
+const DebugLayout: React.FC<DebugLayoutProps> = ({ onEditorMount }) => {
+  const mode = useAppStore((s) => s.mode);
+  const stopDebug = useAppStore((s) => s.stopDebug);
+
+  if (mode.type !== "debug") return null;
+
+  return (
+    <DebugLayoutInner
+      onEditorMount={onEditorMount}
+      computer={mode.computer}
+      sourceMap={mode.sourceMap}
+      labels={mode.labels}
+      onStopDebug={stopDebug}
+    />
+  );
+};
+
+type DebugLayoutInnerProps = {
+  onEditorMount: (editor: monaco.editor.IStandaloneCodeEditor) => void;
+  computer: ComputerInterface;
+  sourceMap: SourceMap;
+  labels: Labels;
   onStopDebug: () => void;
 };
 
-const DebugLayout: React.FC<DebugLayoutProps> = ({
-  debugSession,
-  initialFiles,
-  fileName,
-  onSwitchFile,
+/** Inner component: all hooks called unconditionally, no early returns */
+const DebugLayoutInner: React.FC<DebugLayoutInnerProps> = ({
   onEditorMount,
+  computer,
+  sourceMap,
+  labels,
   onStopDebug,
 }) => {
-  const { computer, sourceMap, labels } = debugSession;
+  const activeFile = useFileStore((s) => s.activeFile);
+  const setActiveFile = useFileStore((s) => s.setActiveFile);
+
   const [editor, setEditor] =
     useState<monaco.editor.IStandaloneCodeEditor | null>(null);
 
@@ -296,10 +172,9 @@ const DebugLayout: React.FC<DebugLayoutProps> = ({
 
   const handleSourceSwitch = useCallback(
     (filePath: string) => {
-      const uri = Uri.file(filePath.replace(/^\//, ""));
-      onSwitchFile(uri);
+      setActiveFile(filePath.replace(/^\//, ""));
     },
-    [onSwitchFile],
+    [setActiveFile],
   );
 
   useSourceHighlight({
@@ -315,11 +190,10 @@ const DebugLayout: React.FC<DebugLayoutProps> = ({
         <Group orientation="vertical" id="z33-v">
           <Panel defaultSize="70%" minSize="30%" id="z33-editor">
             <div className="flex flex-col h-full">
-              <DebugToolbar computer={computer} />
+              <DebugToolbar />
               <div className="flex-1 min-h-0">
                 <MultiFileEditor
-                  initialFiles={initialFiles}
-                  fileName={fileName}
+                  filePath={activeFile}
                   readOnly
                   onEditorMount={handleDebugEditorMount}
                 />
@@ -334,12 +208,7 @@ const DebugLayout: React.FC<DebugLayoutProps> = ({
       </Panel>
       <ResizeHandle />
       <Panel defaultSize="30%" minSize="15%" maxSize="50%" id="z33-debug">
-        <DebugSidebar
-          computer={computer}
-          sourceMap={sourceMap}
-          labels={labels}
-          onClose={onStopDebug}
-        />
+        <DebugSidebar onClose={onStopDebug} />
       </Panel>
     </Group>
   );

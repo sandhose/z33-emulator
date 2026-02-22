@@ -1,6 +1,7 @@
 import type * as monaco from "monaco-editor";
 import { useEffect, useRef, useState } from "react";
-import type { Computer, SourceMap } from "z33-web-bindings";
+import type { SourceMap } from "z33-web-bindings";
+import type { ComputerInterface } from "./computer";
 import { useRegisters } from "./computer";
 
 /**
@@ -30,7 +31,7 @@ function buildByteToCharMap(text: string): Uint32Array {
 }
 
 type UseSourceHighlightOptions = {
-  computer: Computer;
+  computer: ComputerInterface;
   sourceMap: SourceMap;
   editor: monaco.editor.IStandaloneCodeEditor | null;
   onSwitchFile: (filePath: string) => void;
@@ -63,6 +64,7 @@ export function useSourceHighlight({
     return () => disposable.dispose();
   }, [editor]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: currentModelUri forces re-run when @monaco-editor/react switches the active model, which wouldn't otherwise change deps.
   useEffect(() => {
     if (!editor) return;
 

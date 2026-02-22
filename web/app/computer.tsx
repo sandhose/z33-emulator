@@ -10,11 +10,24 @@ import {
   useRef,
   useSyncExternalStore,
 } from "react";
-import type { Cell, Computer, Cycles, Registers } from "z33-web-bindings";
+import type { Cell, Cycles, Registers, SourceMap } from "z33-web-bindings";
 
 const MEMORY_SIZE = 10_000;
 
 export type Labels = Map<number, string[]>;
+
+/** Interface satisfied by the WASM Computer class, and future worker proxies */
+export interface ComputerInterface {
+  step(): boolean;
+  registers(): Registers;
+  memory(address: number): Cell;
+  cycles(): Cycles;
+  subscribe_registers(cb: (r: Registers) => void): () => void;
+  subscribe_memory(address: number, cb: (c: Cell) => void): () => void;
+  subscribe_cycles(cb: (c: Cycles) => void): () => void;
+  readonly source_map: SourceMap;
+  readonly labels: Iterable<[string, number]>;
+}
 
 export const Word: React.FC<{ word: number; labels: Labels }> = ({
   word,
@@ -62,7 +75,10 @@ export const CellView: React.FC<{ cell: Cell; labels: Labels }> = ({
 const normalize = (value: number): number =>
   Math.max(0, Math.min(value, MEMORY_SIZE - 1));
 
-export const useMemoryCell = (computer: Computer, address: number): Cell => {
+export const useMemoryCell = (
+  computer: ComputerInterface,
+  address: number,
+): Cell => {
   const subscribe = useCallback(
     (cb: (cell: Cell) => void) => computer.subscribe_memory(address, cb),
     [computer, address],
@@ -72,7 +88,7 @@ export const useMemoryCell = (computer: Computer, address: number): Cell => {
 };
 
 const MemoryCell: React.FC<{
-  computer: Computer;
+  computer: ComputerInterface;
   address: number;
   labels: Labels;
 }> = ({ computer, address, labels }) => {
@@ -91,7 +107,7 @@ export type MemoryViewerRef = {
 };
 
 type MemoryViewerProps = {
-  computer: Computer;
+  computer: ComputerInterface;
   highlight: number;
   labels: Labels;
 };
@@ -173,7 +189,7 @@ export const MemoryViewer = memo(
 );
 MemoryViewer.displayName = "MemoryViewer";
 
-export const useRegisters = (computer: Computer): Registers => {
+export const useRegisters = (computer: ComputerInterface): Registers => {
   const subscribe = useCallback(
     (cb: (registers: Registers) => void) => computer.subscribe_registers(cb),
     [computer],
@@ -182,7 +198,7 @@ export const useRegisters = (computer: Computer): Registers => {
   return useDeferredValue(registers);
 };
 
-export const useCycles = (computer: Computer): Cycles => {
+export const useCycles = (computer: ComputerInterface): Cycles => {
   const subscribe = useCallback(
     (cb: (cycles: Cycles) => void) => computer.subscribe_cycles(cb),
     [computer],
