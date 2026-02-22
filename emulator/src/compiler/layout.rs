@@ -141,16 +141,16 @@ pub(crate) fn layout_memory(program: &[Located<Line>]) -> Result<Layout, MemoryL
     let mut position = PROGRAM_START;
 
     for line in program {
-        let offset = line.location.start;
+        let line_offset = line.location.start;
         let line = &line.inner;
         for key in line.symbols.clone() {
-            let key = key.offset(offset);
+            let key = key.offset(line_offset);
             trace!(key = %key.inner, position, "Inserting label");
             layout.insert_label(key, position)?;
         }
 
         if let Some(ref content) = line.content {
-            let offset = offset + content.location.start;
+            let content_offset = line_offset + content.location.start;
             match &content.inner {
                 LineContent::Directive {
                     kind: Located { inner: Word, .. },
@@ -159,7 +159,7 @@ pub(crate) fn layout_memory(program: &[Located<Line>]) -> Result<Layout, MemoryL
                 | LineContent::Instruction { .. } => {
                     layout.insert_placement(
                         position,
-                        Placement::Line(content.clone().offset(offset)),
+                        Placement::Line(content.clone().offset(line_offset)),
                     )?;
                     trace!(position, content = %content.inner, "Inserting line");
                     position += 1; // Instructions and word directives take one
@@ -230,8 +230,8 @@ pub(crate) fn layout_memory(program: &[Located<Line>]) -> Result<Layout, MemoryL
                     return Err(InvalidDirectiveArgument {
                         kind: kind.inner,
                         location: Range {
-                            start: kind.location.start + offset,
-                            end: kind.location.end + offset,
+                            start: kind.location.start + content_offset,
+                            end: kind.location.end + content_offset,
                         },
                     });
                 }
