@@ -1,23 +1,12 @@
 import {
   FilePlusIcon,
-  Loader2Icon,
-  PlayIcon,
   RotateCcwIcon,
-  SquareIcon,
   TrashIcon,
   UploadIcon,
-  XCircleIcon,
 } from "lucide-react";
 import type * as React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "./components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "./components/ui/select";
 import {
   Tooltip,
   TooltipContent,
@@ -35,8 +24,6 @@ const sampleFiles = Object.fromEntries(
     }),
   ).map(([path, content]) => [path.replace(/^.*[\\/]/, ""), content]),
 );
-
-const DEFAULT_ENTRYPOINT_NAMES = ["main", "start", "run", "entry"];
 
 const InlineFileInput: React.FC<{
   onSubmit: (filename: string) => void;
@@ -72,19 +59,7 @@ const InlineFileInput: React.FC<{
   );
 };
 
-type FileSidebarProps = {
-  onRun: (entrypoint: string) => void;
-  compilationStatus: "idle" | "pending" | "success" | "error";
-  labels: string[];
-  defaultEntrypoint: string | undefined;
-};
-
-export const FileSidebar: React.FC<FileSidebarProps> = ({
-  onRun,
-  compilationStatus,
-  labels,
-  defaultEntrypoint,
-}) => {
+export const FileSidebar: React.FC = () => {
   const files = useFileStore((s) => s.files);
   const activeFile = useFileStore((s) => s.activeFile);
   const setActiveFile = useFileStore((s) => s.setActiveFile);
@@ -94,7 +69,6 @@ export const FileSidebar: React.FC<FileSidebarProps> = ({
   const setContent = useFileStore((s) => s.setContent);
 
   const mode = useAppStore((s) => s.mode);
-  const stopDebug = useAppStore((s) => s.stopDebug);
   const isDebugging = mode.type === "debug";
 
   const [isCreatingFile, setIsCreatingFile] = useState(false);
@@ -163,24 +137,6 @@ export const FileSidebar: React.FC<FileSidebarProps> = ({
     [setContent, setActiveFile],
   );
 
-  // Track which entrypoint is selected in the dropdown
-  const [selectedEntrypoint, setSelectedEntrypoint] = useState<string>("");
-
-  // Reset selection when labels or remembered entrypoint changes
-  useEffect(() => {
-    if (defaultEntrypoint && labels.includes(defaultEntrypoint)) {
-      setSelectedEntrypoint(defaultEntrypoint);
-      return;
-    }
-    for (const candidate of DEFAULT_ENTRYPOINT_NAMES) {
-      if (labels.includes(candidate)) {
-        setSelectedEntrypoint(candidate);
-        return;
-      }
-    }
-    setSelectedEntrypoint(labels[0] ?? "");
-  }, [labels, defaultEntrypoint]);
-
   // Filter to touched files during debug, show all during edit
   const displayedFiles = useMemo(() => {
     const allFiles = Object.keys(files);
@@ -202,8 +158,6 @@ export const FileSidebar: React.FC<FileSidebarProps> = ({
       return;
     resetFiles(sampleFiles, "fact.S");
   }, [resetFiles]);
-
-  const canRun = compilationStatus === "success" && labels.length > 0;
 
   if (isDebugging) return null;
 
@@ -247,52 +201,50 @@ export const FileSidebar: React.FC<FileSidebarProps> = ({
         <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Files
         </span>
-        {!isDebugging && (
-          <div className="flex gap-0.5">
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    onClick={() => setIsCreatingFile(true)}
-                  />
-                }
-              >
-                <FilePlusIcon />
-              </TooltipTrigger>
-              <TooltipContent side="bottom">New file</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    onClick={() => uploadInputRef.current?.click()}
-                  />
-                }
-              >
-                <UploadIcon />
-              </TooltipTrigger>
-              <TooltipContent side="bottom">Upload file</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    onClick={resetToSamples}
-                  />
-                }
-              >
-                <RotateCcwIcon />
-              </TooltipTrigger>
-              <TooltipContent side="bottom">Reset to samples</TooltipContent>
-            </Tooltip>
-          </div>
-        )}
+        <div className="flex gap-0.5">
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  onClick={() => setIsCreatingFile(true)}
+                />
+              }
+            >
+              <FilePlusIcon />
+            </TooltipTrigger>
+            <TooltipContent side="bottom">New file</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  onClick={() => uploadInputRef.current?.click()}
+                />
+              }
+            >
+              <UploadIcon />
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Upload file</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  onClick={resetToSamples}
+                />
+              }
+            >
+              <RotateCcwIcon />
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Reset to samples</TooltipContent>
+          </Tooltip>
+        </div>
       </div>
 
       <div className="flex-1 flex flex-col gap-1 overflow-auto">
@@ -309,16 +261,14 @@ export const FileSidebar: React.FC<FileSidebarProps> = ({
             >
               {name}
             </button>
-            {!isDebugging && (
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                className="opacity-0 group-hover:opacity-100 mr-1"
-                onClick={() => deleteFile(name)}
-              >
-                <TrashIcon />
-              </Button>
-            )}
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className="opacity-0 group-hover:opacity-100 mr-1"
+              onClick={() => deleteFile(name)}
+            >
+              <TrashIcon />
+            </Button>
           </div>
         ))}
 
@@ -330,65 +280,6 @@ export const FileSidebar: React.FC<FileSidebarProps> = ({
             }}
             onCancel={() => setIsCreatingFile(false)}
           />
-        )}
-      </div>
-
-      <div className="flex flex-col gap-1">
-        {isDebugging ? (
-          <Button
-            type="button"
-            variant="destructive"
-            className="w-full"
-            onClick={stopDebug}
-          >
-            <SquareIcon className="mr-2 h-4 w-4" />
-            Stop Debug
-          </Button>
-        ) : canRun ? (
-          <div className="flex gap-1">
-            <div className="flex-1 min-w-0">
-              <Select
-                value={selectedEntrypoint}
-                onValueChange={(v) => {
-                  if (v !== null) setSelectedEntrypoint(v);
-                }}
-              >
-                <SelectTrigger className="font-mono text-xs w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent align="start" side="top">
-                  {labels.map((label) => (
-                    <SelectItem
-                      key={label}
-                      value={label}
-                      className="font-mono text-xs"
-                    >
-                      {label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <Button
-              type="button"
-              size="icon"
-              disabled={!selectedEntrypoint}
-              onClick={() => {
-                if (selectedEntrypoint) onRun(selectedEntrypoint);
-              }}
-            >
-              <PlayIcon className="h-4 w-4" />
-            </Button>
-          </div>
-        ) : (
-          <Button type="button" className="w-full" disabled>
-            {compilationStatus === "pending" ? (
-              <Loader2Icon className="animate-spin mr-2 h-4 w-4" />
-            ) : compilationStatus === "error" ? (
-              <XCircleIcon className="mr-2 h-4 w-4" />
-            ) : null}
-            {compilationStatus === "pending" ? "Compiling…" : "Run"}
-          </Button>
         )}
       </div>
 
