@@ -127,7 +127,7 @@ const App = () => {
 
   const compileDebouncer = useDebouncer(
     performCompile,
-    { wait: 600 },
+    { wait: 300 },
     (state) => ({ isPending: state.isPending }),
   );
 
@@ -167,7 +167,8 @@ const App = () => {
   // biome-ignore lint/correctness/useExhaustiveDependencies: activeFile is an intentional trigger dep
   useEffect(() => {
     compileDebouncer.maybeExecute();
-  }, [activeFile, compileDebouncer.maybeExecute]);
+    compileDebouncer.flush();
+  }, [activeFile, compileDebouncer.maybeExecute, compileDebouncer.flush]);
 
   const handleRun = useCallback(
     (entrypoint: string) => {
