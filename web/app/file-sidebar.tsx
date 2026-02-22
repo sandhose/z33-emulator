@@ -208,6 +208,7 @@ export const FileSidebar: React.FC<FileSidebarProps> = ({
   if (isDebugging) return null;
 
   return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: drop zone is fine right?
     <div
       ref={dropZoneRef}
       className="relative flex flex-col w-48 border-r border-border p-2"

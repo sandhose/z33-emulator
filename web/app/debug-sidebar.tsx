@@ -1,7 +1,7 @@
 import { memo } from "react";
 import { Table, TableBody, TableCell, TableRow } from "./components/ui/table";
-import { CellView, type Labels, Word, useRegisters } from "./computer";
 import type { ComputerInterface } from "./computer";
+import { CellView, type Labels, useRegisters, Word } from "./computer";
 
 export const RegisterPanel: React.FC<{
   computer: ComputerInterface;
