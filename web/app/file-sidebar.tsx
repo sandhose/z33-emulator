@@ -208,7 +208,7 @@ export const FileSidebar: React.FC<FileSidebarProps> = ({
   return (
     <div
       ref={dropZoneRef}
-      className="relative flex flex-col w-48 border-r border-border"
+      className="relative flex flex-col w-48 border-r border-border p-2"
       onDragOver={(e) => e.preventDefault()}
       onDragEnter={(e) => {
         e.preventDefault();
@@ -292,7 +292,7 @@ export const FileSidebar: React.FC<FileSidebarProps> = ({
         )}
       </div>
 
-      <div className="flex-1 flex flex-col overflow-auto">
+      <div className="flex-1 flex flex-col gap-1 overflow-auto">
         {displayedFiles.map((name) => (
           <div
             className="group flex items-center rounded-sm hover:bg-muted/50 data-[state=selected]:bg-muted"
@@ -330,7 +330,7 @@ export const FileSidebar: React.FC<FileSidebarProps> = ({
         )}
       </div>
 
-      <div className="p-2 flex flex-col gap-1">
+      <div className="flex flex-col gap-1">
         {isDebugging ? (
           <Button
             type="button"
@@ -353,7 +353,7 @@ export const FileSidebar: React.FC<FileSidebarProps> = ({
                 <SelectTrigger className="font-mono text-xs w-full">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent align="start" side="top">
                   {labels.map((label) => (
                     <SelectItem
                       key={label}
