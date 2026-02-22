@@ -317,7 +317,9 @@ export const MultiFileEditor: React.FC<Props> = ({
               onSubmit={(filename) => {
                 if (!monaco) return;
                 const uri = monaco.Uri.file(filename);
-                monaco.editor.createModel("", "z33", uri);
+                if (!monaco.editor.getModel(uri)) {
+                  monaco.editor.createModel("", "z33", uri);
+                }
                 switchFile(uri);
                 persistWorkspace();
                 sync();
@@ -376,7 +378,12 @@ export const MultiFileEditor: React.FC<Props> = ({
             const reader = new FileReader();
             reader.onload = () => {
               const uri = monaco.Uri.file(file.name);
-              monaco.editor.createModel(reader.result as string, "z33", uri);
+              const existing = monaco.editor.getModel(uri);
+              if (existing) {
+                existing.setValue(reader.result as string);
+              } else {
+                monaco.editor.createModel(reader.result as string, "z33", uri);
+              }
               switchFile(uri);
               persistWorkspace();
               sync();
