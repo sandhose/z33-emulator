@@ -32,12 +32,33 @@ export const reportSchema: z.ZodType<Report> = baseReportSchema.extend({
   related: z.lazy(() => reportSchema.array()),
 });
 
-const spanToRange = (
+// Monaco MarkerSeverity enum values (stable across versions)
+const MARKER_SEVERITY: Record<Report["severity"], monaco.MarkerSeverity> = {
+  error: 8 as monaco.MarkerSeverity, // MarkerSeverity.Error
+  warning: 4 as monaco.MarkerSeverity, // MarkerSeverity.Warning
+  advice: 2 as monaco.MarkerSeverity, // MarkerSeverity.Info
+};
+
+const SEVERITY_CLASSES: Record<
+  Report["severity"],
+  { line: string; glyph: string }
+> = {
+  error: { line: "diag-error-line", glyph: "diag-error-glyph" },
+  warning: { line: "diag-warning-line", glyph: "diag-warning-glyph" },
+  advice: { line: "diag-advice-line", glyph: "diag-advice-glyph" },
+};
+
+const spanToPositions = (
   model: monaco.editor.IModel,
   span: Span,
-): monaco.IRange => {
+): Pick<
+  monaco.editor.IMarkerData,
+  "startLineNumber" | "startColumn" | "endLineNumber" | "endColumn"
+> => {
   const start = model.getPositionAt(span.offset);
-  const end = model.getPositionAt(span.offset + span.length);
+  // For zero-length spans, extend by 1 so the squiggly is visible
+  const endOffset = span.offset + Math.max(span.length, 1);
+  const end = model.getPositionAt(endOffset);
 
   return {
     startLineNumber: start.lineNumber,
@@ -47,46 +68,89 @@ const spanToRange = (
   };
 };
 
-export const toMonacoDecoration = (
+const buildMessage = (
+  report: Report,
+  labelText: string | undefined,
+): string => {
+  const parts = [report.message];
+  if (report.causes?.length) {
+    for (const cause of report.causes) {
+      parts.push(`Caused by: ${cause}`);
+    }
+  }
+  if (labelText) parts.push(labelText);
+  if (report.help) parts.push(`Help: ${report.help}`);
+  return parts.join("\n");
+};
+
+export type DiagnosticResult = {
+  markers: monaco.editor.IMarkerData[];
+  decorations: monaco.editor.IModelDeltaDecoration[];
+};
+
+export const toMonacoDiagnostics = (
   model: monaco.editor.IModel,
   report: Report,
   parentReport?: Report,
-): monaco.editor.IModelDeltaDecoration[] => {
+): DiagnosticResult => {
   const filename = report.filename || parentReport?.filename || null;
 
-  const children = report.related.flatMap((related) =>
-    toMonacoDecoration(model, related, report),
+  const children = report.related.reduce(
+    (acc: DiagnosticResult, related) => {
+      const child = toMonacoDiagnostics(model, related, report);
+      return {
+        markers: [...acc.markers, ...child.markers],
+        decorations: [...acc.decorations, ...child.decorations],
+      };
+    },
+    { markers: [], decorations: [] },
   );
 
   if (filename !== model.uri.path) {
     return children;
   }
 
-  const result = report.labels.map((item) => {
-    const range = spanToRange(model, item.span);
-    const hoverMessage = [{ value: report.message }];
-    if (item.label) {
-      hoverMessage.push({ value: item.label });
-    }
+  const severity = MARKER_SEVERITY[report.severity];
+  const classes = SEVERITY_CLASSES[report.severity];
 
-    if (item.span.length === 0) {
-      return {
-        range,
-        options: {
-          glyphMarginHoverMessage: hoverMessage,
-          isWholeLine: true,
-          linesDecorationsClassName: "bg-destructive",
-        },
-      };
-    }
+  const linesSeen = new Set<number>();
+  const markers: monaco.editor.IMarkerData[] = [];
+  const decorations: monaco.editor.IModelDeltaDecoration[] = [];
 
-    return {
-      range,
-      options: {
-        hoverMessage,
-      },
+  for (const item of report.labels) {
+    const positions = spanToPositions(model, item.span);
+
+    // Squiggly underline marker
+    const marker: monaco.editor.IMarkerData = {
+      severity,
+      message: buildMessage(report, item.label),
+      ...positions,
     };
-  });
+    if (report.code !== undefined) marker.source = report.code;
+    markers.push(marker);
 
-  return [...result, ...children];
+    // Whole-line background + gutter bar, one per affected line
+    const lineNumber = positions.startLineNumber;
+    if (!linesSeen.has(lineNumber)) {
+      linesSeen.add(lineNumber);
+      decorations.push({
+        range: {
+          startLineNumber: lineNumber,
+          startColumn: 1,
+          endLineNumber: lineNumber,
+          endColumn: model.getLineMaxColumn(lineNumber),
+        },
+        options: {
+          isWholeLine: true,
+          className: classes.line,
+          glyphMarginClassName: classes.glyph,
+        },
+      });
+    }
+  }
+
+  return {
+    markers: [...markers, ...children.markers],
+    decorations: [...decorations, ...children.decorations],
+  };
 };

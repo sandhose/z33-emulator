@@ -12,6 +12,13 @@ import type * as React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "./components/ui/button";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./components/ui/select";
+import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -28,6 +35,8 @@ const sampleFiles = Object.fromEntries(
     }),
   ).map(([path, content]) => [path.replace(/^.*[\\/]/, ""), content]),
 );
+
+const DEFAULT_ENTRYPOINT_NAMES = ["main", "start", "run", "entry"];
 
 const InlineFileInput: React.FC<{
   onSubmit: (filename: string) => void;
@@ -64,13 +73,17 @@ const InlineFileInput: React.FC<{
 };
 
 type FileSidebarProps = {
-  onRun: () => void;
+  onRun: (entrypoint: string) => void;
   compilationStatus: "idle" | "pending" | "success" | "error";
+  labels: string[];
+  defaultEntrypoint: string | undefined;
 };
 
 export const FileSidebar: React.FC<FileSidebarProps> = ({
   onRun,
   compilationStatus,
+  labels,
+  defaultEntrypoint,
 }) => {
   const files = useFileStore((s) => s.files);
   const activeFile = useFileStore((s) => s.activeFile);
@@ -86,6 +99,24 @@ export const FileSidebar: React.FC<FileSidebarProps> = ({
 
   const [isCreatingFile, setIsCreatingFile] = useState(false);
   const uploadInputRef = useRef<HTMLInputElement>(null);
+
+  // Track which entrypoint is selected in the dropdown
+  const [selectedEntrypoint, setSelectedEntrypoint] = useState<string>("");
+
+  // Reset selection when labels or remembered entrypoint changes
+  useEffect(() => {
+    if (defaultEntrypoint && labels.includes(defaultEntrypoint)) {
+      setSelectedEntrypoint(defaultEntrypoint);
+      return;
+    }
+    for (const candidate of DEFAULT_ENTRYPOINT_NAMES) {
+      if (labels.includes(candidate)) {
+        setSelectedEntrypoint(candidate);
+        return;
+      }
+    }
+    setSelectedEntrypoint(labels[0] ?? "");
+  }, [labels, defaultEntrypoint]);
 
   // Filter to touched files during debug, show all during edit
   const displayedFiles = useMemo(() => {
@@ -108,6 +139,8 @@ export const FileSidebar: React.FC<FileSidebarProps> = ({
       return;
     resetFiles(sampleFiles, "fact.S");
   }, [resetFiles]);
+
+  const canRun = compilationStatus === "success" && labels.length > 0;
 
   return (
     <div className="flex flex-col w-48 border-r border-border">
@@ -201,7 +234,7 @@ export const FileSidebar: React.FC<FileSidebarProps> = ({
         )}
       </div>
 
-      <div className="p-2">
+      <div className="p-2 flex flex-col gap-1">
         {isDebugging ? (
           <Button
             type="button"
@@ -212,17 +245,46 @@ export const FileSidebar: React.FC<FileSidebarProps> = ({
             <SquareIcon className="mr-2 h-4 w-4" />
             Stop Debug
           </Button>
+        ) : canRun ? (
+          <div className="flex gap-1">
+            <div className="flex-1 min-w-0">
+              <Select
+                value={selectedEntrypoint}
+                onValueChange={(v) => {
+                  if (v !== null) setSelectedEntrypoint(v);
+                }}
+              >
+                <SelectTrigger className="font-mono text-xs w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {labels.map((label) => (
+                    <SelectItem
+                      key={label}
+                      value={label}
+                      className="font-mono text-xs"
+                    >
+                      {label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button
+              type="button"
+              size="icon"
+              disabled={!selectedEntrypoint}
+              onClick={() => {
+                if (selectedEntrypoint) onRun(selectedEntrypoint);
+              }}
+            >
+              <PlayIcon className="h-4 w-4" />
+            </Button>
+          </div>
         ) : (
-          <Button
-            type="button"
-            className="w-full"
-            onClick={onRun}
-            disabled={compilationStatus !== "success"}
-          >
+          <Button type="button" className="w-full" disabled>
             {compilationStatus === "pending" ? (
               <Loader2Icon className="animate-spin mr-2 h-4 w-4" />
-            ) : compilationStatus === "success" ? (
-              <PlayIcon className="mr-2 h-4 w-4" />
             ) : compilationStatus === "error" ? (
               <XCircleIcon className="mr-2 h-4 w-4" />
             ) : null}
