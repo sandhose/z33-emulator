@@ -2,8 +2,8 @@ import "./globals.css";
 import "./monaco.ts";
 import { createRoot } from "react-dom/client";
 import App from "./App";
-import { TooltipProvider } from "./components/ui/tooltip.tsx";
 import { ThemeProvider } from "./components/theme-provider.tsx";
+import { TooltipProvider } from "./components/ui/tooltip.tsx";
 
 const rootElement = document.getElementById("root");
 if (!rootElement) {
