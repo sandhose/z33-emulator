@@ -115,9 +115,9 @@ monaco.languages.setMonarchTokensProvider("z33", {
     ],
     instruction: [
       [/\n$/, "endofline", "@pop"],
-      [/(\w|%)+[^a-zA-Z0-9_,\/]+(\w|%)+/, "invalid", "@pop"],
-      [/\[[^\]]*\][^a-zA-Z0-9_,\/]+(\w|%)+/, "invalid", "@pop"],
-      [/(\w|%)+[^a-zA-Z0-9_,\/]+\[[^\]]*\]/, "invalid", "@pop"],
+      [/(\w|%)+[^a-zA-Z0-9_,/]+(\w|%)+/, "invalid", "@pop"],
+      [/\[[^\]]*\][^a-zA-Z0-9_,/]+(\w|%)+/, "invalid", "@pop"],
+      [/(\w|%)+[^a-zA-Z0-9_,/]+\[[^\]]*\]/, "invalid", "@pop"],
       [/\[/, "operator", "@idx"],
       [/,/, "operator"],
       { include: "@constants" },
