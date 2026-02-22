@@ -22,7 +22,7 @@ import {
 } from "./computer";
 import { cn } from "./lib/utils";
 
-type Tab = "pc" | "stack" | "memory";
+type Tab = "stack" | "memory";
 
 type MemoryPanelProps = {
   computer: ComputerInterface;
@@ -48,42 +48,6 @@ const TabButton: React.FC<{
     {children}
   </button>
 );
-
-const PcTab: React.FC<{ computer: ComputerInterface; labels: Labels }> = memo(
-  ({ computer, labels }) => {
-    const ref = useRef<MemoryViewerRef>(null);
-    const registers = useRegisters(computer);
-
-    return (
-      <div className="flex flex-col h-full">
-        <div className="flex items-center justify-end px-2 py-1">
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  onClick={() => ref.current?.recenter()}
-                />
-              }
-            />
-            <TooltipContent>Recenter on PC</TooltipContent>
-          </Tooltip>
-          <CrosshairIcon className="h-3.5 w-3.5" />
-        </div>
-        <div className="flex-1 overflow-hidden">
-          <MemoryViewer
-            ref={ref}
-            computer={computer}
-            highlight={registers.pc}
-            labels={labels}
-          />
-        </div>
-      </div>
-    );
-  },
-);
-PcTab.displayName = "PcTab";
 
 const StackTab: React.FC<{ computer: ComputerInterface; labels: Labels }> =
   memo(({ computer, labels }) => {
@@ -178,19 +142,13 @@ MemoryTab.displayName = "MemoryTab";
 
 export const MemoryPanel: React.FC<MemoryPanelProps> = memo(
   ({ computer, labels, className }) => {
-    const [activeTab, setActiveTab] = useState<Tab>("pc");
+    const [activeTab, setActiveTab] = useState<Tab>("stack");
 
     return (
       <div
         className={cn("flex flex-col h-full border-t border-border", className)}
       >
         <div className="flex border-b border-border bg-muted/30">
-          <TabButton
-            active={activeTab === "pc"}
-            onClick={() => setActiveTab("pc")}
-          >
-            PC
-          </TabButton>
           <TabButton
             active={activeTab === "stack"}
             onClick={() => setActiveTab("stack")}
@@ -206,7 +164,6 @@ export const MemoryPanel: React.FC<MemoryPanelProps> = memo(
         </div>
 
         <div className="flex-1 overflow-hidden">
-          {activeTab === "pc" && <PcTab computer={computer} labels={labels} />}
           {activeTab === "stack" && (
             <StackTab computer={computer} labels={labels} />
           )}

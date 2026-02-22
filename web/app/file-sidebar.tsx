@@ -102,7 +102,7 @@ export const FileSidebar: React.FC<FileSidebarProps> = ({
   const [isSidebarDragging, setIsSidebarDragging] = useState(false);
   const uploadInputRef = useRef<HTMLInputElement>(null);
   const dropZoneRef = useRef<HTMLDivElement>(null);
-  const dismissTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const dismissTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   // Detect file-drag over the window using dragover as a heartbeat.
   // dragover fires continuously (~50-350ms depending on browser) while the drag
@@ -204,6 +204,8 @@ export const FileSidebar: React.FC<FileSidebarProps> = ({
   }, [resetFiles]);
 
   const canRun = compilationStatus === "success" && labels.length > 0;
+
+  if (isDebugging) return null;
 
   return (
     <div

@@ -119,9 +119,9 @@ export const MemoryViewer = memo(
 
       const rowVirtualizer = useVirtualizer({
         count: MEMORY_SIZE + 1,
-        initialOffset: highlight * 32,
+        initialOffset: highlight * 28,
         getScrollElement: () => parentRef.current,
-        estimateSize: () => 32,
+        estimateSize: () => 28,
       });
 
       const recenter = useCallback(() => {
@@ -148,7 +148,7 @@ export const MemoryViewer = memo(
           >
             {rowVirtualizer.getVirtualItems().map((virtualItem) => (
               <div
-                className="flex px-2 py-1 gap-2 border-b border-b-muted items-center data-[state=selected]:bg-muted"
+                className="flex px-1.5 py-1 gap-1.5 border-b border-b-muted items-center data-[state=selected]:bg-muted"
                 key={virtualItem.key}
                 style={{
                   position: "absolute",
