@@ -1,9 +1,12 @@
 import {
   FilePlusIcon,
+  Loader2Icon,
+  PlayIcon,
   RotateCcwIcon,
   SquareIcon,
   TrashIcon,
   UploadIcon,
+  XCircleIcon,
 } from "lucide-react";
 import type * as React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -61,11 +64,13 @@ const InlineFileInput: React.FC<{
 };
 
 type FileSidebarProps = {
-  onCompileAndRun: () => void;
+  onRun: () => void;
+  compilationStatus: "idle" | "pending" | "success" | "error";
 };
 
 export const FileSidebar: React.FC<FileSidebarProps> = ({
-  onCompileAndRun,
+  onRun,
+  compilationStatus,
 }) => {
   const files = useFileStore((s) => s.files);
   const activeFile = useFileStore((s) => s.activeFile);
@@ -208,8 +213,20 @@ export const FileSidebar: React.FC<FileSidebarProps> = ({
             Stop Debug
           </Button>
         ) : (
-          <Button type="button" className="w-full" onClick={onCompileAndRun}>
-            Compile
+          <Button
+            type="button"
+            className="w-full"
+            onClick={onRun}
+            disabled={compilationStatus !== "success"}
+          >
+            {compilationStatus === "pending" ? (
+              <Loader2Icon className="animate-spin mr-2 h-4 w-4" />
+            ) : compilationStatus === "success" ? (
+              <PlayIcon className="mr-2 h-4 w-4" />
+            ) : compilationStatus === "error" ? (
+              <XCircleIcon className="mr-2 h-4 w-4" />
+            ) : null}
+            {compilationStatus === "pending" ? "Compiling…" : "Run"}
           </Button>
         )}
       </div>

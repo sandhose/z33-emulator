@@ -48,6 +48,7 @@ const initial = computeInitialState();
 interface FileState {
   files: Record<string, string>; // filename (no leading slash) → content
   activeFile: string;
+  entrypoints: Record<string, string>; // filename → last confirmed function entrypoint
 }
 
 interface FileActions {
@@ -59,6 +60,7 @@ interface FileActions {
   /** Called for external operations (upload, reset) — Monaco sync follows via subscription */
   setContent: (name: string, content: string) => void;
   resetFiles: (files: Record<string, string>, activeFile: string) => void;
+  setEntrypoint: (file: string, entrypoint: string) => void;
 }
 
 export const useFileStore = create<FileState & FileActions>()(
@@ -66,6 +68,7 @@ export const useFileStore = create<FileState & FileActions>()(
     (set) => ({
       files: initial.files,
       activeFile: initial.activeFile,
+      entrypoints: {},
 
       setActiveFile: (name) => set({ activeFile: name }),
 
@@ -96,6 +99,11 @@ export const useFileStore = create<FileState & FileActions>()(
         })),
 
       resetFiles: (files, activeFile) => set({ files, activeFile }),
+
+      setEntrypoint: (file, entrypoint) =>
+        set((state) => ({
+          entrypoints: { ...state.entrypoints, [file]: entrypoint },
+        })),
     }),
     {
       name: WORKSPACE_V2_KEY,
@@ -103,6 +111,7 @@ export const useFileStore = create<FileState & FileActions>()(
       partialize: (state) => ({
         files: state.files,
         activeFile: state.activeFile,
+        entrypoints: state.entrypoints,
       }),
     },
   ),
