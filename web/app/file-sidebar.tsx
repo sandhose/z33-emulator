@@ -98,7 +98,70 @@ export const FileSidebar: React.FC<FileSidebarProps> = ({
   const isDebugging = mode.type === "debug";
 
   const [isCreatingFile, setIsCreatingFile] = useState(false);
+  const [isWindowDragging, setIsWindowDragging] = useState(false);
+  const [isSidebarDragging, setIsSidebarDragging] = useState(false);
   const uploadInputRef = useRef<HTMLInputElement>(null);
+  const dropZoneRef = useRef<HTMLDivElement>(null);
+  const dismissTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+
+  // Detect file-drag over the window using dragover as a heartbeat.
+  // dragover fires continuously (~50-350ms depending on browser) while the drag
+  // is inside the viewport. We show the overlay on dragenter and schedule a
+  // dismiss timeout on every dragover; as long as events keep coming the timeout
+  // resets. When the drag leaves the window dragover stops and the timeout fires.
+  // This avoids all the dragleave/relatedTarget edge-cases that plague other
+  // approaches (iframes, shadow DOM, DOM mutations from the overlay itself).
+  useEffect(() => {
+    const scheduleDismiss = () => {
+      clearTimeout(dismissTimeoutRef.current);
+      dismissTimeoutRef.current = setTimeout(() => {
+        setIsWindowDragging(false);
+        setIsSidebarDragging(false);
+      }, 500);
+    };
+
+    const handleDragEnter = (e: DragEvent) => {
+      e.preventDefault();
+      if (e.dataTransfer?.types.includes("Files")) {
+        setIsWindowDragging(true);
+        scheduleDismiss();
+      }
+    };
+    const handleDragOver = (e: DragEvent) => {
+      e.preventDefault();
+      if (e.dataTransfer?.types.includes("Files")) scheduleDismiss();
+    };
+    const handleDrop = (e: DragEvent) => {
+      e.preventDefault();
+      clearTimeout(dismissTimeoutRef.current);
+      setIsWindowDragging(false);
+      setIsSidebarDragging(false);
+    };
+
+    window.addEventListener("dragenter", handleDragEnter);
+    window.addEventListener("dragover", handleDragOver);
+    window.addEventListener("drop", handleDrop);
+    return () => {
+      clearTimeout(dismissTimeoutRef.current);
+      window.removeEventListener("dragenter", handleDragEnter);
+      window.removeEventListener("dragover", handleDragOver);
+      window.removeEventListener("drop", handleDrop);
+    };
+  }, []);
+
+  const processFiles = useCallback(
+    (fileList: FileList) => {
+      for (const file of fileList) {
+        const reader = new FileReader();
+        reader.onload = () => {
+          setContent(file.name, reader.result as string);
+          setActiveFile(file.name);
+        };
+        reader.readAsText(file);
+      }
+    },
+    [setContent, setActiveFile],
+  );
 
   // Track which entrypoint is selected in the dropdown
   const [selectedEntrypoint, setSelectedEntrypoint] = useState<string>("");
@@ -143,7 +206,40 @@ export const FileSidebar: React.FC<FileSidebarProps> = ({
   const canRun = compilationStatus === "success" && labels.length > 0;
 
   return (
-    <div className="flex flex-col w-48 border-r border-border">
+    <div
+      ref={dropZoneRef}
+      className="relative flex flex-col w-48 border-r border-border"
+      onDragOver={(e) => e.preventDefault()}
+      onDragEnter={(e) => {
+        e.preventDefault();
+        if (e.dataTransfer.types.includes("Files")) setIsSidebarDragging(true);
+      }}
+      onDragLeave={(e) => {
+        e.preventDefault();
+        if (!dropZoneRef.current?.contains(e.relatedTarget as Node)) {
+          setIsSidebarDragging(false);
+        }
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsWindowDragging(false);
+        setIsSidebarDragging(false);
+        if (e.dataTransfer.files.length > 0) processFiles(e.dataTransfer.files);
+      }}
+    >
+      {isWindowDragging && (
+        <div
+          data-over={isSidebarDragging}
+          className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-sm border-2 border-dashed pointer-events-none transition-all border-primary/40 bg-primary/5 opacity-50 data-[over=true]:border-primary data-[over=true]:bg-primary/10 data-[over=true]:opacity-100"
+        >
+          <UploadIcon className="size-6 text-primary" />
+          <span className="text-xs text-primary font-medium">
+            Drop files here
+          </span>
+        </div>
+      )}
+
       <div className="flex items-center justify-between px-3 py-2">
         <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Files
@@ -297,19 +393,9 @@ export const FileSidebar: React.FC<FileSidebarProps> = ({
         ref={uploadInputRef}
         type="file"
         multiple
-        className="hidden"
+        className="sr-only"
         onChange={(e) => {
-          const uploadedFiles = e.target.files;
-          if (!uploadedFiles) return;
-          for (const file of uploadedFiles) {
-            const reader = new FileReader();
-            reader.onload = () => {
-              const content = reader.result as string;
-              setContent(file.name, content);
-              setActiveFile(file.name);
-            };
-            reader.readAsText(file);
-          }
+          if (e.target.files) processFiles(e.target.files);
           e.target.value = "";
         }}
       />
