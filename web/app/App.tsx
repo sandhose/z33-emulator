@@ -1,7 +1,7 @@
 import { useMonaco } from "@monaco-editor/react";
 import type * as monaco from "monaco-editor";
 import { Uri } from "monaco-editor/esm/vs/editor/editor.api.js";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Group, Panel } from "react-resizable-panels";
 import type { Computer, Program, SourceMap } from "z33-web-bindings";
 import { InMemoryPreprocessor } from "z33-web-bindings";
@@ -79,6 +79,14 @@ const App = () => {
     if (!monacoInstance) return;
     setFileNames(monacoInstance.editor.getModels().map((m) => m.uri));
   }, [monacoInstance]);
+
+  const compiledFileNames = useMemo(() => {
+    if (!debugSession) return fileNames;
+    const touchedFiles = new Set(
+      Array.from(debugSession.sourceMap.values()).map((loc) => loc.file),
+    );
+    return fileNames.filter((uri) => touchedFiles.has(uri.path));
+  }, [debugSession, fileNames]);
 
   // Auto-save workspace on content changes
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -204,7 +212,7 @@ const App = () => {
       <FileSidebar
         monaco={monacoInstance}
         fileName={fileName}
-        fileNames={fileNames}
+        fileNames={compiledFileNames}
         onSwitchFile={handleSwitchFile}
         onCompileAndRun={handleCompileAndRun}
         isDebugging={debugSession !== null}
