@@ -3,6 +3,32 @@ import { useEffect, useRef } from "react";
 import type { Computer, SourceMap } from "z33-web-bindings";
 import { useRegisters } from "./computer";
 
+/**
+ * Build a lookup table from UTF-8 byte offset → JS string character offset.
+ * The Rust source map produces byte offsets, but Monaco's getPositionAt()
+ * expects character (UTF-16 code unit) offsets.
+ */
+function buildByteToCharMap(text: string): Uint32Array {
+  const encoded = new TextEncoder().encode(text);
+  // Map from byte index → char index. +1 so we can look up the end-of-string offset.
+  const map = new Uint32Array(encoded.length + 1);
+  let charIdx = 0;
+  let byteIdx = 0;
+  while (charIdx < text.length) {
+    const cp = text.codePointAt(charIdx);
+    if (cp === undefined) break;
+    const byteLen = cp <= 0x7f ? 1 : cp <= 0x7ff ? 2 : cp <= 0xffff ? 3 : 4;
+    const charLen = cp > 0xffff ? 2 : 1; // surrogate pair
+    for (let i = 0; i < byteLen; i++) {
+      map[byteIdx + i] = charIdx;
+    }
+    byteIdx += byteLen;
+    charIdx += charLen;
+  }
+  map[byteIdx] = charIdx;
+  return map;
+}
+
 type UseSourceHighlightOptions = {
   computer: Computer;
   sourceMap: SourceMap;
@@ -20,6 +46,8 @@ export function useSourceHighlight({
   const decorationsRef =
     useRef<monaco.editor.IEditorDecorationsCollection | null>(null);
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
+  const byteToCharRef = useRef<Uint32Array | null>(null);
+  const modelUriRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!editor) return;
@@ -31,6 +59,16 @@ export function useSourceHighlight({
       editorRef.current = editor;
     }
 
+    // Rebuild byte-to-char map when the model (file) changes
+    const model = editor.getModel();
+    const modelUri = model?.uri.toString() ?? null;
+    if (modelUri !== modelUriRef.current) {
+      modelUriRef.current = modelUri;
+      byteToCharRef.current = model
+        ? buildByteToCharMap(model.getValue())
+        : null;
+    }
+
     const decorations = decorationsRef.current;
     if (!decorations) return;
 
@@ -40,7 +78,6 @@ export function useSourceHighlight({
       return;
     }
 
-    const model = editor.getModel();
     if (!model) {
       decorations.clear();
       return;
@@ -54,8 +91,17 @@ export function useSourceHighlight({
       return;
     }
 
-    const startPos = model.getPositionAt(location.span[0]);
-    const endPos = model.getPositionAt(location.span[1]);
+    // Convert UTF-8 byte offsets from the Rust source map to character offsets
+    const byteToChar = byteToCharRef.current;
+    const charStart = byteToChar
+      ? (byteToChar[location.span[0]] ?? location.span[0])
+      : location.span[0];
+    const charEnd = byteToChar
+      ? (byteToChar[location.span[1]] ?? location.span[1])
+      : location.span[1];
+
+    const startPos = model.getPositionAt(charStart);
+    const endPos = model.getPositionAt(charEnd);
 
     decorations.set([
       // Whole-line background on the start line only
