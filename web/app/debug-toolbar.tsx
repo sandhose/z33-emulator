@@ -1,6 +1,13 @@
-import { PauseIcon, PlayIcon, StepForwardIcon } from "lucide-react";
+import { PauseIcon, PlayIcon, SquareIcon, StepForwardIcon } from "lucide-react";
 import { memo, startTransition, useCallback, useEffect, useState } from "react";
 import { Button } from "./components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./components/ui/select";
 import type { ComputerInterface } from "./computer";
 import { useCycles } from "./computer";
 import { cn } from "./lib/utils";
@@ -66,16 +73,29 @@ function useStepRunner(computer: ComputerInterface) {
 
 type DebugToolbarProps = {
   className?: string;
+  touchedFiles: string[];
+  activeFile: string;
+  onFileChange: (name: string) => void;
+  onStop: () => void;
 };
 
 export const DebugToolbar: React.FC<DebugToolbarProps> = memo(
-  ({ className }) => {
+  ({ className, touchedFiles, activeFile, onFileChange, onStop }) => {
     const mode = useAppStore((s) => s.mode);
 
     if (mode.type !== "debug") return null;
     const { computer } = mode;
 
-    return <DebugToolbarInner computer={computer} className={className} />;
+    return (
+      <DebugToolbarInner
+        computer={computer}
+        className={className}
+        touchedFiles={touchedFiles}
+        activeFile={activeFile}
+        onFileChange={onFileChange}
+        onStop={onStop}
+      />
+    );
   },
 );
 DebugToolbar.displayName = "DebugToolbar";
@@ -83,7 +103,18 @@ DebugToolbar.displayName = "DebugToolbar";
 const DebugToolbarInner: React.FC<{
   computer: ComputerInterface;
   className?: string | undefined;
-}> = ({ computer, className }) => {
+  touchedFiles: string[];
+  activeFile: string;
+  onFileChange: (name: string) => void;
+  onStop: () => void;
+}> = ({
+  computer,
+  className,
+  touchedFiles,
+  activeFile,
+  onFileChange,
+  onStop,
+}) => {
   const cycles = useCycles(computer);
   const { halt, panicked, running, stepOnce, runN, stop } =
     useStepRunner(computer);
@@ -160,6 +191,36 @@ const DebugToolbarInner: React.FC<{
           Halted
         </span>
       )}
+
+      <div className="ml-auto flex items-center gap-1">
+        {touchedFiles.length > 1 && (
+          <Select
+            value={activeFile}
+            onValueChange={(v) => {
+              if (v !== null) onFileChange(v);
+            }}
+          >
+            <SelectTrigger className="h-7 text-xs font-mono w-36">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent align="end">
+              {touchedFiles.map((name) => (
+                <SelectItem
+                  key={name}
+                  value={name}
+                  className="font-mono text-xs"
+                >
+                  {name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+        <Button variant="ghost" size="sm" onClick={onStop}>
+          <SquareIcon className="mr-1 h-3.5 w-3.5" />
+          Stop
+        </Button>
+      </div>
     </div>
   );
 };

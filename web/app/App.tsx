@@ -2,12 +2,12 @@ import { useMonaco } from "@monaco-editor/react";
 import { useDebouncer } from "@tanstack/react-pacer";
 import { CheckCircle2Icon, XCircleIcon } from "lucide-react";
 import type * as monaco from "monaco-editor";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Group, Panel } from "react-resizable-panels";
 import type { Computer, SourceMap } from "z33-web-bindings";
 import { InMemoryPreprocessor } from "z33-web-bindings";
 import type { ComputerInterface, Labels } from "./computer";
-import { DebugSidebar } from "./debug-sidebar";
+import { RegisterPanel } from "./debug-sidebar";
 import { DebugToolbar } from "./debug-toolbar";
 import { FileSidebar } from "./file-sidebar";
 import { getMonacoFiles, initMonacoSync } from "./lib/monaco-sync";
@@ -315,33 +315,44 @@ const DebugLayoutInner: React.FC<DebugLayoutInnerProps> = ({
     onSwitchFile: handleSourceSwitch,
   });
 
+  const touchedFiles = useMemo(() => {
+    const names = new Set<string>();
+    for (const loc of sourceMap.values()) {
+      names.add(loc.file.replace(/^\//, ""));
+    }
+    return [...names];
+  }, [sourceMap]);
+
   return (
-    <Group orientation="horizontal" id="z33-h">
-      <Panel defaultSize="70%" minSize="40%" id="z33-main">
-        <Group orientation="vertical" id="z33-v">
-          <Panel defaultSize="70%" minSize="30%" id="z33-editor">
-            <div className="flex flex-col h-full">
-              <DebugToolbar />
-              <div className="flex-1 min-h-0">
-                <MultiFileEditor
-                  filePath={activeFile}
-                  readOnly
-                  onEditorMount={handleDebugEditorMount}
-                />
-              </div>
-            </div>
-          </Panel>
-          <ResizeHandle direction="vertical" />
-          <Panel defaultSize="30%" minSize="10%" collapsible id="z33-memory">
-            <MemoryPanel computer={computer} labels={labels} />
-          </Panel>
-        </Group>
-      </Panel>
-      <ResizeHandle />
-      <Panel defaultSize="30%" minSize="15%" maxSize="50%" id="z33-debug">
-        <DebugSidebar onClose={onStopDebug} />
-      </Panel>
-    </Group>
+    <div className="flex flex-col h-full">
+      <DebugToolbar
+        touchedFiles={touchedFiles}
+        activeFile={activeFile}
+        onFileChange={setActiveFile}
+        onStop={onStopDebug}
+      />
+      <Group orientation="horizontal" id="z33-h" className="flex-1 min-h-0">
+        <Panel defaultSize="65%" minSize="40%" id="z33-editor">
+          <MultiFileEditor
+            filePath={activeFile}
+            readOnly
+            onEditorMount={handleDebugEditorMount}
+          />
+        </Panel>
+        <ResizeHandle />
+        <Panel defaultSize="35%" minSize="20%" maxSize="50%" id="z33-right">
+          <Group orientation="vertical" id="z33-right-v">
+            <Panel defaultSize="30%" minSize="15%" id="z33-registers">
+              <RegisterPanel computer={computer} labels={labels} />
+            </Panel>
+            <ResizeHandle direction="vertical" />
+            <Panel defaultSize="70%" minSize="30%" id="z33-memory">
+              <MemoryPanel computer={computer} labels={labels} />
+            </Panel>
+          </Group>
+        </Panel>
+      </Group>
+    </div>
   );
 };
 
