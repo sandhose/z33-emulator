@@ -5,21 +5,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Group, Panel } from "react-resizable-panels";
 import type { Computer, SourceMap } from "z33-web-bindings";
 import { InMemoryPreprocessor } from "z33-web-bindings";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "./components/ui/popover";
 import type { ComputerInterface, Labels } from "./computer";
 import { DebugSidebar } from "./debug-sidebar";
 import { DebugToolbar } from "./debug-toolbar";
-import { EntrypointSelector } from "./entrypoint-selector";
 import { FileSidebar } from "./file-sidebar";
 import { getMonacoFiles, initMonacoSync } from "./lib/monaco-sync";
 import { MemoryPanel } from "./memory-panel";
 import { MultiFileEditor } from "./multi-file-editor";
 import { ResizeHandle } from "./panel-resize-handle";
-import { reportSchema, toMonacoDecoration } from "./report";
+import { reportSchema, toMonacoDiagnostics } from "./report";
 import { useAppStore } from "./stores/app-store";
 import { useFileStore } from "./stores/file-store";
 import { useSourceHighlight } from "./use-source-highlight";
@@ -40,10 +34,7 @@ const App = () => {
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
 
   const activeFile = useFileStore((s) => s.activeFile);
-  const startCompile = useAppStore((s) => s.startCompile);
-  const confirmEntrypoint = useAppStore((s) => s.confirmEntrypoint);
   const startDebug = useAppStore((s) => s.startDebug);
-  const stopDebug = useAppStore((s) => s.stopDebug);
   const mode = useAppStore((s) => s.mode);
   const setEntrypoint = useFileStore((s) => s.setEntrypoint);
   const entrypoints = useFileStore((s) => s.entrypoints);
@@ -52,7 +43,7 @@ const App = () => {
     { type: "idle" },
   );
 
-  // Tracks Monaco decoration IDs per model URI string for proper cleanup
+  // Decoration IDs for line highlights (squiggly markers are tracked by Monaco itself)
   const decorationIds = useRef(new Map<string, string[]>());
 
   // Initialize Monaco sync once after Monaco loads
@@ -68,7 +59,10 @@ const App = () => {
     const result = preprocessor.compile();
     const { program: prog, report } = result;
 
-    // Clear old decorations from all models
+    // Clear all z33 markers and line-highlight decorations from every model
+    for (const model of monacoInstance.editor.getModels()) {
+      monacoInstance.editor.setModelMarkers(model, "z33", []);
+    }
     for (const [uriStr, ids] of decorationIds.current) {
       monacoInstance.editor
         .getModel(monacoInstance.Uri.parse(uriStr))
@@ -86,10 +80,14 @@ const App = () => {
       try {
         const reportObject = reportSchema.parse(JSON.parse(report));
         for (const model of monacoInstance.editor.getModels()) {
-          const decorations = toMonacoDecoration(model, reportObject);
+          const { markers, decorations } = toMonacoDiagnostics(
+            model,
+            reportObject,
+          );
+          monacoInstance.editor.setModelMarkers(model, "z33", markers);
           if (decorations.length > 0) {
-            const newIds = model.deltaDecorations([], decorations);
-            decorationIds.current.set(model.uri.toString(), newIds);
+            const ids = model.deltaDecorations([], decorations);
+            decorationIds.current.set(model.uri.toString(), ids);
           }
         }
       } catch (e) {
@@ -143,23 +141,13 @@ const App = () => {
     compileDebouncer.maybeExecute();
   }, [activeFile, compileDebouncer.maybeExecute]);
 
-  const handleRun = useCallback(() => {
-    if (compilationResult.type !== "success") return;
-    const { labels, compileFn } = compilationResult;
-    const rememberedEp = entrypoints[activeFile];
-    if (rememberedEp && labels.includes(rememberedEp)) {
-      startDebug(compileFn, rememberedEp);
-    } else {
-      startCompile(labels, compileFn);
-    }
-  }, [compilationResult, entrypoints, activeFile, startDebug, startCompile]);
-
-  const handleConfirmEntrypoint = useCallback(
-    (ep: string) => {
-      setEntrypoint(activeFile, ep);
-      confirmEntrypoint(ep);
+  const handleRun = useCallback(
+    (entrypoint: string) => {
+      if (compilationResult.type !== "success") return;
+      setEntrypoint(activeFile, entrypoint);
+      startDebug(compilationResult.compileFn, entrypoint);
     },
-    [activeFile, setEntrypoint, confirmEntrypoint],
+    [compilationResult, activeFile, setEntrypoint, startDebug],
   );
 
   const handleEditorMount = useCallback(
@@ -178,7 +166,14 @@ const App = () => {
 
   return (
     <main className="flex h-screen bg-background">
-      <FileSidebar onRun={handleRun} compilationStatus={compilationStatus} />
+      <FileSidebar
+        onRun={handleRun}
+        compilationStatus={compilationStatus}
+        labels={
+          compilationResult.type === "success" ? compilationResult.labels : []
+        }
+        defaultEntrypoint={entrypoints[activeFile]}
+      />
 
       <div className="flex-1 min-w-0">
         {isDebugging ? (
@@ -190,28 +185,6 @@ const App = () => {
           />
         )}
       </div>
-
-      <Popover
-        open={mode.type === "pending-entrypoint"}
-        onOpenChange={(open) => {
-          if (!open) stopDebug();
-        }}
-      >
-        <PopoverTrigger
-          render={<span className="fixed top-4 left-1/2 w-0 h-0" />}
-        />
-        <PopoverContent>
-          {mode.type === "pending-entrypoint" && (
-            <EntrypointSelector
-              entrypoints={mode.labels}
-              onRun={handleConfirmEntrypoint}
-              {...(entrypoints[activeFile] !== undefined && {
-                defaultEntrypoint: entrypoints[activeFile],
-              })}
-            />
-          )}
-        </PopoverContent>
-      </Popover>
     </main>
   );
 };
