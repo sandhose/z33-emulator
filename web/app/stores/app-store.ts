@@ -26,6 +26,10 @@ interface AppActions {
     compileFn: (entrypoint: string) => Computer,
   ) => void;
   confirmEntrypoint: (entrypoint: string) => void;
+  startDebug: (
+    compileFn: (entrypoint: string) => Computer,
+    entrypoint: string,
+  ) => void;
   stopDebug: () => void;
 }
 
@@ -40,6 +44,19 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
     if (mode.type !== "pending-entrypoint") return;
 
     const computer = mode.compileFn(entrypoint);
+    const sourceMap = computer.source_map;
+
+    const labels: Labels = new Map();
+    for (const [label, address] of computer.labels) {
+      const values = labels.get(address) ?? [];
+      labels.set(address, [...values, label]);
+    }
+
+    set({ mode: { type: "debug", computer, sourceMap, labels } });
+  },
+
+  startDebug: (compileFn, entrypoint) => {
+    const computer = compileFn(entrypoint);
     const sourceMap = computer.source_map;
 
     const labels: Labels = new Map();

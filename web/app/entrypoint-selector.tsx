@@ -31,17 +31,24 @@ const DEFAULT_ENTRYPOINT_NAMES = ["main", "start", "run", "entry"];
 type Props = {
   onRun?: (entrypoint: string) => void;
   entrypoints: string[];
+  defaultEntrypoint?: string;
 };
 
 export const EntrypointSelector: React.FC<Props> = ({
   entrypoints,
   onRun,
+  defaultEntrypoint,
 }: Props) => {
   const form = useForm({
     resolver: zodResolver(formSchema),
   });
 
   React.useEffect(() => {
+    // Prefer the remembered entrypoint if it's still valid
+    if (defaultEntrypoint && entrypoints.includes(defaultEntrypoint)) {
+      form.setValue("entrypoint", defaultEntrypoint);
+      return;
+    }
     // Let's find a possible candidate for a default entrypoint
     for (const candidate of DEFAULT_ENTRYPOINT_NAMES) {
       if (entrypoints.includes(candidate)) {
@@ -49,7 +56,7 @@ export const EntrypointSelector: React.FC<Props> = ({
         return;
       }
     }
-  }, [entrypoints, form.setValue]);
+  }, [entrypoints, defaultEntrypoint, form.setValue]);
 
   function onSubmit(values: z.infer<typeof formSchema>) {
     onRun?.(values.entrypoint);

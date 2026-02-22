@@ -1,8 +1,9 @@
 import { useMonaco } from "@monaco-editor/react";
+import { useDebouncer } from "@tanstack/react-pacer";
 import type * as monaco from "monaco-editor";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Group, Panel } from "react-resizable-panels";
-import type { SourceMap } from "z33-web-bindings";
+import type { Computer, SourceMap } from "z33-web-bindings";
 import { InMemoryPreprocessor } from "z33-web-bindings";
 import {
   Popover,
@@ -23,6 +24,17 @@ import { useAppStore } from "./stores/app-store";
 import { useFileStore } from "./stores/file-store";
 import { useSourceHighlight } from "./use-source-highlight";
 
+type CompilationResult =
+  | { type: "idle" }
+  | {
+      type: "success";
+      labels: string[];
+      compileFn: (ep: string) => Computer;
+    }
+  | { type: "error" };
+
+type UICompilationStatus = "idle" | "pending" | "success" | "error";
+
 const App = () => {
   const monacoInstance = useMonaco();
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
@@ -30,8 +42,18 @@ const App = () => {
   const activeFile = useFileStore((s) => s.activeFile);
   const startCompile = useAppStore((s) => s.startCompile);
   const confirmEntrypoint = useAppStore((s) => s.confirmEntrypoint);
+  const startDebug = useAppStore((s) => s.startDebug);
   const stopDebug = useAppStore((s) => s.stopDebug);
   const mode = useAppStore((s) => s.mode);
+  const setEntrypoint = useFileStore((s) => s.setEntrypoint);
+  const entrypoints = useFileStore((s) => s.entrypoints);
+
+  const [compilationResult, setCompilationResult] = useState<CompilationResult>(
+    { type: "idle" },
+  );
+
+  // Tracks Monaco decoration IDs per model URI string for proper cleanup
+  const decorationIds = useRef(new Map<string, string[]>());
 
   // Initialize Monaco sync once after Monaco loads
   useEffect(() => {
@@ -39,38 +61,106 @@ const App = () => {
     return initMonacoSync(monacoInstance);
   }, [monacoInstance]);
 
-  const handleCompileAndRun = useCallback(() => {
+  const performCompile = useCallback(() => {
     if (!monacoInstance) return;
-
-    const filesRecord = getMonacoFiles();
-    const files = new Map(Object.entries(filesRecord));
-    const entrypoint = `/${activeFile}`;
-
-    const preprocessor = new InMemoryPreprocessor(files, entrypoint);
+    const files = new Map(Object.entries(getMonacoFiles()));
+    const preprocessor = new InMemoryPreprocessor(files, `/${activeFile}`);
     const result = preprocessor.compile();
-    const prog = result.program;
-    const report = result.report;
+    const { program: prog, report } = result;
 
-    if ((prog && report) || (!prog && !report)) {
-      throw Error("Invalid return value");
+    // Clear old decorations from all models
+    for (const [uriStr, ids] of decorationIds.current) {
+      monacoInstance.editor
+        .getModel(monacoInstance.Uri.parse(uriStr))
+        ?.deltaDecorations(ids, []);
     }
+    decorationIds.current.clear();
 
     if (prog) {
-      startCompile(prog.labels, (ep: string) => prog.compile(ep));
-    }
-
-    if (report) {
+      setCompilationResult({
+        type: "success",
+        labels: prog.labels,
+        compileFn: (ep) => prog.compile(ep),
+      });
+    } else if (report) {
       try {
         const reportObject = reportSchema.parse(JSON.parse(report));
         for (const model of monacoInstance.editor.getModels()) {
           const decorations = toMonacoDecoration(model, reportObject);
-          model.deltaDecorations([], decorations);
+          if (decorations.length > 0) {
+            const newIds = model.deltaDecorations([], decorations);
+            decorationIds.current.set(model.uri.toString(), newIds);
+          }
         }
-      } catch (e: unknown) {
-        console.log(String(e));
+      } catch (e) {
+        console.warn(e);
       }
+      setCompilationResult({ type: "error" });
     }
-  }, [monacoInstance, activeFile, startCompile]);
+  }, [monacoInstance, activeFile]);
+
+  const compileDebouncer = useDebouncer(
+    performCompile,
+    { wait: 600 },
+    (state) => ({ isPending: state.isPending }),
+  );
+
+  // Attach Monaco content-change listeners and trigger initial compile
+  useEffect(() => {
+    if (!monacoInstance) return;
+
+    compileDebouncer.maybeExecute();
+
+    type Disposable = { dispose(): void };
+    const disposables: Disposable[] = [];
+
+    for (const model of monacoInstance.editor.getModels()) {
+      disposables.push(
+        model.onDidChangeContent(() => {
+          compileDebouncer.maybeExecute();
+        }),
+      );
+    }
+
+    disposables.push(
+      monacoInstance.editor.onDidCreateModel((model) => {
+        disposables.push(
+          model.onDidChangeContent(() => {
+            compileDebouncer.maybeExecute();
+          }),
+        );
+      }),
+    );
+
+    return () => {
+      for (const d of disposables) d.dispose();
+    };
+  }, [monacoInstance, compileDebouncer.maybeExecute]);
+
+  // Re-trigger on activeFile change (new preprocessor entrypoint)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: activeFile is an intentional trigger dep
+  useEffect(() => {
+    compileDebouncer.maybeExecute();
+  }, [activeFile, compileDebouncer.maybeExecute]);
+
+  const handleRun = useCallback(() => {
+    if (compilationResult.type !== "success") return;
+    const { labels, compileFn } = compilationResult;
+    const rememberedEp = entrypoints[activeFile];
+    if (rememberedEp && labels.includes(rememberedEp)) {
+      startDebug(compileFn, rememberedEp);
+    } else {
+      startCompile(labels, compileFn);
+    }
+  }, [compilationResult, entrypoints, activeFile, startDebug, startCompile]);
+
+  const handleConfirmEntrypoint = useCallback(
+    (ep: string) => {
+      setEntrypoint(activeFile, ep);
+      confirmEntrypoint(ep);
+    },
+    [activeFile, setEntrypoint, confirmEntrypoint],
+  );
 
   const handleEditorMount = useCallback(
     (editor: monaco.editor.IStandaloneCodeEditor) => {
@@ -79,11 +169,16 @@ const App = () => {
     [],
   );
 
+  const compilationStatus: UICompilationStatus = compileDebouncer.state
+    .isPending
+    ? "pending"
+    : compilationResult.type;
+
   const isDebugging = mode.type === "debug";
 
   return (
     <main className="flex h-screen bg-background">
-      <FileSidebar onCompileAndRun={handleCompileAndRun} />
+      <FileSidebar onRun={handleRun} compilationStatus={compilationStatus} />
 
       <div className="flex-1 min-w-0">
         {isDebugging ? (
@@ -109,7 +204,10 @@ const App = () => {
           {mode.type === "pending-entrypoint" && (
             <EntrypointSelector
               entrypoints={mode.labels}
-              onRun={confirmEntrypoint}
+              onRun={handleConfirmEntrypoint}
+              {...(entrypoints[activeFile] !== undefined && {
+                defaultEntrypoint: entrypoints[activeFile],
+              })}
             />
           )}
         </PopoverContent>
