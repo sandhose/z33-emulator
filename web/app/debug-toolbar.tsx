@@ -12,6 +12,7 @@ import type { ComputerInterface } from "./computer";
 import { useCycles } from "./computer";
 import { cn } from "./lib/utils";
 import { useAppStore } from "./stores/app-store";
+import { ThemeSwitcher } from "./theme-switcher";
 
 function useStepRunner(computer: ComputerInterface) {
   const [halt, setHalt] = useState(false);
@@ -200,7 +201,7 @@ const DebugToolbarInner: React.FC<{
               if (v !== null) onFileChange(v);
             }}
           >
-            <SelectTrigger className="h-7 text-xs font-mono w-36">
+            <SelectTrigger size="xs" className="font-mono w-36">
               <SelectValue />
             </SelectTrigger>
             <SelectContent align="end">
@@ -220,6 +221,7 @@ const DebugToolbarInner: React.FC<{
           <SquareIcon className="mr-1 h-3.5 w-3.5" />
           Stop
         </Button>
+        <ThemeSwitcher />
       </div>
     </div>
   );

@@ -1,6 +1,5 @@
 import { useMonaco } from "@monaco-editor/react";
 import { useDebouncer } from "@tanstack/react-pacer";
-import { CheckCircle2Icon, XCircleIcon } from "lucide-react";
 import type * as monaco from "monaco-editor";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Group, Panel } from "react-resizable-panels";
@@ -9,6 +8,7 @@ import { InMemoryPreprocessor } from "z33-web-bindings";
 import type { ComputerInterface, Labels } from "./computer";
 import { RegisterPanel } from "./debug-sidebar";
 import { DebugToolbar } from "./debug-toolbar";
+import { EditToolbar } from "./edit-toolbar";
 import { FileSidebar } from "./file-sidebar";
 import { getMonacoFiles, initMonacoSync } from "./lib/monaco-sync";
 import { MemoryPanel } from "./memory-panel";
@@ -199,51 +199,36 @@ const App = () => {
   const isDebugging = mode.type === "debug";
 
   return (
-    <main className="flex h-screen bg-background">
-      <FileSidebar
-        onRun={handleRun}
-        compilationStatus={compilationStatus}
-        labels={
-          compilationResult.type === "success" ? compilationResult.labels : []
-        }
-        defaultEntrypoint={entrypoints[activeFile]}
-      />
-
-      <div className="flex-1 min-w-0 flex flex-col">
-        {isDebugging ? (
-          <DebugLayout onEditorMount={handleEditorMount} />
-        ) : (
-          <>
+    <main className="flex flex-col h-screen bg-background">
+      {!isDebugging && (
+        <EditToolbar
+          onRun={handleRun}
+          compilationStatus={compilationStatus}
+          compilationError={
+            compilationResult.type === "error"
+              ? compilationResult.message
+              : undefined
+          }
+          labels={
+            compilationResult.type === "success" ? compilationResult.labels : []
+          }
+          defaultEntrypoint={entrypoints[activeFile]}
+        />
+      )}
+      <div className="flex flex-1 min-h-0">
+        <FileSidebar />
+        <div className="flex-1 min-w-0 flex flex-col min-h-0">
+          {isDebugging ? (
+            <DebugLayout onEditorMount={handleEditorMount} />
+          ) : (
             <div className="flex-1 min-h-0">
               <MultiFileEditor
                 filePath={activeFile}
                 onEditorMount={handleEditorMount}
               />
             </div>
-            {compilationStatus !== "idle" &&
-              compilationStatus !== "pending" && (
-                <div className="px-6 py-4 border-t border-border text-xs flex items-center gap-2 shrink-0">
-                  {compilationStatus === "error" ? (
-                    <>
-                      <XCircleIcon className="shrink-0 size-3.5 text-destructive" />
-                      <span className="text-destructive">
-                        {compilationResult.type === "error"
-                          ? compilationResult.message
-                          : "Compilation failed"}
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle2Icon className="shrink-0 size-3.5 text-green-600 dark:text-green-400" />
-                      <span className="text-green-600 dark:text-green-400">
-                        No errors
-                      </span>
-                    </>
-                  )}
-                </div>
-              )}
-          </>
-        )}
+          )}
+        </div>
       </div>
     </main>
   );
