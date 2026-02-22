@@ -156,9 +156,9 @@ pub struct SourceLocation {
     pub span: (usize, usize),
 }
 
-/// Compose the debug info source map (address → byte range in preprocessor output)
-/// with the preprocessor source map (byte offset → original file location)
-/// to produce a map of address → original source location.
+/// Compose the debug info source map (address → byte range in preprocessor
+/// output) with the preprocessor source map (byte offset → original file
+/// location) to produce a map of address → original source location.
 fn compose_source_maps(
     debug_source_map: &BTreeMap<Address, Range<usize>>,
     preprocessor_source_map: &ReferencingSourceMap,
@@ -186,6 +186,7 @@ fn compiler_error_to_report(
     files: &HashMap<String, String>,
 ) -> miette::Report {
     use std::error::Error as StdError;
+
     use z33_emulator::compiler::CompilationError;
 
     // Build a full message by walking the error source chain
@@ -256,7 +257,8 @@ impl Program {
 
     /// Check whether the program can be assembled (layout + fill phases).
     ///
-    /// Returns a JSON-formatted miette report string on failure, or `None` on success.
+    /// Returns a JSON-formatted miette report string on failure, or `None` on
+    /// success.
     #[wasm_bindgen]
     #[must_use]
     pub fn check(&self) -> Option<String> {
