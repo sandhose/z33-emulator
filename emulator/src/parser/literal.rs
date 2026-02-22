@@ -140,7 +140,8 @@ where
         parse_octal_literal,
         parse_binary_literal,
         map_res(take_while1(is_digit), from_decimal),
-    )).parse(input)
+    ))
+    .parse(input)
 }
 
 #[cfg(test)]

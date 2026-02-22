@@ -59,7 +59,9 @@ pub fn parse_new<'a, Error: ParseError<&'a str>>(
     input: &'a str,
 ) -> Result<Located<Program>, Error> {
     // TODO: proper error handling & wrap those steps
-    let (_, program) = all_consuming(self::line::parse_program).parse(input).finish()?;
+    let (_, program) = all_consuming(self::line::parse_program)
+        .parse(input)
+        .finish()?;
     let program = program.with_location(0..input.len());
 
     Ok(program)
