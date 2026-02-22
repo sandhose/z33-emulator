@@ -1,5 +1,6 @@
 import { useMonaco } from "@monaco-editor/react";
 import { useDebouncer } from "@tanstack/react-pacer";
+import { CheckCircle2Icon, XCircleIcon } from "lucide-react";
 import type * as monaco from "monaco-editor";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Group, Panel } from "react-resizable-panels";
@@ -25,7 +26,7 @@ type CompilationResult =
       labels: string[];
       compileFn: (ep: string) => Computer;
     }
-  | { type: "error" };
+  | { type: "error"; message: string };
 
 type UICompilationStatus = "idle" | "pending" | "success" | "error";
 
@@ -74,8 +75,10 @@ const App = () => {
       // Check for fill/layout errors (unresolved labels, etc.)
       const checkReport = prog.check();
       if (checkReport !== undefined) {
+        let errorMessage = "Compilation failed";
         try {
           const reportObject = reportSchema.parse(JSON.parse(checkReport));
+          errorMessage = reportObject.message;
           for (const model of monacoInstance.editor.getModels()) {
             const { markers, decorations } = toMonacoDiagnostics(
               model,
@@ -90,7 +93,7 @@ const App = () => {
         } catch (e) {
           console.warn(e);
         }
-        setCompilationResult({ type: "error" });
+        setCompilationResult({ type: "error", message: errorMessage });
         return;
       }
 
@@ -100,8 +103,10 @@ const App = () => {
         compileFn: (ep) => prog.compile(ep),
       });
     } else if (report) {
+      let errorMessage = "Failed to parse";
       try {
         const reportObject = reportSchema.parse(JSON.parse(report));
+        errorMessage = reportObject.message;
         for (const model of monacoInstance.editor.getModels()) {
           const { markers, decorations } = toMonacoDiagnostics(
             model,
@@ -116,7 +121,7 @@ const App = () => {
       } catch (e) {
         console.warn(e);
       }
-      setCompilationResult({ type: "error" });
+      setCompilationResult({ type: "error", message: errorMessage });
     }
   }, [monacoInstance, activeFile]);
 
@@ -203,14 +208,40 @@ const App = () => {
         defaultEntrypoint={entrypoints[activeFile]}
       />
 
-      <div className="flex-1 min-w-0">
+      <div className="flex-1 min-w-0 flex flex-col">
         {isDebugging ? (
           <DebugLayout onEditorMount={handleEditorMount} />
         ) : (
-          <MultiFileEditor
-            filePath={activeFile}
-            onEditorMount={handleEditorMount}
-          />
+          <>
+            <div className="flex-1 min-h-0">
+              <MultiFileEditor
+                filePath={activeFile}
+                onEditorMount={handleEditorMount}
+              />
+            </div>
+            {compilationStatus !== "idle" &&
+              compilationStatus !== "pending" && (
+                <div className="px-3 py-1.5 border-t border-border text-xs flex items-center gap-1.5 shrink-0">
+                  {compilationStatus === "error" ? (
+                    <>
+                      <XCircleIcon className="shrink-0 size-3.5 text-destructive" />
+                      <span className="text-destructive">
+                        {compilationResult.type === "error"
+                          ? compilationResult.message
+                          : "Compilation failed"}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2Icon className="shrink-0 size-3.5 text-green-600 dark:text-green-400" />
+                      <span className="text-green-600 dark:text-green-400">
+                        No errors
+                      </span>
+                    </>
+                  )}
+                </div>
+              )}
+          </>
         )}
       </div>
     </main>

@@ -24,7 +24,7 @@ export const MultiFileEditor: React.FC<Props> = ({
       onMount={(editor) => {
         onEditorMount?.(editor);
       }}
-      options={{ readOnly }}
+      options={{ readOnly, glyphMargin: true }}
     />
   );
 };
