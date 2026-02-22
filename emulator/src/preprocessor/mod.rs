@@ -103,6 +103,18 @@ impl ReferencingSourceMap {
             .next_back()
             .map(|(_, span)| span)
     }
+
+    /// Like [`find`](Self::find), but also returns the chunk start offset.
+    ///
+    /// This is needed to compute the exact position within the original file:
+    /// `original_offset = span.span.start + (position - chunk_key)`
+    #[must_use]
+    pub fn find_with_key(&self, position: usize) -> Option<(usize, &ReferencingSpan)> {
+        self.spans
+            .range(..=position)
+            .next_back()
+            .map(|(&key, span)| (key, span))
+    }
 }
 
 impl From<SourceMap<'_>> for ReferencingSourceMap {
