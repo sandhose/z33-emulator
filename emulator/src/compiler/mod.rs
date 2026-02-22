@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::ops::Range;
 
 use thiserror::Error;
 use tracing::debug;
@@ -18,6 +19,9 @@ type Labels = BTreeMap<String, C::Address>;
 pub struct DebugInfo {
     /// Map of labels to addresses
     pub labels: Labels,
+
+    /// Map of addresses to byte ranges in the preprocessor output
+    pub source_map: BTreeMap<C::Address, Range<usize>>,
 }
 
 #[derive(Debug, Error)]
@@ -63,6 +67,7 @@ pub fn compile(
             .iter()
             .map(|(key, value)| (key.clone(), *value))
             .collect(),
+        source_map: layout.source_map(),
     };
 
     Ok((computer, debug_info))

@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
+use std::ops::Range;
 use std::rc::Rc;
 
 use camino::Utf8PathBuf;
@@ -138,6 +139,37 @@ impl InMemoryPreprocessor {
     }
 }
 
+#[derive(Serialize, Tsify, Clone)]
+#[tsify(into_wasm_abi)]
+pub struct SourceLocation {
+    pub file: String,
+    pub span: (usize, usize),
+}
+
+/// Compose the debug info source map (address → byte range in preprocessor output)
+/// with the preprocessor source map (byte offset → original file location)
+/// to produce a map of address → original source location.
+fn compose_source_maps(
+    debug_source_map: &BTreeMap<Address, Range<usize>>,
+    preprocessor_source_map: &ReferencingSourceMap,
+) -> BTreeMap<Address, SourceLocation> {
+    debug_source_map
+        .iter()
+        .filter_map(|(&address, range)| {
+            let (chunk_key, span) = preprocessor_source_map.find_with_key(range.start)?;
+            let start = span.span.start + (range.start - chunk_key);
+            let end = span.span.start + (range.end - chunk_key);
+            Some((
+                address,
+                SourceLocation {
+                    file: span.name.clone(),
+                    span: (start, end),
+                },
+            ))
+        })
+        .collect()
+}
+
 #[wasm_bindgen]
 #[derive(Clone)]
 pub struct Program {
@@ -194,10 +226,13 @@ impl Program {
         tracing::info!("Cloned");
         let memory = MemoryObserver::new(memory);
 
+        let source_map = compose_source_maps(&debug_info.source_map, &self.source_map);
+
         tracing::info!("Compiled");
 
         Ok(Computer {
             debug_info,
+            source_map,
             inner: computer,
             cycles,
             registers,
@@ -214,9 +249,14 @@ pub struct Cycles(usize);
 #[tsify(into_wasm_abi)]
 pub struct Labels(Vec<String>);
 
+#[derive(Serialize, Tsify)]
+#[tsify(into_wasm_abi)]
+pub struct SourceMap(BTreeMap<u32, SourceLocation>);
+
 #[wasm_bindgen]
 pub struct Computer {
     debug_info: z33_emulator::compiler::DebugInfo,
+    source_map: BTreeMap<Address, SourceLocation>,
     inner: z33_emulator::runtime::Computer,
     cycles: Observable<Cycles>,
     registers: Observable<Registers>,
@@ -306,6 +346,12 @@ impl Computer {
     #[must_use]
     pub fn labels(&self) -> LabelsWithAddresses {
         LabelsWithAddresses(self.debug_info.labels.clone())
+    }
+
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn source_map(&self) -> SourceMap {
+        SourceMap(self.source_map.clone())
     }
 
     #[must_use]

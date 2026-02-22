@@ -48,6 +48,20 @@ pub struct Layout {
 }
 
 impl Layout {
+    /// Extract a source map mapping addresses to byte ranges in the preprocessor output.
+    ///
+    /// Only includes entries for `Placement::Line` (instructions and `.word` directives).
+    #[must_use]
+    pub fn source_map(&self) -> BTreeMap<Address, Range<usize>> {
+        self.memory
+            .iter()
+            .filter_map(|(address, placement)| match placement {
+                Placement::Line(located) => Some((*address, located.location.clone())),
+                _ => None,
+            })
+            .collect()
+    }
+
     fn insert_placement(
         &mut self,
         address: Address,

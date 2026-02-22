@@ -19,7 +19,13 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import type { Cell, Computer, Cycles, Registers } from "z33-web-bindings";
+import type {
+  Cell,
+  Computer,
+  Cycles,
+  Registers,
+  SourceMap,
+} from "z33-web-bindings";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
 import {
@@ -290,16 +296,42 @@ export const CyclesView: React.FC<{
   return <div className={className}>Cycles: {cycles}</div>;
 };
 
+const SourceLocationView: React.FC<{
+  computer: Computer;
+  sourceMap: SourceMap;
+}> = ({ computer, sourceMap }) => {
+  const registers = useRegisters(computer);
+  const location = sourceMap.get(registers.pc);
+  if (!location) {
+    return (
+      <div className="border p-4 rounded text-sm text-muted-foreground">
+        No source location for address {registers.pc}
+      </div>
+    );
+  }
+
+  return (
+    <div className="border p-4 rounded text-sm font-mono">
+      <div className="font-semibold">{location.file}</div>
+      <div className="text-muted-foreground">
+        bytes {location.span[0]}..{location.span[1]}
+      </div>
+    </div>
+  );
+};
+
 export const ControlSection: React.FC<{
   className?: string;
   computer: Computer;
   labels: Labels;
-}> = memo(({ className, computer, labels }) => {
+  sourceMap: SourceMap;
+}> = memo(({ className, computer, labels, sourceMap }) => {
   const onStep = useCallback(() => computer.step(), [computer]);
   return (
     <Section className={className}>
       <Title>Controls</Title>
       <CyclesView computer={computer} className="border p-4 rounded" />
+      <SourceLocationView computer={computer} sourceMap={sourceMap} />
       <div className="flex-1">
         <RegisterView computer={computer} labels={labels} />
       </div>
@@ -477,9 +509,16 @@ export const ComputerView: React.FC<{ computer: Computer }> = ({
     return labels;
   }, [computer]);
 
+  const sourceMap = useMemo(() => computer.source_map, [computer]);
+
   return (
     <div className="flex justify-center gap-4 p-4 w-screen h-screen">
-      <ControlSection className="w-96" computer={computer} labels={labels} />
+      <ControlSection
+        className="w-96"
+        computer={computer}
+        labels={labels}
+        sourceMap={sourceMap}
+      />
 
       <ProgramCounterSection
         className="flex-1"
