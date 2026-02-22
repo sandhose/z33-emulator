@@ -6,7 +6,6 @@ import {
   StepForwardIcon,
 } from "lucide-react";
 import { memo, useCallback, useRef, useState } from "react";
-import type { Computer } from "z33-web-bindings";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
 import {
@@ -15,6 +14,7 @@ import {
   TooltipTrigger,
 } from "./components/ui/tooltip";
 import {
+  type ComputerInterface,
   type Labels,
   MemoryViewer,
   type MemoryViewerRef,
@@ -25,7 +25,7 @@ import { cn } from "./lib/utils";
 type Tab = "pc" | "stack" | "memory";
 
 type MemoryPanelProps = {
-  computer: Computer;
+  computer: ComputerInterface;
   labels: Labels;
   className?: string;
 };
@@ -49,7 +49,7 @@ const TabButton: React.FC<{
   </button>
 );
 
-const PcTab: React.FC<{ computer: Computer; labels: Labels }> = memo(
+const PcTab: React.FC<{ computer: ComputerInterface; labels: Labels }> = memo(
   ({ computer, labels }) => {
     const ref = useRef<MemoryViewerRef>(null);
     const registers = useRegisters(computer);
@@ -85,8 +85,8 @@ const PcTab: React.FC<{ computer: Computer; labels: Labels }> = memo(
 );
 PcTab.displayName = "PcTab";
 
-const StackTab: React.FC<{ computer: Computer; labels: Labels }> = memo(
-  ({ computer, labels }) => {
+const StackTab: React.FC<{ computer: ComputerInterface; labels: Labels }> =
+  memo(({ computer, labels }) => {
     const ref = useRef<MemoryViewerRef>(null);
     const registers = useRegisters(computer);
 
@@ -117,12 +117,11 @@ const StackTab: React.FC<{ computer: Computer; labels: Labels }> = memo(
         </div>
       </div>
     );
-  },
-);
+  });
 StackTab.displayName = "StackTab";
 
-const MemoryTab: React.FC<{ computer: Computer; labels: Labels }> = memo(
-  ({ computer, labels }) => {
+const MemoryTab: React.FC<{ computer: ComputerInterface; labels: Labels }> =
+  memo(({ computer, labels }) => {
     const [viewAddress, setViewAddress] = useState(1000);
     const minus10 = useCallback(() => setViewAddress((a) => a - 10), []);
     const minus1 = useCallback(() => setViewAddress((a) => a - 1), []);
@@ -174,8 +173,7 @@ const MemoryTab: React.FC<{ computer: Computer; labels: Labels }> = memo(
         </div>
       </div>
     );
-  },
-);
+  });
 MemoryTab.displayName = "MemoryTab";
 
 export const MemoryPanel: React.FC<MemoryPanelProps> = memo(
