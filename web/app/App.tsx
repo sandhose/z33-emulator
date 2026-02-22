@@ -71,6 +71,29 @@ const App = () => {
     decorationIds.current.clear();
 
     if (prog) {
+      // Check for fill/layout errors (unresolved labels, etc.)
+      const checkReport = prog.check();
+      if (checkReport !== undefined) {
+        try {
+          const reportObject = reportSchema.parse(JSON.parse(checkReport));
+          for (const model of monacoInstance.editor.getModels()) {
+            const { markers, decorations } = toMonacoDiagnostics(
+              model,
+              reportObject,
+            );
+            monacoInstance.editor.setModelMarkers(model, "z33", markers);
+            if (decorations.length > 0) {
+              const ids = model.deltaDecorations([], decorations);
+              decorationIds.current.set(model.uri.toString(), ids);
+            }
+          }
+        } catch (e) {
+          console.warn(e);
+        }
+        setCompilationResult({ type: "error" });
+        return;
+      }
+
       setCompilationResult({
         type: "success",
         labels: prog.labels,
@@ -144,8 +167,13 @@ const App = () => {
   const handleRun = useCallback(
     (entrypoint: string) => {
       if (compilationResult.type !== "success") return;
-      setEntrypoint(activeFile, entrypoint);
-      startDebug(compilationResult.compileFn, entrypoint);
+      try {
+        setEntrypoint(activeFile, entrypoint);
+        startDebug(compilationResult.compileFn, entrypoint);
+      } catch (e) {
+        // check() should have caught errors before Run; this is a safety net
+        console.error("Compilation failed at run time:", e);
+      }
     },
     [compilationResult, activeFile, setEntrypoint, startDebug],
   );

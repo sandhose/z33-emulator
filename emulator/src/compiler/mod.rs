@@ -36,6 +36,14 @@ pub enum CompilationError {
     UnknownEntrypoint(String),
 }
 
+/// Run layout and fill without selecting an entrypoint.
+/// Returns `Ok(())` if the program can be assembled, or a `CompilationError`.
+pub fn check(program: &Program) -> Result<(), CompilationError> {
+    let layout = self::layout::layout_memory(&program.lines)?;
+    self::memory::fill_memory(&layout)?;
+    Ok(())
+}
+
 #[tracing::instrument(skip(program))]
 pub fn compile(
     program: &Program,

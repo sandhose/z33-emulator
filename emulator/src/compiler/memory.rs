@@ -325,7 +325,7 @@ fn compile_placement(labels: &Labels, placement: &Placement) -> Result<Cell, Mem
                         source,
                         location: Range {
                             start: location.start + line_location.start,
-                            end: location.end + line_location.end,
+                            end: location.end + line_location.start,
                         },
                     })?;
             Ok(Cell::Word(value))
@@ -356,7 +356,7 @@ fn compile_placement(labels: &Labels, placement: &Placement) -> Result<Cell, Mem
                         .map_err(|source| MemoryFillError::Compute {
                             location: Range {
                                 start: argument.location.start + line_location.start,
-                                end: argument.location.end + line_location.end,
+                                end: argument.location.end + line_location.start,
                             },
                             source,
                         })
@@ -367,7 +367,7 @@ fn compile_placement(labels: &Labels, placement: &Placement) -> Result<Cell, Mem
                 MemoryFillError::InstructionCompilation {
                     location: Range {
                         start: kind.location.start + line_location.start,
-                        end: kind.location.end + line_location.end,
+                        end: kind.location.end + line_location.start,
                     },
                     source,
                 }

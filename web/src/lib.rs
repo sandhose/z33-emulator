@@ -8,7 +8,7 @@ use miette::JSONReportHandler;
 use serde::{Deserialize, Serialize};
 use tsify::Tsify;
 use wasm_bindgen::prelude::*;
-use z33_emulator::compiler::compile;
+use z33_emulator::compiler::{check as compiler_check, compile};
 use z33_emulator::constants::Address;
 use z33_emulator::preprocessor::{
     InMemoryFilesystem, PreprocessorError, ReferencingSourceMap, Workspace,
@@ -25,6 +25,7 @@ fn start() {
 #[wasm_bindgen]
 pub struct InMemoryPreprocessor {
     preprocessor: Workspace,
+    files: HashMap<String, String>,
 }
 
 #[derive(Default, Deserialize, Tsify)]
@@ -98,10 +99,18 @@ impl InMemoryPreprocessor {
     #[wasm_bindgen(constructor)]
     #[must_use]
     pub fn new(files: InputFiles, entrypoint: String) -> Self {
+        let files_map: HashMap<String, String> = files
+            .0
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.clone()))
+            .collect();
         let fs = InMemoryFilesystem::new(files.0);
         let entrypoint = Utf8PathBuf::from(entrypoint);
         let preprocessor = Workspace::new(&fs, &entrypoint);
-        Self { preprocessor }
+        Self {
+            preprocessor,
+            files: files_map,
+        }
     }
 
     /// Compile the given file
@@ -120,6 +129,7 @@ impl InMemoryPreprocessor {
         match program {
             Ok(program) => CompilationResult::new(Program {
                 source_map: source_map.into(),
+                files: self.files.clone(),
                 program,
             }),
             Err(e) => {
@@ -170,11 +180,55 @@ fn compose_source_maps(
         .collect()
 }
 
+fn compiler_error_to_report(
+    error: &z33_emulator::compiler::CompilationError,
+    source_map: &ReferencingSourceMap,
+    files: &HashMap<String, String>,
+) -> miette::Report {
+    use std::error::Error as StdError;
+    use z33_emulator::compiler::CompilationError;
+
+    // Build a full message by walking the error source chain
+    let mut msg = error.to_string();
+    let mut cause: Option<&dyn StdError> = StdError::source(error);
+    while let Some(c) = cause {
+        msg.push_str(": ");
+        msg.push_str(&c.to_string());
+        cause = c.source();
+    }
+
+    // Extract the byte range in the preprocessed source, if available
+    let location: Option<std::ops::Range<usize>> = match error {
+        CompilationError::MemoryFill(e) => Some(e.location().clone()),
+        CompilationError::MemoryLayout(e) => e.location().cloned(),
+        CompilationError::UnknownEntrypoint(_) => None,
+    };
+
+    if let Some(loc) = location {
+        if let Some((chunk_key, span_info)) = source_map.find_with_key(loc.start) {
+            if let Some(content) = files.get(&span_info.name) {
+                let start = span_info.span.start + (loc.start - chunk_key);
+                let end = span_info.span.start + (loc.end - chunk_key);
+                let named_source =
+                    miette::NamedSource::new(span_info.name.clone(), content.clone());
+                return miette::miette!(
+                    labels = vec![miette::LabeledSpan::underline(start..end)],
+                    "{msg}"
+                )
+                .with_source_code(named_source);
+            }
+        }
+    }
+
+    miette::miette!("{msg}")
+}
+
 #[wasm_bindgen]
 #[derive(Clone)]
+#[allow(clippy::struct_field_names)]
 pub struct Program {
-    #[allow(dead_code)]
     source_map: ReferencingSourceMap,
+    files: HashMap<String, String>,
     program: z33_emulator::parser::location::Located<z33_emulator::parser::Program>,
 }
 
@@ -198,6 +252,21 @@ impl Program {
                 .map(ToOwned::to_owned)
                 .collect(),
         )
+    }
+
+    /// Check whether the program can be assembled (layout + fill phases).
+    ///
+    /// Returns a JSON-formatted miette report string on failure, or `None` on success.
+    #[wasm_bindgen]
+    #[must_use]
+    pub fn check(&self) -> Option<String> {
+        match compiler_check(&self.program.inner) {
+            Ok(()) => None,
+            Err(ref e) => {
+                let report = compiler_error_to_report(e, &self.source_map, &self.files);
+                Some(format!("{report:?}"))
+            }
+        }
     }
 
     /// Compile the program at the given entrypoint
