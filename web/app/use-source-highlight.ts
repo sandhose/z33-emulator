@@ -1,5 +1,5 @@
 import type * as monaco from "monaco-editor";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Computer, SourceMap } from "z33-web-bindings";
 import { useRegisters } from "./computer";
 
@@ -48,6 +48,20 @@ export function useSourceHighlight({
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const byteToCharRef = useRef<Uint32Array | null>(null);
   const modelUriRef = useRef<string | null>(null);
+
+  // Re-run the highlight effect whenever the editor switches to a different model.
+  // This is needed because onSwitchFile triggers a React state update that causes
+  // @monaco-editor/react to call editor.setModel(), but the highlight effect's
+  // deps don't change — so we track the active model URI as state to force a re-run.
+  const [currentModelUri, setCurrentModelUri] = useState<string | null>(null);
+  useEffect(() => {
+    if (!editor) return;
+    setCurrentModelUri(editor.getModel()?.uri.toString() ?? null);
+    const disposable = editor.onDidChangeModel((e) => {
+      setCurrentModelUri(e.newModelUrl?.toString() ?? null);
+    });
+    return () => disposable.dispose();
+  }, [editor]);
 
   useEffect(() => {
     if (!editor) return;
@@ -133,7 +147,7 @@ export function useSourceHighlight({
     ]);
 
     editor.revealLineInCenter(startPos.lineNumber);
-  }, [editor, sourceMap, registers.pc, onSwitchFile]);
+  }, [editor, sourceMap, registers.pc, onSwitchFile, currentModelUri]);
 
   // Cleanup on unmount
   useEffect(() => {
