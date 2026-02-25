@@ -17,7 +17,7 @@ import { useFileStore } from "./stores/file-store";
 
 const sampleFiles = Object.fromEntries(
   Object.entries(
-    import.meta.glob<string>("../../samples/*.S", {
+    import.meta.glob<string>("../../samples/*.s", {
       query: "?raw",
       import: "default",
       eager: true,
@@ -156,7 +156,7 @@ export const FileSidebar: React.FC = () => {
       )
     )
       return;
-    resetFiles(sampleFiles, "fact.S");
+    resetFiles(sampleFiles, "fact.s");
   }, [resetFiles]);
 
   if (isDebugging) return null;

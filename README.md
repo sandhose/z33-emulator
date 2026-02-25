@@ -39,13 +39,13 @@ cargo build --release
 ## Running a program
 
 ```sh
-[path to]/z33-cli run samples/fact.S main
+[path to]/z33-cli run samples/fact.s main
 ```
 
 ## Interactive mode
 
 ```sh
-[path to]/z33-cli run -i samples/fact.S main
+[path to]/z33-cli run -i samples/fact.s main
 ```
 
 ### Available commands:

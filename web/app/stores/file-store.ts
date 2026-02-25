@@ -6,7 +6,7 @@ const WORKSPACE_V2_KEY = "z33:workspace-v2";
 
 const sampleFiles = Object.fromEntries(
   Object.entries(
-    import.meta.glob<string>("../../../samples/*.S", {
+    import.meta.glob<string>("../../../samples/*.s", {
       query: "?raw",
       import: "default",
       eager: true,
