@@ -18,8 +18,11 @@ const ROW_HEIGHT = 28;
 
 export type Labels = Map<number, string[]>;
 
-/** Registers that can be followed in the memory viewer */
-export type Following = "%pc" | "%sp" | "%a" | "%b";
+/** Narrow type for actual CPU registers */
+export type RegisterId = "%pc" | "%sp" | "%a" | "%b";
+
+/** Anything that can be followed in the memory viewer: a register or a label */
+export type Following = RegisterId | `label:${string}`;
 
 /** Interface satisfied by the WASM Computer class, and future worker proxies */
 export interface ComputerInterface {
@@ -107,7 +110,7 @@ const Label: React.FC<{ label: string }> = ({ label }) => (
   </div>
 );
 
-export const RegisterBadge: React.FC<{ register: Following }> = ({
+export const RegisterBadge: React.FC<{ register: RegisterId }> = ({
   register,
 }) => {
   switch (register) {
@@ -138,7 +141,7 @@ export const RegisterBadge: React.FC<{ register: Following }> = ({
   }
 };
 
-export const RegisterDot: React.FC<{ register: Following }> = ({
+export const RegisterDot: React.FC<{ register: RegisterId }> = ({
   register,
 }) => {
   switch (register) {
@@ -167,7 +170,7 @@ export type MemoryViewerRef = {
 };
 
 /** Map from address to list of registers pointing there */
-export type Pointers = Map<number, Following[]>;
+export type Pointers = Map<number, RegisterId[]>;
 
 type MemoryViewerProps = {
   computer: ComputerInterface;
