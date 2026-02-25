@@ -19,7 +19,6 @@ const InlineFileInput: React.FC<{
   onSubmit: (filename: string) => void;
   onCancel: () => void;
 }> = ({ onSubmit, onCancel }) => {
-  const [value, setValue] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -31,14 +30,16 @@ const InlineFileInput: React.FC<{
       className="px-2 py-1"
       onSubmit={(e) => {
         e.preventDefault();
-        if (value.trim()) onSubmit(value.trim());
+        const data = new FormData(e.target as HTMLFormElement);
+        const filename = data.get("filename");
+        if (typeof filename !== "string") throw new Error();
+        if (filename.trim()) onSubmit(filename.trim());
       }}
     >
       <input
         ref={inputRef}
+        name="filename"
         className="w-full bg-transparent text-sm font-mono outline-none border-b border-ring"
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
         onBlur={onCancel}
         onKeyDown={(e) => {
           if (e.key === "Escape") onCancel();
