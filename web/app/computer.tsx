@@ -12,6 +12,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import type { Cell, Cycles, Registers, SourceMap } from "z33-web-bindings";
+import { cn } from "./lib/utils";
 
 const MEMORY_SIZE = 10_000;
 const ROW_HEIGHT = 28;
@@ -37,13 +38,32 @@ export interface ComputerInterface {
   readonly labels: Iterable<[string, number]>;
 }
 
+const WordValue: React.FC<{ word: number | string; muted?: boolean }> = ({
+  word,
+  muted,
+}) => (
+  <span
+    className={cn(
+      "inline-block min-w-[8ch] text-right",
+      muted && "text-muted-foreground",
+    )}
+  >
+    {word}
+  </span>
+);
+
 export const Word: React.FC<{ word: number; labels: Labels }> = ({
   word,
   labels,
 }) => {
   const list = labels.get(word);
   if (list) {
-    return <>{word} = {...list.map((l) => <Label key={l} label={l} />)}</>;
+    return (
+      <>
+        <WordValue word={word} /> ={" "}
+        {...list.map((l) => <Label key={l} label={l} />)}
+      </>
+    );
   }
 
   let distance = 100;
@@ -59,13 +79,13 @@ export const Word: React.FC<{ word: number; labels: Labels }> = ({
   if (nearest) {
     return (
       <>
-        {word} ={" "}
+        <WordValue word={word} /> ={" "}
         {...nearest.map((l) => <Label key={l} label={`${l}+${distance}`} />)}
       </>
     );
   }
 
-  return word;
+  return <WordValue word={word} />;
 };
 
 export const CellView: React.FC<{ cell: Cell; labels: Labels }> = ({
@@ -77,7 +97,7 @@ export const CellView: React.FC<{ cell: Cell; labels: Labels }> = ({
   ) : cell.type === "instruction" ? (
     cell.instruction
   ) : (
-    "0 (empty)"
+    <WordValue word="00000000" muted />
   );
 
 const normalize = (value: number): number =>

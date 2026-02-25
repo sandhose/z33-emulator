@@ -136,11 +136,7 @@ export const RegisterPanel: React.FC<{
               </TooltipContent>
             </Tooltip>
             <span className="flex-1 min-w-0">
-              {reg === "pc" ? (
-                <Word word={registers.pc} labels={labels} />
-              ) : (
-                registers.sp
-              )}
+              <Word word={registers[reg]} labels={labels} />
             </span>
             {isFollowing && <RegisterDot register={key} />}
           </button>
