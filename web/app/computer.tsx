@@ -1,3 +1,4 @@
+import { useDebouncer } from "@tanstack/react-pacer";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type * as React from "react";
 import {
@@ -13,8 +14,12 @@ import {
 import type { Cell, Cycles, Registers, SourceMap } from "z33-web-bindings";
 
 const MEMORY_SIZE = 10_000;
+const ROW_HEIGHT = 28;
 
 export type Labels = Map<number, string[]>;
+
+/** Registers that can be followed in the memory viewer */
+export type Following = "%pc" | "%sp" | "%a" | "%b";
 
 /** Interface satisfied by the WASM Computer class, and future worker proxies */
 export interface ComputerInterface {
@@ -73,7 +78,7 @@ export const CellView: React.FC<{ cell: Cell; labels: Labels }> = ({
   );
 
 const normalize = (value: number): number =>
-  Math.max(0, Math.min(value, MEMORY_SIZE - 1));
+  Math.max(0, Math.min(value, MEMORY_SIZE));
 
 export const useMemoryCell = (
   computer: ComputerInterface,
@@ -102,85 +107,224 @@ const Label: React.FC<{ label: string }> = ({ label }) => (
   </div>
 );
 
+export const RegisterBadge: React.FC<{ register: Following }> = ({
+  register,
+}) => {
+  switch (register) {
+    case "%pc":
+      return (
+        <div className="px-1.5 inline-block rounded text-xs font-semibold bg-blue-500 text-white">
+          %pc
+        </div>
+      );
+    case "%sp":
+      return (
+        <div className="px-1.5 inline-block rounded text-xs font-semibold bg-emerald-500 text-white">
+          %sp
+        </div>
+      );
+    case "%a":
+      return (
+        <div className="px-1.5 inline-block rounded text-xs font-semibold bg-amber-500 text-white">
+          %a
+        </div>
+      );
+    case "%b":
+      return (
+        <div className="px-1.5 inline-block rounded text-xs font-semibold bg-violet-500 text-white">
+          %b
+        </div>
+      );
+  }
+};
+
+export const RegisterDot: React.FC<{ register: Following }> = ({
+  register,
+}) => {
+  switch (register) {
+    case "%pc":
+      return (
+        <span className="inline-block w-2 h-2 rounded-full shrink-0 bg-blue-500" />
+      );
+    case "%sp":
+      return (
+        <span className="inline-block w-2 h-2 rounded-full shrink-0 bg-emerald-500" />
+      );
+    case "%a":
+      return (
+        <span className="inline-block w-2 h-2 rounded-full shrink-0 bg-amber-500" />
+      );
+    case "%b":
+      return (
+        <span className="inline-block w-2 h-2 rounded-full shrink-0 bg-violet-500" />
+      );
+  }
+};
+
 export type MemoryViewerRef = {
   recenter: () => void;
+  scrollTo: (address: number) => void;
 };
+
+/** Map from address to list of registers pointing there */
+export type Pointers = Map<number, Following[]>;
 
 type MemoryViewerProps = {
   computer: ComputerInterface;
-  highlight: number;
+  highlight: number | null;
   labels: Labels;
+  /** Registers pointing to specific addresses, shown as colored badges */
+  pointers?: Pointers;
+  /** Called when user scrolls highlight address out of the visible range */
+  onUserScroll?: () => void;
 };
 
 export const MemoryViewer = memo(
   forwardRef<MemoryViewerRef, MemoryViewerProps>(
-    ({ computer, highlight, labels }, ref) => {
-      const parentRef = useRef(null);
+    ({ computer, highlight, labels, pointers, onUserScroll }, ref) => {
+      const parentRef = useRef<HTMLDivElement>(null);
+      const onUserScrollRef = useRef(onUserScroll);
+      const highlightRef = useRef(highlight);
+
+      useEffect(() => {
+        onUserScrollRef.current = onUserScroll;
+      }, [onUserScroll]);
+
+      useEffect(() => {
+        highlightRef.current = highlight;
+      }, [highlight]);
 
       const rowVirtualizer = useVirtualizer({
         count: MEMORY_SIZE + 1,
-        initialOffset: highlight * 28,
+        initialOffset: (highlight ?? 0) * ROW_HEIGHT,
         getScrollElement: () => parentRef.current,
-        estimateSize: () => 28,
+        estimateSize: () => ROW_HEIGHT,
       });
 
       const recenter = useCallback(() => {
+        if (highlight === null) return;
         rowVirtualizer.scrollToIndex(normalize(highlight), { align: "center" });
       }, [rowVirtualizer, highlight]);
 
+      const scrollTo = useCallback(
+        (address: number) => {
+          rowVirtualizer.scrollToIndex(normalize(address), { align: "center" });
+        },
+        [rowVirtualizer],
+      );
+
+      // When highlight changes (e.g. followed register moves), scroll to keep it in view
+      // with a buffer of rows above/below so it doesn't land flush at the edge.
       useEffect(() => {
-        recenter();
-      }, [recenter]);
+        if (highlight === null) return;
+        const el = parentRef.current;
+        if (!el) return;
+        const BUFFER = 4;
+        const visibleStart = Math.floor(el.scrollTop / ROW_HEIGHT);
+        const visibleEnd = Math.floor(
+          (el.scrollTop + el.clientHeight) / ROW_HEIGHT,
+        );
+        if (highlight < visibleStart + BUFFER) {
+          rowVirtualizer.scrollToIndex(normalize(highlight - BUFFER), {
+            align: "start",
+          });
+        } else if (highlight > visibleEnd - BUFFER) {
+          rowVirtualizer.scrollToIndex(normalize(highlight + BUFFER), {
+            align: "end",
+          });
+        }
+      }, [rowVirtualizer, highlight]);
+
+      // Detect when user manually scrolls highlight out of view and cancel follow mode.
+      // Uses refs for highlight and callback so the debounced fn is stable ([] deps).
+      const scrollDebouncer = useDebouncer(
+        () => {
+          const el = parentRef.current;
+          if (!el || !onUserScrollRef.current) return;
+          const BUFFER = 3;
+          const h = highlightRef.current;
+          if (h === null) return;
+          const visibleStart = Math.floor(el.scrollTop / ROW_HEIGHT);
+          const visibleEnd = Math.floor(
+            (el.scrollTop + el.clientHeight) / ROW_HEIGHT,
+          );
+          if (h < visibleStart - BUFFER || h > visibleEnd + BUFFER) {
+            onUserScrollRef.current();
+          }
+        },
+        { wait: 150 },
+      );
+
+      useEffect(() => {
+        const el = parentRef.current;
+        if (!el) return;
+        el.addEventListener("scroll", scrollDebouncer.maybeExecute, {
+          passive: true,
+        });
+        return () => {
+          el.removeEventListener("scroll", scrollDebouncer.maybeExecute);
+          scrollDebouncer.cancel();
+        };
+      }, [scrollDebouncer.maybeExecute, scrollDebouncer.cancel]);
 
       useImperativeHandle(
         ref,
         () => ({
           recenter,
+          scrollTo,
         }),
-        [recenter],
+        [recenter, scrollTo],
       );
 
       return (
-        <div className="overflow-auto h-full" ref={parentRef}>
+        <div className="overflow-auto flex-1 min-h-0" ref={parentRef}>
           <div
-            className="font-mono text-sm w-full relative"
+            className="font-mono text-xs w-full relative"
             style={{ height: `${rowVirtualizer.getTotalSize()}px` }}
           >
-            {rowVirtualizer.getVirtualItems().map((virtualItem) => (
-              <div
-                className="flex px-1.5 py-1 gap-1.5 border-b border-b-muted items-center data-[state=selected]:bg-muted"
-                key={virtualItem.key}
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  width: "100%",
-                  height: `${virtualItem.size}px`,
-                  transform: `translateY(${virtualItem.start}px)`,
-                }}
-                data-state={
-                  virtualItem.index === highlight ? "selected" : undefined
-                }
-              >
-                {virtualItem.index === MEMORY_SIZE ? (
-                  "TOP OF STACK"
-                ) : (
-                  <>
-                    <div className="w-10">{virtualItem.index}</div>
-                    <div className="flex-1">
-                      <MemoryCell
-                        computer={computer}
-                        address={virtualItem.index}
-                        labels={labels}
-                      />
-                    </div>
-                    {...(labels
-                      .get(virtualItem.index)
-                      ?.map((l) => <Label key={l} label={l} />) || [])}
-                  </>
-                )}
-              </div>
-            ))}
+            {rowVirtualizer.getVirtualItems().map((virtualItem) => {
+              const rowPointers = pointers?.get(virtualItem.index);
+              return (
+                <div
+                  className="flex px-1.5 py-1 gap-1.5 border-b border-b-muted items-center data-[state=selected]:bg-muted"
+                  key={virtualItem.key}
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    height: `${virtualItem.size}px`,
+                    transform: `translateY(${virtualItem.start}px)`,
+                  }}
+                  data-state={
+                    highlight !== null && virtualItem.index === highlight
+                      ? "selected"
+                      : undefined
+                  }
+                >
+                  {virtualItem.index === MEMORY_SIZE ? (
+                    "TOP OF STACK"
+                  ) : (
+                    <>
+                      <div className="w-10">{virtualItem.index}</div>
+                      <div className="flex-1">
+                        <MemoryCell
+                          computer={computer}
+                          address={virtualItem.index}
+                          labels={labels}
+                        />
+                      </div>
+                      {labels.get(virtualItem.index)?.map((l) => (
+                        <Label key={l} label={l} />
+                      ))}
+                      {rowPointers?.map((reg) => (
+                        <RegisterBadge key={reg} register={reg} />
+                      ))}
+                    </>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       );

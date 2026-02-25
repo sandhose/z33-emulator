@@ -1,175 +1,147 @@
+import { memo, useCallback, useMemo, useRef } from "react";
 import {
-  CrosshairIcon,
-  SkipBackIcon,
-  SkipForwardIcon,
-  StepBackIcon,
-  StepForwardIcon,
-} from "lucide-react";
-import { memo, useCallback, useRef, useState } from "react";
-import { Button } from "./components/ui/button";
-import { Input } from "./components/ui/input";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "./components/ui/tooltip";
-import {
+  CellView,
   type ComputerInterface,
+  type Following,
   type Labels,
   MemoryViewer,
   type MemoryViewerRef,
+  type Pointers,
+  useMemoryCell,
   useRegisters,
 } from "./computer";
 import { cn } from "./lib/utils";
 
-type Tab = "stack" | "memory";
-
 type MemoryPanelProps = {
   computer: ComputerInterface;
   labels: Labels;
+  following: Following | null;
+  onFollow: (reg: Following | null) => void;
   className?: string;
 };
 
-const TabButton: React.FC<{
-  active: boolean;
+/** A single label row showing name, address, and live memory cell value */
+const LabelRow: React.FC<{
+  name: string;
+  address: number;
+  computer: ComputerInterface;
+  labels: Labels;
   onClick: () => void;
-  children: React.ReactNode;
-}> = ({ active, onClick, children }) => (
-  <button
-    type="button"
-    className={cn(
-      "px-3 py-1 text-xs font-medium transition-colors",
-      active
-        ? "border-b-2 border-primary text-foreground"
-        : "text-muted-foreground hover:text-foreground",
-    )}
-    onClick={onClick}
-  >
-    {children}
-  </button>
-);
+}> = ({ name, address, computer, labels, onClick }) => {
+  const cell = useMemoryCell(computer, address);
+  return (
+    <button
+      type="button"
+      className="flex items-center gap-2 w-full px-2 py-0.5 text-left hover:bg-muted/50 cursor-pointer font-mono text-xs"
+      onClick={onClick}
+    >
+      <span className="text-muted-foreground w-10 shrink-0 text-right">
+        {address}
+      </span>
+      <span className="text-muted-foreground shrink-0">{name}</span>
+      <span className="text-foreground/80 ml-auto shrink-0">
+        <CellView cell={cell} labels={labels} />
+      </span>
+    </button>
+  );
+};
 
-const StackTab: React.FC<{ computer: ComputerInterface; labels: Labels }> =
-  memo(({ computer, labels }) => {
-    const ref = useRef<MemoryViewerRef>(null);
-    const registers = useRegisters(computer);
+const LabelList: React.FC<{
+  computer: ComputerInterface;
+  labels: Labels;
+  onLabelClick: (address: number) => void;
+}> = ({ computer, labels, onLabelClick }) => {
+  const sorted = useMemo(
+    () => Array.from(computer.labels).sort(([, a], [, b]) => a - b),
+    [computer.labels],
+  );
 
-    return (
-      <div className="flex flex-col h-full">
-        <div className="flex items-center justify-end px-2 py-1">
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  onClick={() => ref.current?.recenter()}
-                />
-              }
-            />
-            <TooltipContent>Recenter on SP</TooltipContent>
-          </Tooltip>
-          <CrosshairIcon className="h-3.5 w-3.5" />
-        </div>
-        <div className="flex-1 overflow-hidden">
-          <MemoryViewer
-            ref={ref}
-            computer={computer}
-            highlight={registers.sp}
-            labels={labels}
-          />
-        </div>
+  if (sorted.length === 0) return null;
+
+  return (
+    <div className="border-b border-border">
+      <div className="bg-muted/30 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        Labels
       </div>
-    );
-  });
-StackTab.displayName = "StackTab";
-
-const MemoryTab: React.FC<{ computer: ComputerInterface; labels: Labels }> =
-  memo(({ computer, labels }) => {
-    const [viewAddress, setViewAddress] = useState(1000);
-    const minus10 = useCallback(() => setViewAddress((a) => a - 10), []);
-    const minus1 = useCallback(() => setViewAddress((a) => a - 1), []);
-    const plus1 = useCallback(() => setViewAddress((a) => a + 1), []);
-    const plus10 = useCallback(() => setViewAddress((a) => a + 10), []);
-
-    return (
-      <div className="flex flex-col h-full">
-        <div className="flex items-center gap-1 px-2 py-1 flex-wrap">
-          {Array.from(computer.labels).map(([label, address]) => (
-            <Button
-              variant="secondary"
-              size="sm"
-              key={label}
-              className="text-xs h-6 px-2"
-              onClick={() => setViewAddress(address)}
-            >
-              {label}
-            </Button>
-          ))}
-
-          <div className="flex gap-1 items-center ml-auto">
-            <Button variant="outline" size="icon-xs" onClick={minus10}>
-              <SkipBackIcon />
-            </Button>
-            <Button variant="outline" size="icon-xs" onClick={minus1}>
-              <StepBackIcon />
-            </Button>
-            <Input
-              type="number"
-              value={viewAddress}
-              onChange={(e) => setViewAddress(+e.target.value)}
-              className="w-20 h-6 text-xs"
-            />
-            <Button variant="outline" size="icon-xs" onClick={plus1}>
-              <StepForwardIcon />
-            </Button>
-            <Button variant="outline" size="icon-xs" onClick={plus10}>
-              <SkipForwardIcon />
-            </Button>
-          </div>
-        </div>
-        <div className="flex-1 overflow-hidden">
-          <MemoryViewer
+      <div className="max-h-32 overflow-y-auto">
+        {sorted.map(([name, address]) => (
+          <LabelRow
+            key={name}
+            name={name}
+            address={address}
             computer={computer}
-            highlight={viewAddress}
             labels={labels}
+            onClick={() => onLabelClick(address)}
           />
-        </div>
+        ))}
       </div>
-    );
-  });
-MemoryTab.displayName = "MemoryTab";
+    </div>
+  );
+};
 
 export const MemoryPanel: React.FC<MemoryPanelProps> = memo(
-  ({ computer, labels, className }) => {
-    const [activeTab, setActiveTab] = useState<Tab>("stack");
+  ({ computer, labels, following, onFollow, className }) => {
+    const viewerRef = useRef<MemoryViewerRef>(null);
+    const registers = useRegisters(computer);
+
+    // Derive the address to follow in the viewer (null = not following, no highlight)
+    const highlight = useMemo((): number | null => {
+      if (following === "%pc") return registers.pc;
+      if (following === "%sp") return registers.sp;
+      if (following === "%a" && registers.a.type === "word")
+        return registers.a.word;
+      if (following === "%b" && registers.b.type === "word")
+        return registers.b.word;
+      return null;
+    }, [following, registers]);
+
+    // Build pointers map: address → list of registers pointing there
+    const pointers = useMemo<Pointers>(() => {
+      const map: Pointers = new Map();
+      const add = (reg: Following, addr: number) => {
+        const existing = map.get(addr) ?? [];
+        map.set(addr, [...existing, reg]);
+      };
+      add("%pc", registers.pc);
+      add("%sp", registers.sp);
+      if (registers.a.type === "word") add("%a", registers.a.word);
+      if (registers.b.type === "word") add("%b", registers.b.word);
+      return map;
+    }, [registers.pc, registers.sp, registers.a, registers.b]);
+
+    const handleLabelClick = useCallback(
+      (address: number) => {
+        onFollow(null);
+        viewerRef.current?.scrollTo(address);
+      },
+      [onFollow],
+    );
+
+    const handleUserScroll = useCallback(() => {
+      onFollow(null);
+    }, [onFollow]);
 
     return (
-      <div
-        className={cn("flex flex-col h-full border-t border-border", className)}
-      >
-        <div className="flex border-b border-border bg-muted/30">
-          <TabButton
-            active={activeTab === "stack"}
-            onClick={() => setActiveTab("stack")}
-          >
-            Stack
-          </TabButton>
-          <TabButton
-            active={activeTab === "memory"}
-            onClick={() => setActiveTab("memory")}
-          >
-            Memory
-          </TabButton>
+      <div className={cn("flex flex-col h-full", className)}>
+        <div className="shrink-0">
+          <LabelList
+            computer={computer}
+            labels={labels}
+            onLabelClick={handleLabelClick}
+          />
         </div>
-
-        <div className="flex-1 overflow-hidden">
-          {activeTab === "stack" && (
-            <StackTab computer={computer} labels={labels} />
-          )}
-          {activeTab === "memory" && (
-            <MemoryTab computer={computer} labels={labels} />
-          )}
+        <div className="flex-1 overflow-hidden flex flex-col">
+          <div className="bg-muted/30 border-b px-2 py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground shrink-0">
+            Memory
+          </div>
+          <MemoryViewer
+            ref={viewerRef}
+            computer={computer}
+            highlight={highlight}
+            labels={labels}
+            pointers={pointers}
+            {...(following !== null ? { onUserScroll: handleUserScroll } : {})}
+          />
         </div>
       </div>
     );

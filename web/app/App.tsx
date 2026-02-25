@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Group, Panel } from "react-resizable-panels";
 import type { Computer, SourceMap } from "z33-web-bindings";
 import { InMemoryPreprocessor } from "z33-web-bindings";
-import type { ComputerInterface, Labels } from "./computer";
+import type { ComputerInterface, Following, Labels } from "./computer";
 import { RegisterPanel } from "./debug-sidebar";
 import { DebugToolbar } from "./debug-toolbar";
 import { EditToolbar } from "./edit-toolbar";
@@ -278,6 +278,8 @@ const DebugLayoutInner: React.FC<DebugLayoutInnerProps> = ({
   const [editor, setEditor] =
     useState<monaco.editor.IStandaloneCodeEditor | null>(null);
 
+  const [following, setFollowing] = useState<Following | null>("%sp");
+
   const handleDebugEditorMount = useCallback(
     (ed: monaco.editor.IStandaloneCodeEditor) => {
       setEditor(ed);
@@ -326,15 +328,24 @@ const DebugLayoutInner: React.FC<DebugLayoutInnerProps> = ({
         </Panel>
         <ResizeHandle />
         <Panel defaultSize="35%" minSize="20%" maxSize="50%" id="z33-right">
-          <Group orientation="vertical" id="z33-right-v">
-            <Panel defaultSize="30%" minSize="15%" id="z33-registers">
-              <RegisterPanel computer={computer} labels={labels} />
-            </Panel>
-            <ResizeHandle direction="vertical" />
-            <Panel defaultSize="70%" minSize="30%" id="z33-memory">
-              <MemoryPanel computer={computer} labels={labels} />
-            </Panel>
-          </Group>
+          <div className="flex flex-col h-full border-l">
+            <div className="shrink-0 border-b">
+              <RegisterPanel
+                computer={computer}
+                labels={labels}
+                following={following}
+                onFollow={setFollowing}
+              />
+            </div>
+            <div className="flex-1 min-h-0">
+              <MemoryPanel
+                computer={computer}
+                labels={labels}
+                following={following}
+                onFollow={setFollowing}
+              />
+            </div>
+          </div>
         </Panel>
       </Group>
     </div>
