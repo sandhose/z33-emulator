@@ -2,7 +2,7 @@ import type { Computer, SourceMap } from "z33-web-bindings";
 import { create } from "zustand";
 import type { ComputerInterface, Labels } from "../computer";
 
-export type AppMode =
+type AppMode =
   | { type: "edit" }
   | {
       type: "debug";
