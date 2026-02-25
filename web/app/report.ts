@@ -24,7 +24,7 @@ const baseReportSchema = z.object({
   labels: labelSchema.array(),
 });
 
-export type Report = z.infer<typeof baseReportSchema> & {
+type Report = z.infer<typeof baseReportSchema> & {
   related: Report[];
 };
 
@@ -83,7 +83,7 @@ const buildMessage = (
   return parts.join("\n");
 };
 
-export type DiagnosticResult = {
+type DiagnosticResult = {
   markers: monaco.editor.IMarkerData[];
   decorations: monaco.editor.IModelDeltaDecoration[];
 };

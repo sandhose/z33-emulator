@@ -110,9 +110,7 @@ const Label: React.FC<{ label: string }> = ({ label }) => (
   </div>
 );
 
-export const RegisterBadge: React.FC<{ register: RegisterId }> = ({
-  register,
-}) => {
+const RegisterBadge: React.FC<{ register: RegisterId }> = ({ register }) => {
   switch (register) {
     case "%pc":
       return (

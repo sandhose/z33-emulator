@@ -13,15 +13,6 @@ export function loadWorkspace(): Map<string, string> | null {
   }
 }
 
-export function saveWorkspace(files: Map<string, string>): void {
-  const obj = Object.fromEntries(files);
-  localStorage.setItem(WORKSPACE_KEY, JSON.stringify(obj));
-}
-
 export function loadActiveFile(): string | null {
   return localStorage.getItem(ACTIVE_FILE_KEY);
-}
-
-export function saveActiveFile(name: string): void {
-  localStorage.setItem(ACTIVE_FILE_KEY, name);
 }
