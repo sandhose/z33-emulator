@@ -15,16 +15,6 @@ import {
 import { useAppStore } from "./stores/app-store";
 import { useFileStore } from "./stores/file-store";
 
-const sampleFiles = Object.fromEntries(
-  Object.entries(
-    import.meta.glob<string>("../../samples/*.s", {
-      query: "?raw",
-      import: "default",
-      eager: true,
-    }),
-  ).map(([path, content]) => [path.replace(/^.*[\\/]/, ""), content]),
-);
-
 const InlineFileInput: React.FC<{
   onSubmit: (filename: string) => void;
   onCancel: () => void;
@@ -53,7 +43,7 @@ const InlineFileInput: React.FC<{
         onKeyDown={(e) => {
           if (e.key === "Escape") onCancel();
         }}
-        placeholder="filename.S"
+        placeholder="filename.s"
       />
     </form>
   );
@@ -156,7 +146,7 @@ export const FileSidebar: React.FC = () => {
       )
     )
       return;
-    resetFiles(sampleFiles, "fact.s");
+    resetFiles();
   }, [resetFiles]);
 
   if (isDebugging) return null;
