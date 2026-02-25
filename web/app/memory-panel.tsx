@@ -7,6 +7,7 @@ import {
   MemoryViewer,
   type MemoryViewerRef,
   type Pointers,
+  type RegisterId,
   useMemoryCell,
   useRegisters,
 } from "./computer";
@@ -26,13 +27,17 @@ const LabelRow: React.FC<{
   address: number;
   computer: ComputerInterface;
   labels: Labels;
+  isFollowing: boolean;
   onClick: () => void;
-}> = ({ name, address, computer, labels, onClick }) => {
+}> = ({ name, address, computer, labels, isFollowing, onClick }) => {
   const cell = useMemoryCell(computer, address);
   return (
     <button
       type="button"
-      className="flex items-center gap-2 w-full px-2 py-0.5 text-left hover:bg-muted/50 cursor-pointer font-mono text-xs"
+      className={cn(
+        "flex items-center gap-2 w-full px-2 py-0.5 text-left hover:bg-muted/50 cursor-pointer font-mono text-xs",
+        isFollowing && "bg-muted/50",
+      )}
       onClick={onClick}
     >
       <span className="text-muted-foreground w-10 shrink-0 text-right">
@@ -49,8 +54,9 @@ const LabelRow: React.FC<{
 const LabelList: React.FC<{
   computer: ComputerInterface;
   labels: Labels;
-  onLabelClick: (address: number) => void;
-}> = ({ computer, labels, onLabelClick }) => {
+  following: Following | null;
+  onLabelClick: (name: string, address: number) => void;
+}> = ({ computer, labels, following, onLabelClick }) => {
   const sorted = useMemo(
     () => Array.from(computer.labels).sort(([, a], [, b]) => a - b),
     [computer.labels],
@@ -71,7 +77,8 @@ const LabelList: React.FC<{
             address={address}
             computer={computer}
             labels={labels}
-            onClick={() => onLabelClick(address)}
+            isFollowing={following === `label:${name}`}
+            onClick={() => onLabelClick(name, address)}
           />
         ))}
       </div>
@@ -92,13 +99,19 @@ export const MemoryPanel: React.FC<MemoryPanelProps> = memo(
         return registers.a.word;
       if (following === "%b" && registers.b.type === "word")
         return registers.b.word;
+      if (following?.startsWith("label:")) {
+        const name = following.slice("label:".length);
+        for (const [n, addr] of computer.labels) {
+          if (n === name) return addr;
+        }
+      }
       return null;
-    }, [following, registers]);
+    }, [following, registers, computer.labels]);
 
     // Build pointers map: address → list of registers pointing there
     const pointers = useMemo<Pointers>(() => {
       const map: Pointers = new Map();
-      const add = (reg: Following, addr: number) => {
+      const add = (reg: RegisterId, addr: number) => {
         const existing = map.get(addr) ?? [];
         map.set(addr, [...existing, reg]);
       };
@@ -110,11 +123,16 @@ export const MemoryPanel: React.FC<MemoryPanelProps> = memo(
     }, [registers.pc, registers.sp, registers.a, registers.b]);
 
     const handleLabelClick = useCallback(
-      (address: number) => {
-        onFollow(null);
-        viewerRef.current?.scrollTo(address);
+      (name: string, address: number) => {
+        const key: Following = `label:${name}`;
+        if (following === key) {
+          onFollow(null);
+        } else {
+          onFollow(key);
+          viewerRef.current?.scrollTo(address);
+        }
       },
-      [onFollow],
+      [following, onFollow],
     );
 
     const handleUserScroll = useCallback(() => {
@@ -127,6 +145,7 @@ export const MemoryPanel: React.FC<MemoryPanelProps> = memo(
           <LabelList
             computer={computer}
             labels={labels}
+            following={following}
             onLabelClick={handleLabelClick}
           />
         </div>
