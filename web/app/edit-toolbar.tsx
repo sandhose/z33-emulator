@@ -1,4 +1,5 @@
 import {
+  BookOpenIcon,
   CheckCircle2Icon,
   Loader2Icon,
   PlayIcon,
@@ -102,11 +103,26 @@ export const EditToolbar: React.FC<EditToolbarProps> = memo(
                   if (selectedEntrypoint) onRun(selectedEntrypoint);
                 }}
               >
-                <PlayIcon />
+                <PlayIcon data-icon="inline-start" />
                 Run
               </Button>
             </>
           )}
+          <Button
+            variant="ghost"
+            size="xs"
+            render={
+              // biome-ignore lint/a11y/useAnchorContent: Button renders its children inside this anchor
+              <a
+                href="https://pdagog.gitlab.io/ens/z33refcard-fr.pdf"
+                target="_blank"
+                rel="noopener noreferrer"
+              />
+            }
+          >
+            <BookOpenIcon data-icon="inline-start" />
+            Docs
+          </Button>
           <ThemeSwitcher />
         </div>
       </div>
