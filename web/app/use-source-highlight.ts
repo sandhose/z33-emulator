@@ -64,6 +64,18 @@ export function useSourceHighlight({
     return () => disposable.dispose();
   }, [editor]);
 
+  // Auto-switch file only when PC changes, not when the user manually switches models.
+  // By omitting currentModelUri from deps, this effect only fires on actual PC movement.
+  useEffect(() => {
+    if (!editor) return;
+    const model = editor.getModel();
+    const location = sourceMap.get(registers.pc);
+    if (!location || !model) return;
+    if (model.uri.path !== location.file) {
+      onSwitchFile(location.file);
+    }
+  }, [editor, sourceMap, registers.pc, onSwitchFile]);
+
   // biome-ignore lint/correctness/useExhaustiveDependencies: currentModelUri forces re-run when @monaco-editor/react switches the active model, which wouldn't otherwise change deps.
   useEffect(() => {
     if (!editor) return;
@@ -99,10 +111,9 @@ export function useSourceHighlight({
       return;
     }
 
-    // Switch file if the source location is in a different file
+    // Don't apply decorations if the visible file doesn't match the PC's file
+    // (user manually switched to a different file)
     if (model.uri.path !== location.file) {
-      onSwitchFile(location.file);
-      // The editor model will change, decorations will be applied on next render
       decorations.clear();
       return;
     }
@@ -149,7 +160,7 @@ export function useSourceHighlight({
     ]);
 
     editor.revealLineInCenter(startPos.lineNumber);
-  }, [editor, sourceMap, registers.pc, onSwitchFile, currentModelUri]);
+  }, [editor, sourceMap, registers.pc, currentModelUri]);
 
   // Cleanup on unmount
   useEffect(() => {
