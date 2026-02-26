@@ -15,16 +15,17 @@ import {
   Word,
 } from "./computer";
 
-const SR_FLAGS = [
-  { label: "C", fullName: "Carry", mask: 0x001 },
-  { label: "Z", fullName: "Zero", mask: 0x002 },
-  { label: "N", fullName: "Negative", mask: 0x004 },
-  { label: "V", fullName: "Overflow", mask: 0x008 },
+// Listed MSB-first (rendered left-to-right)
+const SR_SYSTEM_FLAGS = [
+  { label: "S", fullName: "Supervisor", mask: 0x200 },
+  { label: "I", fullName: "Interrupt Enable", mask: 0x100 },
 ] as const;
 
-const SR_SYSTEM_FLAGS = [
-  { label: "I", fullName: "Interrupt Enable", mask: 0x100 },
-  { label: "S", fullName: "Supervisor", mask: 0x200 },
+const SR_FLAGS = [
+  { label: "V", fullName: "Overflow", mask: 0x008 },
+  { label: "N", fullName: "Negative", mask: 0x004 },
+  { label: "Z", fullName: "Zero", mask: 0x002 },
+  { label: "C", fullName: "Carry", mask: 0x001 },
 ] as const;
 
 const REGISTER_DESCRIPTIONS = {
@@ -35,38 +36,45 @@ const REGISTER_DESCRIPTIONS = {
   sr: "Status register (flags)",
 } as const;
 
+const FlagBit: React.FC<{ label: string; fullName: string; active: boolean }> =
+  ({ label, fullName, active }) => (
+    <Tooltip>
+      <TooltipTrigger
+        className={`inline-flex items-center justify-center rounded px-1 py-0 text-[10px] font-bold leading-4 select-none ${
+          active
+            ? "bg-foreground text-background"
+            : "bg-muted text-muted-foreground opacity-50"
+        }`}
+      >
+        {label}
+      </TooltipTrigger>
+      <TooltipContent side="bottom">{fullName}</TooltipContent>
+    </Tooltip>
+  );
+
 const StatusRegisterView: React.FC<{ sr: number }> = ({ sr }) => (
   <span className="flex flex-1 min-w-0 items-center gap-1.5">
     <span className="flex gap-0.5">
-      {SR_FLAGS.map((flag) => (
-        <Tooltip key={flag.label}>
-          <TooltipTrigger
-            className={`inline-flex items-center justify-center rounded px-1 py-0 text-[10px] font-bold leading-4 select-none ${
-              sr & flag.mask
-                ? "bg-foreground text-background"
-                : "bg-muted text-muted-foreground opacity-50"
-            }`}
-          >
-            {flag.label}
-          </TooltipTrigger>
-          <TooltipContent side="bottom">{flag.fullName}</TooltipContent>
-        </Tooltip>
+      {SR_SYSTEM_FLAGS.map((flag) => (
+        <FlagBit
+          key={flag.label}
+          label={flag.label}
+          fullName={flag.fullName}
+          active={Boolean(sr & flag.mask)}
+        />
       ))}
     </span>
+    <span className="text-muted-foreground text-[10px] leading-4 select-none">
+      …
+    </span>
     <span className="flex gap-0.5">
-      {SR_SYSTEM_FLAGS.map((flag) => (
-        <Tooltip key={flag.label}>
-          <TooltipTrigger
-            className={`inline-flex items-center justify-center rounded px-1 py-0 text-[10px] font-bold leading-4 select-none ${
-              sr & flag.mask
-                ? "bg-foreground text-background"
-                : "bg-muted text-muted-foreground opacity-50"
-            }`}
-          >
-            {flag.label}
-          </TooltipTrigger>
-          <TooltipContent side="bottom">{flag.fullName}</TooltipContent>
-        </Tooltip>
+      {SR_FLAGS.map((flag) => (
+        <FlagBit
+          key={flag.label}
+          label={flag.label}
+          fullName={flag.fullName}
+          active={Boolean(sr & flag.mask)}
+        />
       ))}
     </span>
     <span className="text-muted-foreground">
