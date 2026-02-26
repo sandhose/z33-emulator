@@ -140,7 +140,7 @@ jobs:
           shared-key: ${{ matrix.arch }}-pc-windows-msvc
 
       - name: Setup cargo-xwin cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: cargo-xwin
           key: cargo-xwin-${{ matrix.arch }}
