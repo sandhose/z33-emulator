@@ -1,4 +1,10 @@
-import { PauseIcon, PlayIcon, SquareIcon, StepForwardIcon } from "lucide-react";
+import {
+  BookOpenIcon,
+  PauseIcon,
+  PencilIcon,
+  PlayIcon,
+  StepForwardIcon,
+} from "lucide-react";
 import { memo, startTransition, useCallback, useEffect, useState } from "react";
 import { Button } from "./components/ui/button";
 import {
@@ -8,6 +14,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./components/ui/select";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "./components/ui/tooltip";
 import type { ComputerInterface } from "./computer";
 import { useCycles } from "./computer";
 import { cn } from "./lib/utils";
@@ -131,46 +142,46 @@ const DebugToolbarInner: React.FC<{
     >
       <Button
         variant="ghost"
-        size="sm"
+        size="xs"
         onClick={stepOnce}
         disabled={disabled || running}
       >
-        <StepForwardIcon className="mr-1 h-3.5 w-3.5" />
+        <StepForwardIcon data-icon="inline-start" />
         Step
       </Button>
 
       {running ? (
-        <Button variant="ghost" size="sm" onClick={stop}>
-          <PauseIcon className="mr-1 h-3.5 w-3.5" />
+        <Button variant="ghost" size="xs" onClick={stop}>
+          <PauseIcon data-icon="inline-start" />
           Pause
         </Button>
       ) : (
         <>
           <Button
             variant="ghost"
-            size="sm"
+            size="xs"
             onClick={() => runN(10)}
             disabled={disabled}
           >
-            <PlayIcon className="mr-1 h-3.5 w-3.5" />
+            <PlayIcon data-icon="inline-start" />
             10
           </Button>
           <Button
             variant="ghost"
-            size="sm"
+            size="xs"
             onClick={() => runN(100)}
             disabled={disabled}
           >
-            <PlayIcon className="mr-1 h-3.5 w-3.5" />
+            <PlayIcon data-icon="inline-start" />
             100
           </Button>
           <Button
             variant="ghost"
-            size="sm"
+            size="xs"
             onClick={() => runN(1000)}
             disabled={disabled}
           >
-            <PlayIcon className="mr-1 h-3.5 w-3.5" />
+            <PlayIcon data-icon="inline-start" />
             1k
           </Button>
         </>
@@ -178,9 +189,23 @@ const DebugToolbarInner: React.FC<{
 
       <div className="mx-2 h-4 w-px bg-border" />
 
-      <span className="text-xs text-muted-foreground font-mono">
-        C:{cycles}
-      </span>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <span className="text-xs font-mono cursor-default select-none flex h-6 items-center gap-1 px-1" />
+          }
+        >
+          <span className="text-muted-foreground">Cycles count</span>
+          <span className="tabular-nums">{cycles}</span>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">
+          <ul className="list-disc list-inside space-y-0.5">
+            <li>1 cycle per instruction</li>
+            <li>+1 per memory operand</li>
+            <li>registers &amp; immediates are free</li>
+          </ul>
+        </TooltipContent>
+      </Tooltip>
 
       {panicked && (
         <span className="ml-2 text-xs font-semibold text-destructive bg-destructive/10 px-2 py-0.5 rounded">
@@ -217,9 +242,31 @@ const DebugToolbarInner: React.FC<{
             </SelectContent>
           </Select>
         )}
-        <Button variant="ghost" size="sm" onClick={onStop}>
-          <SquareIcon className="mr-1 h-3.5 w-3.5" />
-          Stop
+        <Tooltip>
+          <TooltipTrigger
+            render={<Button variant="outline" size="xs" onClick={onStop} />}
+          >
+            <PencilIcon data-icon="inline-start" />
+            Edit
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            Stop execution and return to the editor
+          </TooltipContent>
+        </Tooltip>
+        <Button
+          variant="ghost"
+          size="xs"
+          render={
+            // biome-ignore lint/a11y/useAnchorContent: Button renders its children inside this anchor
+            <a
+              href="https://pdagog.gitlab.io/ens/z33refcard-fr.pdf"
+              target="_blank"
+              rel="noopener noreferrer"
+            />
+          }
+        >
+          <BookOpenIcon data-icon="inline-start" />
+          Docs
         </Button>
         <ThemeSwitcher />
       </div>

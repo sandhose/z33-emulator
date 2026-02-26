@@ -36,21 +36,24 @@ const REGISTER_DESCRIPTIONS = {
   sr: "Status register (flags)",
 } as const;
 
-const FlagBit: React.FC<{ label: string; fullName: string; active: boolean }> =
-  ({ label, fullName, active }) => (
-    <Tooltip>
-      <TooltipTrigger
-        className={`inline-flex items-center justify-center rounded px-1 py-0 text-[10px] font-bold leading-4 select-none ${
-          active
-            ? "bg-foreground text-background"
-            : "bg-muted text-muted-foreground opacity-50"
-        }`}
-      >
-        {label}
-      </TooltipTrigger>
-      <TooltipContent side="bottom">{fullName}</TooltipContent>
-    </Tooltip>
-  );
+const FlagBit: React.FC<{
+  label: string;
+  fullName: string;
+  active: boolean;
+}> = ({ label, fullName, active }) => (
+  <Tooltip>
+    <TooltipTrigger
+      className={`inline-flex items-center justify-center rounded px-1 py-0 text-[10px] font-bold leading-4 select-none ${
+        active
+          ? "bg-foreground text-background"
+          : "bg-muted text-muted-foreground opacity-50"
+      }`}
+    >
+      {label}
+    </TooltipTrigger>
+    <TooltipContent side="bottom">{fullName}</TooltipContent>
+  </Tooltip>
+);
 
 const StatusRegisterView: React.FC<{ sr: number }> = ({ sr }) => (
   <span className="flex flex-1 min-w-0 items-center gap-1.5">
