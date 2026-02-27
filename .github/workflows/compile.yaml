@@ -168,7 +168,7 @@ jobs:
 
     steps:
       - name: Download the artifacts from the previous job
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
 
