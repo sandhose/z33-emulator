@@ -38,7 +38,7 @@
     "monaco-editor": "^0.55.1",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "react-resizable-panels": "^4.6.5",
+    "react-resizable-panels": "^4.7.0",
     "shadcn": "^3.8.5",
     "tailwind-merge": "^3.5.0",
     "tailwindcss": "^4.2.1",
