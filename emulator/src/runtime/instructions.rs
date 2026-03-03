@@ -168,10 +168,7 @@ impl Instruction {
                     .sr
                     .set(StatusRegister::OVERFLOW, overflow);
                 computer.registers.sr.set(StatusRegister::ZERO, res == 0);
-                computer
-                    .registers
-                    .sr
-                    .set(StatusRegister::NEGATIVE, res < 0);
+                computer.registers.sr.set(StatusRegister::NEGATIVE, res < 0);
             }
 
             Self::And(arg, reg) => {
@@ -182,10 +179,7 @@ impl Instruction {
                 computer.set_register(*reg, res.into())?;
 
                 computer.registers.sr.set(StatusRegister::ZERO, res == 0);
-                computer
-                    .registers
-                    .sr
-                    .set(StatusRegister::NEGATIVE, res < 0);
+                computer.registers.sr.set(StatusRegister::NEGATIVE, res < 0);
             }
 
             Self::Call(arg) => {
@@ -221,10 +215,7 @@ impl Instruction {
                 computer.set_register(*reg, res.into())?;
 
                 computer.registers.sr.set(StatusRegister::ZERO, res == 0);
-                computer
-                    .registers
-                    .sr
-                    .set(StatusRegister::NEGATIVE, res < 0);
+                computer.registers.sr.set(StatusRegister::NEGATIVE, res < 0);
             }
 
             Self::Fas(addr, reg) => {
@@ -319,10 +310,7 @@ impl Instruction {
                     .sr
                     .set(StatusRegister::OVERFLOW, overflow);
                 computer.registers.sr.set(StatusRegister::ZERO, res == 0);
-                computer
-                    .registers
-                    .sr
-                    .set(StatusRegister::NEGATIVE, res < 0);
+                computer.registers.sr.set(StatusRegister::NEGATIVE, res < 0);
             }
 
             Self::Neg(reg) => {
@@ -336,10 +324,7 @@ impl Instruction {
                     .sr
                     .set(StatusRegister::OVERFLOW, overflow);
                 computer.registers.sr.set(StatusRegister::ZERO, res == 0);
-                computer
-                    .registers
-                    .sr
-                    .set(StatusRegister::NEGATIVE, res < 0);
+                computer.registers.sr.set(StatusRegister::NEGATIVE, res < 0);
             }
 
             Self::Nop => {}
@@ -351,10 +336,7 @@ impl Instruction {
                 computer.set_register(*reg, res.into())?;
 
                 computer.registers.sr.set(StatusRegister::ZERO, res == 0);
-                computer
-                    .registers
-                    .sr
-                    .set(StatusRegister::NEGATIVE, res < 0);
+                computer.registers.sr.set(StatusRegister::NEGATIVE, res < 0);
             }
 
             Self::Or(arg, reg) => {
@@ -365,10 +347,7 @@ impl Instruction {
                 computer.set_register(*reg, res.into())?;
 
                 computer.registers.sr.set(StatusRegister::ZERO, res == 0);
-                computer
-                    .registers
-                    .sr
-                    .set(StatusRegister::NEGATIVE, res < 0);
+                computer.registers.sr.set(StatusRegister::NEGATIVE, res < 0);
             }
 
             Self::Out(_, _) => {
@@ -423,10 +402,7 @@ impl Instruction {
                 computer.set_register(*reg, res.into())?;
 
                 computer.registers.sr.set(StatusRegister::ZERO, res == 0);
-                computer
-                    .registers
-                    .sr
-                    .set(StatusRegister::NEGATIVE, res < 0);
+                computer.registers.sr.set(StatusRegister::NEGATIVE, res < 0);
             }
 
             Self::Shr(arg, reg) => {
@@ -440,10 +416,7 @@ impl Instruction {
                 computer.set_register(*reg, res.into())?;
 
                 computer.registers.sr.set(StatusRegister::ZERO, res == 0);
-                computer
-                    .registers
-                    .sr
-                    .set(StatusRegister::NEGATIVE, res < 0);
+                computer.registers.sr.set(StatusRegister::NEGATIVE, res < 0);
             }
 
             Self::St(reg, address) => {
@@ -465,10 +438,7 @@ impl Instruction {
                     .sr
                     .set(StatusRegister::OVERFLOW, overflow);
                 computer.registers.sr.set(StatusRegister::ZERO, res == 0);
-                computer
-                    .registers
-                    .sr
-                    .set(StatusRegister::NEGATIVE, res < 0);
+                computer.registers.sr.set(StatusRegister::NEGATIVE, res < 0);
             }
 
             Self::Swap(arg, reg) => {
@@ -506,10 +476,7 @@ impl Instruction {
                 computer.set_register(*reg, res.into())?;
 
                 computer.registers.sr.set(StatusRegister::ZERO, res == 0);
-                computer
-                    .registers
-                    .sr
-                    .set(StatusRegister::NEGATIVE, res < 0);
+                computer.registers.sr.set(StatusRegister::NEGATIVE, res < 0);
             }
 
             Self::DebugReg => {
