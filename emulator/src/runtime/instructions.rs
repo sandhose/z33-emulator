@@ -373,10 +373,10 @@ impl Instruction {
                 let a = arg.extract_word(computer)?;
                 let b = reg.extract_word(computer)?;
 
-                let b: u32 = b.try_into().map_err(|_| Exception::InvalidInstruction)?;
-                let res = a.checked_shl(b).ok_or(Exception::InvalidInstruction)?;
+                let a: u32 = a.try_into().map_err(|_| Exception::InvalidInstruction)?;
+                let res = b.checked_shl(a).ok_or(Exception::InvalidInstruction)?;
 
-                debug!("{} << {} = {}", a, b, res);
+                debug!("{} << {} = {}", b, a, res);
                 computer.set_register(*reg, res.into())?;
             }
 
@@ -384,10 +384,10 @@ impl Instruction {
                 let a = arg.extract_word(computer)?;
                 let b = reg.extract_word(computer)?;
 
-                let b: u32 = b.try_into().map_err(|_| Exception::InvalidInstruction)?;
-                let res = a.checked_shr(b).ok_or(Exception::InvalidInstruction)?;
+                let a: u32 = a.try_into().map_err(|_| Exception::InvalidInstruction)?;
+                let res = b.checked_shr(a).ok_or(Exception::InvalidInstruction)?;
 
-                debug!("{} >> {} = {}", a, b, res);
+                debug!("{} >> {} = {}", b, a, res);
                 computer.set_register(*reg, res.into())?;
             }
 
