@@ -1,8 +1,10 @@
 import { memo, useCallback, useMemo, useRef } from "react";
 import {
+  ADDRESS_WIDTH,
   CellView,
   type ComputerInterface,
   type Following,
+  formatAddress,
   type Labels,
   MemoryViewer,
   type MemoryViewerRef,
@@ -12,6 +14,7 @@ import {
   useRegisters,
 } from "./computer";
 import { cn } from "./lib/utils";
+import { useDisplayStore } from "./stores/display-store";
 
 type MemoryPanelProps = {
   computer: ComputerInterface;
@@ -31,6 +34,7 @@ const LabelRow: React.FC<{
   onClick: () => void;
 }> = ({ name, address, computer, labels, isFollowing, onClick }) => {
   const cell = useMemoryCell(computer, address);
+  const displayFormat = useDisplayStore((s) => s.format);
   return (
     <button
       type="button"
@@ -40,8 +44,13 @@ const LabelRow: React.FC<{
       )}
       onClick={onClick}
     >
-      <span className="text-muted-foreground w-10 shrink-0 text-right">
-        {address}
+      <span
+        className={cn(
+          "text-muted-foreground shrink-0 text-right",
+          ADDRESS_WIDTH[displayFormat],
+        )}
+      >
+        {formatAddress(address, displayFormat)}
       </span>
       <span className="text-muted-foreground shrink-0">{name}</span>
       <span className="text-foreground/80 ml-auto shrink-0">

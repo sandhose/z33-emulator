@@ -8,12 +8,15 @@ import type { ComputerInterface } from "./computer";
 import {
   CellView,
   type Following,
+  formatWord,
   type Labels,
   RegisterDot,
   type RegisterId,
   useRegisters,
   Word,
 } from "./computer";
+import { FormatSwitcher } from "./format-switcher";
+import { useDisplayStore } from "./stores/display-store";
 
 // Listed MSB-first (rendered left-to-right)
 const SR_SYSTEM_FLAGS = [
@@ -55,36 +58,37 @@ const FlagBit: React.FC<{
   </Tooltip>
 );
 
-const StatusRegisterView: React.FC<{ sr: number }> = ({ sr }) => (
-  <span className="flex flex-1 min-w-0 items-center gap-1.5">
-    <span className="flex gap-0.5">
-      {SR_SYSTEM_FLAGS.map((flag) => (
-        <FlagBit
-          key={flag.label}
-          label={flag.label}
-          fullName={flag.fullName}
-          active={Boolean(sr & flag.mask)}
-        />
-      ))}
+const StatusRegisterView: React.FC<{ sr: number }> = ({ sr }) => {
+  const format = useDisplayStore((s) => s.format);
+  return (
+    <span className="flex flex-1 min-w-0 items-center gap-1.5">
+      <span className="flex gap-0.5">
+        {SR_SYSTEM_FLAGS.map((flag) => (
+          <FlagBit
+            key={flag.label}
+            label={flag.label}
+            fullName={flag.fullName}
+            active={Boolean(sr & flag.mask)}
+          />
+        ))}
+      </span>
+      <span className="text-muted-foreground text-[10px] leading-4 select-none">
+        …
+      </span>
+      <span className="flex gap-0.5">
+        {SR_FLAGS.map((flag) => (
+          <FlagBit
+            key={flag.label}
+            label={flag.label}
+            fullName={flag.fullName}
+            active={Boolean(sr & flag.mask)}
+          />
+        ))}
+      </span>
+      <span className="text-muted-foreground">{formatWord(sr, format)}</span>
     </span>
-    <span className="text-muted-foreground text-[10px] leading-4 select-none">
-      …
-    </span>
-    <span className="flex gap-0.5">
-      {SR_FLAGS.map((flag) => (
-        <FlagBit
-          key={flag.label}
-          label={flag.label}
-          fullName={flag.fullName}
-          active={Boolean(sr & flag.mask)}
-        />
-      ))}
-    </span>
-    <span className="text-muted-foreground">
-      0x{sr.toString(16).toUpperCase().padStart(3, "0")}
-    </span>
-  </span>
-);
+  );
+};
 
 export const RegisterPanel: React.FC<{
   computer: ComputerInterface;
@@ -100,8 +104,9 @@ export const RegisterPanel: React.FC<{
 
   return (
     <div className="font-mono text-xs">
-      <div className="bg-muted/30 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground font-sans">
+      <div className="bg-muted/30 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground font-sans flex items-center justify-between">
         Registers
+        <FormatSwitcher />
       </div>
       {(["a", "b"] as const).map((reg) => {
         const key = `%${reg}` as RegisterId;
