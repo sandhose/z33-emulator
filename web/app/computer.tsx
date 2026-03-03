@@ -13,6 +13,7 @@ import {
 } from "react";
 import type { Cell, Cycles, Registers, SourceMap } from "z33-web-bindings";
 import { cn } from "./lib/utils";
+import { type DisplayFormat, useDisplayStore } from "./stores/display-store";
 
 const MEMORY_SIZE = 10_000;
 const ROW_HEIGHT = 28;
@@ -38,17 +39,51 @@ export interface ComputerInterface {
   readonly labels: Iterable<[string, number]>;
 }
 
-const WordValue: React.FC<{ word: number | string; muted?: boolean }> = ({
-  word,
-  muted,
-}) => (
+export const formatWord = (word: number, format: DisplayFormat): string => {
+  switch (format) {
+    case "hex":
+      return word < 0
+        ? `-0x${(-word).toString(16).toUpperCase()}`
+        : `0x${word.toString(16).toUpperCase()}`;
+    case "binary":
+      return word < 0 ? `-0b${(-word).toString(2)}` : `0b${word.toString(2)}`;
+    default:
+      return String(word);
+  }
+};
+
+export const formatAddress = (
+  address: number,
+  format: DisplayFormat,
+): string => {
+  switch (format) {
+    case "hex":
+      return `0x${address.toString(16).toUpperCase()}`;
+    case "binary":
+      return `0b${address.toString(2)}`;
+    default:
+      return String(address);
+  }
+};
+
+export const ADDRESS_WIDTH: Record<DisplayFormat, string> = {
+  decimal: "w-[6ch]",
+  hex: "w-[8ch]",
+  binary: "w-[16ch]",
+};
+
+const WordValue: React.FC<{
+  word: number | string;
+  muted?: boolean;
+  format?: DisplayFormat;
+}> = ({ word, muted, format = "decimal" }) => (
   <span
     className={cn(
       "inline-block min-w-[8ch] text-right",
       muted && "text-muted-foreground",
     )}
   >
-    {word}
+    {typeof word === "number" ? formatWord(word, format) : word}
   </span>
 );
 
@@ -56,11 +91,12 @@ export const Word: React.FC<{ word: number; labels: Labels }> = ({
   word,
   labels,
 }) => {
+  const format = useDisplayStore((s) => s.format);
   const list = labels.get(word);
   if (list) {
     return (
       <>
-        <WordValue word={word} /> ={" "}
+        <WordValue word={word} format={format} /> ={" "}
         {...list.map((l) => <Label key={l} label={l} />)}
       </>
     );
@@ -79,13 +115,13 @@ export const Word: React.FC<{ word: number; labels: Labels }> = ({
   if (nearest) {
     return (
       <>
-        <WordValue word={word} /> ={" "}
+        <WordValue word={word} format={format} /> ={" "}
         {...nearest.map((l) => <Label key={l} label={`${l}+${distance}`} />)}
       </>
     );
   }
 
-  return <WordValue word={word} />;
+  return <WordValue word={word} format={format} />;
 };
 
 export const CellView: React.FC<{ cell: Cell; labels: Labels }> = ({
@@ -203,6 +239,7 @@ type MemoryViewerProps = {
 export const MemoryViewer = memo(
   forwardRef<MemoryViewerRef, MemoryViewerProps>(
     ({ computer, highlight, labels, pointers, onUserScroll }, ref) => {
+      const displayFormat = useDisplayStore((s) => s.format);
       const parentRef = useRef<HTMLDivElement>(null);
       const onUserScrollRef = useRef(onUserScroll);
       const highlightRef = useRef(highlight);
@@ -327,7 +364,14 @@ export const MemoryViewer = memo(
                     "TOP OF STACK"
                   ) : (
                     <>
-                      <div className="w-10">{virtualItem.index}</div>
+                      <div
+                        className={cn(
+                          ADDRESS_WIDTH[displayFormat],
+                          "text-muted-foreground",
+                        )}
+                      >
+                        {formatAddress(virtualItem.index, displayFormat)}
+                      </div>
                       <div className="flex-1">
                         <MemoryCell
                           computer={computer}
