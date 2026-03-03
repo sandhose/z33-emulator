@@ -21,6 +21,7 @@ import {
 } from "./components/ui/tooltip";
 import type { ComputerInterface } from "./computer";
 import { useCycles } from "./computer";
+import { Badge } from "./components/ui/badge";
 import { cn } from "./lib/utils";
 import { useAppStore } from "./stores/app-store";
 import { ThemeSwitcher } from "./theme-switcher";
@@ -208,14 +209,14 @@ const DebugToolbarInner: React.FC<{
       </Tooltip>
 
       {panicked && (
-        <span className="ml-2 text-xs font-semibold text-destructive bg-destructive/10 px-2 py-0.5 rounded">
+        <Badge variant="destructive" className="ml-2 font-semibold">
           Panicked: {panicked}
-        </span>
+        </Badge>
       )}
       {halt && !panicked && (
-        <span className="ml-2 text-xs font-semibold text-destructive bg-destructive/10 px-2 py-0.5 rounded">
+        <Badge variant="destructive" className="ml-2 font-semibold">
           Halted
-        </span>
+        </Badge>
       )}
 
       <div className="ml-auto flex items-center gap-1">
