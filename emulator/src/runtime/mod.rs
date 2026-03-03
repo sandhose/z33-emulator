@@ -169,10 +169,11 @@ impl Computer {
         *(self.memory.get_mut(C::INTERRUPT_SR_SAVE)?) = self.registers.get(&Reg::SR);
         *(self.memory.get_mut(C::INTERRUPT_EXCEPTION)?) = exception.code().into();
         self.registers.sr.set(StatusRegister::SUPERVISOR, true);
-        self.registers.sr.set(
-            StatusRegister::INTERRUPT_ENABLE,
-            !exception.is_hardware_interrupt(),
-        );
+        if exception.is_hardware_interrupt() {
+            self.registers
+                .sr
+                .set(StatusRegister::INTERRUPT_ENABLE, false);
+        }
         self.registers.pc = C::INTERRUPT_HANDLER;
         Ok(())
     }
