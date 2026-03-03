@@ -1,5 +1,4 @@
 import { memo, useCallback, useMemo, useRef } from "react";
-import { ScrollArea } from "./components/ui/scroll-area";
 import {
   ADDRESS_WIDTH,
   CellView,
@@ -79,7 +78,7 @@ const LabelList: React.FC<{
       <div className="bg-muted/30 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         Labels
       </div>
-      <ScrollArea className="max-h-32">
+      <div className="max-h-32 overflow-y-auto">
         {sorted.map(([name, address]) => (
           <LabelRow
             key={name}
@@ -91,7 +90,7 @@ const LabelList: React.FC<{
             onClick={() => onLabelClick(name, address)}
           />
         ))}
-      </ScrollArea>
+      </div>
     </div>
   );
 };
