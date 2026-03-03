@@ -7,6 +7,17 @@ import {
 } from "lucide-react";
 import type * as React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "./components/ui/alert-dialog";
 import { Button } from "./components/ui/button";
 import {
   Tooltip,
@@ -141,15 +152,7 @@ export const FileSidebar: React.FC = () => {
     return allFiles.filter((name) => touchedFiles.has(name));
   }, [mode, files]);
 
-  const resetToSamples = useCallback(() => {
-    if (
-      !confirm(
-        "Reset all files to the built-in samples? Your changes will be lost.",
-      )
-    )
-      return;
-    resetFiles();
-  }, [resetFiles]);
+  const [resetDialogOpen, setResetDialogOpen] = useState(false);
 
   if (isDebugging) return null;
 
@@ -222,20 +225,41 @@ export const FileSidebar: React.FC = () => {
             </TooltipTrigger>
             <TooltipContent side="bottom">Upload file</TooltipContent>
           </Tooltip>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  onClick={resetToSamples}
-                />
-              }
-            >
-              <RotateCcwIcon />
-            </TooltipTrigger>
-            <TooltipContent side="bottom">Reset to samples</TooltipContent>
-          </Tooltip>
+          <AlertDialog open={resetDialogOpen} onOpenChange={setResetDialogOpen}>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <AlertDialogTrigger
+                    render={<Button variant="ghost" size="icon-xs" />}
+                  />
+                }
+              >
+                <RotateCcwIcon />
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Reset to samples</TooltipContent>
+            </Tooltip>
+            <AlertDialogContent size="sm">
+              <AlertDialogHeader>
+                <AlertDialogTitle>Reset to samples?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will replace all files with the built-in samples. Your
+                  changes will be lost.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  variant="destructive"
+                  onClick={() => {
+                    resetFiles();
+                    setResetDialogOpen(false);
+                  }}
+                >
+                  Reset
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       </div>
 
