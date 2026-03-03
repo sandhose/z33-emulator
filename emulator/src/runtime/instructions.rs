@@ -167,6 +167,11 @@ impl Instruction {
                     .registers
                     .sr
                     .set(StatusRegister::OVERFLOW, overflow);
+                computer.registers.sr.set(StatusRegister::ZERO, res == 0);
+                computer
+                    .registers
+                    .sr
+                    .set(StatusRegister::NEGATIVE, res < 0);
             }
 
             Self::And(arg, reg) => {
@@ -208,6 +213,12 @@ impl Instruction {
                 let res = b.checked_div(a).ok_or(Exception::DivByZero)?;
                 debug!("{} / {} = {}", b, a, res);
                 computer.set_register(*reg, res.into())?;
+
+                computer.registers.sr.set(StatusRegister::ZERO, res == 0);
+                computer
+                    .registers
+                    .sr
+                    .set(StatusRegister::NEGATIVE, res < 0);
             }
 
             Self::Fas(addr, reg) => {
@@ -301,6 +312,11 @@ impl Instruction {
                     .registers
                     .sr
                     .set(StatusRegister::OVERFLOW, overflow);
+                computer.registers.sr.set(StatusRegister::ZERO, res == 0);
+                computer
+                    .registers
+                    .sr
+                    .set(StatusRegister::NEGATIVE, res < 0);
             }
 
             Self::Neg(reg) => {
@@ -313,6 +329,11 @@ impl Instruction {
                     .registers
                     .sr
                     .set(StatusRegister::OVERFLOW, overflow);
+                computer.registers.sr.set(StatusRegister::ZERO, res == 0);
+                computer
+                    .registers
+                    .sr
+                    .set(StatusRegister::NEGATIVE, res < 0);
             }
 
             Self::Nop => {}
@@ -413,6 +434,11 @@ impl Instruction {
                     .registers
                     .sr
                     .set(StatusRegister::OVERFLOW, overflow);
+                computer.registers.sr.set(StatusRegister::ZERO, res == 0);
+                computer
+                    .registers
+                    .sr
+                    .set(StatusRegister::NEGATIVE, res < 0);
             }
 
             Self::Swap(arg, reg) => {
