@@ -180,6 +180,12 @@ impl Instruction {
                 let res = a & b;
                 debug!("{} & {} = {}", a, b, res);
                 computer.set_register(*reg, res.into())?;
+
+                computer.registers.sr.set(StatusRegister::ZERO, res == 0);
+                computer
+                    .registers
+                    .sr
+                    .set(StatusRegister::NEGATIVE, res < 0);
             }
 
             Self::Call(arg) => {
@@ -343,6 +349,12 @@ impl Instruction {
                 let res = !val;
                 debug!("!{} = {}", val, res);
                 computer.set_register(*reg, res.into())?;
+
+                computer.registers.sr.set(StatusRegister::ZERO, res == 0);
+                computer
+                    .registers
+                    .sr
+                    .set(StatusRegister::NEGATIVE, res < 0);
             }
 
             Self::Or(arg, reg) => {
@@ -351,6 +363,12 @@ impl Instruction {
                 let res = a | b;
                 debug!("{} | {} = {}", a, b, res);
                 computer.set_register(*reg, res.into())?;
+
+                computer.registers.sr.set(StatusRegister::ZERO, res == 0);
+                computer
+                    .registers
+                    .sr
+                    .set(StatusRegister::NEGATIVE, res < 0);
             }
 
             Self::Out(_, _) => {
@@ -403,6 +421,12 @@ impl Instruction {
 
                 debug!("{} << {} = {}", b, a, res);
                 computer.set_register(*reg, res.into())?;
+
+                computer.registers.sr.set(StatusRegister::ZERO, res == 0);
+                computer
+                    .registers
+                    .sr
+                    .set(StatusRegister::NEGATIVE, res < 0);
             }
 
             Self::Shr(arg, reg) => {
@@ -414,6 +438,12 @@ impl Instruction {
 
                 debug!("{} >> {} = {}", b, a, res);
                 computer.set_register(*reg, res.into())?;
+
+                computer.registers.sr.set(StatusRegister::ZERO, res == 0);
+                computer
+                    .registers
+                    .sr
+                    .set(StatusRegister::NEGATIVE, res < 0);
             }
 
             Self::St(reg, address) => {
@@ -474,6 +504,12 @@ impl Instruction {
                 let res = a ^ b;
                 debug!("{} ^ {} = {}", a, b, res);
                 computer.set_register(*reg, res.into())?;
+
+                computer.registers.sr.set(StatusRegister::ZERO, res == 0);
+                computer
+                    .registers
+                    .sr
+                    .set(StatusRegister::NEGATIVE, res < 0);
             }
 
             Self::DebugReg => {
