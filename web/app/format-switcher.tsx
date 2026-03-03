@@ -1,10 +1,10 @@
 import { BinaryIcon, HashIcon } from "lucide-react";
+import { ToggleGroup, ToggleGroupItem } from "./components/ui/toggle-group";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "./components/ui/tooltip";
-import { cn } from "./lib/utils";
 import { type DisplayFormat, useDisplayStore } from "./stores/display-store";
 
 const FORMATS = ["decimal", "hex", "binary"] as const;
@@ -28,32 +28,25 @@ export const FormatSwitcher: React.FC = () => {
   const setFormat = useDisplayStore((s) => s.setFormat);
 
   return (
-    <div className="flex items-center rounded-md border border-border overflow-hidden">
-      {FORMATS.map((f, i) => {
+    <ToggleGroup
+      value={[format]}
+      onValueChange={(values) => {
+        if (values.length > 0) setFormat(values[0] as DisplayFormat);
+      }}
+      size="xs"
+      variant="outline"
+    >
+      {FORMATS.map((f) => {
         const Icon = ICONS[f];
         return (
           <Tooltip key={f}>
-            <TooltipTrigger
-              render={
-                <button
-                  type="button"
-                  className={cn(
-                    "size-6 flex items-center justify-center [&_svg]:size-3 transition-colors",
-                    format === f
-                      ? "bg-muted text-foreground"
-                      : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
-                    i < FORMATS.length - 1 && "border-r border-border",
-                  )}
-                  onClick={() => setFormat(f)}
-                />
-              }
-            >
+            <TooltipTrigger render={<ToggleGroupItem value={f} />}>
               <Icon />
             </TooltipTrigger>
             <TooltipContent>{LABELS[f]}</TooltipContent>
           </Tooltip>
         );
       })}
-    </div>
+    </ToggleGroup>
   );
 };

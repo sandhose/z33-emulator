@@ -1,11 +1,11 @@
 import { MonitorIcon, MoonIcon, SunIcon } from "lucide-react";
 import { useTheme } from "./components/theme-provider";
+import { ToggleGroup, ToggleGroupItem } from "./components/ui/toggle-group";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "./components/ui/tooltip";
-import { cn } from "./lib/utils";
 
 const THEMES = ["light", "system", "dark"] as const;
 
@@ -21,32 +21,25 @@ export const ThemeSwitcher: React.FC = () => {
   const { theme, setTheme } = useTheme();
 
   return (
-    <div className="flex items-center rounded-md border border-border overflow-hidden">
+    <ToggleGroup
+      value={[theme]}
+      onValueChange={(values) => {
+        if (values.length > 0) setTheme(values[0] as (typeof THEMES)[number]);
+      }}
+      size="xs"
+      variant="outline"
+    >
       {THEMES.map((t) => {
         const Icon = ICONS[t];
         return (
           <Tooltip key={t}>
-            <TooltipTrigger
-              render={
-                <button
-                  type="button"
-                  className={cn(
-                    "size-6 flex items-center justify-center [&_svg]:size-3 transition-colors",
-                    theme === t
-                      ? "bg-muted text-foreground"
-                      : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
-                    t !== "dark" && "border-r border-border",
-                  )}
-                  onClick={() => setTheme(t)}
-                />
-              }
-            >
+            <TooltipTrigger render={<ToggleGroupItem value={t} />}>
               <Icon />
             </TooltipTrigger>
             <TooltipContent>{LABELS[t]}</TooltipContent>
           </Tooltip>
         );
       })}
-    </div>
+    </ToggleGroup>
   );
 };
