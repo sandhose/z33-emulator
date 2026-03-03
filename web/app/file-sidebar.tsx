@@ -1,4 +1,5 @@
 import {
+  DownloadIcon,
   FilePlusIcon,
   RotateCcwIcon,
   TrashIcon,
@@ -252,14 +253,48 @@ export const FileSidebar: React.FC = () => {
             >
               {name}
             </button>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              className="opacity-0 group-hover:opacity-100 mr-1"
-              onClick={() => deleteFile(name)}
-            >
-              <TrashIcon />
-            </Button>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    className="opacity-0 group-hover:opacity-100"
+                    onClick={() => {
+                      const content = files[name];
+                      if (content === undefined) return;
+                      const blob = new Blob([content], {
+                        type: "text/plain",
+                      });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement("a");
+                      a.href = url;
+                      a.download = name;
+                      a.click();
+                      URL.revokeObjectURL(url);
+                    }}
+                  />
+                }
+              >
+                <DownloadIcon />
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Download</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    className="opacity-0 group-hover:opacity-100 mr-1"
+                    onClick={() => deleteFile(name)}
+                  />
+                }
+              >
+                <TrashIcon />
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Delete</TooltipContent>
+            </Tooltip>
           </div>
         ))}
 
