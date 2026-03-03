@@ -10,7 +10,7 @@ use super::exception::Exception;
 use super::memory::Cell;
 use super::registers::{Reg, StatusRegister};
 use super::{Computer, ProcessorError};
-use crate::constants::{Word, INTERRUPT_PC_SAVE, INTERRUPT_SR_SAVE};
+use crate::constants::{INTERRUPT_PC_SAVE, INTERRUPT_SR_SAVE};
 
 #[derive(Debug, Clone, PartialEq, Eq, Display)]
 pub enum Instruction {
@@ -305,10 +305,14 @@ impl Instruction {
 
             Self::Neg(reg) => {
                 let val = reg.extract_word(computer)?;
-                let res = -val;
-                let res = res as Word;
+                let (res, overflow) = val.overflowing_neg();
                 debug!("-{} = {}", val, res);
                 computer.set_register(*reg, res.into())?;
+
+                computer
+                    .registers
+                    .sr
+                    .set(StatusRegister::OVERFLOW, overflow);
             }
 
             Self::Nop => {}
