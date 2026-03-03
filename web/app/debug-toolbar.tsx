@@ -6,6 +6,7 @@ import {
   StepForwardIcon,
 } from "lucide-react";
 import { memo, startTransition, useCallback, useEffect, useState } from "react";
+import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
 import {
   Select,
@@ -21,7 +22,6 @@ import {
 } from "./components/ui/tooltip";
 import type { ComputerInterface } from "./computer";
 import { useCycles } from "./computer";
-import { Badge } from "./components/ui/badge";
 import { cn } from "./lib/utils";
 import { useAppStore } from "./stores/app-store";
 import { ThemeSwitcher } from "./theme-switcher";
