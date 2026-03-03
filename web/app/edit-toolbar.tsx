@@ -74,6 +74,7 @@ export const EditToolbar: React.FC<EditToolbarProps> = memo(
         <div className="ml-auto flex items-center gap-1">
           {canRun && (
             <>
+              <span className="text-xs text-muted-foreground">Start at</span>
               <Select
                 value={selectedEntrypoint}
                 onValueChange={(v) => {
