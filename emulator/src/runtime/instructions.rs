@@ -400,7 +400,7 @@ impl Instruction {
                 computer.check_privileged()?;
                 computer.registers.pc =
                     computer.memory.get(INTERRUPT_PC_SAVE)?.extract_address()?;
-                computer.registers.sr = StatusRegister::from_bits_truncate(
+                computer.registers.sr = StatusRegister::from_bits_retain(
                     computer.memory.get(INTERRUPT_SR_SAVE)?.extract_word()?,
                 );
             }
