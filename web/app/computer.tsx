@@ -12,6 +12,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import type { Cell, Cycles, Registers, SourceMap } from "z33-web-bindings";
+import { Badge } from "./components/ui/badge";
 import { cn } from "./lib/utils";
 import { type DisplayFormat, useDisplayStore } from "./stores/display-store";
 
@@ -161,36 +162,26 @@ const MemoryCell: React.FC<{
 };
 
 const Label: React.FC<{ label: string }> = ({ label }) => (
-  <div className="px-2 inline-block bg-accent text-accent-foreground rounded text-xs">
-    {label}
-  </div>
+  <Badge variant="outline">{label}</Badge>
 );
 
 const RegisterBadge: React.FC<{ register: RegisterId }> = ({ register }) => {
   switch (register) {
     case "%pc":
       return (
-        <div className="px-1.5 inline-block rounded text-xs font-semibold bg-blue-500 text-white">
-          %pc
-        </div>
+        <Badge className="font-semibold bg-blue-500 text-white">%pc</Badge>
       );
     case "%sp":
       return (
-        <div className="px-1.5 inline-block rounded text-xs font-semibold bg-emerald-500 text-white">
-          %sp
-        </div>
+        <Badge className="font-semibold bg-emerald-500 text-white">%sp</Badge>
       );
     case "%a":
       return (
-        <div className="px-1.5 inline-block rounded text-xs font-semibold bg-amber-500 text-white">
-          %a
-        </div>
+        <Badge className="font-semibold bg-amber-500 text-white">%a</Badge>
       );
     case "%b":
       return (
-        <div className="px-1.5 inline-block rounded text-xs font-semibold bg-violet-500 text-white">
-          %b
-        </div>
+        <Badge className="font-semibold bg-violet-500 text-white">%b</Badge>
       );
   }
 };
