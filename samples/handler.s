@@ -1,4 +1,4 @@
-#define EXCEPTION [102]
+#define EXCEPTION 102
 #define TRAP 4
 
 main:
@@ -11,7 +11,7 @@ invalid:
 .addr 200
 handler:
     push %a
-    ld EXCEPTION, %a
+    ld [EXCEPTION], %a
     cmp TRAP, %a
     jne exit
     pop %a
