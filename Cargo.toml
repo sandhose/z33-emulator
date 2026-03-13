@@ -28,7 +28,7 @@ anstyle = "1.0.13"
 anyhow = "1.0.102"
 bitflags = "2.11.0"
 camino = { version = "1.2.2", features = ["serde1"] }
-clap = { version = "4.5.60", features = ["derive"] }
+clap = { version = "4.6.0", features = ["derive"] }
 clap_complete = "4.5.66"
 console_error_panic_hook = "0.1.7"
 indoc = "2.0.7"
