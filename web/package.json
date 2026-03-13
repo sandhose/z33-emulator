@@ -10,7 +10,7 @@
     "knip": "knip"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.4.5",
+    "@biomejs/biome": "2.4.6",
     "@tailwindcss/vite": "^4.1.18",
     "@tsconfig/node20": "^20.1.9",
     "@tsconfig/strictest": "^2.0.8",
