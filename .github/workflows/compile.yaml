@@ -13,6 +13,9 @@ env:
   CARGO_TERM_COLOR: always
   CARGO_NET_GIT_FETCH_WITH_CLI: "true"
 
+permissions:
+  contents: read
+
 name: Compile
 
 jobs:
@@ -31,7 +34,9 @@ jobs:
 
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v6.0.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Install Rust toolchain
         run: |
@@ -40,12 +45,13 @@ jobs:
           rustup target add ${{ matrix.arch }}-apple-darwin
 
       - name: Setup Rust build cache
-        uses: Swatinem/rust-cache@v2.9.1
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           shared-key: ${{ matrix.arch }}-macos
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install zig
-        uses: goto-bus-stop/setup-zig@v2.2.1
+        uses: goto-bus-stop/setup-zig@abea47f85e598557f500fa1fd2ab7464fcb39406 # v2.2.1
 
       - name: Install cargo-zigbuild
         run: pipx install cargo-zigbuild
@@ -60,7 +66,7 @@ jobs:
         run: tar -czvf z33-cli-${{ matrix.arch }}-macos.tar.gz --owner=0 --group=0 -C target/${{ matrix.arch }}-apple-darwin/release/ z33-cli
 
       - name: Upload the binary as artifact
-        uses: actions/upload-artifact@v7.0.0
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: ${{ matrix.arch }}-macos
           path: z33-cli-${{ matrix.arch }}-macos.tar.gz
@@ -78,7 +84,9 @@ jobs:
 
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v6.0.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Install Rust toolchain
         run: |
@@ -87,12 +95,13 @@ jobs:
           rustup target add ${{ matrix.arch }}-unknown-linux-musl
 
       - name: Setup Rust build cache
-        uses: Swatinem/rust-cache@v2.9.1
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           shared-key: ${{ matrix.arch }}-linux
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install zig
-        uses: goto-bus-stop/setup-zig@v2.2.1
+        uses: goto-bus-stop/setup-zig@abea47f85e598557f500fa1fd2ab7464fcb39406 # v2.2.1
 
       - name: Install cargo-zigbuild
         run: pipx install cargo-zigbuild
@@ -104,7 +113,7 @@ jobs:
         run: tar -czvf z33-cli-${{ matrix.arch }}-linux.tar.gz --owner=0 --group=0 -C target/${{ matrix.arch }}-unknown-linux-musl/release/ z33-cli
 
       - name: Upload the binary as artifact
-        uses: actions/upload-artifact@v7.0.0
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: ${{ matrix.arch }}-linux
           path: z33-cli-${{ matrix.arch }}-linux.tar.gz
@@ -126,7 +135,9 @@ jobs:
 
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v6.0.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Install Rust toolchain
         run: |
@@ -135,12 +146,20 @@ jobs:
           rustup target add ${{ matrix.arch }}-pc-windows-msvc
 
       - name: Setup Rust build cache
-        uses: Swatinem/rust-cache@v2.9.1
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           shared-key: ${{ matrix.arch }}-pc-windows-msvc
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      - name: Setup cargo-xwin cache
-        uses: actions/cache@v5.0.4
+      - name: Restore cargo-xwin cache
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: cargo-xwin
+          key: cargo-xwin-${{ matrix.arch }}
+
+      - name: Save cargo-xwin cache
+        if: github.ref == 'refs/heads/main'
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           path: cargo-xwin
           key: cargo-xwin-${{ matrix.arch }}
@@ -155,7 +174,7 @@ jobs:
         run: mv target/${{ matrix.arch }}-pc-windows-msvc/release/z33-cli.exe ./z33-cli-${{ matrix.arch }}-windows.exe
 
       - name: Upload the binary as artifact
-        uses: actions/upload-artifact@v7.0.0
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: ${{ matrix.arch }}-windows
           path: z33-cli-${{ matrix.arch }}-windows.exe
@@ -165,10 +184,12 @@ jobs:
     needs: [build-linux, build-macos, build-windows]
     runs-on: ubuntu-24.04
     if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
 
     steps:
       - name: Download the artifacts from the previous job
-        uses: actions/download-artifact@v8.0.1
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: artifacts
 
@@ -177,7 +198,7 @@ jobs:
           mv ./artifacts/{x86_64,aarch64}-{linux,macos,windows}/* ./
 
       - name: Prepare a release
-        uses: softprops/action-gh-release@v2.6.1
+        uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2.6.1
         with:
           files: |
             z33-cli-x86_64-linux.tar.gz

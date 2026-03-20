@@ -1,0 +1,7 @@
+rules:
+  cache-poisoning:
+    ignore:
+      # save-if restricts cache writes to main branch only
+      - compile.yaml:48
+      - compile.yaml:98
+      - compile.yaml:149
