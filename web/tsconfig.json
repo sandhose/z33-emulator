@@ -10,7 +10,7 @@
       "@/*": ["./app/*"]
     }
   },
-  "include": ["app"],
+  "include": ["app", "e2e"],
   "references": [
     {
       "path": "./tsconfig.node.json"

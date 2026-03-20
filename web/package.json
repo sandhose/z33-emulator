@@ -10,9 +10,13 @@
     "lint:fix": "oxlint --fix app/",
     "fmt": "oxfmt app/",
     "fmt:check": "oxfmt --check app/",
-    "knip": "knip"
+    "knip": "knip",
+    "e2e": "playwright test",
+    "e2e:ui": "playwright test --ui",
+    "e2e:headed": "playwright test --headed"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@tailwindcss/vite": "^4.2.2",
     "@tsconfig/node20": "^20.1.9",
     "@tsconfig/strictest": "^2.0.8",
