@@ -1,10 +1,4 @@
-import {
-  BookOpenIcon,
-  PauseIcon,
-  PencilIcon,
-  PlayIcon,
-  StepForwardIcon,
-} from "lucide-react";
+import { PauseIcon, PencilIcon, PlayIcon, StepForwardIcon } from "lucide-react";
 import { memo } from "react";
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
@@ -21,6 +15,7 @@ import {
   TooltipTrigger,
 } from "./components/ui/tooltip";
 import type { ComputerInterface } from "./computer-types";
+import { DocsButton } from "./docs-button";
 import { useCycles } from "./hooks/use-computer";
 import { useStepRunner } from "./hooks/use-step-runner";
 import { cn } from "./lib/utils";
@@ -212,22 +207,7 @@ const DebugToolbarInner: React.FC<{
             Stop execution and return to the editor
           </TooltipContent>
         </Tooltip>
-        <Button
-          variant="ghost"
-          size="xs"
-          nativeButton={false}
-          render={
-            // biome-ignore lint/a11y/useAnchorContent: Button renders its children inside this anchor
-            <a
-              href="https://pdagog.gitlab.io/ens/z33refcard-fr.pdf"
-              target="_blank"
-              rel="noopener noreferrer"
-            />
-          }
-        >
-          <BookOpenIcon data-icon="inline-start" />
-          Docs
-        </Button>
+        <DocsButton />
         <ThemeSwitcher />
       </div>
     </div>
