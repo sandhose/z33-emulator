@@ -53,22 +53,34 @@ export const EditToolbar: React.FC<EditToolbarProps> = memo(
     const canRun = compilationStatus === "success" && labels.length > 0;
 
     return (
-      <div className="flex items-center gap-2 px-2 py-1 border-b border-border bg-muted/30 shrink-0">
+      <div
+        role="toolbar"
+        aria-label="Edit"
+        className="flex items-center gap-2 px-2 py-1 border-b border-border bg-muted/30 shrink-0"
+      >
         {compilationStatus === "pending" && (
-          <Loader2Icon className="shrink-0 size-3.5 animate-spin text-muted-foreground" />
+          <span role="status" aria-label="Compiling">
+            <Loader2Icon className="shrink-0 size-3.5 animate-spin text-muted-foreground" />
+          </span>
         )}
         {compilationStatus === "error" && (
-          <>
+          <span
+            role="status"
+            aria-label="Compilation error"
+            className="flex items-center gap-2"
+          >
             <XCircleIcon className="shrink-0 size-3.5 text-destructive" />
             {compilationError && (
               <span className="text-xs text-destructive truncate">
                 {compilationError}
               </span>
             )}
-          </>
+          </span>
         )}
         {compilationStatus === "success" && (
-          <CheckCircle2Icon className="shrink-0 size-3.5 text-green-600 dark:text-green-400" />
+          <span role="status" aria-label="Compilation succeeded">
+            <CheckCircle2Icon className="shrink-0 size-3.5 text-green-600 dark:text-green-400" />
+          </span>
         )}
 
         <div className="ml-auto flex items-center gap-1">
@@ -81,7 +93,11 @@ export const EditToolbar: React.FC<EditToolbarProps> = memo(
                   if (v !== null) setSelectedEntrypoint(v);
                 }}
               >
-                <SelectTrigger size="xs" className="font-mono w-32">
+                <SelectTrigger
+                  size="xs"
+                  className="font-mono w-32"
+                  aria-label="Entrypoint"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent align="end" side="bottom">

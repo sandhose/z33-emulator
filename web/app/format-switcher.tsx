@@ -45,7 +45,9 @@ export const FormatSwitcher: React.FC = () => {
         const Icon = ICONS[f];
         return (
           <Tooltip key={f}>
-            <TooltipTrigger render={<ToggleGroupItem value={f} />}>
+            <TooltipTrigger
+              render={<ToggleGroupItem value={f} aria-label={LABELS[f]} />}
+            >
               <Icon />
             </TooltipTrigger>
             <TooltipContent>{LABELS[f]}</TooltipContent>
