@@ -28,7 +28,7 @@
     "oxlint": "^1.56.0",
     "oxlint-tsgolint": "^0.17.1",
     "tailwindcss": "^4.2.2",
-    "typescript": "^5.9.3",
+    "typescript": "6.0.1-rc",
     "vite": "^8.0.0"
   },
   "dependencies": {
