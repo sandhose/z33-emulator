@@ -15,7 +15,7 @@ import { MultiFileEditor } from "./multi-file-editor";
 import { ResizeHandle } from "./panel-resize-handle";
 import { useAppStore } from "./stores/app-store";
 import { useFileStore } from "./stores/file-store";
-import { useSourceHighlight } from "./use-source-highlight";
+import { useSourceHighlight } from "./hooks/use-source-highlight";
 
 const App = () => {
   const monacoInstance = useMonaco();

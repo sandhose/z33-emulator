@@ -1,8 +1,8 @@
 import type * as monaco from "monaco-editor";
 import { useEffect, useRef, useState } from "react";
 import type { SourceMap } from "z33-web-bindings";
-import type { ComputerInterface } from "./computer-types";
-import { useRegisters } from "./hooks/use-computer";
+import type { ComputerInterface } from "../computer-types";
+import { useRegisters } from "./use-computer";
 
 /**
  * Build a lookup table from UTF-8 byte offset → JS string character offset.
