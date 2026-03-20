@@ -7,6 +7,7 @@ import { InMemoryPreprocessor } from "z33-web-bindings";
 import { toMonacoPath } from "../lib/file-paths";
 import { getMonacoFiles, initMonacoSync } from "../lib/monaco-sync";
 import { reportSchema, toMonacoDiagnostics } from "../report";
+import { useFileStore } from "../stores/file-store";
 
 type CompilationResult =
   | { type: "idle" }
@@ -56,7 +57,15 @@ export function useCompilation(activeFile: string, monacoInstance: Monaco) {
   // Initialize Monaco sync once after Monaco loads
   useEffect(() => {
     if (!monacoInstance) return;
-    return initMonacoSync(monacoInstance);
+    return initMonacoSync(monacoInstance, {
+      onEdit: (name, content) =>
+        useFileStore.getState()._onMonacoEdit(name, content),
+      getFiles: () => useFileStore.getState().files,
+      subscribe: (listener) =>
+        useFileStore.subscribe((state, prev) =>
+          listener(state.files, prev.files),
+        ),
+    });
   }, [monacoInstance]);
 
   const performCompile = useCallback(() => {
