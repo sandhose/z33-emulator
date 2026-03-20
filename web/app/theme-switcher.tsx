@@ -8,6 +8,11 @@ import {
 } from "./components/ui/tooltip";
 
 const THEMES = ["light", "system", "dark"] as const;
+type ThemeValue = (typeof THEMES)[number];
+
+function isThemeValue(value: string): value is ThemeValue {
+  return (THEMES as readonly string[]).includes(value);
+}
 
 const ICONS = {
   light: SunIcon,
@@ -24,7 +29,8 @@ export const ThemeSwitcher: React.FC = () => {
     <ToggleGroup
       value={[theme]}
       onValueChange={(values) => {
-        if (values.length > 0) setTheme(values[0] as (typeof THEMES)[number]);
+        const value = values[0];
+        if (value && isThemeValue(value)) setTheme(value);
       }}
       size="xs"
       variant="outline"

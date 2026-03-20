@@ -7,7 +7,11 @@ import {
 } from "./components/ui/tooltip";
 import { type DisplayFormat, useDisplayStore } from "./stores/display-store";
 
-const FORMATS = ["decimal", "hex", "binary"] as const;
+const FORMATS: readonly DisplayFormat[] = ["decimal", "hex", "binary"];
+
+function isDisplayFormat(value: string): value is DisplayFormat {
+  return (FORMATS as readonly string[]).includes(value);
+}
 
 const ICONS: Record<DisplayFormat, React.FC> = {
   decimal: HashIcon,
@@ -31,7 +35,8 @@ export const FormatSwitcher: React.FC = () => {
     <ToggleGroup
       value={[format]}
       onValueChange={(values) => {
-        if (values.length > 0) setFormat(values[0] as DisplayFormat);
+        const value = values[0];
+        if (value && isDisplayFormat(value)) setFormat(value);
       }}
       size="xs"
       variant="outline"

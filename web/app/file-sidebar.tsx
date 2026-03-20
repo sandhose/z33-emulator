@@ -131,8 +131,10 @@ export const FileSidebar: React.FC = () => {
       for (const file of fileList) {
         const reader = new FileReader();
         reader.addEventListener("load", () => {
-          setContent(file.name, reader.result as string);
-          setActiveFile(file.name);
+          if (typeof reader.result === "string") {
+            setContent(file.name, reader.result);
+            setActiveFile(file.name);
+          }
         });
         reader.readAsText(file);
       }
@@ -168,7 +170,10 @@ export const FileSidebar: React.FC = () => {
       }}
       onDragLeave={(e) => {
         e.preventDefault();
-        if (!dropZoneRef.current?.contains(e.relatedTarget as Node)) {
+        if (
+          !(e.relatedTarget instanceof Node) ||
+          !dropZoneRef.current?.contains(e.relatedTarget)
+        ) {
           setIsSidebarDragging(false);
         }
       }}

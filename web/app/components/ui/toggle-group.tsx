@@ -39,6 +39,7 @@ function ToggleGroup({
       data-size={size}
       data-spacing={spacing}
       data-orientation={orientation}
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- React.CSSProperties doesn't support CSS custom properties
       style={{ "--gap": spacing } as React.CSSProperties}
       className={cn(
         "group/toggle-group flex w-fit flex-row items-center gap-[--spacing(var(--gap))] rounded-lg data-[size=xs]:rounded-[min(var(--radius-sm),8px)] data-[size=sm]:rounded-[min(var(--radius-md),10px)] data-vertical:flex-col data-vertical:items-stretch",

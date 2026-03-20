@@ -9,6 +9,11 @@ import {
 type EffectiveTheme = "dark" | "light";
 type Theme = EffectiveTheme | "system";
 
+const VALID_THEMES: readonly Theme[] = ["dark", "light", "system"];
+function isTheme(value: string): value is Theme {
+  return (VALID_THEMES as readonly string[]).includes(value);
+}
+
 type ThemeProviderProps = {
   children: React.ReactNode;
   defaultTheme?: Theme;
@@ -37,9 +42,10 @@ export function ThemeProvider({
   storageKey = "vite-ui-theme",
   ...props
 }: ThemeProviderProps) {
-  const [theme, setTheme] = useState<Theme>(
-    () => (localStorage.getItem(storageKey) as Theme) || defaultTheme,
-  );
+  const [theme, setTheme] = useState<Theme>(() => {
+    const stored = localStorage.getItem(storageKey);
+    return stored && isTheme(stored) ? stored : defaultTheme;
+  });
 
   const isSystemDark = useSyncExternalStore(
     (callback) => {
