@@ -24,6 +24,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "./components/ui/tooltip";
+import { useFileDrop } from "./hooks/use-file-drop";
 import { stripLeadingSlash } from "./lib/file-paths";
 import { useAppStore } from "./stores/app-store";
 import { useFileStore } from "./stores/file-store";
@@ -77,57 +78,7 @@ export const FileSidebar: React.FC = () => {
   const isDebugging = mode.type === "debug";
 
   const [isCreatingFile, setIsCreatingFile] = useState(false);
-  const [isWindowDragging, setIsWindowDragging] = useState(false);
-  const [isSidebarDragging, setIsSidebarDragging] = useState(false);
   const uploadInputRef = useRef<HTMLInputElement>(null);
-  const dropZoneRef = useRef<HTMLDivElement>(null);
-  // oxlint-disable-next-line unicorn/no-useless-undefined -- useRef requires an argument
-  const dismissTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
-
-  // Detect file-drag over the window using dragover as a heartbeat.
-  // dragover fires continuously (~50-350ms depending on browser) while the drag
-  // is inside the viewport. We show the overlay on dragenter and schedule a
-  // dismiss timeout on every dragover; as long as events keep coming the timeout
-  // resets. When the drag leaves the window dragover stops and the timeout fires.
-  // This avoids all the dragleave/relatedTarget edge-cases that plague other
-  // approaches (iframes, shadow DOM, DOM mutations from the overlay itself).
-  useEffect(() => {
-    const scheduleDismiss = () => {
-      clearTimeout(dismissTimeoutRef.current);
-      dismissTimeoutRef.current = setTimeout(() => {
-        setIsWindowDragging(false);
-        setIsSidebarDragging(false);
-      }, 500);
-    };
-
-    const handleDragEnter = (e: DragEvent) => {
-      e.preventDefault();
-      if (e.dataTransfer?.types.includes("Files")) {
-        setIsWindowDragging(true);
-        scheduleDismiss();
-      }
-    };
-    const handleDragOver = (e: DragEvent) => {
-      e.preventDefault();
-      if (e.dataTransfer?.types.includes("Files")) scheduleDismiss();
-    };
-    const handleDrop = (e: DragEvent) => {
-      e.preventDefault();
-      clearTimeout(dismissTimeoutRef.current);
-      setIsWindowDragging(false);
-      setIsSidebarDragging(false);
-    };
-
-    window.addEventListener("dragenter", handleDragEnter);
-    window.addEventListener("dragover", handleDragOver);
-    window.addEventListener("drop", handleDrop);
-    return () => {
-      clearTimeout(dismissTimeoutRef.current);
-      window.removeEventListener("dragenter", handleDragEnter);
-      window.removeEventListener("dragover", handleDragOver);
-      window.removeEventListener("drop", handleDrop);
-    };
-  }, []);
 
   const processFiles = useCallback(
     (fileList: FileList) => {
@@ -140,6 +91,9 @@ export const FileSidebar: React.FC = () => {
     },
     [setContent, setActiveFile],
   );
+
+  const { isWindowDragging, isOverDropZone, dropZoneRef, dropZoneProps } =
+    useFileDrop(processFiles);
 
   // Filter to touched files during debug, show all during edit
   const displayedFiles = useMemo(() => {
@@ -164,31 +118,11 @@ export const FileSidebar: React.FC = () => {
       role="navigation"
       aria-label="Files"
       className="relative flex flex-col w-48 border-r border-border p-2"
-      onDragOver={(e) => e.preventDefault()}
-      onDragEnter={(e) => {
-        e.preventDefault();
-        if (e.dataTransfer.types.includes("Files")) setIsSidebarDragging(true);
-      }}
-      onDragLeave={(e) => {
-        e.preventDefault();
-        if (
-          !(e.relatedTarget instanceof Node) ||
-          !dropZoneRef.current?.contains(e.relatedTarget)
-        ) {
-          setIsSidebarDragging(false);
-        }
-      }}
-      onDrop={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        setIsWindowDragging(false);
-        setIsSidebarDragging(false);
-        if (e.dataTransfer.files.length > 0) processFiles(e.dataTransfer.files);
-      }}
+      {...dropZoneProps}
     >
       {isWindowDragging && (
         <div
-          data-over={isSidebarDragging}
+          data-over={isOverDropZone}
           className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-sm border-2 border-dashed pointer-events-none transition-all border-primary/40 bg-primary/5 opacity-50 data-[over=true]:border-primary data-[over=true]:bg-primary/10 data-[over=true]:opacity-100"
         >
           <UploadIcon className="size-6 text-primary" />
