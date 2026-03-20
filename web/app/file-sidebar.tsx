@@ -51,6 +51,7 @@ const InlineFileInput: React.FC<{
       <input
         ref={inputRef}
         name="filename"
+        aria-label="File name"
         className="w-full bg-transparent text-sm font-mono outline-none border-b border-ring"
         onBlur={onCancel}
         onKeyDown={(e) => {
@@ -162,6 +163,8 @@ export const FileSidebar: React.FC = () => {
     // biome-ignore lint/a11y/noStaticElementInteractions: drop zone is fine right?
     <div
       ref={dropZoneRef}
+      role="navigation"
+      aria-label="Files"
       className="relative flex flex-col w-48 border-r border-border p-2"
       onDragOver={(e) => e.preventDefault()}
       onDragEnter={(e) => {
@@ -208,6 +211,7 @@ export const FileSidebar: React.FC = () => {
                 <Button
                   variant="ghost"
                   size="icon-xs"
+                  aria-label="New file"
                   onClick={() => setIsCreatingFile(true)}
                 />
               }
@@ -222,6 +226,7 @@ export const FileSidebar: React.FC = () => {
                 <Button
                   variant="ghost"
                   size="icon-xs"
+                  aria-label="Upload file"
                   onClick={() => uploadInputRef.current?.click()}
                 />
               }
@@ -235,7 +240,13 @@ export const FileSidebar: React.FC = () => {
               <TooltipTrigger
                 render={
                   <AlertDialogTrigger
-                    render={<Button variant="ghost" size="icon-xs" />}
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        aria-label="Reset to samples"
+                      />
+                    }
                   />
                 }
               >
@@ -288,6 +299,7 @@ export const FileSidebar: React.FC = () => {
                   <Button
                     variant="ghost"
                     size="icon-xs"
+                    aria-label="Download"
                     className="opacity-0 group-hover:opacity-100"
                     onClick={() => {
                       const content = files[name];
@@ -315,6 +327,7 @@ export const FileSidebar: React.FC = () => {
                   <Button
                     variant="ghost"
                     size="icon-xs"
+                    aria-label="Delete"
                     className="opacity-0 group-hover:opacity-100 mr-1"
                     onClick={() => deleteFile(name)}
                   />

@@ -74,7 +74,7 @@ const LabelList: React.FC<{
   if (sorted.length === 0) return null;
 
   return (
-    <div className="border-b border-border">
+    <div role="region" aria-label="Labels" className="border-b border-border">
       <div className="bg-muted/30 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         Labels
       </div>
@@ -158,7 +158,11 @@ export const MemoryPanel: React.FC<MemoryPanelProps> = memo(
             onLabelClick={handleLabelClick}
           />
         </div>
-        <div className="flex-1 overflow-hidden flex flex-col">
+        <div
+          role="region"
+          aria-label="Memory"
+          className="flex-1 overflow-hidden flex flex-col"
+        >
           <div className="bg-muted/30 border-b px-2 py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground shrink-0">
             Memory
           </div>

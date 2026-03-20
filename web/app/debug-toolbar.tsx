@@ -136,6 +136,8 @@ const DebugToolbarInner: React.FC<{
 
   return (
     <div
+      role="toolbar"
+      aria-label="Debug"
       className={cn(
         "flex items-center gap-1 px-2 py-1 border-b border-border bg-muted/30",
         className,
@@ -163,6 +165,7 @@ const DebugToolbarInner: React.FC<{
             size="xs"
             onClick={() => runN(10)}
             disabled={disabled}
+            aria-label="Run 10 steps"
           >
             <PlayIcon data-icon="inline-start" />
             10
@@ -172,6 +175,7 @@ const DebugToolbarInner: React.FC<{
             size="xs"
             onClick={() => runN(100)}
             disabled={disabled}
+            aria-label="Run 100 steps"
           >
             <PlayIcon data-icon="inline-start" />
             100
@@ -181,6 +185,7 @@ const DebugToolbarInner: React.FC<{
             size="xs"
             onClick={() => runN(1000)}
             disabled={disabled}
+            aria-label="Run 1000 steps"
           >
             <PlayIcon data-icon="inline-start" />
             1k
@@ -197,7 +202,9 @@ const DebugToolbarInner: React.FC<{
           }
         >
           <span className="text-muted-foreground">Cycles count</span>
-          <span className="tabular-nums">{cycles}</span>
+          <span className="tabular-nums" aria-label="Cycle count">
+            {cycles}
+          </span>
         </TooltipTrigger>
         <TooltipContent side="bottom">
           <ul className="list-disc list-inside space-y-0.5">
@@ -209,12 +216,20 @@ const DebugToolbarInner: React.FC<{
       </Tooltip>
 
       {panicked && (
-        <Badge variant="destructive" className="ml-2 font-semibold">
+        <Badge
+          role="alert"
+          variant="destructive"
+          className="ml-2 font-semibold"
+        >
           Panicked: {panicked}
         </Badge>
       )}
       {halt && !panicked && (
-        <Badge variant="destructive" className="ml-2 font-semibold">
+        <Badge
+          role="alert"
+          variant="destructive"
+          className="ml-2 font-semibold"
+        >
           Halted
         </Badge>
       )}

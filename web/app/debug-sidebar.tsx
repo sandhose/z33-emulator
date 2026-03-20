@@ -103,7 +103,7 @@ export const RegisterPanel: React.FC<{
   };
 
   return (
-    <div className="font-mono text-xs">
+    <div role="region" aria-label="Registers" className="font-mono text-xs">
       <div className="bg-muted/30 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground font-sans flex items-center justify-between">
         Registers
         <FormatSwitcher />
@@ -115,6 +115,7 @@ export const RegisterPanel: React.FC<{
           <button
             key={reg}
             type="button"
+            aria-label={`Register %${reg}`}
             className="flex items-center gap-2 w-full px-2 py-0.5 text-left hover:bg-muted/50 cursor-pointer select-none"
             onClick={makeClickHandler(key)}
           >
@@ -140,6 +141,7 @@ export const RegisterPanel: React.FC<{
           <button
             key={reg}
             type="button"
+            aria-label={`Register %${reg}`}
             className="flex items-center gap-2 w-full px-2 py-0.5 text-left hover:bg-muted/50 cursor-pointer select-none"
             onClick={makeClickHandler(key)}
           >
