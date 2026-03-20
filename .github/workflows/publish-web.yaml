@@ -26,19 +26,19 @@ jobs:
 
     steps:
       - name: Checkout the code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v6.0.2
         with:
           persist-credentials: false
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v5.0.0
         with:
-          version: 9
+          package_json_file: web/package.json
 
       - name: Install Node
         uses: actions/setup-node@v6.3.0
         with:
-          node-version: "20"
+          node-version: "24"
           cache: "pnpm"
           cache-dependency-path: web/pnpm-lock.yaml
 
@@ -49,7 +49,7 @@ jobs:
           rustup target add wasm32-unknown-unknown
 
       - name: Setup Rust build cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@v2.9.1
 
       - name: Install Node dependencies
         run: pnpm i
@@ -60,10 +60,10 @@ jobs:
         working-directory: web
 
       - name: Upload artifact
-        uses: actions/upload-pages-artifact@v4
+        uses: actions/upload-pages-artifact@v4.0.0
         with:
           path: "./web/dist"
 
       - name: Deploy to GitHub Pages
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v4.0.5
         if: github.ref == 'refs/heads/main'

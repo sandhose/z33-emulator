@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v6
+        uses: actions/checkout@v6.0.2
 
       - name: Install Rust toolchain
         run: |
@@ -28,7 +28,7 @@ jobs:
           rustup default stable
 
       - name: Setup Rust build cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@v2.9.1
 
       - name: Run cargo test
         run: cargo test --workspace
@@ -38,7 +38,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v6
+        uses: actions/checkout@v6.0.2
 
       - name: Install Rust toolchain
         run: |
@@ -54,7 +54,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v6
+        uses: actions/checkout@v6.0.2
 
       - name: Install Rust toolchain
         run: |
@@ -63,7 +63,7 @@ jobs:
           rustup component add clippy
 
       - name: Setup Rust build cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@v2.9.1
 
       - name: Run cargo clippy
         run: cargo clippy --workspace
@@ -73,10 +73,10 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v6
+        uses: actions/checkout@v6.0.2
 
       - name: Run cargo deny
-        uses: EmbarkStudios/cargo-deny-action@v2
+        uses: EmbarkStudios/cargo-deny-action@v2.0.15
 
   lint:
     name: "oxlint + oxfmt check"
@@ -86,17 +86,17 @@ jobs:
         working-directory: web
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v6
+        uses: actions/checkout@v6.0.2
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v5.0.0
         with:
           package_json_file: web/package.json
 
       - name: Install Node
         uses: actions/setup-node@v6.3.0
         with:
-          node-version: "20"
+          node-version: "24"
           cache: "pnpm"
           cache-dependency-path: web/pnpm-lock.yaml
 
@@ -107,7 +107,7 @@ jobs:
           rustup target add wasm32-unknown-unknown
 
       - name: Setup Rust build cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@v2.9.1
 
       - name: Install dependencies
         run: pnpm i
@@ -126,17 +126,17 @@ jobs:
         working-directory: web
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v6
+        uses: actions/checkout@v6.0.2
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v5.0.0
         with:
           package_json_file: web/package.json
 
       - name: Install Node
         uses: actions/setup-node@v6.3.0
         with:
-          node-version: "20"
+          node-version: "24"
           cache: "pnpm"
           cache-dependency-path: web/pnpm-lock.yaml
 
@@ -147,7 +147,7 @@ jobs:
           rustup target add wasm32-unknown-unknown
 
       - name: Setup Rust build cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@v2.9.1
 
       - name: Install dependencies
         run: pnpm i
@@ -159,7 +159,7 @@ jobs:
         run: pnpm run e2e
 
       - name: Upload test report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.0
         if: ${{ !cancelled() }}
         with:
           name: playwright-report
