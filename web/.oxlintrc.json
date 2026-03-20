@@ -1,0 +1,21 @@
+{
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn"
+  },
+  "plugins": ["react", "typescript", "unicorn"],
+  "rules": {
+    "no-param-reassign": "error",
+    "typescript/prefer-as-const": "error",
+    "default-param-last": "error",
+    "typescript/prefer-enum-initializers": "error",
+    "react/self-closing-comp": "error",
+    "one-var": ["error", "never"],
+    "unicorn/no-useless-template-literals": "error",
+    "typescript/no-inferrable-types": "error",
+    "no-else-return": "warn",
+    "react/react-in-jsx-scope": "off",
+    "no-shadow": "off"
+  },
+  "ignorePatterns": ["types/**"]
+}
