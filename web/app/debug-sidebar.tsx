@@ -14,6 +14,7 @@ import {
 import { CellView, RegisterDot, Word } from "./computer";
 import { useRegisters } from "./hooks/use-computer";
 import { FormatSwitcher } from "./format-switcher";
+import { SectionHeader } from "./section-header";
 import { useDisplayStore } from "./stores/display-store";
 
 // Listed MSB-first (rendered left-to-right)
@@ -102,10 +103,10 @@ export const RegisterPanel: React.FC<{
 
   return (
     <div role="region" aria-label="Registers" className="font-mono text-xs">
-      <div className="bg-muted/30 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground font-sans flex items-center justify-between">
+      <SectionHeader className="font-sans flex items-center justify-between">
         Registers
         <FormatSwitcher />
-      </div>
+      </SectionHeader>
       {(["a", "b"] as const).map((reg) => {
         const key = `%${reg}` as RegisterId;
         const isFollowing = following === key;

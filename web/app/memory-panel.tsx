@@ -11,6 +11,7 @@ import {
 import { CellView, MemoryViewer, type MemoryViewerRef } from "./computer";
 import { useMemoryCell, useRegisters } from "./hooks/use-computer";
 import { cn } from "./lib/utils";
+import { SectionHeader } from "./section-header";
 import { useDisplayStore } from "./stores/display-store";
 
 type MemoryPanelProps = {
@@ -72,9 +73,7 @@ const LabelList: React.FC<{
 
   return (
     <div role="region" aria-label="Labels" className="border-b border-border">
-      <div className="bg-muted/30 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        Labels
-      </div>
+      <SectionHeader>Labels</SectionHeader>
       <div className="max-h-32 overflow-y-auto">
         {sorted.map(([name, address]) => (
           <LabelRow
@@ -160,9 +159,7 @@ export const MemoryPanel: React.FC<MemoryPanelProps> = memo(
           aria-label="Memory"
           className="flex-1 overflow-hidden flex flex-col"
         >
-          <div className="bg-muted/30 border-b px-2 py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground shrink-0">
-            Memory
-          </div>
+          <SectionHeader className="border-b shrink-0">Memory</SectionHeader>
           <MemoryViewer
             ref={viewerRef}
             computer={computer}
