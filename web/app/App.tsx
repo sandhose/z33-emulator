@@ -1,35 +1,21 @@
 import { useMonaco } from "@monaco-editor/react";
-import { useDebouncer } from "@tanstack/react-pacer";
 import type * as monaco from "monaco-editor";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Group, Panel } from "react-resizable-panels";
-import type { Computer, SourceMap } from "z33-web-bindings";
-import { InMemoryPreprocessor } from "z33-web-bindings";
+import type { SourceMap } from "z33-web-bindings";
 import type { ComputerInterface, Following, Labels } from "./computer";
 import { RegisterPanel } from "./debug-sidebar";
 import { DebugToolbar } from "./debug-toolbar";
 import { EditToolbar } from "./edit-toolbar";
 import { FileSidebar } from "./file-sidebar";
-import { stripLeadingSlash, toMonacoPath } from "./lib/file-paths";
-import { getMonacoFiles, initMonacoSync } from "./lib/monaco-sync";
+import { useCompilation } from "./hooks/use-compilation";
+import { stripLeadingSlash } from "./lib/file-paths";
 import { MemoryPanel } from "./memory-panel";
 import { MultiFileEditor } from "./multi-file-editor";
 import { ResizeHandle } from "./panel-resize-handle";
-import { reportSchema, toMonacoDiagnostics } from "./report";
 import { useAppStore } from "./stores/app-store";
 import { useFileStore } from "./stores/file-store";
 import { useSourceHighlight } from "./use-source-highlight";
-
-type CompilationResult =
-  | { type: "idle" }
-  | {
-      type: "success";
-      labels: string[];
-      compileFn: (ep: string) => Computer;
-    }
-  | { type: "error"; message: string };
-
-type UICompilationStatus = "idle" | "pending" | "success" | "error";
 
 const App = () => {
   const monacoInstance = useMonaco();
@@ -41,139 +27,10 @@ const App = () => {
   const setEntrypoint = useFileStore((s) => s.setEntrypoint);
   const entrypoints = useFileStore((s) => s.entrypoints);
 
-  const [compilationResult, setCompilationResult] = useState<CompilationResult>(
-    { type: "idle" },
+  const { compilationResult, compilationStatus } = useCompilation(
+    activeFile,
+    monacoInstance,
   );
-
-  // Decoration IDs for line highlights (squiggly markers are tracked by Monaco itself)
-  const decorationIds = useRef(new Map<string, string[]>());
-
-  // Initialize Monaco sync once after Monaco loads
-  useEffect(() => {
-    if (!monacoInstance) return;
-    return initMonacoSync(monacoInstance);
-  }, [monacoInstance]);
-
-  const performCompile = useCallback(() => {
-    if (!monacoInstance) return;
-    const files = new Map(Object.entries(getMonacoFiles()));
-    const preprocessor = new InMemoryPreprocessor(
-      files,
-      toMonacoPath(activeFile),
-    );
-    const result = preprocessor.compile();
-    const { program: prog, report } = result;
-
-    // Clear all z33 markers and line-highlight decorations from every model
-    for (const model of monacoInstance.editor.getModels()) {
-      monacoInstance.editor.setModelMarkers(model, "z33", []);
-    }
-    for (const [uriStr, ids] of decorationIds.current) {
-      monacoInstance.editor
-        .getModel(monacoInstance.Uri.parse(uriStr))
-        ?.deltaDecorations(ids, []);
-    }
-    decorationIds.current.clear();
-
-    if (prog) {
-      // Check for fill/layout errors (unresolved labels, etc.)
-      const checkReport = prog.check();
-      if (checkReport !== undefined) {
-        let errorMessage = "Compilation failed";
-        try {
-          const reportObject = reportSchema.parse(JSON.parse(checkReport));
-          errorMessage = reportObject.message;
-          for (const model of monacoInstance.editor.getModels()) {
-            const { markers, decorations } = toMonacoDiagnostics(
-              model,
-              reportObject,
-            );
-            monacoInstance.editor.setModelMarkers(model, "z33", markers);
-            if (decorations.length > 0) {
-              const ids = model.deltaDecorations([], decorations);
-              decorationIds.current.set(model.uri.toString(), ids);
-            }
-          }
-        } catch (e) {
-          console.warn(e);
-        }
-        setCompilationResult({ type: "error", message: errorMessage });
-        return;
-      }
-
-      setCompilationResult({
-        type: "success",
-        labels: prog.labels,
-        compileFn: (ep) => prog.compile(ep),
-      });
-    } else if (report) {
-      let errorMessage = "Failed to parse";
-      try {
-        const reportObject = reportSchema.parse(JSON.parse(report));
-        errorMessage = reportObject.message;
-        for (const model of monacoInstance.editor.getModels()) {
-          const { markers, decorations } = toMonacoDiagnostics(
-            model,
-            reportObject,
-          );
-          monacoInstance.editor.setModelMarkers(model, "z33", markers);
-          if (decorations.length > 0) {
-            const ids = model.deltaDecorations([], decorations);
-            decorationIds.current.set(model.uri.toString(), ids);
-          }
-        }
-      } catch (e) {
-        console.warn(e);
-      }
-      setCompilationResult({ type: "error", message: errorMessage });
-    }
-  }, [monacoInstance, activeFile]);
-
-  const compileDebouncer = useDebouncer(
-    performCompile,
-    { wait: 300 },
-    (state) => ({ isPending: state.isPending }),
-  );
-
-  // Attach Monaco content-change listeners and trigger initial compile
-  useEffect(() => {
-    if (!monacoInstance) return;
-
-    compileDebouncer.maybeExecute();
-
-    type Disposable = { dispose(): void };
-    const disposables: Disposable[] = [];
-
-    for (const model of monacoInstance.editor.getModels()) {
-      disposables.push(
-        model.onDidChangeContent(() => {
-          compileDebouncer.maybeExecute();
-        }),
-      );
-    }
-
-    disposables.push(
-      monacoInstance.editor.onDidCreateModel((model) => {
-        disposables.push(
-          model.onDidChangeContent(() => {
-            compileDebouncer.maybeExecute();
-          }),
-        );
-      }),
-    );
-
-    return () => {
-      for (const d of disposables) d.dispose();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- debouncer is a stable ref
-  }, [monacoInstance, compileDebouncer.maybeExecute]);
-
-  // Re-trigger on activeFile change (new preprocessor entrypoint)
-  useEffect(() => {
-    compileDebouncer.maybeExecute();
-    compileDebouncer.flush();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- debouncer is a stable ref, activeFile is an intentional trigger dep
-  }, [activeFile, compileDebouncer.maybeExecute, compileDebouncer.flush]);
 
   const handleRun = useCallback(
     (entrypoint: string) => {
@@ -195,11 +52,6 @@ const App = () => {
     },
     [],
   );
-
-  const compilationStatus: UICompilationStatus = compileDebouncer.state
-    .isPending
-    ? "pending"
-    : compilationResult.type;
 
   const isDebugging = mode.type === "debug";
 
