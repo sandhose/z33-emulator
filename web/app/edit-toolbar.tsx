@@ -128,6 +128,7 @@ export const EditToolbar: React.FC<EditToolbarProps> = memo(
           <Button
             variant="ghost"
             size="xs"
+            nativeButton={false}
             render={
               // biome-ignore lint/a11y/useAnchorContent: Button renders its children inside this anchor
               <a
