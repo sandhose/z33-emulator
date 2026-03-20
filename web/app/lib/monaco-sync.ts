@@ -1,5 +1,6 @@
 import type { Monaco } from "@monaco-editor/react";
 import type { editor as MonacoEditor } from "monaco-editor";
+import { stripLeadingSlash } from "./file-paths";
 import { useFileStore } from "../stores/file-store";
 
 // oxlint-disable-next-line typescript/no-redundant-type-constituents -- Monaco is not `any`, false positive
@@ -41,7 +42,7 @@ export function initMonacoSync(monaco: Monaco): () => void {
 
   // Attach content listeners to all existing models
   for (const model of monaco.editor.getModels()) {
-    const name = model.uri.path.replace(/^\//, "");
+    const name = stripLeadingSlash(model.uri.path);
     disposables.push(attachContentListener(name, model));
   }
 

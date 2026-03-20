@@ -10,6 +10,7 @@ import { RegisterPanel } from "./debug-sidebar";
 import { DebugToolbar } from "./debug-toolbar";
 import { EditToolbar } from "./edit-toolbar";
 import { FileSidebar } from "./file-sidebar";
+import { stripLeadingSlash, toMonacoPath } from "./lib/file-paths";
 import { getMonacoFiles, initMonacoSync } from "./lib/monaco-sync";
 import { MemoryPanel } from "./memory-panel";
 import { MultiFileEditor } from "./multi-file-editor";
@@ -56,7 +57,10 @@ const App = () => {
   const performCompile = useCallback(() => {
     if (!monacoInstance) return;
     const files = new Map(Object.entries(getMonacoFiles()));
-    const preprocessor = new InMemoryPreprocessor(files, `/${activeFile}`);
+    const preprocessor = new InMemoryPreprocessor(
+      files,
+      toMonacoPath(activeFile),
+    );
     const result = preprocessor.compile();
     const { program: prog, report } = result;
 
@@ -291,7 +295,7 @@ const DebugLayoutInner: React.FC<DebugLayoutInnerProps> = ({
 
   const handleSourceSwitch = useCallback(
     (filePath: string) => {
-      setActiveFile(filePath.replace(/^\//, ""));
+      setActiveFile(stripLeadingSlash(filePath));
     },
     [setActiveFile],
   );
@@ -306,7 +310,7 @@ const DebugLayoutInner: React.FC<DebugLayoutInnerProps> = ({
   const touchedFiles = useMemo(() => {
     const names = new Set<string>();
     for (const loc of sourceMap.values()) {
-      names.add(loc.file.replace(/^\//, ""));
+      names.add(stripLeadingSlash(loc.file));
     }
     return [...names];
   }, [sourceMap]);

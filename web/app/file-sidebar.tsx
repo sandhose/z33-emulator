@@ -24,6 +24,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "./components/ui/tooltip";
+import { stripLeadingSlash } from "./lib/file-paths";
 import { useAppStore } from "./stores/app-store";
 import { useFileStore } from "./stores/file-store";
 
@@ -146,7 +147,7 @@ export const FileSidebar: React.FC = () => {
     if (mode.type !== "debug") return allFiles;
     const touchedFiles = new Set(
       Array.from(mode.sourceMap.values()).map((loc) =>
-        loc.file.replace(/^\//, ""),
+        stripLeadingSlash(loc.file),
       ),
     );
     return allFiles.filter((name) => touchedFiles.has(name));

@@ -1,6 +1,7 @@
 import { Editor } from "@monaco-editor/react";
 import type * as monaco from "monaco-editor";
 import { useTheme } from "./components/theme-provider";
+import { toMonacoPath } from "./lib/file-paths";
 
 type Props = {
   filePath: string;
@@ -19,7 +20,7 @@ export const MultiFileEditor: React.FC<Props> = ({
     <Editor
       className="editor h-full"
       theme={theme.effective === "dark" ? "vs-dark" : "light"}
-      path={`/${filePath}`}
+      path={toMonacoPath(filePath)}
       keepCurrentModel
       onMount={(editor) => {
         onEditorMount?.(editor);
