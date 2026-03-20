@@ -120,7 +120,10 @@ export const RegisterPanel: React.FC<{
             onClick={makeClickHandler(key)}
           >
             <Tooltip>
-              <TooltipTrigger className="w-8 shrink-0 text-muted-foreground text-left">
+              <TooltipTrigger
+                render={<span />}
+                className="w-8 shrink-0 text-muted-foreground text-left"
+              >
                 %{reg}
               </TooltipTrigger>
               <TooltipContent side="right">
@@ -146,7 +149,10 @@ export const RegisterPanel: React.FC<{
             onClick={makeClickHandler(key)}
           >
             <Tooltip>
-              <TooltipTrigger className="w-8 shrink-0 text-muted-foreground text-left">
+              <TooltipTrigger
+                render={<span />}
+                className="w-8 shrink-0 text-muted-foreground text-left"
+              >
                 %{reg}
               </TooltipTrigger>
               <TooltipContent side="right">
