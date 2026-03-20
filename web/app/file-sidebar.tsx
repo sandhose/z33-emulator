@@ -80,6 +80,7 @@ export const FileSidebar: React.FC = () => {
   const [isSidebarDragging, setIsSidebarDragging] = useState(false);
   const uploadInputRef = useRef<HTMLInputElement>(null);
   const dropZoneRef = useRef<HTMLDivElement>(null);
+  // oxlint-disable-next-line unicorn/no-useless-undefined -- useRef requires an argument
   const dismissTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   // Detect file-drag over the window using dragover as a heartbeat.
@@ -130,14 +131,10 @@ export const FileSidebar: React.FC = () => {
   const processFiles = useCallback(
     (fileList: FileList) => {
       for (const file of fileList) {
-        const reader = new FileReader();
-        reader.addEventListener("load", () => {
-          if (typeof reader.result === "string") {
-            setContent(file.name, reader.result);
-            setActiveFile(file.name);
-          }
+        void file.text().then((text) => {
+          setContent(file.name, text);
+          setActiveFile(file.name);
         });
-        reader.readAsText(file);
       }
     },
     [setContent, setActiveFile],

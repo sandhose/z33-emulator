@@ -172,7 +172,7 @@ export const MemoryPanel: React.FC<MemoryPanelProps> = memo(
             highlight={highlight}
             labels={labels}
             pointers={pointers}
-            {...(following !== null ? { onUserScroll: handleUserScroll } : {})}
+            {...(following === null ? {} : { onUserScroll: handleUserScroll })}
           />
         </div>
       </div>

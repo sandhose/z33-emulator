@@ -1,7 +1,9 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useLayoutEffect,
+  useMemo,
   useState,
   useSyncExternalStore,
 } from "react";
@@ -64,14 +66,18 @@ export function ThemeProvider({
     root.classList.add(effective);
   }, [effective]);
 
-  const value = {
-    theme,
-    effective,
-    setTheme: (theme: Theme) => {
+  const handleSetTheme = useCallback(
+    (theme: Theme) => {
       localStorage.setItem(storageKey, theme);
       setTheme(theme);
     },
-  };
+    [storageKey],
+  );
+
+  const value = useMemo(
+    () => ({ theme, effective, setTheme: handleSetTheme }),
+    [theme, effective, handleSetTheme],
+  );
 
   return (
     <ThemeProviderContext.Provider {...props} value={value}>

@@ -5,7 +5,7 @@ import App from "./App";
 import { ThemeProvider } from "./components/theme-provider.tsx";
 import { TooltipProvider } from "./components/ui/tooltip.tsx";
 
-const rootElement = document.getElementById("root");
+const rootElement = document.querySelector("#root");
 if (!rootElement) {
   throw new Error("No root element found");
 }

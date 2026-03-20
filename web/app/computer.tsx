@@ -48,7 +48,7 @@ export const formatWord = (word: number, format: DisplayFormat): string => {
         : `0x${word.toString(16).toUpperCase()}`;
     case "binary":
       return word < 0 ? `-0b${(-word).toString(2)}` : `0b${word.toString(2)}`;
-    default:
+    case "decimal":
       return String(word);
   }
 };
@@ -62,7 +62,7 @@ export const formatAddress = (
       return `0x${address.toString(16).toUpperCase()}`;
     case "binary":
       return `0b${address.toString(2)}`;
-    default:
+    case "decimal":
       return String(address);
   }
 };
