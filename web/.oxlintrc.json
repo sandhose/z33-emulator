@@ -1,6 +1,7 @@
 {
   "options": {
-    "typeAware": true
+    "typeAware": true,
+    "typeCheck": true
   },
   "categories": {
     "correctness": "error",
