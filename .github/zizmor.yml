@@ -5,3 +5,7 @@ rules:
       - compile.yaml:48
       - compile.yaml:98
       - compile.yaml:149
+  superfluous-actions:
+    ignore:
+      # softprops/action-gh-release is preferred over gh CLI for declarative release publishing
+      - compile.yaml:201
