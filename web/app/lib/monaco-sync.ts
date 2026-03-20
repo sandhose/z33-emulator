@@ -2,6 +2,7 @@ import type { Monaco } from "@monaco-editor/react";
 import type { editor as MonacoEditor } from "monaco-editor";
 import { useFileStore } from "../stores/file-store";
 
+// oxlint-disable-next-line typescript/no-redundant-type-constituents -- Monaco is not `any`, false positive
 let monacoRef: Monaco | null = null;
 
 function attachContentListener(
