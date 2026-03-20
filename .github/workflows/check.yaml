@@ -78,21 +78,31 @@ jobs:
       - name: Run cargo deny
         uses: EmbarkStudios/cargo-deny-action@v2
 
-  biome:
-    name: "`biome` check"
+  lint:
+    name: "oxlint + oxfmt check"
     runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: web
     steps:
       - name: Checkout sources
         uses: actions/checkout@v6
 
-      - name: Setup Biome
-        uses: biomejs/setup-biome@v2
-        with:
-          version: latest
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
 
-      - name: Run Biome
-        run: biome ci
-        working-directory: web
+      - name: Install Node
+        uses: actions/setup-node@v6.3.0
+        with:
+          node-version: "20"
+          cache: "pnpm"
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm i
+
+      - name: Run lint and format check
+        run: pnpm run check
 
   typecheck:
     name: Web app typecheck
@@ -103,8 +113,6 @@ jobs:
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 9
 
       - name: Install Node
         uses: actions/setup-node@v6.3.0

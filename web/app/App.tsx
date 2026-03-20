@@ -161,13 +161,14 @@ const App = () => {
     return () => {
       for (const d of disposables) d.dispose();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- debouncer is a stable ref
   }, [monacoInstance, compileDebouncer.maybeExecute]);
 
   // Re-trigger on activeFile change (new preprocessor entrypoint)
-  // biome-ignore lint/correctness/useExhaustiveDependencies: activeFile is an intentional trigger dep
   useEffect(() => {
     compileDebouncer.maybeExecute();
     compileDebouncer.flush();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- debouncer is a stable ref, activeFile is an intentional trigger dep
   }, [activeFile, compileDebouncer.maybeExecute, compileDebouncer.flush]);
 
   const handleRun = useCallback(

@@ -130,10 +130,10 @@ export const FileSidebar: React.FC = () => {
     (fileList: FileList) => {
       for (const file of fileList) {
         const reader = new FileReader();
-        reader.onload = () => {
+        reader.addEventListener("load", () => {
           setContent(file.name, reader.result as string);
           setActiveFile(file.name);
-        };
+        });
         reader.readAsText(file);
       }
     },

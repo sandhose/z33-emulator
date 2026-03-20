@@ -5,12 +5,17 @@
   "scripts": {
     "build": "vite build",
     "start": "vite",
-    "check": "biome check",
+    "check": "oxlint app/ && oxfmt --check app/",
+    "lint": "oxlint app/",
+    "lint:fix": "oxlint --fix app/",
+    "fmt": "oxfmt app/",
+    "fmt:check": "oxfmt --check app/",
     "typecheck": "tsc -p .",
     "knip": "knip"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.4.5",
+    "oxfmt": "^0.41.0",
+    "oxlint": "^1.56.0",
     "@tailwindcss/vite": "^4.2.2",
     "@tsconfig/node20": "^20.1.9",
     "@tsconfig/strictest": "^2.0.8",
