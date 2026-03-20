@@ -26,8 +26,8 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "./components/ui/tooltip";
-import type { ComputerInterface } from "./computer";
-import { useCycles } from "./computer";
+import type { ComputerInterface } from "./computer-types";
+import { useCycles } from "./hooks/use-computer";
 import { cn } from "./lib/utils";
 import { useAppStore } from "./stores/app-store";
 import { ThemeSwitcher } from "./theme-switcher";

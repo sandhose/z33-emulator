@@ -5,78 +5,33 @@ import {
   forwardRef,
   memo,
   useCallback,
-  useDeferredValue,
   useEffect,
   useImperativeHandle,
   useRef,
-  useSyncExternalStore,
 } from "react";
-import type { Cell, Cycles, Registers, SourceMap } from "z33-web-bindings";
+import type { Cell } from "z33-web-bindings";
 import { Badge } from "./components/ui/badge";
+import {
+  ADDRESS_WIDTH,
+  type ComputerInterface,
+  type Labels,
+  type Pointers,
+  REGISTER_COLORS,
+  type RegisterId,
+  formatAddress,
+  formatWord,
+} from "./computer-types";
+import { useMemoryCell } from "./hooks/use-computer";
 import { cn } from "./lib/utils";
-import { type DisplayFormat, useDisplayStore } from "./stores/display-store";
+import { useDisplayStore } from "./stores/display-store";
 
 const MEMORY_SIZE = 10_000;
 const ROW_HEIGHT = 28;
 
-export type Labels = Map<number, string[]>;
-
-/** Narrow type for actual CPU registers */
-export type RegisterId = "%pc" | "%sp" | "%a" | "%b";
-
-/** Anything that can be followed in the memory viewer: a register or a label */
-export type Following = RegisterId | `label:${string}`;
-
-/** Interface satisfied by the WASM Computer class, and future worker proxies */
-export interface ComputerInterface {
-  step(): boolean;
-  registers(): Registers;
-  memory(address: number): Cell;
-  cycles(): Cycles;
-  subscribe_registers(cb: (r: Registers) => void): () => void;
-  subscribe_memory(address: number, cb: (c: Cell) => void): () => void;
-  subscribe_cycles(cb: (c: Cycles) => void): () => void;
-  readonly source_map: SourceMap;
-  readonly labels: Iterable<[string, number]>;
-}
-
-export const formatWord = (word: number, format: DisplayFormat): string => {
-  switch (format) {
-    case "hex":
-      return word < 0
-        ? `-0x${(-word).toString(16).toUpperCase()}`
-        : `0x${word.toString(16).toUpperCase()}`;
-    case "binary":
-      return word < 0 ? `-0b${(-word).toString(2)}` : `0b${word.toString(2)}`;
-    case "decimal":
-      return String(word);
-  }
-};
-
-export const formatAddress = (
-  address: number,
-  format: DisplayFormat,
-): string => {
-  switch (format) {
-    case "hex":
-      return `0x${address.toString(16).toUpperCase()}`;
-    case "binary":
-      return `0b${address.toString(2)}`;
-    case "decimal":
-      return String(address);
-  }
-};
-
-export const ADDRESS_WIDTH: Record<DisplayFormat, string> = {
-  decimal: "w-[6ch]",
-  hex: "w-[8ch]",
-  binary: "w-[16ch]",
-};
-
 const WordValue: React.FC<{
   word: number | string;
   muted?: boolean;
-  format?: DisplayFormat;
+  format?: "decimal" | "hex" | "binary";
 }> = ({ word, muted, format = "decimal" }) => (
   <span
     className={cn(
@@ -140,18 +95,6 @@ export const CellView: React.FC<{ cell: Cell; labels: Labels }> = ({
 const normalize = (value: number): number =>
   Math.max(0, Math.min(value, MEMORY_SIZE));
 
-export const useMemoryCell = (
-  computer: ComputerInterface,
-  address: number,
-): Cell => {
-  const subscribe = useCallback(
-    (cb: (cell: Cell) => void) => computer.subscribe_memory(address, cb),
-    [computer, address],
-  );
-  const value = useSyncExternalStore(subscribe, () => computer.memory(address));
-  return useDeferredValue(value);
-};
-
 const MemoryCell: React.FC<{
   computer: ComputerInterface;
   address: number;
@@ -165,57 +108,24 @@ const Label: React.FC<{ label: string }> = ({ label }) => (
   <Badge variant="outline">{label}</Badge>
 );
 
-const RegisterBadge: React.FC<{ register: RegisterId }> = ({ register }) => {
-  switch (register) {
-    case "%pc":
-      return (
-        <Badge className="font-semibold bg-blue-500 text-white">%pc</Badge>
-      );
-    case "%sp":
-      return (
-        <Badge className="font-semibold bg-emerald-500 text-white">%sp</Badge>
-      );
-    case "%a":
-      return (
-        <Badge className="font-semibold bg-amber-500 text-white">%a</Badge>
-      );
-    case "%b":
-      return (
-        <Badge className="font-semibold bg-violet-500 text-white">%b</Badge>
-      );
-  }
-};
+const RegisterBadge: React.FC<{ register: RegisterId }> = ({ register }) => (
+  <Badge className={`font-semibold ${REGISTER_COLORS[register]} text-white`}>
+    {register}
+  </Badge>
+);
 
 export const RegisterDot: React.FC<{ register: RegisterId }> = ({
   register,
-}) => {
-  switch (register) {
-    case "%pc":
-      return (
-        <span className="inline-block w-2 h-2 rounded-full shrink-0 bg-blue-500" />
-      );
-    case "%sp":
-      return (
-        <span className="inline-block w-2 h-2 rounded-full shrink-0 bg-emerald-500" />
-      );
-    case "%a":
-      return (
-        <span className="inline-block w-2 h-2 rounded-full shrink-0 bg-amber-500" />
-      );
-    case "%b":
-      return (
-        <span className="inline-block w-2 h-2 rounded-full shrink-0 bg-violet-500" />
-      );
-  }
-};
+}) => (
+  <span
+    className={`inline-block w-2 h-2 rounded-full shrink-0 ${REGISTER_COLORS[register]}`}
+  />
+);
 
 export type MemoryViewerRef = {
   recenter: () => void;
   scrollTo: (address: number) => void;
 };
-
-/** Map from address to list of registers pointing there */
-export type Pointers = Map<number, RegisterId[]>;
 
 type MemoryViewerProps = {
   computer: ComputerInterface;
@@ -389,21 +299,3 @@ export const MemoryViewer = memo(
   ),
 );
 MemoryViewer.displayName = "MemoryViewer";
-
-export const useRegisters = (computer: ComputerInterface): Registers => {
-  const subscribe = useCallback(
-    (cb: (registers: Registers) => void) => computer.subscribe_registers(cb),
-    [computer],
-  );
-  const registers = useSyncExternalStore(subscribe, () => computer.registers());
-  return useDeferredValue(registers);
-};
-
-export const useCycles = (computer: ComputerInterface): Cycles => {
-  const subscribe = useCallback(
-    (cb: (cycles: Cycles) => void) => computer.subscribe_cycles(cb),
-    [computer],
-  );
-  const cycles = useSyncExternalStore(subscribe, () => computer.cycles());
-  return useDeferredValue(cycles);
-};

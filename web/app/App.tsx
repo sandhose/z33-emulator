@@ -3,7 +3,7 @@ import type * as monaco from "monaco-editor";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { Group, Panel } from "react-resizable-panels";
 import type { SourceMap } from "z33-web-bindings";
-import type { ComputerInterface, Following, Labels } from "./computer";
+import type { ComputerInterface, Following, Labels } from "./computer-types";
 import { RegisterPanel } from "./debug-sidebar";
 import { DebugToolbar } from "./debug-toolbar";
 import { EditToolbar } from "./edit-toolbar";

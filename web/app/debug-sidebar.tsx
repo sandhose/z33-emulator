@@ -4,17 +4,15 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "./components/ui/tooltip";
-import type { ComputerInterface } from "./computer";
 import {
-  CellView,
+  type ComputerInterface,
   type Following,
   formatWord,
   type Labels,
-  RegisterDot,
   type RegisterId,
-  useRegisters,
-  Word,
-} from "./computer";
+} from "./computer-types";
+import { CellView, RegisterDot, Word } from "./computer";
+import { useRegisters } from "./hooks/use-computer";
 import { FormatSwitcher } from "./format-switcher";
 import { useDisplayStore } from "./stores/display-store";
 

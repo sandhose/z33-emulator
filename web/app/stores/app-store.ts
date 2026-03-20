@@ -1,6 +1,6 @@
 import type { Computer, SourceMap } from "z33-web-bindings";
 import { create } from "zustand";
-import type { ComputerInterface, Labels } from "../computer";
+import type { ComputerInterface, Labels } from "../computer-types";
 
 type AppMode =
   | { type: "edit" }

@@ -1,18 +1,15 @@
 import { memo, useCallback, useMemo, useRef } from "react";
 import {
   ADDRESS_WIDTH,
-  CellView,
   type ComputerInterface,
   type Following,
   formatAddress,
   type Labels,
-  MemoryViewer,
-  type MemoryViewerRef,
   type Pointers,
   type RegisterId,
-  useMemoryCell,
-  useRegisters,
-} from "./computer";
+} from "./computer-types";
+import { CellView, MemoryViewer, type MemoryViewerRef } from "./computer";
+import { useMemoryCell, useRegisters } from "./hooks/use-computer";
 import { cn } from "./lib/utils";
 import { useDisplayStore } from "./stores/display-store";
 
