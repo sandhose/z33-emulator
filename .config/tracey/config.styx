@@ -1,0 +1,13 @@
+specs (
+  {
+    name z33
+    include (spec/src/**/*.md)
+    exclude (spec/src/08-calling-convention.md spec/src/09-io-controllers.md spec/src/10-variants/**/*.md spec/src/11-appendices/**/*.md spec/src/00-introduction.md)
+    impls (
+      {
+        name rust
+        include (emulator/src/**/*.rs)
+      }
+    )
+  }
+)

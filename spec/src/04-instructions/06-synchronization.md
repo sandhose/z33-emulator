@@ -2,6 +2,9 @@
 
 ## `fas` — Fetch and Set
 
+r[inst.fas]
+`fas src, reg` — atomically reads the cell at the source memory address into the destination register, then sets that memory cell to the Word value 1. This is an atomic test-and-set operation for implementing mutual exclusion primitives. Cycles: 1 + cost(src) + cost(reg).
+
 **Syntax:** `fas src, reg`
 where *src* is *dir/ind/idx* and *reg* is a register.
 
@@ -11,8 +14,6 @@ where *src* is *dir/ind/idx* and *reg* is a register.
 reg ← memory[src]
 memory[src] ← 1
 ```
-
-Atomically reads the cell at the source memory address into the destination register, then sets that memory cell to the Word value 1. This is an atomic test-and-set operation intended for implementing mutual exclusion primitives (spinlocks).
 
 The read and write are performed as a single indivisible operation — no interrupt or exception can occur between them.
 
@@ -33,8 +34,6 @@ spin:
 ```
 
 **Flags:** None.
-
-**Cycles:** 1 + cost(src) + cost(reg)
 
 **Privileged:** No (unless *reg* is `%sr`)
 

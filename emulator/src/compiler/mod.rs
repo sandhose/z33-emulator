@@ -59,6 +59,7 @@ pub fn compile(
         .ok_or_else(|| CompilationError::UnknownEntrypoint(entrypoint.to_string()))?;
     debug!(pc, entrypoint, "Found entrypoint");
 
+    // r[impl arch.initial-state]
     let computer = Computer {
         memory,
         registers: Registers {

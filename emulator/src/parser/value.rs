@@ -64,6 +64,7 @@ impl AstNode for InstructionKind {
     }
 }
 
+// r[impl asm.mnemonics]
 pub(crate) fn parse_instruction_kind<I, Error>(input: I) -> IResult<I, InstructionKind, Error>
 where
     I: Input + Compare<&'static str>,

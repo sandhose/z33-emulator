@@ -52,4 +52,4 @@ This specification consolidates information from three sources:
 2. **Emulator** — a Rust implementation that serves as the de facto ground truth for instruction semantics
 3. **Course materials** — exercises, exams, and slides from the ASE course
 
-Where these sources disagree, discrepancies are documented in the [Open Questions](./appendices/open-questions.md) appendix. Unless otherwise noted, the emulator's behavior is taken as the normative baseline.
+Where these sources disagree, discrepancies are documented in the [Open Questions](./11-appendices/01-open-questions.md) appendix. Unless otherwise noted, the emulator's behavior is taken as the normative baseline.

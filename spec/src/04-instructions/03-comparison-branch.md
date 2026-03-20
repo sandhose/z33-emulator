@@ -2,6 +2,9 @@
 
 ## `cmp` — Compare
 
+r[inst.cmp]
+`cmp src, reg` — compares the source value to the register value and sets the Z and N flags accordingly. No other state is modified — the register value is unchanged. Cycles: 1 + cost(src) + cost(reg).
+
 **Syntax:** `cmp src, reg`
 where *src* is *imm/reg/dir/ind/idx* and *reg* is a register.
 
@@ -11,8 +14,6 @@ where *src* is *imm/reg/dir/ind/idx* and *reg* is a register.
 Z ← (src == reg)
 N ← (src < reg)
 ```
-
-Compares the source value to the register value and sets the Z and N flags accordingly. No other state is modified — the register value is unchanged.
 
 **Important:** The comparison semantics use the **source operand's perspective**:
 - Z is set when *src* equals *reg*
@@ -27,8 +28,6 @@ The conditional jump instructions test these flags from the same perspective: `j
 
 **Flags:** Z — set if src == reg; N — set if src < reg.
 
-**Cycles:** 1 + cost(src) + cost(reg)
-
 **Privileged:** No
 
 **Exceptions:**
@@ -37,6 +36,9 @@ The conditional jump instructions test these flags from the same perspective: `j
 ---
 
 ## `jmp` — Unconditional Jump
+
+r[inst.jmp]
+`jmp target` — loads the target address into the program counter. Cycles: 1 + cost(target).
 
 **Syntax:** `jmp target`
 where *target* is *imm/reg/dir/ind/idx*.
@@ -47,11 +49,7 @@ where *target* is *imm/reg/dir/ind/idx*.
 %pc ← target
 ```
 
-The operand is interpreted as an address and loaded into the program counter.
-
 **Flags:** None.
-
-**Cycles:** 1 + cost(target)
 
 **Privileged:** No
 
@@ -85,6 +83,24 @@ If the condition is false, the instruction has no effect (execution continues at
 ### Condition Table
 
 Given `cmp src, reg` was the most recent flag-setting instruction:
+
+r[inst.jeq]
+`jeq target` — jump if equal (Z = 1).
+
+r[inst.jne]
+`jne target` — jump if not equal (Z = 0).
+
+r[inst.jlt]
+`jlt target` — jump if less than (Z = 0 **and** N = 1).
+
+r[inst.jle]
+`jle target` — jump if less or equal (Z = 1 **or** N = 1).
+
+r[inst.jgt]
+`jgt target` — jump if greater than (Z = 0 **and** N = 0).
+
+r[inst.jge]
+`jge target` — jump if greater or equal (Z = 1 **or** N = 0).
 
 | Mnemonic | Condition | Flags Tested | Meaning |
 |---|---|---|---|

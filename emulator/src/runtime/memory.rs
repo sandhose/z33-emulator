@@ -25,6 +25,7 @@ pub enum CellError {
 }
 
 /// Represents a cell in memory and in general purpose registers
+// r[impl arch.memory.cell-types]
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum Cell {
     /// An empty cell, no value was ever set here,
@@ -154,6 +155,7 @@ pub enum MemoryError {
 /// Holds the memory cells of the computer.
 ///
 /// It has 10000 cells
+// r[impl arch.memory.unified]
 pub struct Memory {
     inner: Box<[Cell; MEMORY_SIZE as _]>,
 }
