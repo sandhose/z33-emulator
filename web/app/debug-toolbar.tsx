@@ -5,7 +5,13 @@ import {
   PlayIcon,
   StepForwardIcon,
 } from "lucide-react";
-import { memo, startTransition, useCallback, useEffect, useState } from "react";
+import {
+  memo,
+  startTransition,
+  useCallback,
+  useEffect,
+  useReducer,
+} from "react";
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
 import {
@@ -26,43 +32,66 @@ import { cn } from "./lib/utils";
 import { useAppStore } from "./stores/app-store";
 import { ThemeSwitcher } from "./theme-switcher";
 
+/** Step interval in milliseconds */
+const STEP_INTERVAL_MS = 50;
+
+type StepState =
+  | { status: "idle" }
+  | { status: "running"; remaining: number }
+  | { status: "halted" }
+  | { status: "panicked"; error: string };
+
+type StepAction =
+  | { type: "step_ok" }
+  | { type: "halt" }
+  | { type: "panic"; error: string }
+  | { type: "schedule"; count: number }
+  | { type: "stop" };
+
+function stepReducer(state: StepState, action: StepAction): StepState {
+  switch (action.type) {
+    case "step_ok": {
+      if (state.status !== "running") return { status: "idle" };
+      const remaining = state.remaining - 1;
+      if (remaining <= 0) return { status: "idle" };
+      return { status: "running", remaining };
+    }
+    case "halt":
+      return { status: "halted" };
+    case "panic":
+      return { status: "panicked", error: action.error };
+    case "schedule":
+      return { status: "running", remaining: action.count };
+    case "stop":
+      return { status: "idle" };
+  }
+}
+
 function useStepRunner(computer: ComputerInterface) {
-  const [halt, setHalt] = useState(false);
-  const [panicked, setPanicked] = useState<string | null>(null);
-  const [running, setRunning] = useState(false);
-  const [stepsToRun, setStepsToRun] = useState(0);
-  const [speed] = useState(20);
+  const [state, dispatch] = useReducer(stepReducer, { status: "idle" });
 
   const doStep = useCallback(() => {
     try {
       if (computer.step()) {
-        setHalt(true);
+        dispatch({ type: "halt" });
+        return;
       }
     } catch (error) {
-      setPanicked(String(error));
+      dispatch({ type: "panic", error: String(error) });
+      return;
     }
-    setStepsToRun((prev) => prev - 1);
+    dispatch({ type: "step_ok" });
   }, [computer]);
 
   useEffect(() => {
-    if (halt || panicked !== null) {
-      setRunning(false);
-      return;
-    }
-    if (running !== stepsToRun > 0) {
-      setRunning(stepsToRun > 0);
-    }
-  }, [halt, running, panicked, stepsToRun]);
-
-  useEffect(() => {
-    if (!running) return;
-    const id = setInterval(doStep, 1000 / speed);
+    if (state.status !== "running") return;
+    const id = setInterval(doStep, STEP_INTERVAL_MS);
     return () => clearInterval(id);
-  }, [speed, running, doStep]);
+  }, [state.status, doStep]);
 
   const stepOnce = useCallback(() => {
     startTransition(() => {
-      setStepsToRun(1);
+      dispatch({ type: "schedule", count: 1 });
       doStep();
     });
   }, [doStep]);
@@ -70,7 +99,7 @@ function useStepRunner(computer: ComputerInterface) {
   const runN = useCallback(
     (n: number) => {
       startTransition(() => {
-        setStepsToRun(n);
+        dispatch({ type: "schedule", count: n });
         doStep();
       });
     },
@@ -78,10 +107,17 @@ function useStepRunner(computer: ComputerInterface) {
   );
 
   const stop = useCallback(() => {
-    setStepsToRun(0);
+    dispatch({ type: "stop" });
   }, []);
 
-  return { halt, panicked, running, stepOnce, runN, stop };
+  return {
+    halt: state.status === "halted",
+    panicked: state.status === "panicked" ? state.error : null,
+    running: state.status === "running",
+    stepOnce,
+    runN,
+    stop,
+  };
 }
 
 type DebugToolbarProps = {
