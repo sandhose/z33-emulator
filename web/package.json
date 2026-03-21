@@ -39,7 +39,7 @@
     "@fontsource-variable/inter": "^5.2.8",
     "@monaco-editor/react": "^4.7.0",
     "@tanstack/react-pacer": "^0.20.0",
-    "@tanstack/react-virtual": "^3.13.20",
+    "@tanstack/react-virtual": "^3.13.22",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.576.0",
