@@ -7,7 +7,6 @@ export const DocsButton: React.FC = () => (
     size="xs"
     nativeButton={false}
     render={
-      // biome-ignore lint/a11y/useAnchorContent: Button renders its children inside this anchor
       <a
         href="https://pdagog.gitlab.io/ens/z33refcard-fr.pdf"
         target="_blank"

@@ -76,7 +76,6 @@ export function useSourceHighlight({
     }
   }, [editor, sourceMap, registers.pc, onSwitchFile]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: currentModelUri forces re-run when @monaco-editor/react switches the active model, which wouldn't otherwise change deps.
   useEffect(() => {
     if (!editor) return;
 

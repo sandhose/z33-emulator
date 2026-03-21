@@ -154,14 +154,14 @@ export function useCompilation(activeFile: string, monacoInstance: Monaco) {
     return () => {
       for (const d of disposables) d.dispose();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- debouncer is a stable ref
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- debouncer is a stable ref
   }, [monacoInstance, compileDebouncer.maybeExecute]);
 
   // Re-trigger on activeFile change (new preprocessor entrypoint)
   useEffect(() => {
     compileDebouncer.maybeExecute();
     compileDebouncer.flush();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- debouncer is a stable ref, activeFile is an intentional trigger dep
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- debouncer is a stable ref, activeFile is an intentional trigger dep
   }, [activeFile, compileDebouncer.maybeExecute, compileDebouncer.flush]);
 
   const compilationStatus: UICompilationStatus = compileDebouncer.state
