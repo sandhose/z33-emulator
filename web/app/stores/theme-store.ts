@@ -1,8 +1,8 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-export type EffectiveTheme = "dark" | "light";
-export type Theme = EffectiveTheme | "system";
+type EffectiveTheme = "dark" | "light";
+type Theme = EffectiveTheme | "system";
 
 const darkMediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
 

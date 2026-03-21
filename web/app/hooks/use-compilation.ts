@@ -18,7 +18,7 @@ type CompilationResult =
     }
   | { type: "error"; message: string };
 
-export type UICompilationStatus = "idle" | "pending" | "success" | "error";
+type UICompilationStatus = "idle" | "pending" | "success" | "error";
 
 /**
  * Apply parsed diagnostics (markers + line decorations) to all Monaco models.
