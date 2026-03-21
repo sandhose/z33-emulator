@@ -24,7 +24,7 @@ missing_errors_doc = "allow"
 module_name_repetitions = "allow"
 
 [workspace.dependencies]
-anstyle = "1.0.13"
+anstyle = "1.0.14"
 anyhow = "1.0.102"
 bitflags = "2.11.0"
 camino = { version = "1.2.2", features = ["serde1"] }
