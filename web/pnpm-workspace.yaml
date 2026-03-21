@@ -8,4 +8,8 @@ trustPolicyExclude:
 
 strictDepBuilds: true
 
+ignoredBuiltDependencies:
+  - esbuild
+  - msw
+
 strictPeerDependencies: true
