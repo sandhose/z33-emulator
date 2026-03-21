@@ -67,9 +67,9 @@ export function ThemeProvider({
   }, [effective]);
 
   const handleSetTheme = useCallback(
-    (theme: Theme) => {
-      localStorage.setItem(storageKey, theme);
-      setTheme(theme);
+    (newTheme: Theme) => {
+      localStorage.setItem(storageKey, newTheme);
+      setTheme(newTheme);
     },
     [storageKey],
   );

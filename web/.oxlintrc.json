@@ -26,7 +26,7 @@
     "typescript/no-inferrable-types": "error",
     "no-else-return": "warn",
     "react/react-in-jsx-scope": "off",
-    "no-shadow": "off",
+    "no-shadow": "warn",
 
     "strict-boolean-expressions": "off",
     "no-confusing-void-expression": "off",
