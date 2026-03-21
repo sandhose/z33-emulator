@@ -29,7 +29,7 @@
     "no-shadow": "warn",
 
     "strict-boolean-expressions": "off",
-    "no-confusing-void-expression": "off",
+    "no-confusing-void-expression": "warn",
     "no-inline-comments": "off",
     "no-unsafe-member-access": "off",
     "no-unsafe-call": "off",

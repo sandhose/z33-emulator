@@ -39,5 +39,7 @@ export const useAppStore = create<AppState & AppActions>()((set) => ({
     set({ mode: { type: "debug", computer, sourceMap, labels } });
   },
 
-  stopDebug: () => set({ mode: { type: "edit" } }),
+  stopDebug: () => {
+    set({ mode: { type: "edit" } });
+  },
 }));

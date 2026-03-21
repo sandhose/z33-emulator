@@ -83,7 +83,9 @@ const LabelList: React.FC<{
             computer={computer}
             labels={labels}
             isFollowing={following === `label:${name}`}
-            onClick={() => onLabelClick(name, address)}
+            onClick={() => {
+              onLabelClick(name, address);
+            }}
           />
         ))}
       </div>

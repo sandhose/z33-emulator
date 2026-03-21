@@ -58,13 +58,14 @@ export function useCompilation(activeFile: string, monacoInstance: Monaco) {
   useEffect(() => {
     if (!monacoInstance) return;
     return initMonacoSync(monacoInstance, {
-      onEdit: (name, content) =>
-        useFileStore.getState()._onMonacoEdit(name, content),
+      onEdit: (name, content) => {
+        useFileStore.getState()._onMonacoEdit(name, content);
+      },
       getFiles: () => useFileStore.getState().files,
       subscribe: (listener) =>
-        useFileStore.subscribe((state, prev) =>
-          listener(state.files, prev.files),
-        ),
+        useFileStore.subscribe((state, prev) => {
+          listener(state.files, prev.files);
+        }),
     });
   }, [monacoInstance]);
 

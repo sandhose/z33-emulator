@@ -101,7 +101,9 @@ const DebugToolbarInner: React.FC<{
           <Button
             variant="ghost"
             size="xs"
-            onClick={() => runN(10)}
+            onClick={() => {
+              runN(10);
+            }}
             disabled={disabled}
             aria-label="Run 10 steps"
           >
@@ -111,7 +113,9 @@ const DebugToolbarInner: React.FC<{
           <Button
             variant="ghost"
             size="xs"
-            onClick={() => runN(100)}
+            onClick={() => {
+              runN(100);
+            }}
             disabled={disabled}
             aria-label="Run 100 steps"
           >
@@ -121,7 +125,9 @@ const DebugToolbarInner: React.FC<{
           <Button
             variant="ghost"
             size="xs"
-            onClick={() => runN(1000)}
+            onClick={() => {
+              runN(1000);
+            }}
             disabled={disabled}
             aria-label="Run 1000 steps"
           >

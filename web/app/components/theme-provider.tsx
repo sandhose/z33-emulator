@@ -52,7 +52,9 @@ export function ThemeProvider({
   const isSystemDark = useSyncExternalStore(
     (callback) => {
       darkMediaQuery.addEventListener("change", callback);
-      return () => darkMediaQuery.removeEventListener("change", callback);
+      return () => {
+        darkMediaQuery.removeEventListener("change", callback);
+      };
     },
     () => darkMediaQuery.matches,
   );

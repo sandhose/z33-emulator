@@ -61,7 +61,9 @@ export function useSourceHighlight({
     const disposable = editor.onDidChangeModel((e) => {
       setCurrentModelUri(e.newModelUrl?.toString() ?? null);
     });
-    return () => disposable.dispose();
+    return () => {
+      disposable.dispose();
+    };
   }, [editor]);
 
   // Auto-switch file only when PC changes, not when the user manually switches models.

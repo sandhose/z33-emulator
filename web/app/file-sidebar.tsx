@@ -143,7 +143,9 @@ export const FileSidebar: React.FC = () => {
                   variant="ghost"
                   size="icon-xs"
                   aria-label="New file"
-                  onClick={() => setIsCreatingFile(true)}
+                  onClick={() => {
+                    setIsCreatingFile(true);
+                  }}
                 />
               }
             >
@@ -220,7 +222,9 @@ export const FileSidebar: React.FC = () => {
             <button
               type="button"
               className="flex-1 px-3 py-1.5 text-left text-sm font-mono truncate"
-              onClick={() => setActiveFile(name)}
+              onClick={() => {
+                setActiveFile(name);
+              }}
             >
               {name}
             </button>
@@ -260,7 +264,9 @@ export const FileSidebar: React.FC = () => {
                     size="icon-xs"
                     aria-label="Delete"
                     className="opacity-0 group-hover:opacity-100 mr-1"
-                    onClick={() => deleteFile(name)}
+                    onClick={() => {
+                      deleteFile(name);
+                    }}
                   />
                 }
               >
@@ -277,7 +283,9 @@ export const FileSidebar: React.FC = () => {
               createFile(filename, "");
               setIsCreatingFile(false);
             }}
-            onCancel={() => setIsCreatingFile(false)}
+            onCancel={() => {
+              setIsCreatingFile(false);
+            }}
           />
         )}
       </div>

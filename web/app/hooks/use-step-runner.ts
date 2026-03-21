@@ -55,7 +55,9 @@ export function useStepRunner(computer: ComputerInterface) {
   useEffect(() => {
     if (state.status !== "running") return;
     const id = setInterval(doStep, STEP_INTERVAL_MS);
-    return () => clearInterval(id);
+    return () => {
+      clearInterval(id);
+    };
   }, [state.status, doStep]);
 
   const stepOnce = useCallback(() => {
