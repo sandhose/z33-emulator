@@ -131,6 +131,9 @@ jobs:
       - name: Run lint and format check
         run: pnpm run check
 
+      - name: Check for unused exports
+        run: pnpm knip
+
   e2e:
     name: "Playwright E2E tests"
     runs-on: ubuntu-24.04
