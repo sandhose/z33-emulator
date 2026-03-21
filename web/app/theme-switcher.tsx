@@ -1,5 +1,5 @@
 import { MonitorIcon, MoonIcon, SunIcon } from "lucide-react";
-import { useTheme } from "./components/theme-provider";
+import { useThemeStore } from "./stores/theme-store";
 import { ToggleGroup, ToggleGroupItem } from "./components/ui/toggle-group";
 import {
   Tooltip,
@@ -23,7 +23,8 @@ const ICONS = {
 const LABELS = { light: "Light", system: "System", dark: "Dark" } as const;
 
 export const ThemeSwitcher: React.FC = () => {
-  const { theme, setTheme } = useTheme();
+  const theme = useThemeStore((s) => s.theme);
+  const setTheme = useThemeStore((s) => s.setTheme);
 
   return (
     <ToggleGroup

@@ -1,11 +1,5 @@
-import {
-  BookOpenIcon,
-  PauseIcon,
-  PencilIcon,
-  PlayIcon,
-  StepForwardIcon,
-} from "lucide-react";
-import { memo, startTransition, useCallback, useEffect, useState } from "react";
+import { PauseIcon, PencilIcon, PlayIcon, StepForwardIcon } from "lucide-react";
+import { memo } from "react";
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
 import {
@@ -20,69 +14,13 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "./components/ui/tooltip";
-import type { ComputerInterface } from "./computer";
-import { useCycles } from "./computer";
+import type { ComputerInterface } from "./computer-types";
+import { DocsButton } from "./docs-button";
+import { useCycles } from "./hooks/use-computer";
+import { useStepRunner } from "./hooks/use-step-runner";
 import { cn } from "./lib/utils";
 import { useAppStore } from "./stores/app-store";
 import { ThemeSwitcher } from "./theme-switcher";
-
-function useStepRunner(computer: ComputerInterface) {
-  const [halt, setHalt] = useState(false);
-  const [panicked, setPanicked] = useState<string | null>(null);
-  const [running, setRunning] = useState(false);
-  const [stepsToRun, setStepsToRun] = useState(0);
-  const [speed] = useState(20);
-
-  const doStep = useCallback(() => {
-    try {
-      if (computer.step()) {
-        setHalt(true);
-      }
-    } catch (error) {
-      setPanicked(String(error));
-    }
-    setStepsToRun((prev) => prev - 1);
-  }, [computer]);
-
-  useEffect(() => {
-    if (halt || panicked !== null) {
-      setRunning(false);
-      return;
-    }
-    if (running !== stepsToRun > 0) {
-      setRunning(stepsToRun > 0);
-    }
-  }, [halt, running, panicked, stepsToRun]);
-
-  useEffect(() => {
-    if (!running) return;
-    const id = setInterval(doStep, 1000 / speed);
-    return () => clearInterval(id);
-  }, [speed, running, doStep]);
-
-  const stepOnce = useCallback(() => {
-    startTransition(() => {
-      setStepsToRun(1);
-      doStep();
-    });
-  }, [doStep]);
-
-  const runN = useCallback(
-    (n: number) => {
-      startTransition(() => {
-        setStepsToRun(n);
-        doStep();
-      });
-    },
-    [doStep],
-  );
-
-  const stop = useCallback(() => {
-    setStepsToRun(0);
-  }, []);
-
-  return { halt, panicked, running, stepOnce, runN, stop };
-}
 
 type DebugToolbarProps = {
   className?: string;
@@ -163,7 +101,9 @@ const DebugToolbarInner: React.FC<{
           <Button
             variant="ghost"
             size="xs"
-            onClick={() => runN(10)}
+            onClick={() => {
+              runN(10);
+            }}
             disabled={disabled}
             aria-label="Run 10 steps"
           >
@@ -173,7 +113,9 @@ const DebugToolbarInner: React.FC<{
           <Button
             variant="ghost"
             size="xs"
-            onClick={() => runN(100)}
+            onClick={() => {
+              runN(100);
+            }}
             disabled={disabled}
             aria-label="Run 100 steps"
           >
@@ -183,7 +125,9 @@ const DebugToolbarInner: React.FC<{
           <Button
             variant="ghost"
             size="xs"
-            onClick={() => runN(1000)}
+            onClick={() => {
+              runN(1000);
+            }}
             disabled={disabled}
             aria-label="Run 1000 steps"
           >
@@ -269,22 +213,7 @@ const DebugToolbarInner: React.FC<{
             Stop execution and return to the editor
           </TooltipContent>
         </Tooltip>
-        <Button
-          variant="ghost"
-          size="xs"
-          nativeButton={false}
-          render={
-            // biome-ignore lint/a11y/useAnchorContent: Button renders its children inside this anchor
-            <a
-              href="https://pdagog.gitlab.io/ens/z33refcard-fr.pdf"
-              target="_blank"
-              rel="noopener noreferrer"
-            />
-          }
-        >
-          <BookOpenIcon data-icon="inline-start" />
-          Docs
-        </Button>
+        <DocsButton />
         <ThemeSwitcher />
       </div>
     </div>

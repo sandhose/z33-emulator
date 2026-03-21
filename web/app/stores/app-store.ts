@@ -1,6 +1,6 @@
 import type { Computer, SourceMap } from "z33-web-bindings";
 import { create } from "zustand";
-import type { ComputerInterface, Labels } from "../computer";
+import type { ComputerInterface, Labels } from "../computer-types";
 
 type AppMode =
   | { type: "edit" }
@@ -39,5 +39,7 @@ export const useAppStore = create<AppState & AppActions>()((set) => ({
     set({ mode: { type: "debug", computer, sourceMap, labels } });
   },
 
-  stopDebug: () => set({ mode: { type: "edit" } }),
+  stopDebug: () => {
+    set({ mode: { type: "edit" } });
+  },
 }));

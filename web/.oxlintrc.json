@@ -5,7 +5,9 @@
   },
   "categories": {
     "correctness": "error",
-    "suspicious": "warn"
+    "suspicious": "warn",
+    "pedantic": "warn",
+    "perf": "warn"
   },
   "plugins": ["react", "typescript", "unicorn"],
   "rules": {
@@ -24,7 +26,18 @@
     "typescript/no-inferrable-types": "error",
     "no-else-return": "warn",
     "react/react-in-jsx-scope": "off",
-    "no-shadow": "off"
+    "no-shadow": "warn",
+
+    "strict-boolean-expressions": "off",
+    "no-confusing-void-expression": "warn",
+    "no-inline-comments": "off",
+    "no-unsafe-member-access": "off",
+    "no-unsafe-call": "off",
+    "no-unsafe-assignment": "off",
+    "no-unsafe-argument": "off",
+    "max-lines-per-function": "off",
+    "max-lines": "off",
+    "max-depth": "off"
   },
   "ignorePatterns": ["types/**"]
 }

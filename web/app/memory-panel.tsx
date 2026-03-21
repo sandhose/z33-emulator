@@ -1,19 +1,17 @@
 import { memo, useCallback, useMemo, useRef } from "react";
 import {
   ADDRESS_WIDTH,
-  CellView,
   type ComputerInterface,
   type Following,
   formatAddress,
   type Labels,
-  MemoryViewer,
-  type MemoryViewerRef,
   type Pointers,
   type RegisterId,
-  useMemoryCell,
-  useRegisters,
-} from "./computer";
+} from "./computer-types";
+import { CellView, MemoryViewer, type MemoryViewerRef } from "./computer";
+import { useMemoryCell, useRegisters } from "./hooks/use-computer";
 import { cn } from "./lib/utils";
+import { SectionHeader } from "./section-header";
 import { useDisplayStore } from "./stores/display-store";
 
 type MemoryPanelProps = {
@@ -75,9 +73,7 @@ const LabelList: React.FC<{
 
   return (
     <div role="region" aria-label="Labels" className="border-b border-border">
-      <div className="bg-muted/30 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        Labels
-      </div>
+      <SectionHeader>Labels</SectionHeader>
       <div className="max-h-32 overflow-y-auto">
         {sorted.map(([name, address]) => (
           <LabelRow
@@ -87,7 +83,9 @@ const LabelList: React.FC<{
             computer={computer}
             labels={labels}
             isFollowing={following === `label:${name}`}
-            onClick={() => onLabelClick(name, address)}
+            onClick={() => {
+              onLabelClick(name, address);
+            }}
           />
         ))}
       </div>
@@ -163,16 +161,14 @@ export const MemoryPanel: React.FC<MemoryPanelProps> = memo(
           aria-label="Memory"
           className="flex-1 overflow-hidden flex flex-col"
         >
-          <div className="bg-muted/30 border-b px-2 py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground shrink-0">
-            Memory
-          </div>
+          <SectionHeader className="border-b shrink-0">Memory</SectionHeader>
           <MemoryViewer
             ref={viewerRef}
             computer={computer}
             highlight={highlight}
             labels={labels}
             pointers={pointers}
-            {...(following !== null ? { onUserScroll: handleUserScroll } : {})}
+            {...(following === null ? {} : { onUserScroll: handleUserScroll })}
           />
         </div>
       </div>

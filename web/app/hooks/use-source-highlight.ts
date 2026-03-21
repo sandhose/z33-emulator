@@ -1,8 +1,8 @@
 import type * as monaco from "monaco-editor";
 import { useEffect, useRef, useState } from "react";
 import type { SourceMap } from "z33-web-bindings";
-import type { ComputerInterface } from "./computer";
-import { useRegisters } from "./computer";
+import type { ComputerInterface } from "../computer-types";
+import { useRegisters } from "./use-computer";
 
 /**
  * Build a lookup table from UTF-8 byte offset → JS string character offset.
@@ -61,7 +61,9 @@ export function useSourceHighlight({
     const disposable = editor.onDidChangeModel((e) => {
       setCurrentModelUri(e.newModelUrl?.toString() ?? null);
     });
-    return () => disposable.dispose();
+    return () => {
+      disposable.dispose();
+    };
   }, [editor]);
 
   // Auto-switch file only when PC changes, not when the user manually switches models.
@@ -76,7 +78,6 @@ export function useSourceHighlight({
     }
   }, [editor, sourceMap, registers.pc, onSwitchFile]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: currentModelUri forces re-run when @monaco-editor/react switches the active model, which wouldn't otherwise change deps.
   useEffect(() => {
     if (!editor) return;
 

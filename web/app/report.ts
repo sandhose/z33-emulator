@@ -93,7 +93,7 @@ export const toMonacoDiagnostics = (
   report: Report,
   parentReport?: Report,
 ): DiagnosticResult => {
-  const filename = report.filename || parentReport?.filename || null;
+  const filename = report.filename ?? parentReport?.filename ?? null;
 
   const children = report.related.reduce(
     (acc: DiagnosticResult, related) => {

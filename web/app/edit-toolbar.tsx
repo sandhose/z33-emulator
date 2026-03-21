@@ -1,5 +1,4 @@
 import {
-  BookOpenIcon,
   CheckCircle2Icon,
   Loader2Icon,
   PlayIcon,
@@ -14,6 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./components/ui/select";
+import { DocsButton } from "./docs-button";
 import { ThemeSwitcher } from "./theme-switcher";
 
 const DEFAULT_ENTRYPOINT_NAMES = ["main", "start", "run", "entry"];
@@ -125,22 +125,7 @@ export const EditToolbar: React.FC<EditToolbarProps> = memo(
               </Button>
             </>
           )}
-          <Button
-            variant="ghost"
-            size="xs"
-            nativeButton={false}
-            render={
-              // biome-ignore lint/a11y/useAnchorContent: Button renders its children inside this anchor
-              <a
-                href="https://pdagog.gitlab.io/ens/z33refcard-fr.pdf"
-                target="_blank"
-                rel="noopener noreferrer"
-              />
-            }
-          >
-            <BookOpenIcon data-icon="inline-start" />
-            Docs
-          </Button>
+          <DocsButton />
           <ThemeSwitcher />
         </div>
       </div>
