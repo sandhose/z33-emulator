@@ -224,8 +224,7 @@ export const MemoryViewer = memo(
           el.removeEventListener("scroll", scrollDebouncer.maybeExecute);
           scrollDebouncer.cancel();
         };
-        // oxlint-disable-next-line react-hooks/exhaustive-deps -- debouncer is a stable ref
-      }, [scrollDebouncer.maybeExecute, scrollDebouncer.cancel]);
+      }, [scrollDebouncer]);
 
       useImperativeHandle(
         ref,
