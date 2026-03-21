@@ -1,8 +1,8 @@
 import "./globals.css";
 import "./monaco.ts";
+import "./stores/theme-store.ts";
 import { createRoot } from "react-dom/client";
 import App from "./App";
-import { ThemeProvider } from "./components/theme-provider.tsx";
 import { TooltipProvider } from "./components/ui/tooltip.tsx";
 
 const rootElement = document.querySelector("#root");
@@ -12,9 +12,7 @@ if (!rootElement) {
 const root = createRoot(rootElement);
 
 root.render(
-  <ThemeProvider>
-    <TooltipProvider delay={400}>
-      <App />
-    </TooltipProvider>
-  </ThemeProvider>,
+  <TooltipProvider delay={400}>
+    <App />
+  </TooltipProvider>,
 );
