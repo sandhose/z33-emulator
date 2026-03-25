@@ -7,7 +7,7 @@ use tracing::debug;
 use self::layout::MemoryLayoutError;
 use self::memory::MemoryFillError;
 use crate::constants as C;
-use crate::parser::line::Program;
+use crate::parser::line::{LineContent, Program};
 use crate::runtime::{Computer, Registers};
 
 pub mod layout;
@@ -34,11 +34,27 @@ pub enum CompilationError {
 
     #[error("unknown entrypoint: {0}")]
     UnknownEntrypoint(String),
+
+    #[error("program contains syntax errors")]
+    HasParseErrors,
+}
+
+/// Check whether the program contains any error-recovery placeholders.
+fn has_parse_errors(program: &Program) -> bool {
+    program.lines.iter().any(|line| {
+        line.inner
+            .content
+            .as_ref()
+            .is_some_and(|c| matches!(c.inner, LineContent::Error))
+    })
 }
 
 /// Run layout and fill without selecting an entrypoint.
 /// Returns `Ok(())` if the program can be assembled, or a `CompilationError`.
 pub fn check(program: &Program) -> Result<(), CompilationError> {
+    if has_parse_errors(program) {
+        return Err(CompilationError::HasParseErrors);
+    }
     let layout = self::layout::layout_memory(&program.lines)?;
     self::memory::fill_memory(&layout)?;
     Ok(())
@@ -49,6 +65,9 @@ pub fn compile(
     program: &Program,
     entrypoint: &str,
 ) -> Result<(Computer, DebugInfo), CompilationError> {
+    if has_parse_errors(program) {
+        return Err(CompilationError::HasParseErrors);
+    }
     let layout = self::layout::layout_memory(&program.lines)?;
     let memory = self::memory::fill_memory(&layout)?;
 

@@ -9,6 +9,7 @@ use nom::{Finish, IResult, Parser};
 
 use self::location::{Locatable, Located};
 
+pub mod assembly;
 pub(crate) mod condition;
 mod errors;
 pub(crate) mod expression;
@@ -19,6 +20,7 @@ mod precedence;
 pub(crate) mod preprocessor;
 pub(crate) mod value;
 
+pub use assembly::{parse, DiagnosticSeverity, ParseDiagnostic, ParseResult};
 pub use errors::{Error, ParseError};
 pub use expression::{parse_expression, Context as ExpressionContext, Node as ExpressionNode};
 pub use line::Program;
@@ -45,12 +47,14 @@ pub(crate) fn parse_identifier<'a, Error: ParseError<&'a str>>(
     .parse(input)
 }
 
-/// Parse a program
+/// Parse a program using the legacy nom-based parser.
 ///
 /// # Errors
 ///
 /// This function will return an error if the program is invalid
-pub fn parse(input: &str) -> Result<Located<Program>, nom_language::error::VerboseError<&str>> {
+pub fn parse_legacy(
+    input: &str,
+) -> Result<Located<Program>, nom_language::error::VerboseError<&str>> {
     parse_new(input)
 }
 

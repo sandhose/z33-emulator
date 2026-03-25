@@ -15,6 +15,74 @@ use z33_emulator::preprocessor::{
 };
 use z33_emulator::runtime::{Memory, ProcessorError};
 
+/// A wrapper diagnostic that bundles multiple parse errors.
+/// The first error is rendered as the main diagnostic; the rest appear as
+/// `related`, so the JSON handler (and thus the web app) sees all of them.
+struct ParseErrors {
+    main: miette::Report,
+    related: Vec<miette::Report>,
+}
+
+impl std::fmt::Debug for ParseErrors {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Debug::fmt(&self.main, f)
+    }
+}
+
+impl std::fmt::Display for ParseErrors {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.main, f)
+    }
+}
+
+impl std::error::Error for ParseErrors {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.main.source()
+    }
+}
+
+impl miette::Diagnostic for ParseErrors {
+    fn source_code(&self) -> Option<&dyn miette::SourceCode> {
+        self.main.source_code()
+    }
+
+    fn labels(&self) -> Option<Box<dyn Iterator<Item = miette::LabeledSpan> + '_>> {
+        self.main.labels()
+    }
+
+    fn severity(&self) -> Option<miette::Severity> {
+        self.main.severity()
+    }
+
+    fn help<'a>(&'a self) -> Option<Box<dyn std::fmt::Display + 'a>> {
+        self.main.help()
+    }
+
+    fn url<'a>(&'a self) -> Option<Box<dyn std::fmt::Display + 'a>> {
+        self.main.url()
+    }
+
+    fn code<'a>(&'a self) -> Option<Box<dyn std::fmt::Display + 'a>> {
+        self.main.code()
+    }
+
+    fn related<'a>(
+        &'a self,
+    ) -> Option<Box<dyn Iterator<Item = &'a dyn miette::Diagnostic> + 'a>> {
+        // Chain the main report's related diagnostics with our extra ones
+        let main_related = self
+            .main
+            .related()
+            .into_iter()
+            .flatten();
+        let extra = self
+            .related
+            .iter()
+            .map(|r| r.as_ref() as &dyn miette::Diagnostic);
+        Some(Box::new(main_related.chain(extra)))
+    }
+}
+
 #[wasm_bindgen(start)]
 fn start() {
     console_error_panic_hook::set_once();
@@ -88,12 +156,6 @@ impl CompilationResult {
     }
 }
 
-fn char_offset(a: &str, b: &str) -> usize {
-    let a = a.as_ptr();
-    let b = b.as_ptr();
-    b as usize - a as usize
-}
-
 #[wasm_bindgen]
 impl InMemoryPreprocessor {
     #[wasm_bindgen(constructor)]
@@ -125,27 +187,54 @@ impl InMemoryPreprocessor {
             Err(e) => return CompilationResult::preprocessor_error(e),
         };
         let source_str = &source;
-        let program = z33_emulator::parser::parse(source_str);
-        match program {
-            Ok(program) => CompilationResult::new(Program {
-                source_map: source_map.into(),
-                files: self.files.clone(),
-                program,
-            }),
-            Err(e) => {
-                // The nom errors are… bad. Let's just print the first location
-                let (location, _kind) = e.errors.first().expect("at least one error");
-                let offset = char_offset(source_str, location);
-                // Find the corresponding span from the source map
-                let span = source_map
-                    .find(offset)
-                    .expect("source info to be available");
-                let labels = vec![miette::LabeledSpan::underline(span.span.clone())];
-                let report = miette::miette!(labels = labels, "Failed to parse program")
-                    .with_source_code(span.source.clone());
-                CompilationResult::compilation_error(report)
-            }
+        let result = z33_emulator::parser::parse(source_str);
+
+        let has_errors = result
+            .diagnostics
+            .iter()
+            .any(|d| d.severity == z33_emulator::parser::DiagnosticSeverity::Error);
+
+        if has_errors {
+            // Convert each parse diagnostic into a miette report with source
+            // location mapped back to the original file.  The first one
+            // becomes the top-level report; the rest are attached as `related`
+            // so the web app creates a Monaco marker for each.
+            let mut reports: Vec<miette::Report> = result
+                .diagnostics
+                .iter()
+                .filter(|d| d.severity == z33_emulator::parser::DiagnosticSeverity::Error)
+                .filter_map(|diag| {
+                    let span = source_map.find(diag.span.start)?;
+                    let labels =
+                        vec![miette::LabeledSpan::underline(span.span.clone())];
+                    Some(
+                        miette::miette!(labels = labels, "{}", diag.message)
+                            .with_source_code(span.source.clone()),
+                    )
+                })
+                .collect();
+
+            let report = if reports.is_empty() {
+                miette::miette!("Failed to parse program")
+            } else if reports.len() == 1 {
+                reports.remove(0)
+            } else {
+                // Bundle: first error is the root, the rest are `related`
+                let first = reports.remove(0);
+                miette::Report::new(ParseErrors {
+                    main: first,
+                    related: reports,
+                })
+            };
+
+            return CompilationResult::compilation_error(report);
         }
+
+        CompilationResult::new(Program {
+            source_map: source_map.into(),
+            files: self.files.clone(),
+            program: result.program,
+        })
     }
 }
 
@@ -202,7 +291,7 @@ fn compiler_error_to_report(
     let location: Option<std::ops::Range<usize>> = match error {
         CompilationError::MemoryFill(e) => Some(e.location().clone()),
         CompilationError::MemoryLayout(e) => e.location().cloned(),
-        CompilationError::UnknownEntrypoint(_) => None,
+        CompilationError::UnknownEntrypoint(_) | CompilationError::HasParseErrors => None,
     };
 
     if let Some(loc) = location {

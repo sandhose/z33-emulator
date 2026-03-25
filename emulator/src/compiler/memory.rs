@@ -339,6 +339,14 @@ fn compile_placement(labels: &Labels, placement: &Placement) -> Result<Cell, Mem
             unreachable!();
         }
 
+        // Error recovery placeholders should never reach memory fill
+        P::Line(Located {
+            inner: LineContent::Error,
+            ..
+        }) => {
+            unreachable!("error nodes should be skipped during layout");
+        }
+
         P::Line(Located {
             inner: LineContent::Instruction { kind, arguments },
             location: line_location,

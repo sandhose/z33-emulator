@@ -142,6 +142,10 @@ pub(crate) enum InstructionArgument {
         register: Located<Reg>,
         value: Located<Node>,
     },
+
+    /// A parse error that was recovered from
+    #[display("<error>")]
+    Error,
 }
 
 /// Parse an instruction argument
@@ -264,6 +268,9 @@ impl From<i128> for DirectiveArgument {
 pub enum ComputeError {
     #[error("could not evaluate argument")]
     Evaluation(#[from] EvaluationError),
+
+    #[error("cannot evaluate error placeholder")]
+    Error,
 }
 
 impl InstructionArgument {
@@ -286,6 +293,7 @@ impl InstructionArgument {
                 let value = value.inner.evaluate(context)?;
                 Ok(ImmRegDirIndIdx::Idx(Idx(register.inner, value)))
             }
+            Self::Error => Err(ComputeError::Error),
         }
     }
 }
@@ -298,6 +306,7 @@ impl AstNode for InstructionArgument {
             InstructionArgument::Direct(_) => NodeKind::Direct,
             InstructionArgument::Indirect(_) => NodeKind::Indirect,
             InstructionArgument::Indexed { .. } => NodeKind::Indexed,
+            InstructionArgument::Error => NodeKind::Error,
         }
     }
 
@@ -311,12 +320,12 @@ impl AstNode for InstructionArgument {
     fn children(&self) -> Vec<crate::ast::Node> {
         match self {
             InstructionArgument::Value(e) => e.children(),
-            InstructionArgument::Register(_) => Vec::new(),
             InstructionArgument::Direct(e) => vec![e.to_node()],
             InstructionArgument::Indirect(r) => vec![r.to_node()],
             InstructionArgument::Indexed { register, value } => {
                 vec![register.to_node(), value.to_node()]
             }
+            InstructionArgument::Register(_) | InstructionArgument::Error => Vec::new(),
         }
     }
 }

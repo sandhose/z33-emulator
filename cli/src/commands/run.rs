@@ -24,12 +24,6 @@ pub struct RunOpt {
     interactive: bool,
 }
 
-fn char_offset(a: &str, b: &str) -> usize {
-    let a = a.as_ptr();
-    let b = b.as_ptr();
-    b as usize - a as usize
-}
-
 impl RunOpt {
     #[allow(clippy::too_many_lines)]
     pub fn exec(self) -> anyhow::Result<()> {
@@ -47,23 +41,28 @@ impl RunOpt {
         let source = source.as_str();
 
         debug!("Parsing program");
-        let program = match parse(source) {
-            Ok(p) => p,
-            Err(e) => {
-                // The nom errors are… bad. Let's just print the first location
-                let (location, _kind) = e.errors.first().expect("at least one error");
-                let offset = char_offset(source, location);
-                // Find the corresponding span from the source map
-                let span = source_map
-                    .find(offset)
-                    .expect("source info to be available");
-                let labels = vec![miette::LabeledSpan::underline(span.span.clone())];
-                let report = miette::miette!(labels = labels, "Failed to parse program")
-                    .with_source_code(span.source.clone());
-                eprintln!("{report:?}");
+        let result = parse(source);
+        if !result.diagnostics.is_empty() {
+            for diag in &result.diagnostics {
+                // Map the span back through the source map if possible
+                if let Some(span) = source_map.find(diag.span.start) {
+                    let labels = vec![miette::LabeledSpan::underline(span.span.clone())];
+                    let report = miette::miette!(labels = labels, "{}", diag.message)
+                        .with_source_code(span.source.clone());
+                    eprintln!("{report:?}");
+                } else {
+                    eprintln!("parse error: {}", diag.message);
+                }
+            }
+            if result
+                .diagnostics
+                .iter()
+                .any(|d| d.severity == z33_emulator::parser::DiagnosticSeverity::Error)
+            {
                 exit(1);
             }
-        };
+        }
+        let program = result.program;
 
         debug!(entrypoint = %self.entrypoint, "Building computer");
         let (mut computer, debug_info) = match compile(&program.inner, &self.entrypoint) {
@@ -82,7 +81,8 @@ impl RunOpt {
                 let location = match &e {
                     CompilationError::MemoryLayout(e) => e.location(),
                     CompilationError::MemoryFill(e) => Some(e.location()),
-                    CompilationError::UnknownEntrypoint(_e) => None,
+                    CompilationError::UnknownEntrypoint(_)
+                    | CompilationError::HasParseErrors => None,
                 };
 
                 if let Some(location) = location {

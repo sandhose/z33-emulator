@@ -18,9 +18,14 @@ pub fn run_program(source: &str, entrypoint: &str, steps: Steps) -> String {
     let fs = InMemoryFilesystem::new([("/main.S".into(), source.into())]);
     let workspace = Workspace::new(&fs, "/main.S");
     let (_source_map, preprocessed) = workspace.preprocess().expect("preprocess failed");
-    let program = parse(&preprocessed).expect("parse failed");
+    let result = parse(&preprocessed);
+    assert!(
+        result.diagnostics.is_empty(),
+        "parse errors: {:?}",
+        result.diagnostics.iter().map(|d| &d.message).collect::<Vec<_>>()
+    );
     let (mut computer, _debug_info) =
-        compile(&program.inner, entrypoint).expect("compilation failed");
+        compile(&result.program.inner, entrypoint).expect("compilation failed");
 
     let halt_reason = match steps {
         Steps::Count(n) => {
@@ -118,8 +123,14 @@ pub fn compile_program(source: &str, entrypoint: &str) -> String {
     let fs = InMemoryFilesystem::new([("/main.S".into(), source.into())]);
     let workspace = Workspace::new(&fs, "/main.S");
     let (_source_map, preprocessed) = workspace.preprocess().expect("preprocess failed");
-    let program = parse(&preprocessed).expect("parse failed");
-    let (computer, debug_info) = compile(&program.inner, entrypoint).expect("compilation failed");
+    let result = parse(&preprocessed);
+    assert!(
+        result.diagnostics.is_empty(),
+        "parse errors: {:?}",
+        result.diagnostics.iter().map(|d| &d.message).collect::<Vec<_>>()
+    );
+    let (computer, debug_info) =
+        compile(&result.program.inner, entrypoint).expect("compilation failed");
 
     format_compilation(&computer, &debug_info)
 }

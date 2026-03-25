@@ -242,6 +242,9 @@ pub(crate) fn layout_memory(program: &[Located<Line>]) -> Result<Layout, MemoryL
                         },
                     });
                 }
+
+                // Skip error recovery placeholders
+                LineContent::Error => {}
             }
         }
     }

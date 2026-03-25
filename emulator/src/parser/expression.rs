@@ -74,6 +74,9 @@ pub enum Node {
 
     /// A reference to a variable
     Variable(String),
+
+    /// A parse error that was recovered from
+    Error,
 }
 
 impl AstNode for Node {
@@ -91,6 +94,7 @@ impl AstNode for Node {
             Node::BinaryNot(_) => NodeKind::ExpressionBinaryNot,
             Node::Literal(_) => NodeKind::ExpressionLiteral,
             Node::Variable(_) => NodeKind::ExpressionVariable,
+            Node::Error => NodeKind::Error,
         }
     }
 
@@ -105,7 +109,7 @@ impl AstNode for Node {
             | Node::Multiply(a, b)
             | Node::Divide(a, b) => vec![a.to_node(), b.to_node()],
             Node::Invert(a) | Node::BinaryNot(a) => vec![a.to_node()],
-            Node::Variable(_) | Node::Literal(_) => Vec::new(),
+            Node::Variable(_) | Node::Literal(_) | Node::Error => Vec::new(),
         }
     }
 
@@ -180,6 +184,7 @@ impl std::fmt::Display for Node {
                 Node::BinaryNot(a) => write!(f, "~{}", a.inner.with_parent(self)),
                 Node::Literal(a) => write!(f, "{a}"),
                 Node::Variable(a) => write!(f, "{a}"),
+                Node::Error => write!(f, "<error>"),
             }
         }
     }
@@ -200,6 +205,7 @@ impl Node {
             Node::BinaryNot(a) => Node::BinaryNot(a.offset(offset)),
             Node::Literal(a) => Node::Literal(a),
             Node::Variable(a) => Node::Variable(a),
+            Node::Error => Node::Error,
         }
     }
 }
@@ -238,6 +244,9 @@ pub enum EvaluationError {
         location: Range<usize>,
         inner: Box<EvaluationError>,
     },
+
+    #[error("cannot evaluate error placeholder")]
+    Error,
 }
 
 impl Node {
@@ -328,6 +337,8 @@ impl Node {
                         variable: variable.clone(),
                     },
                 )?,
+
+                Node::Error => return Err(EvaluationError::Error),
             };
 
         V::try_from(value).map_err(|_| EvaluationError::Downcast)

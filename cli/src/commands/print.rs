@@ -21,8 +21,13 @@ impl PrintOpt {
         let source = source.as_str();
 
         debug!("Parsing program");
-        let program = parse(source).unwrap(); // TODO: the error is tied to the input
-        println!("{program}");
+        let result = parse(source);
+        if !result.diagnostics.is_empty() {
+            for diag in &result.diagnostics {
+                eprintln!("parse error: {}", diag.message);
+            }
+        }
+        println!("{}", result.program);
 
         Ok(())
     }

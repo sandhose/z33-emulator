@@ -16,6 +16,7 @@ workspace = true
 [dependencies]
 bitflags.workspace = true
 camino.workspace = true
+chumsky.workspace = true
 thiserror.workspace = true
 miette.workspace = true
 nom.workspace = true

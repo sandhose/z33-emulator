@@ -1,5 +1,6 @@
 import type * as monaco from "monaco-editor";
 import * as z from "zod";
+import { buildByteToCharMap, byteOffsetToCharOffset } from "./lib/utf8";
 
 const spanSchema = z.object({
   offset: z.number().min(0).int(),
@@ -51,14 +52,19 @@ const SEVERITY_CLASSES: Record<
 const spanToPositions = (
   model: monaco.editor.IModel,
   span: Span,
+  byteToChar: Uint32Array,
 ): Pick<
   monaco.editor.IMarkerData,
   "startLineNumber" | "startColumn" | "endLineNumber" | "endColumn"
 > => {
-  const start = model.getPositionAt(span.offset);
-  // For zero-length spans, extend by 1 so the squiggly is visible
-  const endOffset = span.offset + Math.max(span.length, 1);
-  const end = model.getPositionAt(endOffset);
+  // Miette spans are UTF-8 byte offsets; Monaco expects UTF-16 code unit offsets
+  const charStart = byteOffsetToCharOffset(byteToChar, span.offset);
+  const charEnd = byteOffsetToCharOffset(
+    byteToChar,
+    span.offset + Math.max(span.length, 1),
+  );
+  const start = model.getPositionAt(charStart);
+  const end = model.getPositionAt(charEnd);
 
   return {
     startLineNumber: start.lineNumber,
@@ -92,12 +98,25 @@ export const toMonacoDiagnostics = (
   model: monaco.editor.IModel,
   report: Report,
   parentReport?: Report,
+  byteToChar?: Uint32Array,
 ): DiagnosticResult => {
   const filename = report.filename ?? parentReport?.filename ?? null;
 
+  // Build byte-to-char map lazily once per model (when the filename matches)
+  const resolvedByteToChar =
+    byteToChar ??
+    (filename === model.uri.path
+      ? buildByteToCharMap(model.getValue())
+      : undefined);
+
   const children = report.related.reduce(
     (acc: DiagnosticResult, related) => {
-      const child = toMonacoDiagnostics(model, related, report);
+      const child = toMonacoDiagnostics(
+        model,
+        related,
+        report,
+        resolvedByteToChar,
+      );
       return {
         markers: [...acc.markers, ...child.markers],
         decorations: [...acc.decorations, ...child.decorations],
@@ -106,7 +125,7 @@ export const toMonacoDiagnostics = (
     { markers: [], decorations: [] },
   );
 
-  if (filename !== model.uri.path) {
+  if (filename !== model.uri.path || !resolvedByteToChar) {
     return children;
   }
 
@@ -118,7 +137,7 @@ export const toMonacoDiagnostics = (
   const decorations: monaco.editor.IModelDeltaDecoration[] = [];
 
   for (const item of report.labels) {
-    const positions = spanToPositions(model, item.span);
+    const positions = spanToPositions(model, item.span, resolvedByteToChar);
 
     // Squiggly underline marker
     const marker: monaco.editor.IMarkerData = {

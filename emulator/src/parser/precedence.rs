@@ -46,7 +46,7 @@ impl<T: std::fmt::Display + Precedence> std::fmt::Display for ChildTree<'_, T> {
 impl Precedence for ExpressionNode {
     fn precedence(&self) -> usize {
         match self {
-            Self::Literal(_) | Self::Variable(_) => 0,
+            Self::Literal(_) | Self::Variable(_) | Self::Error => 0,
             Self::Invert(_) | Self::BinaryNot(_) => 2,
             Self::Multiply(_, _) | Self::Divide(_, _) => 3,
             Self::Sum(_, _) | Self::Substract(_, _) => 4,

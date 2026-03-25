@@ -2,33 +2,8 @@ import type * as monaco from "monaco-editor";
 import { useEffect, useRef, useState } from "react";
 import type { SourceMap } from "z33-web-bindings";
 import type { ComputerInterface } from "../computer-types";
+import { buildByteToCharMap } from "../lib/utf8";
 import { useRegisters } from "./use-computer";
-
-/**
- * Build a lookup table from UTF-8 byte offset → JS string character offset.
- * The Rust source map produces byte offsets, but Monaco's getPositionAt()
- * expects character (UTF-16 code unit) offsets.
- */
-function buildByteToCharMap(text: string): Uint32Array {
-  const encoded = new TextEncoder().encode(text);
-  // Map from byte index → char index. +1 so we can look up the end-of-string offset.
-  const map = new Uint32Array(encoded.length + 1);
-  let charIdx = 0;
-  let byteIdx = 0;
-  while (charIdx < text.length) {
-    const cp = text.codePointAt(charIdx);
-    if (cp === undefined) break;
-    const byteLen = cp <= 0x7f ? 1 : cp <= 0x7ff ? 2 : cp <= 0xffff ? 3 : 4;
-    const charLen = cp > 0xffff ? 2 : 1; // surrogate pair
-    for (let i = 0; i < byteLen; i++) {
-      map[byteIdx + i] = charIdx;
-    }
-    byteIdx += byteLen;
-    charIdx += charLen;
-  }
-  map[byteIdx] = charIdx;
-  return map;
-}
 
 type UseSourceHighlightOptions = {
   computer: ComputerInterface;

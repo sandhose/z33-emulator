@@ -28,13 +28,14 @@ anstyle = "1.0.14"
 anyhow = "1.0.102"
 bitflags = "2.11.0"
 camino = { version = "1.2.2", features = ["serde1"] }
+chumsky = { version = "0.12.0", features = ["pratt"] }
 clap = { version = "4.6.0", features = ["derive"] }
 clap_complete = "4.6.0"
 console_error_panic_hook = "0.1.7"
 indoc = "2.0.7"
 insta = "1.46.3"
 js-sys = "0.3.91"
-miette = "7.6.0"
+miette = { version = "7.6.0", features = ["fancy"] }
 nom = "8.0.0"
 nom-language = "0.1.0"
 parse-display = "0.10.0"

@@ -40,6 +40,8 @@ pub(crate) enum LineContent {
         kind: Located<DirectiveKind>,
         argument: Located<DirectiveArgument>,
     },
+    /// Represents a parse error that was recovered from
+    Error,
 }
 
 impl LineContent {
@@ -47,6 +49,7 @@ impl LineContent {
     pub(crate) fn is_directive(&self) -> bool {
         matches!(self, Self::Directive { .. })
     }
+
 }
 
 impl AstNode for LineContent {
@@ -54,6 +57,7 @@ impl AstNode for LineContent {
         match self {
             LineContent::Instruction { .. } => NodeKind::Instruction,
             LineContent::Directive { .. } => NodeKind::Directive,
+            LineContent::Error => NodeKind::Error,
         }
     }
 
@@ -63,6 +67,7 @@ impl AstNode for LineContent {
                 .chain(arguments.iter().map(Located::to_node))
                 .collect(),
             LineContent::Directive { kind, argument } => vec![kind.to_node(), argument.to_node()],
+            LineContent::Error => Vec::new(),
         }
     }
 }
@@ -88,6 +93,7 @@ impl std::fmt::Display for LineContent {
             LineContent::Directive { kind, argument } => {
                 write!(f, ".{}: {}", kind.inner, argument.inner)
             }
+            LineContent::Error => write!(f, "<error>"),
         }
     }
 }

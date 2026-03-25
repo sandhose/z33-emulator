@@ -80,6 +80,8 @@ pub enum NodeKind {
     ExpressionInvert,
     ExpressionLiteral,
     ExpressionVariable,
+
+    Error,
 }
 
 pub struct Node {
