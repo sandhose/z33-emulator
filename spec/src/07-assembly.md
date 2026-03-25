@@ -103,11 +103,8 @@ Example:
 
 ### `#undefine` — Undefine a Symbol
 
-```
-#undefine SYMBOL
-```
-
-Removes a previously defined preprocessor symbol.
+r[asm.preprocessor.undefine]
+`#undefine SYMBOL` — removes a previously defined preprocessor symbol so it is no longer substituted in subsequent source text.
 
 ### `#include` — Include a File
 
@@ -143,11 +140,8 @@ Example:
 
 ### `#error` — Emit an Error
 
-```
-#error "message"
-```
-
-Causes the assembler to emit an error with the specified message. Useful for detecting invalid preprocessor configurations.
+r[asm.preprocessor.error]
+`#error "message"` — causes the assembler to emit an error with the specified message. Useful for detecting invalid preprocessor configurations.
 
 ## Expressions
 

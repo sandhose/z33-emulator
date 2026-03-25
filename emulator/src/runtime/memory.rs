@@ -199,6 +199,16 @@ impl Memory {
             .ok_or(MemoryError::InvalidAddress(address))
     }
 
+    /// Iterate over non-empty cells, yielding `(address, cell)` pairs.
+    #[allow(clippy::cast_possible_truncation)] // MEMORY_SIZE fits in u32
+    pub fn iter_non_empty(&self) -> impl Iterator<Item = (Address, &Cell)> {
+        self.inner
+            .iter()
+            .enumerate()
+            .filter(|(_, cell)| !matches!(cell, Cell::Empty))
+            .map(|(i, cell)| (i as Address, cell))
+    }
+
     /// Get a mutable reference to a cell at an address
     ///
     /// # Errors

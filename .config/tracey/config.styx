@@ -6,7 +6,7 @@ specs (
     impls (
       {
         name rust
-        include (emulator/src/**/*.rs)
+        include (emulator/src/**/*.rs emulator/tests/**/*.rs)
       }
     )
   }

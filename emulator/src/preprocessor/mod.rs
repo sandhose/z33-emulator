@@ -344,6 +344,7 @@ impl Workspace {
                     }
                 }
 
+                // r[impl asm.preprocessor.error]
                 Node::Error { ref message } => {
                     let (stack, message) = stack.push(message);
                     let (src, span) = stack.context();
@@ -356,6 +357,7 @@ impl Workspace {
                     });
                 }
 
+                // r[impl asm.preprocessor.undefine]
                 Node::Undefine { ref key } => {
                     let (_stack, key) = stack.push(key);
 
