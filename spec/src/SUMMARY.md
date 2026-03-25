@@ -29,5 +29,4 @@
 
 - [Open Questions](./11-appendices/01-open-questions.md)
 - [Undefined Behavior](./11-appendices/02-undefined-behavior.md)
-- [Recommended Changes](./11-appendices/03-recommended-changes.md)
 - [Memory Map](./11-appendices/04-memory-map.md)
