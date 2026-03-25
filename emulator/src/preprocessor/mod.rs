@@ -344,6 +344,7 @@ impl Workspace {
                     }
                 }
 
+                // r[impl asm.preprocessor.error]
                 Node::Error { ref message } => {
                     let (stack, message) = stack.push(message);
                     let (src, span) = stack.context();
@@ -356,6 +357,7 @@ impl Workspace {
                     });
                 }
 
+                // r[impl asm.preprocessor.undefine]
                 Node::Undefine { ref key } => {
                     let (_stack, key) = stack.push(key);
 
@@ -363,6 +365,7 @@ impl Workspace {
                     ctx.undefine(key);
                 }
 
+                // r[impl asm.preprocessor.define]
                 Node::Definition {
                     ref key,
                     ref content,
@@ -377,6 +380,7 @@ impl Workspace {
                     ctx.define(key.clone(), content);
                 }
 
+                // r[impl asm.preprocessor.include]
                 Node::Inclusion { path: ref include } => {
                     // Include a file
                     let (stack, include) = stack.push(include);
@@ -401,6 +405,7 @@ impl Workspace {
                     buf.extend(content);
                 }
 
+                // r[impl asm.preprocessor.conditional]
                 Node::Condition { branches, fallback } => {
                     for branch in branches {
                         let (condition_stack, condition) = stack.push(&branch.condition);

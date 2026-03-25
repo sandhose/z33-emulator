@@ -669,6 +669,7 @@ fn parse_parenthesis<'a, Error: ParseError<&'a str>>(
 /// # Errors
 ///
 /// This function will return an error if the expression is invalid
+// r[impl asm.expressions]
 pub fn parse_expression<'a, Error: ParseError<&'a str>>(
     input: &'a str,
 ) -> IResult<&'a str, Node, Error> {

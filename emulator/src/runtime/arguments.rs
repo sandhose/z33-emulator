@@ -12,6 +12,7 @@ use crate::constants as C;
  * (`Reg` is defined in `crate::runtime::registers::Reg`)
  */
 
+// r[impl addr.immediate]
 /// An immediate value
 #[derive(PartialEq, Eq, Clone, Debug, Display)]
 #[display("{0}")]
@@ -24,6 +25,7 @@ impl Imm {
     }
 }
 
+// r[impl addr.direct]
 /// A direct memory access
 #[derive(PartialEq, Eq, Clone, Debug, Display)]
 #[display("[{0}]")]
@@ -36,6 +38,7 @@ impl Dir {
     }
 }
 
+// r[impl addr.indirect]
 /// An indirect memory access (from a register value)
 #[derive(PartialEq, Eq, Clone, Debug, Display)]
 #[display("[{0}]")]
@@ -48,6 +51,7 @@ impl Ind {
     }
 }
 
+// r[impl addr.indexed]
 /// An indexed memory access (from a register value and an offset)
 #[derive(PartialEq, Eq, Clone, Debug, Display)]
 #[display("[{0}{1:+}]")]
@@ -440,6 +444,7 @@ mod conversions {
         }
     }
 
+    // r[impl addr.destination]
     impl TryFrom<ImmRegDirIndIdx> for RegDirIndIdx {
         type Error = ArgConversionError;
 

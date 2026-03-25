@@ -84,6 +84,7 @@ impl Computer {
     ///
     /// If the instruction tries to set the %sr register, it checks if the
     /// processor is running in supervisor mode first.
+    // r[impl reg.sr.privileged-write]
     #[tracing::instrument(skip(self))]
     pub(crate) fn set_register(&mut self, reg: Reg, val: Cell) -> Result<()> {
         if reg == Reg::SR {
@@ -102,8 +103,11 @@ impl Computer {
 
     fn decode_instruction(&mut self) -> Result<&Instruction> {
         let address = Ind(Reg::PC).resolve_address(&self.registers)?;
+        // r[impl exec.fetch]
         let cell = self.memory.get(address)?;
+        // r[impl exec.pc-increment]
         self.registers.pc += 1;
+        // r[impl exec.decode]
         cell.extract_instruction()
             .map_err(|_| Exception::InvalidInstruction.into())
     }
@@ -127,6 +131,7 @@ impl Computer {
             if let ProcessorError::Exception(e) = e {
                 self.recover_from_exception(&e)
                     .map_err(ProcessorError::Exception)
+                    // r[impl exec.cycles.exception]
                     .map(|()| 1) // TODO: fixed cost for exceptions?
             } else {
                 Err(e)
@@ -154,6 +159,7 @@ impl Computer {
         &mut self,
         exception: &Exception,
     ) -> std::result::Result<(), Exception> {
+        // r[impl exc.handling.check-handler]
         // We don't want to recover from the exception if there is no handler setup
         let handler = self.memory.get(C::INTERRUPT_HANDLER)?;
         if handler.extract_instruction().is_err() {
@@ -164,24 +170,31 @@ impl Computer {
             return Err(exception.clone());
         }
 
+        // r[impl exc.handling.save-state]
         debug!(exception = %exception, "Recovering from exception");
         *(self.memory.get_mut(C::INTERRUPT_PC_SAVE)?) = self.registers.get(&Reg::PC);
         *(self.memory.get_mut(C::INTERRUPT_SR_SAVE)?) = self.registers.get(&Reg::SR);
         *(self.memory.get_mut(C::INTERRUPT_EXCEPTION)?) = exception.code().into();
+        // r[impl exec.privilege.transition-up]
+        // r[impl exc.handling.enter-supervisor]
         self.registers.sr.set(StatusRegister::SUPERVISOR, true);
+        // r[impl exc.handling.disable-interrupts]
         if exception.is_hardware_interrupt() {
             self.registers
                 .sr
                 .set(StatusRegister::INTERRUPT_ENABLE, false);
         }
+        // r[impl exc.handling.jump]
         self.registers.pc = C::INTERRUPT_HANDLER;
         Ok(())
     }
 
     fn check_privileged(&self) -> Result<()> {
+        // r[impl exec.privilege.supervisor]
         if self.registers.sr.contains(StatusRegister::SUPERVISOR) {
             Ok(())
         } else {
+            // r[impl exec.privilege.user]
             Err(Exception::PrivilegedInstruction.into())
         }
     }

@@ -8,13 +8,14 @@ use crate::constants as C;
 
 bitflags! {
     #[derive(Clone, Copy, PartialEq, Eq)]
+    // r[impl reg.sr]
     pub struct StatusRegister: C::Word {
-        const CARRY            = 0b000_0000_0001;
-        const ZERO             = 0b000_0000_0010;
-        const NEGATIVE         = 0b000_0000_0100;
-        const OVERFLOW         = 0b000_0000_1000;
-        const INTERRUPT_ENABLE = 0b001_0000_0000;
-        const SUPERVISOR       = 0b010_0000_0000;
+        const CARRY            = 0b000_0000_0001; // r[impl reg.flags.carry]
+        const ZERO             = 0b000_0000_0010; // r[impl reg.flags.zero]
+        const NEGATIVE         = 0b000_0000_0100; // r[impl reg.flags.negative]
+        const OVERFLOW         = 0b000_0000_1000; // r[impl reg.flags.overflow]
+        const INTERRUPT_ENABLE = 0b001_0000_0000; // r[impl reg.flags.interrupt-enable]
+        const SUPERVISOR       = 0b010_0000_0000; // r[impl reg.flags.supervisor]
     }
 }
 
@@ -33,15 +34,18 @@ impl std::fmt::Debug for StatusRegister {
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Registers {
+    // r[impl reg.general-purpose]
     /// General purpose
     pub a: Cell,
 
     /// General purpose
     pub b: Cell,
 
+    // r[impl reg.pc]
     /// Program counter
     pub pc: C::Address,
 
+    // r[impl reg.sp]
     /// Stack pointer
     pub sp: C::Address,
 
@@ -122,6 +126,7 @@ pub enum Reg {
     SR,
 }
 
+// r[impl addr.register]
 impl Reg {
     /// CPU cycles count to use this value
     pub(crate) const fn cost() -> usize {

@@ -156,6 +156,7 @@ impl Instruction {
     #[allow(clippy::too_many_lines)]
     pub(crate) fn execute(&self, computer: &mut Computer) -> Result<(), ProcessorError> {
         match self {
+            // r[impl inst.add]
             Self::Add(arg, reg) => {
                 let a = arg.extract_word(computer)?;
                 let b = reg.extract_word(computer)?;
@@ -171,6 +172,7 @@ impl Instruction {
                 computer.registers.sr.set(StatusRegister::NEGATIVE, res < 0);
             }
 
+            // r[impl inst.and]
             Self::And(arg, reg) => {
                 let a = arg.extract_word(computer)?;
                 let b = reg.extract_word(computer)?;
@@ -182,6 +184,7 @@ impl Instruction {
                 computer.registers.sr.set(StatusRegister::NEGATIVE, res < 0);
             }
 
+            // r[impl inst.call]
             Self::Call(arg) => {
                 // Push PC
                 let pc = computer.registers.pc;
@@ -192,6 +195,7 @@ impl Instruction {
                 computer.jump(addr);
             }
 
+            // r[impl inst.cmp]
             Self::Cmp(arg, reg) => {
                 let a = arg.extract_word(computer)?;
                 let b = reg.extract_word(computer)?;
@@ -207,9 +211,11 @@ impl Instruction {
                 );
             }
 
+            // r[impl inst.div]
             Self::Div(arg, reg) => {
                 let a = arg.extract_word(computer)?;
                 let b = reg.extract_word(computer)?;
+                // r[impl inst.div.exception.division-by-zero]
                 let res = b.checked_div(a).ok_or(Exception::DivByZero)?;
                 debug!("{} / {} = {}", b, a, res);
                 computer.set_register(*reg, res.into())?;
@@ -218,6 +224,7 @@ impl Instruction {
                 computer.registers.sr.set(StatusRegister::NEGATIVE, res < 0);
             }
 
+            // r[impl inst.fas]
             Self::Fas(addr, reg) => {
                 let addr = addr.resolve_address(&computer.registers)?;
                 let cell = computer.memory.get_mut(addr)?;
@@ -226,17 +233,20 @@ impl Instruction {
                 computer.set_register(*reg, val)?;
             }
 
+            // r[impl inst.in]
             Self::In(_, _) => {
                 computer.check_privileged()?;
                 todo!();
             }
 
+            // r[impl inst.jmp]
             Self::Jmp(arg) => {
                 let val = arg.extract_address(computer)?;
                 debug!("Jumping to address {:#x}", val);
                 computer.registers.pc = val;
             }
 
+            // r[impl inst.jeq]
             Self::Jeq(arg) => {
                 if computer.registers.sr.contains(StatusRegister::ZERO) {
                     let val = arg.extract_address(computer)?;
@@ -245,6 +255,7 @@ impl Instruction {
                 }
             }
 
+            // r[impl inst.jne]
             Self::Jne(arg) => {
                 if !computer.registers.sr.contains(StatusRegister::ZERO) {
                     let val = arg.extract_address(computer)?;
@@ -253,6 +264,7 @@ impl Instruction {
                 }
             }
 
+            // r[impl inst.jle]
             Self::Jle(arg) => {
                 if computer.registers.sr.contains(StatusRegister::ZERO)
                     || computer.registers.sr.contains(StatusRegister::NEGATIVE)
@@ -263,6 +275,7 @@ impl Instruction {
                 }
             }
 
+            // r[impl inst.jlt]
             Self::Jlt(arg) => {
                 if !computer.registers.sr.contains(StatusRegister::ZERO)
                     && computer.registers.sr.contains(StatusRegister::NEGATIVE)
@@ -273,6 +286,7 @@ impl Instruction {
                 }
             }
 
+            // r[impl inst.jge]
             Self::Jge(arg) => {
                 if computer.registers.sr.contains(StatusRegister::ZERO)
                     || !computer.registers.sr.contains(StatusRegister::NEGATIVE)
@@ -283,6 +297,7 @@ impl Instruction {
                 }
             }
 
+            // r[impl inst.jgt]
             Self::Jgt(arg) => {
                 if !computer.registers.sr.contains(StatusRegister::ZERO)
                     && !computer.registers.sr.contains(StatusRegister::NEGATIVE)
@@ -293,11 +308,13 @@ impl Instruction {
                 }
             }
 
+            // r[impl inst.ld]
             Self::Ld(arg, reg) => {
                 let val = arg.extract_cell(computer)?;
                 computer.set_register(*reg, val)?;
             }
 
+            // r[impl inst.mul]
             Self::Mul(arg, reg) => {
                 let a = arg.extract_word(computer)?;
                 let b = reg.extract_word(computer)?;
@@ -313,6 +330,7 @@ impl Instruction {
                 computer.registers.sr.set(StatusRegister::NEGATIVE, res < 0);
             }
 
+            // r[impl inst.neg]
             Self::Neg(reg) => {
                 let val = reg.extract_word(computer)?;
                 let (res, overflow) = val.overflowing_neg();
@@ -327,8 +345,10 @@ impl Instruction {
                 computer.registers.sr.set(StatusRegister::NEGATIVE, res < 0);
             }
 
+            // r[impl inst.nop]
             Self::Nop => {}
 
+            // r[impl inst.not]
             Self::Not(reg) => {
                 let val = reg.extract_word(computer)?;
                 let res = !val;
@@ -339,6 +359,7 @@ impl Instruction {
                 computer.registers.sr.set(StatusRegister::NEGATIVE, res < 0);
             }
 
+            // r[impl inst.or]
             Self::Or(arg, reg) => {
                 let a = arg.extract_word(computer)?;
                 let b = reg.extract_word(computer)?;
@@ -350,23 +371,27 @@ impl Instruction {
                 computer.registers.sr.set(StatusRegister::NEGATIVE, res < 0);
             }
 
+            // r[impl inst.out]
             Self::Out(_, _) => {
                 computer.check_privileged()?;
                 todo!()
             }
 
+            // r[impl inst.pop]
             Self::Pop(reg) => {
                 let val = computer.pop()?.clone();
                 debug!("pop => {:?}", val);
                 computer.set_register(*reg, val)?;
             }
 
+            // r[impl inst.push]
             Self::Push(val) => {
                 let val = val.extract_cell(computer)?;
                 debug!("push({:?})", val);
                 computer.push(val)?;
             }
 
+            // r[impl inst.reset]
             Self::Reset => {
                 // We go back one instruction on the %pc so that
                 // we're pointing to the actual reset instruction when
@@ -375,6 +400,9 @@ impl Instruction {
                 return Err(ProcessorError::Reset);
             }
 
+            // r[impl inst.rti]
+            // r[impl exec.privilege.transition-down]
+            // r[impl exc.rti]
             Self::Rti => {
                 computer.check_privileged()?;
                 computer.registers.pc =
@@ -384,6 +412,7 @@ impl Instruction {
                 );
             }
 
+            // r[impl inst.rtn]
             Self::Rtn => {
                 let ret = computer.pop()?; // Pop the return address
                 let ret = ret.extract_address()?; // Convert it to an address
@@ -391,10 +420,12 @@ impl Instruction {
                 computer.registers.pc = ret; // and jump to it
             }
 
+            // r[impl inst.shl]
             Self::Shl(arg, reg) => {
                 let a = arg.extract_word(computer)?;
                 let b = reg.extract_word(computer)?;
 
+                // r[impl inst.shl.exception.invalid-shift]
                 let a: u32 = a.try_into().map_err(|_| Exception::InvalidInstruction)?;
                 let res = b.checked_shl(a).ok_or(Exception::InvalidInstruction)?;
 
@@ -405,10 +436,12 @@ impl Instruction {
                 computer.registers.sr.set(StatusRegister::NEGATIVE, res < 0);
             }
 
+            // r[impl inst.shr]
             Self::Shr(arg, reg) => {
                 let a = arg.extract_word(computer)?;
                 let b = reg.extract_word(computer)?;
 
+                // r[impl inst.shr.exception.invalid-shift]
                 let a: u32 = a.try_into().map_err(|_| Exception::InvalidInstruction)?;
                 let res = b.checked_shr(a).ok_or(Exception::InvalidInstruction)?;
 
@@ -419,12 +452,14 @@ impl Instruction {
                 computer.registers.sr.set(StatusRegister::NEGATIVE, res < 0);
             }
 
+            // r[impl inst.st]
             Self::St(reg, address) => {
                 let val = reg.extract_word(computer)?;
                 let address = address.resolve_address(&computer.registers)?;
                 computer.write(address, val)?;
             }
 
+            // r[impl inst.sub]
             Self::Sub(arg, reg) => {
                 let a = arg.extract_word(computer)?;
                 let b = reg.extract_word(computer)?;
@@ -441,6 +476,7 @@ impl Instruction {
                 computer.registers.sr.set(StatusRegister::NEGATIVE, res < 0);
             }
 
+            // r[impl inst.swap]
             Self::Swap(arg, reg) => {
                 // First we extract the value from both arguments
                 let value = arg.extract_cell(computer)?;
@@ -464,10 +500,12 @@ impl Instruction {
                 }
             }
 
+            // r[impl inst.trap]
             Self::Trap => {
                 return Err(Exception::Trap.into());
             }
 
+            // r[impl inst.xor]
             Self::Xor(arg, reg) => {
                 let a = arg.extract_word(computer)?;
                 let b = reg.extract_word(computer)?;
@@ -488,10 +526,12 @@ impl Instruction {
     }
 
     /// Get the total cost of an instruction in terms of CPU cycles
+    // r[impl exec.cycles]
     pub(crate) const fn cost(&self) -> usize {
         // All instruction cost one CPU cycle itself, plus the cost of each of its
         // arguments
         match self {
+            // r[impl exec.cycles.debugreg]
             Self::DebugReg => 0, // The only exception being `debugreg`, which costs nothing
 
             // imm|reg|dir|ind|idx, reg

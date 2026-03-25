@@ -77,6 +77,7 @@ impl Layout {
         Ok(())
     }
 
+    // r[impl asm.labels]
     fn insert_label(
         &mut self,
         label: Located<String>,
@@ -154,6 +155,7 @@ pub(crate) fn layout_memory(program: &[Located<Line>]) -> Result<Layout, MemoryL
         if let Some(ref content) = line.content {
             let content_offset = line_offset + content.location.start;
             match &content.inner {
+                // r[impl asm.directive.word]
                 LineContent::Directive {
                     kind: Located { inner: Word, .. },
                     ..
@@ -168,6 +170,7 @@ pub(crate) fn layout_memory(program: &[Located<Line>]) -> Result<Layout, MemoryL
                                    // memory cell
                 }
 
+                // r[impl asm.directive.space]
                 LineContent::Directive {
                     kind: Located { inner: Space, .. },
                     argument:
@@ -191,6 +194,7 @@ pub(crate) fn layout_memory(program: &[Located<Line>]) -> Result<Layout, MemoryL
                     }
                 }
 
+                // r[impl asm.directive.addr]
                 LineContent::Directive {
                     kind: Located { inner: Addr, .. },
                     argument:
@@ -209,6 +213,7 @@ pub(crate) fn layout_memory(program: &[Located<Line>]) -> Result<Layout, MemoryL
                     position = addr;
                 }
 
+                // r[impl asm.directive.string]
                 LineContent::Directive {
                     kind: Located { inner: String, .. },
                     argument:

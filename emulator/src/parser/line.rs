@@ -319,6 +319,7 @@ fn parse_symbol_definition<'a, Error: ParseError<&'a str>>(
 }
 
 /// Parses a whole line
+// r[impl asm.line-format]
 fn parse_line<'a, Error: ParseError<&'a str>>(input: &'a str) -> IResult<&'a str, Line, Error> {
     let (rest, _) = space0(input)?;
 

@@ -25,6 +25,7 @@ pub enum CellError {
 }
 
 /// Represents a cell in memory and in general purpose registers
+// r[impl arch.memory.cell-types]
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum Cell {
     /// An empty cell, no value was ever set here,
@@ -154,6 +155,7 @@ pub enum MemoryError {
 /// Holds the memory cells of the computer.
 ///
 /// It has 10000 cells
+// r[impl arch.memory.unified]
 pub struct Memory {
     inner: Box<[Cell; MEMORY_SIZE as _]>,
 }
@@ -195,6 +197,16 @@ impl Memory {
         self.inner
             .get(addr)
             .ok_or(MemoryError::InvalidAddress(address))
+    }
+
+    /// Iterate over non-empty cells, yielding `(address, cell)` pairs.
+    #[allow(clippy::cast_possible_truncation)] // MEMORY_SIZE fits in u32
+    pub fn iter_non_empty(&self) -> impl Iterator<Item = (Address, &Cell)> {
+        self.inner
+            .iter()
+            .enumerate()
+            .filter(|(_, cell)| !matches!(cell, Cell::Empty))
+            .map(|(i, cell)| (i as Address, cell))
     }
 
     /// Get a mutable reference to a cell at an address

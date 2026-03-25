@@ -1,0 +1,7 @@
+[book]
+title = "Zorglub-33 (Z33) Instruction Set Architecture Specification"
+authors = ["Pierre David", "Quentin Gliech"]
+language = "en"
+
+[build]
+build-dir = "book"
