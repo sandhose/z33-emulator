@@ -174,6 +174,13 @@ fn compilation_invalid_register() {
 }
 
 #[test]
+fn compilation_memory_overlap() {
+    insta::assert_snapshot!(check_full_pipeline_errors(
+        "main:\n    .addr 10\n    .string \"hello\"\n    .addr 14\n    .word 0"
+    ));
+}
+
+#[test]
 fn compilation_undefined_label() {
     insta::assert_snapshot!(check_full_pipeline_errors("main:\n    cmp foo, %a"));
 }

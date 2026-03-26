@@ -68,9 +68,10 @@ impl Layout {
         &mut self,
         address: Address,
         placement: Placement,
+        location: Range<usize>,
     ) -> Result<(), MemoryLayoutError> {
         if self.memory.contains_key(&address) {
-            return Err(MemoryLayoutError::MemoryOverlap { address });
+            return Err(MemoryLayoutError::MemoryOverlap { address, location });
         }
 
         self.memory.insert(address, placement);
@@ -116,7 +117,12 @@ pub enum MemoryLayoutError {
     },
 
     #[error("address {address} is already filled")]
-    MemoryOverlap { address: Address },
+    MemoryOverlap {
+        address: Address,
+        /// Location of the line/directive that is trying to write to an
+        /// already-filled address.
+        location: Range<usize>,
+    },
 }
 
 impl MemoryLayoutError {
@@ -124,9 +130,9 @@ impl MemoryLayoutError {
     pub fn location(&self) -> Option<&Range<usize>> {
         match self {
             MemoryLayoutError::DuplicateLabel { location, .. }
-            | MemoryLayoutError::InvalidDirectiveArgument { location, .. } => Some(location),
-            MemoryLayoutError::DirectiveArgumentEvaluation { .. }
-            | MemoryLayoutError::MemoryOverlap { .. } => None,
+            | MemoryLayoutError::InvalidDirectiveArgument { location, .. }
+            | MemoryLayoutError::MemoryOverlap { location, .. } => Some(location),
+            MemoryLayoutError::DirectiveArgumentEvaluation { .. } => None,
         }
     }
 }
@@ -135,6 +141,7 @@ impl MemoryLayoutError {
 ///
 /// It places the labels & prepare a hashmap of cells to be filled.
 #[tracing::instrument(skip(program))]
+#[allow(clippy::too_many_lines)]
 pub(crate) fn layout_memory(program: &[Located<Line>]) -> Result<Layout, MemoryLayoutError> {
     use DirectiveKind::{Addr, Space, String, Word};
     use MemoryLayoutError::{DirectiveArgumentEvaluation, InvalidDirectiveArgument};
@@ -161,9 +168,14 @@ pub(crate) fn layout_memory(program: &[Located<Line>]) -> Result<Layout, MemoryL
                     ..
                 }
                 | LineContent::Instruction { .. } => {
+                    let abs_location = Range {
+                        start: content.location.start + line_offset,
+                        end: content.location.end + line_offset,
+                    };
                     layout.insert_placement(
                         position,
                         Placement::Line(content.clone().offset(line_offset)),
+                        abs_location,
                     )?;
                     trace!(position, content = %content.inner, "Inserting line");
                     position += 1; // Instructions and word directives take one
@@ -188,8 +200,16 @@ pub(crate) fn layout_memory(program: &[Located<Line>]) -> Result<Layout, MemoryL
 
                     trace!(size, position, "Reserving space");
 
+                    let abs_location = Range {
+                        start: content.location.start + line_offset,
+                        end: content.location.end + line_offset,
+                    };
                     for _ in 0..size {
-                        layout.insert_placement(position, Placement::Reserved)?;
+                        layout.insert_placement(
+                            position,
+                            Placement::Reserved,
+                            abs_location.clone(),
+                        )?;
                         position += 1;
                     }
                 }
@@ -223,13 +243,21 @@ pub(crate) fn layout_memory(program: &[Located<Line>]) -> Result<Layout, MemoryL
                         },
                 } => {
                     trace!(position, string = string.as_str(), "Inserting string");
+                    let abs_location = Range {
+                        start: content.location.start + line_offset,
+                        end: content.location.end + line_offset,
+                    };
                     // Fill the memory with the chars of the string
                     for c in string.chars() {
-                        layout.insert_placement(position, Placement::Char(c))?;
+                        layout.insert_placement(
+                            position,
+                            Placement::Char(c),
+                            abs_location.clone(),
+                        )?;
                         position += 1;
                     }
 
-                    layout.insert_placement(position, Placement::Nul)?;
+                    layout.insert_placement(position, Placement::Nul, abs_location)?;
                     position += 1;
                 }
 
@@ -437,9 +465,10 @@ mod tests {
             Line::empty().directive(DirectiveKind::Word, 0), // This overlaps with the second "l"
         ];
 
-        assert_eq!(
-            layout_memory(&program).err(),
-            Some(MemoryLayoutError::MemoryOverlap { address: 14 })
-        );
+        let err = layout_memory(&program).err().unwrap();
+        match err {
+            MemoryLayoutError::MemoryOverlap { address, .. } => assert_eq!(address, 14),
+            other => panic!("expected MemoryOverlap, got {other:?}"),
+        }
     }
 }

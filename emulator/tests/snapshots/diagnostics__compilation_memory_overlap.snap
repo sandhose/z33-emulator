@@ -1,0 +1,10 @@
+---
+source: emulator/tests/diagnostics.rs
+assertion_line: 178
+expression: "check_full_pipeline_errors(\"main:\\n    .addr 10\\n    .string \\\"hello\\\"\\n    .addr 14\\n    .word 0\")"
+---
+error: address 14 is already filled
+  ┌─ <preprocessed>:5:5
+  │
+5 │     .word 0
+  │     ^^^^^^^
