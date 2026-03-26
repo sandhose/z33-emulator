@@ -8,7 +8,6 @@ use z33_emulator::runtime::{Computer, ExtractValue, Reg};
 
 use chumsky::prelude::*;
 
-type Span = z33_emulator::parser::shared::Span;
 type Extra<'a> = z33_emulator::parser::shared::Extra<'a>;
 
 #[derive(Debug, Clone)]

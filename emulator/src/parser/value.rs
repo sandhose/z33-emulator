@@ -9,7 +9,7 @@ use crate::runtime::Reg;
 
 #[derive(Display, FromStr, Clone, Copy, Debug, PartialEq)]
 #[display(style = "lowercase")]
-pub(crate) enum InstructionKind {
+pub enum InstructionKind {
     Add,
     And,
     Call,

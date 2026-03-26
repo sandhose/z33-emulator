@@ -376,8 +376,8 @@ pub fn render_to_string(
 ) -> String {
     let config = term::Config::default();
     let mut buf = Vec::new();
-    term::emit(
-        &mut codespan_reporting::term::termcolor::NoColor::new(&mut buf),
+    term::emit_to_io_write(
+        &mut buf,
         &config,
         db.inner(),
         diag,
