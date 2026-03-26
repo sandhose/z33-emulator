@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::ops::Range;
 
@@ -6,7 +5,6 @@ use thiserror::Error;
 use tracing::{debug, span, trace, Level};
 
 use super::layout::{Labels, Layout, Placement};
-use crate::constants as C;
 use crate::parser::expression::EvaluationError as ExpressionEvaluationError;
 use crate::parser::line::LineContent;
 use crate::parser::location::Located;

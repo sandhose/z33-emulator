@@ -109,30 +109,42 @@ export function useCompilation(activeFile: string, monacoInstance: Monaco) {
     }
     decorationIds.current.clear();
 
+    // Apply parse error diagnostics first (if any)
+    let errorMessage: string | null = null;
+    if (report) {
+      errorMessage =
+        applyReportDiagnostics(monacoInstance, report, decorationIds.current) ??
+        "Failed to parse";
+    }
+
     if (prog) {
-      // Check for fill/layout errors (unresolved labels, etc.)
+      // Run check (layout + fill) to find compilation errors too.
+      // These are shown IN ADDITION to any parse errors.
       const checkReport = prog.check();
       if (checkReport !== undefined) {
-        const message =
+        errorMessage =
           applyReportDiagnostics(
             monacoInstance,
             checkReport,
             decorationIds.current,
-          ) ?? "Compilation failed";
-        setCompilationResult({ type: "error", message });
-        return;
+          ) ??
+          errorMessage ??
+          "Compilation failed";
       }
 
-      setCompilationResult({
-        type: "success",
-        labels: prog.labels,
-        compileFn: (ep) => prog.compile(ep),
-      });
-    } else if (report) {
-      const message =
-        applyReportDiagnostics(monacoInstance, report, decorationIds.current) ??
-        "Failed to parse";
-      setCompilationResult({ type: "error", message });
+      if (errorMessage) {
+        // There are errors, but we still have labels for the entrypoint selector
+        setCompilationResult({ type: "error", message: errorMessage });
+      } else {
+        setCompilationResult({
+          type: "success",
+          labels: prog.labels,
+          compileFn: (ep) => prog.compile(ep),
+        });
+      }
+    } else if (errorMessage) {
+      // Preprocessor error — no program at all
+      setCompilationResult({ type: "error", message: errorMessage });
     }
   }, [monacoInstance, activeFile]);
 

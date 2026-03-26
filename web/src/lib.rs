@@ -50,20 +50,6 @@ impl CompilationResult {
             report_json: Some(json),
         }
     }
-
-    fn compilation_error(json: String) -> Self {
-        Self {
-            program: None,
-            report_json: Some(json),
-        }
-    }
-
-    fn new(v: Program) -> Self {
-        Self {
-            program: Some(v),
-            report_json: None,
-        }
-    }
 }
 
 #[wasm_bindgen]
@@ -109,39 +95,40 @@ impl InMemoryPreprocessor {
         let source_map: ReferencingSourceMap = preprocess_result.source_map.into();
         let result = z33_emulator::parser::parse(source_str);
 
-        let has_errors = result
+        // Convert parse diagnostics to codespan format
+        let parse_diagnostics: Vec<_> = result
             .diagnostics
             .iter()
-            .any(|d| d.severity == z33_emulator::parser::DiagnosticSeverity::Error);
+            .filter(|d| d.severity == z33_emulator::parser::DiagnosticSeverity::Error)
+            .map(|diag| {
+                if let Some((file_id, range)) = resolve_to_original(&source_map, diag.span.clone())
+                {
+                    simple_error(&diag.message, file_id, range)
+                } else {
+                    parse_diagnostic_to_codespan(diag, preprocess_result.preprocessed_file_id)
+                }
+            })
+            .collect();
 
-        if has_errors {
-            // Convert each parse diagnostic to a codespan diagnostic,
-            // mapping back through the source map where possible.
-            let diagnostics: Vec<_> = result
-                .diagnostics
-                .iter()
-                .filter(|d| d.severity == z33_emulator::parser::DiagnosticSeverity::Error)
-                .map(|diag| {
-                    if let Some((file_id, range)) =
-                        resolve_to_original(&source_map, diag.span.clone())
-                    {
-                        simple_error(&diag.message, file_id, range)
-                    } else {
-                        parse_diagnostic_to_codespan(diag, preprocess_result.preprocessed_file_id)
-                    }
-                })
-                .collect();
+        let report_json = if parse_diagnostics.is_empty() {
+            None
+        } else {
+            Some(diagnostics_to_json(
+                &parse_diagnostics,
+                self.preprocessor.file_db(),
+            ))
+        };
 
-            let json = diagnostics_to_json(&diagnostics, self.preprocessor.file_db());
-            return CompilationResult::compilation_error(json);
+        // Always create a Program — labels and check() work even with errors
+        CompilationResult {
+            program: Some(Program {
+                source_map,
+                file_db: self.preprocessor.file_db().clone(),
+                preprocessed_file_id: preprocess_result.preprocessed_file_id,
+                program: result.program,
+            }),
+            report_json,
         }
-
-        CompilationResult::new(Program {
-            source_map,
-            file_db: self.preprocessor.file_db().clone(),
-            preprocessed_file_id: preprocess_result.preprocessed_file_id,
-            program: result.program,
-        })
     }
 }
 
