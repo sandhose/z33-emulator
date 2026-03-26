@@ -49,16 +49,17 @@ fn check_full_pipeline_errors(input: &str) -> String {
     };
 
     let result = parse(&preprocess_result.source);
+    let source_map: z33_emulator::preprocessor::ReferencingSourceMap =
+        preprocess_result.source_map.into();
     let mut buf = String::new();
 
     for diag in &result.diagnostics {
-        let codespan_diag = if let Some((file_id, range)) =
-            resolve_to_original(&preprocess_result.source_map, diag.span.clone())
-        {
-            simple_error(&diag.message, file_id, range)
-        } else {
-            parse_diagnostic_to_codespan(diag, preprocess_result.preprocessed_file_id)
-        };
+        let codespan_diag =
+            if let Some((file_id, range)) = resolve_to_original(&source_map, diag.span.clone()) {
+                simple_error(&diag.message, file_id, range)
+            } else {
+                parse_diagnostic_to_codespan(diag, preprocess_result.preprocessed_file_id)
+            };
         buf.push_str(&render_to_string(&codespan_diag, workspace.file_db()));
     }
 

@@ -44,14 +44,15 @@ impl RunOpt {
             }
         };
         let source = preprocess_result.source.as_str();
+        let source_map: z33_emulator::preprocessor::ReferencingSourceMap =
+            preprocess_result.source_map.into();
 
         debug!("Parsing program");
         let result = parse(source);
         if !result.diagnostics.is_empty() {
             for diag in &result.diagnostics {
                 // Try to map through source map to original file
-                if let Some((file_id, range)) =
-                    resolve_to_original(&preprocess_result.source_map, diag.span.clone())
+                if let Some((file_id, range)) = resolve_to_original(&source_map, diag.span.clone())
                 {
                     let codespan_diag = codespan_reporting::diagnostic::Diagnostic::error()
                         .with_message(&diag.message)

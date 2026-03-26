@@ -11,7 +11,8 @@ use z33_emulator::compiler::{check as compiler_check, compile};
 use z33_emulator::constants::Address;
 use z33_emulator::diagnostic::{
     compilation_error_to_diagnostic, diagnostics_to_json, parse_diagnostic_to_codespan,
-    preprocessor_error_to_diagnostics, resolve_to_original, simple_error, FileDatabase, FileId,
+    preprocessor_error_to_diagnostics, resolve_diagnostic_spans, resolve_to_original, simple_error,
+    FileDatabase, FileId,
 };
 use z33_emulator::preprocessor::{
     InMemoryFilesystem, PreprocessorError, ReferencingSourceMap, Workspace,
@@ -105,6 +106,7 @@ impl InMemoryPreprocessor {
             }
         };
         let source_str = &preprocess_result.source;
+        let source_map: ReferencingSourceMap = preprocess_result.source_map.into();
         let result = z33_emulator::parser::parse(source_str);
 
         let has_errors = result
@@ -121,7 +123,7 @@ impl InMemoryPreprocessor {
                 .filter(|d| d.severity == z33_emulator::parser::DiagnosticSeverity::Error)
                 .map(|diag| {
                     if let Some((file_id, range)) =
-                        resolve_to_original(&preprocess_result.source_map, diag.span.clone())
+                        resolve_to_original(&source_map, diag.span.clone())
                     {
                         simple_error(&diag.message, file_id, range)
                     } else {
@@ -135,8 +137,9 @@ impl InMemoryPreprocessor {
         }
 
         CompilationResult::new(Program {
-            source_map: preprocess_result.source_map.into(),
+            source_map,
             file_db: self.preprocessor.file_db().clone(),
+            preprocessed_file_id: preprocess_result.preprocessed_file_id,
             program: result.program,
         })
     }
@@ -180,27 +183,10 @@ fn compiler_error_to_json(
     source_map: &ReferencingSourceMap,
     file_db: &FileDatabase,
 ) -> String {
-    use z33_emulator::compiler::CompilationError;
-
-    // Extract the byte range in the preprocessed source, if available
-    let location: Option<std::ops::Range<usize>> = match error {
-        CompilationError::MemoryFill(e) => Some(e.location().clone()),
-        CompilationError::MemoryLayout(e) => e.location().cloned(),
-        CompilationError::UnknownEntrypoint(_) | CompilationError::HasParseErrors => None,
-    };
-
-    // Try to map through the source map to the original file
-    if let Some(loc) = &location {
-        if let Some((chunk_key, span_info)) = source_map.find_with_key(loc.start) {
-            let start = span_info.range.start + (loc.start - chunk_key);
-            let end = span_info.range.start + (loc.end - chunk_key);
-            let diag = simple_error(error.to_string(), span_info.file_id, start..end);
-            return diagnostics_to_json(&[diag], file_db);
-        }
-    }
-
-    // Fall back to rendering against the preprocessed file
+    // Get the rich diagnostic (with instruction/argument-level labels)
     let diag = compilation_error_to_diagnostic(error, preprocessed_file_id);
+    // Resolve all label spans through the source map to original files
+    let diag = resolve_diagnostic_spans(&diag, source_map);
     diagnostics_to_json(&[diag], file_db)
 }
 
@@ -210,6 +196,7 @@ fn compiler_error_to_json(
 pub struct Program {
     source_map: ReferencingSourceMap,
     file_db: FileDatabase,
+    preprocessed_file_id: FileId,
     program: z33_emulator::parser::location::Located<z33_emulator::parser::Program>,
 }
 
@@ -244,17 +231,12 @@ impl Program {
     pub fn check(&self) -> Option<String> {
         match compiler_check(&self.program.inner) {
             Ok(()) => None,
-            Err(ref e) => {
-                // We don't have the preprocessed file_id stored on Program,
-                // so use 0 as a fallback (the source map path should work
-                // in most cases).
-                Some(compiler_error_to_json(
-                    e,
-                    0,
-                    &self.source_map,
-                    &self.file_db,
-                ))
-            }
+            Err(ref e) => Some(compiler_error_to_json(
+                e,
+                self.preprocessed_file_id,
+                &self.source_map,
+                &self.file_db,
+            )),
         }
     }
 

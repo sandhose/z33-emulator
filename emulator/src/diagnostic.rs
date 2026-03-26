@@ -278,13 +278,43 @@ pub fn simple_error(
 /// using the preprocessor source map.
 #[must_use]
 pub fn resolve_to_original(
-    source_map: &crate::preprocessor::SourceMap,
+    source_map: &crate::preprocessor::ReferencingSourceMap,
     range: Range<usize>,
 ) -> Option<(FileId, Range<usize>)> {
-    let span = source_map.find(range.start)?;
-    let start = span.range.start + (range.start - source_map.chunk_key(range.start)?);
-    let end = span.range.start + (range.end - source_map.chunk_key(range.start)?);
+    let (chunk_key, span) = source_map.find_with_key(range.start)?;
+    let start = span.range.start + (range.start - chunk_key);
+    let end = span.range.start + (range.end - chunk_key);
     Some((span.file_id, start..end))
+}
+
+/// Resolve all labels in a diagnostic through the source map, mapping spans
+/// from the preprocessed output to original source files.
+///
+/// Labels that can't be resolved are left pointing at the preprocessed file.
+#[must_use]
+pub fn resolve_diagnostic_spans(
+    diag: &Diagnostic<FileId>,
+    source_map: &crate::preprocessor::ReferencingSourceMap,
+) -> Diagnostic<FileId> {
+    let labels = diag
+        .labels
+        .iter()
+        .map(|label| {
+            if let Some((file_id, range)) = resolve_to_original(source_map, label.range.clone()) {
+                Label::new(label.style, file_id, range).with_message(&label.message)
+            } else {
+                label.clone()
+            }
+        })
+        .collect();
+
+    Diagnostic {
+        severity: diag.severity,
+        code: diag.code.clone(),
+        message: diag.message.clone(),
+        labels,
+        notes: diag.notes.clone(),
+    }
 }
 
 // ---------------------------------------------------------------------------
