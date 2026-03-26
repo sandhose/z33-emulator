@@ -28,7 +28,7 @@ anstyle = "1.0.14"
 anyhow = "1.0.102"
 bitflags = "2.11.0"
 camino = { version = "1.2.2", features = ["serde1"] }
-chumsky = { version = "0.12.0", features = ["pratt"] }
+chumsky = { version = "0.12.0", default-features = false, features = ["std", "pratt"] }
 clap = { version = "4.6.0", features = ["derive"] }
 codespan-reporting = "0.13.1"
 clap_complete = "4.6.0"
