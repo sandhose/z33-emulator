@@ -9,7 +9,7 @@ use chumsky::prelude::*;
 use super::line::{Line, LineContent, Program};
 use super::location::{Locatable, Located};
 use super::shared::{
-    expression, hspace, hspace1, identifier, kw, register, span_to_range, string_literal, Extra,
+    expression, hspace, hspace1, kw, register, span_to_range, string_literal, Extra,
     ParseDiagnostic,
 };
 use super::value::{DirectiveArgument, DirectiveKind, InstructionArgument, InstructionKind};
@@ -95,51 +95,58 @@ fn instruction_argument<'a>() -> impl Parser<'a, &'a str, InstructionArgument, E
 fn instruction_kind<'a>() -> impl Parser<'a, &'a str, InstructionKind, Extra<'a>> + Clone {
     use InstructionKind as K;
 
-    // Parse an identifier-like token and match against known mnemonics
+    // Parse an identifier-like token and match against known mnemonics.
+    // We use `validate` instead of `try_map` because chumsky 0.12 reduces
+    // try_map error spans to the cursor position, losing the full identifier
+    // span. `validate` emits errors with the correct span as a side-effect.
     any()
         .filter(|c: &char| c.is_ascii_alphabetic() || *c == '_')
         .repeated()
         .at_least(1)
         .to_slice()
-        .try_map(|s: &str, span| {
+        .validate(|s: &str, e, emitter| {
             // Case-insensitive matching against all instruction mnemonics
             let upper = s.to_ascii_lowercase();
             match upper.as_str() {
-                "add" => Ok(K::Add),
-                "and" => Ok(K::And),
-                "call" => Ok(K::Call),
-                "cmp" => Ok(K::Cmp),
-                "div" => Ok(K::Div),
-                "fas" => Ok(K::Fas),
-                "in" => Ok(K::In),
-                "jmp" => Ok(K::Jmp),
-                "jeq" => Ok(K::Jeq),
-                "jne" => Ok(K::Jne),
-                "jle" => Ok(K::Jle),
-                "jlt" => Ok(K::Jlt),
-                "jge" => Ok(K::Jge),
-                "jgt" => Ok(K::Jgt),
-                "ld" => Ok(K::Ld),
-                "mul" => Ok(K::Mul),
-                "neg" => Ok(K::Neg),
-                "nop" => Ok(K::Nop),
-                "not" => Ok(K::Not),
-                "or" => Ok(K::Or),
-                "out" => Ok(K::Out),
-                "pop" => Ok(K::Pop),
-                "push" => Ok(K::Push),
-                "reset" => Ok(K::Reset),
-                "rti" => Ok(K::Rti),
-                "rtn" => Ok(K::Rtn),
-                "shl" => Ok(K::Shl),
-                "shr" => Ok(K::Shr),
-                "st" => Ok(K::St),
-                "sub" => Ok(K::Sub),
-                "swap" => Ok(K::Swap),
-                "trap" => Ok(K::Trap),
-                "xor" => Ok(K::Xor),
-                "debugreg" => Ok(K::DebugReg),
-                _ => Err(Rich::custom(span, format!("unknown instruction '{s}'"))),
+                "add" => K::Add,
+                "and" => K::And,
+                "call" => K::Call,
+                "cmp" => K::Cmp,
+                "div" => K::Div,
+                "fas" => K::Fas,
+                "in" => K::In,
+                "jmp" => K::Jmp,
+                "jeq" => K::Jeq,
+                "jne" => K::Jne,
+                "jle" => K::Jle,
+                "jlt" => K::Jlt,
+                "jge" => K::Jge,
+                "jgt" => K::Jgt,
+                "ld" => K::Ld,
+                "mul" => K::Mul,
+                "neg" => K::Neg,
+                "nop" => K::Nop,
+                "not" => K::Not,
+                "or" => K::Or,
+                "out" => K::Out,
+                "pop" => K::Pop,
+                "push" => K::Push,
+                "reset" => K::Reset,
+                "rti" => K::Rti,
+                "rtn" => K::Rtn,
+                "shl" => K::Shl,
+                "shr" => K::Shr,
+                "st" => K::St,
+                "sub" => K::Sub,
+                "swap" => K::Swap,
+                "trap" => K::Trap,
+                "xor" => K::Xor,
+                "debugreg" => K::DebugReg,
+                _ => {
+                    emitter.emit(Rich::custom(e.span(), format!("unknown instruction '{s}'")));
+                    // Return a dummy value — the error is already emitted
+                    K::Nop
+                }
             }
         })
 }
@@ -170,25 +177,57 @@ fn directive_argument<'a>() -> impl Parser<'a, &'a str, DirectiveArgument, Extra
 // Lines
 // ---------------------------------------------------------------------------
 
-fn symbol_definition<'a>() -> impl Parser<'a, &'a str, Located<String>, Extra<'a>> + Clone {
-    // Parse `identifier :` as a unit. The identifier is followed by optional
-    // whitespace then `:`. We use `then` + `just(':')` so that if `:` is
-    // absent, chumsky backtracks cleanly and tries instruction parsing instead.
-    identifier()
-        .then_ignore(hspace())
-        .then_ignore(just(':'))
-        .map_with(|i: &str, e| {
-            // The span covers just the identifier (not the colon), but we
-            // need to get the identifier span before the colon. We know the
-            // identifier is at the start of the match.
-            let full_span = span_to_range(e.span());
-            i.to_string()
-                .with_location(full_span.start..full_span.start + i.len())
-        })
+/// Extract label definitions from the beginning of a line, returning
+/// `(labels, remaining_content_offset)`.
+///
+/// This is done imperatively (not with chumsky) to avoid the symbol parser's
+/// backtracking producing misleading errors when an unknown instruction looks
+/// like it could be a label.
+fn extract_labels(line: &str) -> (Vec<Located<String>>, usize) {
+    let mut labels = Vec::new();
+    let mut pos = 0;
+    let bytes = line.as_bytes();
+
+    loop {
+        // Skip whitespace
+        while pos < bytes.len() && (bytes[pos] == b' ' || bytes[pos] == b'\t') {
+            pos += 1;
+        }
+
+        // Try to match: identifier [whitespace] ':'
+        let ident_start = pos;
+        if pos < bytes.len() && super::shared::is_start_identifier_char(bytes[pos] as char) {
+            pos += 1;
+            while pos < bytes.len() && super::shared::is_identifier_char(bytes[pos] as char) {
+                pos += 1;
+            }
+            let ident_end = pos;
+
+            // Skip whitespace between identifier and ':'
+            while pos < bytes.len() && (bytes[pos] == b' ' || bytes[pos] == b'\t') {
+                pos += 1;
+            }
+
+            if pos < bytes.len() && bytes[pos] == b':' {
+                // Found a label!
+                let ident = &line[ident_start..ident_end];
+                labels.push(ident.to_string().with_location(ident_start..ident_end));
+                pos += 1; // skip the ':'
+                continue;
+            }
+
+            // Not a label — backtrack to ident_start
+            pos = ident_start;
+        }
+
+        break;
+    }
+
+    (labels, pos)
 }
 
 fn line_content<'a>() -> impl Parser<'a, &'a str, Located<LineContent>, Extra<'a>> + Clone {
-    // Directive: .kind argument
+    // Directive: .kind argument (starts with '.')
     let directive = directive_kind()
         .map_with(|k, e| k.with_location(span_to_range(e.span())))
         .then_ignore(hspace1())
@@ -199,7 +238,7 @@ fn line_content<'a>() -> impl Parser<'a, &'a str, Located<LineContent>, Extra<'a
         )
         .map(|(kind, argument)| LineContent::Directive { kind, argument });
 
-    // Instruction: mnemonic [arg [, arg]*]
+    // Instruction: mnemonic [arg [, arg]*] (starts with alpha/underscore)
     let instruction = instruction_kind()
         .map_with(|k, e| k.with_location(span_to_range(e.span())))
         .then(
@@ -215,26 +254,24 @@ fn line_content<'a>() -> impl Parser<'a, &'a str, Located<LineContent>, Extra<'a
         )
         .map(|(kind, arguments)| LineContent::Instruction { kind, arguments });
 
-    directive
+    // Dispatch based on first character to avoid error merging between
+    // directive and instruction branches. Directives always start with '.',
+    // everything else is an instruction. This preserves precise error spans
+    // from try_map (e.g. "unknown instruction 'xyz'" spanning all of 'xyz').
+    let instruction = instruction.boxed();
+    just('.')
+        .rewind()
+        .ignore_then(directive.or(instruction.clone()))
         .or(instruction)
         .map_with(|content, e| content.with_location(span_to_range(e.span())))
 }
 
-fn line<'a>() -> impl Parser<'a, &'a str, Located<Line>, Extra<'a>> + Clone {
-    let symbols = symbol_definition()
+/// Parse a line's content (after labels have been stripped).
+fn line_remainder<'a>() -> impl Parser<'a, &'a str, Option<Located<LineContent>>, Extra<'a>> + Clone
+{
+    hspace()
+        .ignore_then(line_content().or_not())
         .then_ignore(hspace())
-        .repeated()
-        .collect::<Vec<_>>();
-
-    // Comments are stripped by the preprocessor, so we don't need to handle
-    // them here. We just consume trailing whitespace.
-    symbols
-        .then_ignore(hspace())
-        .then(line_content().or_not())
-        .then_ignore(hspace())
-        .map_with(|(symbols, content), e| {
-            Line { symbols, content }.with_location(span_to_range(e.span()))
-        })
 }
 
 /// Adjust all `Located` spans inside a `LineContent` so they are relative to
@@ -302,39 +339,63 @@ pub fn parse(input: &str) -> ParseResult {
         // Strip trailing \r for \r\n line endings
         let raw_line = raw_line.strip_suffix('\r').unwrap_or(raw_line);
 
-        let line_parser = line().then_ignore(end());
-        let result = line_parser.parse(raw_line);
+        // Step 1: extract labels imperatively (avoids chumsky backtracking
+        // errors when an unknown instruction looks like it could be a label)
+        let (symbols, content_offset) = extract_labels(raw_line);
+        let content_str = &raw_line[content_offset..];
 
-        let parsed_line = if let Some(mut l) = result.output().cloned() {
-            // Adjust inner content spans to be content-relative
-            if let Some(ref mut content) = l.inner.content {
-                make_content_relative(content);
+        // Step 2: parse the remainder (instruction/directive) with chumsky
+        let content_parser = line_remainder().then_ignore(end());
+        let result = content_parser.parse(content_str);
+
+        let parsed_line = if let Some(content) = result.output().cloned().flatten() {
+            let mut content = content;
+            // Content spans are relative to content_str; make inner spans
+            // content-relative (for the compiler's span model)
+            make_content_relative(&mut content);
+            // Then shift content.location to be line-relative
+            content.location.start += content_offset;
+            content.location.end += content_offset;
+
+            let mut l = Line {
+                symbols,
+                content: Some(content),
             }
-            // Set line.location to absolute position in the full input
+            .with_location(0..raw_line.len());
+            l.location.start += offset;
+            l.location.end += offset;
+            l
+        } else if result.output().is_some() {
+            // Parsed OK but no content (empty line or whitespace-only after labels)
+            let mut l = Line {
+                symbols,
+                content: None,
+            }
+            .with_location(0..raw_line.len());
             l.location.start += offset;
             l.location.end += offset;
             l
         } else {
             // Total parse failure for this line — create an error line
             Line {
-                symbols: Vec::new(),
-                content: if raw_line.trim().is_empty() {
+                symbols,
+                content: if content_str.trim().is_empty() {
                     None
                 } else {
-                    Some(LineContent::Error.with_location(0..raw_line.len()))
+                    Some(LineContent::Error.with_location(content_offset..raw_line.len()))
                 },
             }
             .with_location(offset..offset + raw_line.len())
         };
 
-        // Collect diagnostics, adjusting spans to be absolute
+        // Collect diagnostics, adjusting spans from content-relative to absolute
         for error in result.errors() {
             let mut diag = rich_to_diagnostic(error);
-            diag.span.start += offset;
-            diag.span.end += offset;
+            diag.span.start += offset + content_offset;
+            diag.span.end += offset + content_offset;
             for label in &mut diag.labels {
-                label.0.start += offset;
-                label.0.end += offset;
+                label.0.start += offset + content_offset;
+                label.0.end += offset + content_offset;
             }
             diagnostics.push(diag);
         }

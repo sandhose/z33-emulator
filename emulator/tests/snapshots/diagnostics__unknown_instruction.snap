@@ -1,6 +1,6 @@
 ---
 source: emulator/tests/diagnostics.rs
-assertion_line: 82
+assertion_line: 83
 expression: "check_parse_errors(\"    xyz %a, %b\")"
 ---
 error: unknown instruction 'xyz'

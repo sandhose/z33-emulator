@@ -229,18 +229,23 @@ pub(crate) fn bool_literal<'a>() -> impl Parser<'a, &'a str, bool, Extra<'a>> + 
 pub fn register<'a>() -> impl Parser<'a, &'a str, Reg, Extra<'a>> + Clone {
     just('%')
         .ignore_then(identifier())
-        .try_map(|name: &str, span| {
+        .validate(|name: &str, e, emitter| {
             let lower = name.to_ascii_lowercase();
             match lower.as_str() {
-                "a" => Ok(Reg::A),
-                "b" => Ok(Reg::B),
-                "pc" => Ok(Reg::PC),
-                "sp" => Ok(Reg::SP),
-                "sr" => Ok(Reg::SR),
-                _ => Err(Rich::custom(
-                    span,
-                    format!("unknown register '%{name}', valid registers: %a, %b, %pc, %sp, %sr"),
-                )),
+                "a" => Reg::A,
+                "b" => Reg::B,
+                "pc" => Reg::PC,
+                "sp" => Reg::SP,
+                "sr" => Reg::SR,
+                _ => {
+                    emitter.emit(Rich::custom(
+                        e.span(),
+                        format!(
+                            "unknown register '%{name}', valid registers: %a, %b, %pc, %sp, %sr"
+                        ),
+                    ));
+                    Reg::A // dummy
+                }
             }
         })
 }
