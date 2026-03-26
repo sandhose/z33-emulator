@@ -16,6 +16,7 @@ use super::value::{
 };
 use crate::parser::expression::Node as ExpressionNode;
 use crate::parser::shared::rich_to_diagnostic;
+use crate::runtime::Reg;
 
 /// Result of parsing: always produces a program, plus accumulated diagnostics.
 pub struct ParseResult {

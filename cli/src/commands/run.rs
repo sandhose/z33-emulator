@@ -3,7 +3,10 @@ use std::process::exit;
 use camino::Utf8PathBuf;
 use clap::{ArgAction, Parser, ValueHint};
 use tracing::{debug, error, info};
-use z33_emulator::compiler::CompilationError;
+use z33_emulator::diagnostic::{
+    compilation_error_to_diagnostic, parse_diagnostic_to_codespan,
+    preprocessor_error_to_diagnostics, render_to_string, resolve_to_original,
+};
 use z33_emulator::preprocessor::{NativeFilesystem, Workspace};
 use z33_emulator::{compile, parse};
 
@@ -29,29 +32,47 @@ impl RunOpt {
     pub fn exec(self) -> anyhow::Result<()> {
         let fs = NativeFilesystem::from_env()?;
         info!(path = ?self.input, "Reading program");
-        let preprocessor = Workspace::new(&fs, &self.input);
-        let (source_map, source) = match preprocessor.preprocess() {
+        let mut workspace = Workspace::new(&fs, &self.input);
+        let preprocess_result = match workspace.preprocess() {
             Ok(p) => p,
             Err(e) => {
-                let report = miette::Report::new(e);
-                eprintln!("{report:?}");
+                let diagnostics = preprocessor_error_to_diagnostics(&e);
+                for diag in &diagnostics {
+                    eprint!("{}", render_to_string(diag, workspace.file_db()));
+                }
                 exit(1);
             }
         };
-        let source = source.as_str();
+        let source = preprocess_result.source.as_str();
 
         debug!("Parsing program");
         let result = parse(source);
         if !result.diagnostics.is_empty() {
             for diag in &result.diagnostics {
-                // Map the span back through the source map if possible
-                if let Some(span) = source_map.find(diag.span.start) {
-                    let labels = vec![miette::LabeledSpan::underline(span.span.clone())];
-                    let report = miette::miette!(labels = labels, "{}", diag.message)
-                        .with_source_code(span.source.clone());
-                    eprintln!("{report:?}");
+                // Try to map through source map to original file
+                if let Some((file_id, range)) = resolve_to_original(
+                    &preprocess_result.source_map,
+                    diag.span.clone(),
+                ) {
+                    let codespan_diag = codespan_reporting::diagnostic::Diagnostic::error()
+                        .with_message(&diag.message)
+                        .with_labels(vec![
+                            codespan_reporting::diagnostic::Label::primary(file_id, range),
+                        ]);
+                    eprint!(
+                        "{}",
+                        render_to_string(&codespan_diag, workspace.file_db())
+                    );
                 } else {
-                    eprintln!("parse error: {}", diag.message);
+                    // Fall back to rendering against preprocessed output
+                    let codespan_diag = parse_diagnostic_to_codespan(
+                        diag,
+                        preprocess_result.preprocessed_file_id,
+                    );
+                    eprint!(
+                        "{}",
+                        render_to_string(&codespan_diag, workspace.file_db())
+                    );
                 }
             }
             if result
@@ -71,42 +92,20 @@ impl RunOpt {
                 // TODO: some cleanup needed
                 let mut last_error = &e as &dyn std::error::Error;
                 for error in anyhow::Chain::new(&e) {
-                    // TODO: get the location of individual errors
                     error!("{}", error);
                     last_error = error;
                 }
 
-                let msg = format!("{last_error}");
+                let _ = last_error;
 
-                let location = match &e {
-                    CompilationError::MemoryLayout(e) => e.location(),
-                    CompilationError::MemoryFill(e) => Some(e.location()),
-                    CompilationError::UnknownEntrypoint(_)
-                    | CompilationError::HasParseErrors => None,
-                };
-
-                if let Some(location) = location {
-                    // Find the spans for the start and the end of the error
-                    let start = source_map
-                        .find(location.start)
-                        .expect("source info to be available");
-                    let end = source_map
-                        .find(location.end)
-                        .expect("source info to be available");
-
-                    // Both spans should be in the same file. If not, we just use the start span
-                    let range = if start.source == end.source {
-                        start.span.start..end.span.end
-                    } else {
-                        start.span.clone()
-                    };
-                    let source = start.source;
-
-                    let labels = vec![miette::LabeledSpan::at(range, msg)];
-                    let report = miette::miette!(labels = labels, "Failed to compile program")
-                        .with_source_code(source.clone());
-                    eprintln!("{report:?}");
-                }
+                let codespan_diag = compilation_error_to_diagnostic(
+                    &e,
+                    preprocess_result.preprocessed_file_id,
+                );
+                eprint!(
+                    "{}",
+                    render_to_string(&codespan_diag, workspace.file_db())
+                );
                 exit(1);
             }
         };

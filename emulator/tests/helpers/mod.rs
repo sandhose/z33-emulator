@@ -16,8 +16,9 @@ pub enum Steps {
 #[must_use]
 pub fn run_program(source: &str, entrypoint: &str, steps: Steps) -> String {
     let fs = InMemoryFilesystem::new([("/main.S".into(), source.into())]);
-    let workspace = Workspace::new(&fs, "/main.S");
-    let (_source_map, preprocessed) = workspace.preprocess().expect("preprocess failed");
+    let mut workspace = Workspace::new(&fs, "/main.S");
+    let preprocess_result = workspace.preprocess().expect("preprocess failed");
+    let preprocessed = preprocess_result.source;
     let result = parse(&preprocessed);
     assert!(
         result.diagnostics.is_empty(),
@@ -121,8 +122,9 @@ fn format_state(computer: &Computer, halt_reason: Option<&str>) -> String {
 #[must_use]
 pub fn compile_program(source: &str, entrypoint: &str) -> String {
     let fs = InMemoryFilesystem::new([("/main.S".into(), source.into())]);
-    let workspace = Workspace::new(&fs, "/main.S");
-    let (_source_map, preprocessed) = workspace.preprocess().expect("preprocess failed");
+    let mut workspace = Workspace::new(&fs, "/main.S");
+    let preprocess_result = workspace.preprocess().expect("preprocess failed");
+    let preprocessed = preprocess_result.source;
     let result = parse(&preprocessed);
     assert!(
         result.diagnostics.is_empty(),

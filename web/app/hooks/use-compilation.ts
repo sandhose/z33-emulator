@@ -30,16 +30,32 @@ function applyReportDiagnostics(
   decorationIds: Map<string, string[]>,
 ): string | null {
   try {
-    const reportObject = reportSchema.parse(JSON.parse(reportJson));
-    for (const model of monaco.editor.getModels()) {
-      const { markers, decorations } = toMonacoDiagnostics(model, reportObject);
-      monaco.editor.setModelMarkers(model, "z33", markers);
-      if (decorations.length > 0) {
-        const ids = model.deltaDecorations([], decorations);
-        decorationIds.set(model.uri.toString(), ids);
+    const parsed = JSON.parse(reportJson);
+    // Support both a single report object and an array of reports
+    const reports: unknown[] = Array.isArray(parsed) ? parsed : [parsed];
+    let firstMessage: string | null = null;
+
+    for (const raw of reports) {
+      const reportObject = reportSchema.parse(raw);
+      if (!firstMessage) firstMessage = reportObject.message;
+      for (const model of monaco.editor.getModels()) {
+        const { markers, decorations } = toMonacoDiagnostics(
+          model,
+          reportObject,
+        );
+        monaco.editor.setModelMarkers(model, "z33", [
+          ...monaco.editor.getModelMarkers({ resource: model.uri }),
+          ...markers,
+        ]);
+        if (decorations.length > 0) {
+          const existing = decorationIds.get(model.uri.toString()) ?? [];
+          const ids = model.deltaDecorations([], decorations);
+          decorationIds.set(model.uri.toString(), [...existing, ...ids]);
+        }
       }
     }
-    return reportObject.message;
+
+    return firstMessage;
   } catch (e) {
     console.warn(e);
     return null;

@@ -15,10 +15,10 @@ impl PrintOpt {
     pub fn exec(self) -> anyhow::Result<()> {
         let fs = NativeFilesystem::from_env()?;
         info!(path = ?self.input, "Reading program");
-        let preprocessor = Workspace::new(&fs, &self.input);
+        let mut preprocessor = Workspace::new(&fs, &self.input);
 
-        let (_source_map, source) = preprocessor.preprocess()?;
-        let source = source.as_str();
+        let result = preprocessor.preprocess()?;
+        let source = result.source.as_str();
 
         debug!("Parsing program");
         let result = parse(source);

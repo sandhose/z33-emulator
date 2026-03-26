@@ -1,17 +1,15 @@
 ---
 source: emulator/src/preprocessor/mod.rs
+assertion_line: 822
 expression: report
 ---
-  x Failed to process included file
-  `->   x User error: message
-         ,-[/error.S:1:8]
-       1 | #error "message"
-         :        ^^^^|^^^^
-         :            `-- '#error' preprocessor directive used here
-         `----
-      
-   ,-[/include.S:1:10]
- 1 | #include "error.S"
-   :          ^^^^|^^^^
-   :              `-- File included here
-   `----
+error: #error: message
+  ┌─ /error.S:1:8
+  │
+1 │ #error "message"
+  │        ^^^^^^^^^ message
+  │
+  ┌─ /include.S:1:10
+  │
+1 │ #include "error.S"
+  │          --------- included from here

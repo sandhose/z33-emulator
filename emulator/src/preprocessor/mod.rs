@@ -1,15 +1,13 @@
-#![expect(unused_assignments, reason = "Miette derive generates this")]
-
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Range;
 use std::sync::Arc;
 
 use camino::{Utf8Path, Utf8PathBuf};
-use miette::{Diagnostic, NamedSource, SourceSpan};
 use thiserror::Error;
 use tracing::warn;
 use unicode_segmentation::UnicodeSegmentation;
 
+use crate::diagnostic::{FileDatabase, FileId};
 use crate::parser::condition::{parse_condition, Context as ConditionContext};
 
 /// Compute the byte offset of `substr` within `base`.
@@ -31,52 +29,9 @@ mod fs;
 
 pub use self::fs::{Filesystem, InMemoryFilesystem, NativeFilesystem};
 
-#[derive(Debug, Error, Clone)]
-#[error(transparent)]
-pub struct SharedParseError {
-    inner: Arc<dyn Diagnostic + Send + Sync>,
-}
-
-// It's annoying, but miette doesn't look like it's implementing Diagnostic for
-// many containers, including Box and Arc, so we have to do it manually if we
-// want to share the errors and copy it arround
-impl Diagnostic for SharedParseError {
-    fn code<'a>(&'a self) -> Option<Box<dyn std::fmt::Display + 'a>> {
-        self.inner.code()
-    }
-
-    fn severity(&self) -> Option<miette::Severity> {
-        self.inner.severity()
-    }
-
-    fn help<'a>(&'a self) -> Option<Box<dyn std::fmt::Display + 'a>> {
-        self.inner.help()
-    }
-
-    fn url<'a>(&'a self) -> Option<Box<dyn std::fmt::Display + 'a>> {
-        self.inner.url()
-    }
-
-    fn source_code(&self) -> Option<&dyn miette::SourceCode> {
-        self.inner.source_code()
-    }
-
-    fn labels(&self) -> Option<Box<dyn Iterator<Item = miette::LabeledSpan> + '_>> {
-        self.inner.labels()
-    }
-
-    fn related<'a>(&'a self) -> Option<Box<dyn Iterator<Item = &'a dyn Diagnostic> + 'a>> {
-        self.inner.related()
-    }
-
-    fn diagnostic_source(&self) -> Option<&dyn Diagnostic> {
-        self.inner.diagnostic_source()
-    }
-}
-
 struct ProcessedFile {
-    source: NamedSource<String>,
-    content: Result<FileContent, SharedParseError>,
+    file_id: FileId,
+    content: Result<FileContent, String>,
 }
 
 struct FileContent {
@@ -85,29 +40,14 @@ struct FileContent {
 }
 
 #[derive(Debug, Default)]
-pub struct SourceMap<'a> {
+pub struct SourceMap {
     // A map of spans, from their starting position to the span
-    spans: BTreeMap<usize, Span<'a>>,
+    spans: BTreeMap<usize, Span>,
 }
 
-impl SourceMap<'_> {
+impl SourceMap {
     #[must_use]
-    pub fn find(&self, position: usize) -> Option<&Span<'_>> {
-        self.spans
-            .range(..=position)
-            .next_back()
-            .map(|(_, span)| span)
-    }
-}
-
-#[derive(Clone)]
-pub struct ReferencingSourceMap {
-    spans: BTreeMap<usize, ReferencingSpan>,
-}
-
-impl ReferencingSourceMap {
-    #[must_use]
-    pub fn find(&self, position: usize) -> Option<&ReferencingSpan> {
+    pub fn find(&self, position: usize) -> Option<&Span> {
         self.spans
             .range(..=position)
             .next_back()
@@ -117,9 +57,45 @@ impl ReferencingSourceMap {
     /// Like [`find`](Self::find), but also returns the chunk start offset.
     ///
     /// This is needed to compute the exact position within the original file:
-    /// `original_offset = span.span.start + (position - chunk_key)`
+    /// `original_offset = span.range.start + (position - chunk_key)`
     #[must_use]
-    pub fn find_with_key(&self, position: usize) -> Option<(usize, &ReferencingSpan)> {
+    pub fn find_with_key(&self, position: usize) -> Option<(usize, &Span)> {
+        self.spans
+            .range(..=position)
+            .next_back()
+            .map(|(&key, span)| (key, span))
+    }
+
+    /// Return the chunk start offset for the chunk containing `position`.
+    #[must_use]
+    pub fn chunk_key(&self, position: usize) -> Option<usize> {
+        self.spans
+            .range(..=position)
+            .next_back()
+            .map(|(&key, _)| key)
+    }
+}
+
+#[derive(Clone)]
+pub struct ReferencingSourceMap {
+    spans: BTreeMap<usize, Span>,
+}
+
+impl ReferencingSourceMap {
+    #[must_use]
+    pub fn find(&self, position: usize) -> Option<&Span> {
+        self.spans
+            .range(..=position)
+            .next_back()
+            .map(|(_, span)| span)
+    }
+
+    /// Like [`find`](Self::find), but also returns the chunk start offset.
+    ///
+    /// This is needed to compute the exact position within the original file:
+    /// `original_offset = span.range.start + (position - chunk_key)`
+    #[must_use]
+    pub fn find_with_key(&self, position: usize) -> Option<(usize, &Span)> {
         self.spans
             .range(..=position)
             .next_back()
@@ -127,46 +103,28 @@ impl ReferencingSourceMap {
     }
 }
 
-impl From<SourceMap<'_>> for ReferencingSourceMap {
-    fn from(value: SourceMap<'_>) -> Self {
-        let spans = value
-            .spans
-            .into_iter()
-            .map(|(index, span)| (index, span.into()))
-            .collect();
-        Self { spans }
-    }
-}
-
-#[derive(Debug)]
-pub struct Span<'a> {
-    pub source: &'a NamedSource<String>,
-    pub span: Range<usize>,
-}
-
-#[derive(Clone)]
-pub struct ReferencingSpan {
-    pub name: String,
-    pub span: Range<usize>,
-}
-
-impl From<Span<'_>> for ReferencingSpan {
-    fn from(value: Span<'_>) -> Self {
+impl From<SourceMap> for ReferencingSourceMap {
+    fn from(value: SourceMap) -> Self {
         Self {
-            name: value.source.name().to_owned(),
-            span: value.span,
+            spans: value.spans,
         }
     }
 }
 
-impl<'a> Span<'a> {
-    fn push<'t, T>(&self, node: &'t Located<T>) -> (Span<'a>, &'t T) {
-        let span = Range {
-            start: self.span.start + node.location.start,
-            end: self.span.start + node.location.end,
+#[derive(Debug, Clone)]
+pub struct Span {
+    pub file_id: FileId,
+    pub range: Range<usize>,
+}
+
+impl Span {
+    fn push<'t, T>(&self, node: &'t Located<T>) -> (Span, &'t T) {
+        let range = Range {
+            start: self.range.start + node.location.start,
+            end: self.range.start + node.location.end,
         };
 
-        if span.start > self.span.end || span.end > self.span.end {
+        if range.start > self.range.end || range.end > self.range.end {
             warn!("span out of bounds");
 
             // In debug mode, panic, because this should not happen
@@ -175,22 +133,31 @@ impl<'a> Span<'a> {
         }
 
         let new = Span {
-            source: self.source,
-            span,
+            file_id: self.file_id,
+            range,
         };
 
         (new, &node.inner)
     }
+}
 
-    fn context(&self) -> (NamedSource<String>, SourceSpan) {
-        (self.source.clone(), self.span.clone().into())
-    }
+/// The result of preprocessing a workspace.
+#[derive(Debug)]
+pub struct PreprocessResult {
+    /// Maps byte offsets in the preprocessed output back to original files.
+    pub source_map: SourceMap,
+    /// The fully preprocessed source text.
+    pub source: String,
+    /// A [`FileId`] for the virtual preprocessed output, registered in the
+    /// workspace's [`FileDatabase`].
+    pub preprocessed_file_id: FileId,
 }
 
 /// A [`Workspace`] holds parsed files loaded from a filesystem
 pub struct Workspace {
     entrypoint: Utf8PathBuf,
     files: HashMap<Utf8PathBuf, Result<ProcessedFile, Arc<std::io::Error>>>,
+    file_db: FileDatabase,
 }
 
 impl Workspace {
@@ -201,11 +168,24 @@ impl Workspace {
         let mut this = Self {
             entrypoint: entrypoint.clone(),
             files: HashMap::new(),
+            file_db: FileDatabase::new(),
         };
 
         this.load(fs, &entrypoint);
 
         this
+    }
+
+    /// Get a reference to the file database.
+    #[must_use]
+    pub fn file_db(&self) -> &FileDatabase {
+        &self.file_db
+    }
+
+    /// Consume the workspace and return the file database.
+    #[must_use]
+    pub fn into_file_db(self) -> FileDatabase {
+        self.file_db
     }
 
     fn load<FS: Filesystem>(&mut self, fs: &FS, path: &Utf8Path) -> &mut Self {
@@ -224,6 +204,9 @@ impl Workspace {
             }
         };
 
+        // Register the file in the database
+        let file_id = self.file_db.add(path.to_string(), source.clone());
+
         // Parse the file content
         let source_str = source.as_str();
         let content = parse(source_str)
@@ -240,14 +223,10 @@ impl Workspace {
                     });
                 }
                 FileContent { chunks, references }
-            })
-            .map_err(|err_msg| {
-                let inner: Arc<dyn Diagnostic + Send + Sync> =
-                    Arc::new(miette::MietteDiagnostic::new(err_msg));
-                SharedParseError { inner }
             });
 
-        // Copy the list of files to load, as it is annoying to borrow it after insert
+        // Copy the list of files to load, as it is annoying to borrow it
+        // after insert
         let to_load: HashSet<_> = content
             .as_ref()
             .iter()
@@ -256,8 +235,7 @@ impl Workspace {
             .collect();
 
         // Save the file
-        let source = NamedSource::new(path, source);
-        let file = ProcessedFile { source, content };
+        let file = ProcessedFile { file_id, content };
         self.files.insert(path.to_owned(), Ok(file));
 
         // And load recursively files referenced by it
@@ -275,9 +253,10 @@ impl Workspace {
     /// This function will return an error if the file cannot be preprocessed,
     /// like if it has invalid syntax, can't be opened, includes an invalid
     /// file, etc.
-    pub fn preprocess(&self) -> Result<(SourceMap<'_>, String), PreprocessorError> {
+    pub fn preprocess(&mut self) -> Result<PreprocessResult, PreprocessorError> {
         let mut ctx = Context::default();
-        let chunks = self.preprocess_path(&self.entrypoint, &mut ctx)?;
+        let entrypoint = self.entrypoint.clone();
+        let chunks = self.preprocess_path(&entrypoint, &mut ctx)?;
         let (string, source_map, _) = chunks.into_iter().fold(
             (String::new(), SourceMap::default(), 0),
             |(mut string, mut source_map, offset), (stack, content)| {
@@ -288,14 +267,21 @@ impl Workspace {
             },
         );
 
-        Ok((source_map, string))
+        let preprocessed_file_id =
+            self.file_db.add("<preprocessed>".to_string(), string.clone());
+
+        Ok(PreprocessResult {
+            source_map,
+            source: string,
+            preprocessed_file_id,
+        })
     }
 
     fn preprocess_path(
         &self,
         path: &Utf8Path,
         ctx: &mut Context,
-    ) -> Result<Vec<(Span<'_>, String)>, PreprocessorError> {
+    ) -> Result<Vec<(Span, String)>, PreprocessorError> {
         let Some(file) = self.files.get(path) else {
             // The file is not loaded, this shouldn't happen
             unreachable!("file {path} is not loaded");
@@ -306,31 +292,37 @@ impl Workspace {
             inner: err.clone(),
         })?;
 
+        let source_len = self.file_db.source(file.file_id).len();
         let stack = Span {
-            source: &file.source,
-            span: 0..file.source.inner().len(),
+            file_id: file.file_id,
+            range: 0..source_len,
         };
 
         let content = file.content.as_ref().map_err(|err| {
-            let (src, _span) = stack.context();
             PreprocessorError::ParseFile {
-                src,
+                file_id: file.file_id,
                 inner: vec![err.clone()],
             }
         })?;
 
         let mut buf = Vec::new();
-        self.process_chunks(&mut buf, &content.chunks, &content.references, ctx, &stack)?;
+        self.process_chunks(
+            &mut buf,
+            &content.chunks,
+            &content.references,
+            ctx,
+            &stack,
+        )?;
         Ok(buf)
     }
 
-    fn process_chunks<'a>(
-        &'a self,
-        buf: &mut Vec<(Span<'a>, String)>,
+    fn process_chunks(
+        &self,
+        buf: &mut Vec<(Span, String)>,
         chunks: &[Located<Node>],
         references: &HashMap<Utf8PathBuf, Utf8PathBuf>,
         ctx: &mut Context,
-        stack: &Span<'a>,
+        stack: &Span,
     ) -> Result<(), PreprocessorError> {
         'outer: for chunk in chunks {
             let (stack, chunk) = stack.push(chunk);
@@ -356,12 +348,11 @@ impl Workspace {
                 // r[impl asm.preprocessor.error]
                 Node::Error { ref message } => {
                     let (stack, message) = stack.push(message);
-                    let (src, span) = stack.context();
 
                     // Return the user-defined error
                     return Err(PreprocessorError::UserError {
-                        src,
-                        span,
+                        file_id: stack.file_id,
+                        span: stack.range.clone(),
                         message: message.clone(),
                     });
                 }
@@ -383,8 +374,8 @@ impl Workspace {
                     let (_stack, key) = stack.push(key);
                     let content = content.as_ref().map(|i| &i.inner);
                     // First replace existing definitions in the content
-                    let content =
-                        content.map(|c| ctx.replace(c).into_iter().map(|l| l.inner).collect());
+                    let content = content
+                        .map(|c| ctx.replace(c).into_iter().map(|l| l.inner).collect());
                     // Then add the definition
                     ctx.define(key.clone(), content);
                 }
@@ -397,19 +388,20 @@ impl Workspace {
 
                     // Resolve the path
                     let Some(resolved) = references.get(path) else {
-                        // The file references wasn't resolved, this shouldn't happen
+                        // The file references wasn't resolved, this shouldn't
+                        // happen
                         unreachable!("Referenced file wasn't resolved")
                     };
 
                     // Then process it
-                    let content = self.preprocess_path(resolved, ctx).map_err(|inner| {
-                        let (src, span) = stack.context();
-                        PreprocessorError::InInclude {
-                            src,
-                            span,
-                            inner: Box::new(inner),
-                        }
-                    })?;
+                    let content =
+                        self.preprocess_path(resolved, ctx).map_err(|inner| {
+                            PreprocessorError::InInclude {
+                                file_id: stack.file_id,
+                                span: stack.range.clone(),
+                                inner: Box::new(inner),
+                            }
+                        })?;
 
                     buf.extend(content);
                 }
@@ -417,7 +409,8 @@ impl Workspace {
                 // r[impl asm.preprocessor.conditional]
                 Node::Condition { branches, fallback } => {
                     for branch in branches {
-                        let (condition_stack, condition) = stack.push(&branch.condition);
+                        let (condition_stack, condition) =
+                            stack.push(&branch.condition);
                         let condition: String = ctx
                             .replace_for_if_expression(condition)
                             .into_iter()
@@ -425,30 +418,38 @@ impl Workspace {
                             .collect();
 
                         let condition = condition.as_str();
-                        let expression = parse_condition(condition).map_err(
-                            |err_msg| {
-                                let (src, span) = condition_stack.context();
-                                let inner: Box<dyn miette::Diagnostic + Send + Sync> =
-                                    Box::new(miette::MietteDiagnostic::new(err_msg));
-                                PreprocessorError::ConditionParse { src, span, inner }
-                            },
-                        )?;
+                        let expression =
+                            parse_condition(condition).map_err(|err_msg| {
+                                PreprocessorError::ConditionParse {
+                                    file_id: condition_stack.file_id,
+                                    span: condition_stack.range.clone(),
+                                    inner: err_msg,
+                                }
+                            })?;
 
-                        let result = expression.evaluate(ctx).map_err(|inner| {
-                            let (src, span) = condition_stack.context();
-                            PreprocessorError::ConditionEvaluation { src, span, inner }
-                        })?;
+                        let result =
+                            expression.evaluate(ctx).map_err(|inner| {
+                                PreprocessorError::ConditionEvaluation {
+                                    file_id: condition_stack.file_id,
+                                    span: condition_stack.range.clone(),
+                                    inner,
+                                }
+                            })?;
 
                         if result {
                             let (stack, body) = stack.push(&branch.body);
-                            self.process_chunks(buf, body, references, ctx, &stack)?;
+                            self.process_chunks(
+                                buf, body, references, ctx, &stack,
+                            )?;
                             continue 'outer;
                         }
                     }
 
                     if let Some(ref body) = fallback {
                         let (stack, body) = stack.push(body);
-                        self.process_chunks(buf, body, references, ctx, &stack)?;
+                        self.process_chunks(
+                            buf, body, references, ctx, &stack,
+                        )?;
                     }
                 }
             }
@@ -458,70 +459,47 @@ impl Workspace {
     }
 }
 
-#[derive(Error, Debug, Diagnostic)]
+#[derive(Error, Debug)]
 pub enum PreprocessorError {
     #[error("Failed to process included file")]
     InInclude {
-        #[source_code]
-        src: NamedSource<String>,
-
-        #[label("File included here")]
-        span: SourceSpan,
-
+        file_id: FileId,
+        span: Range<usize>,
         #[source]
-        #[diagnostic_source]
-        inner: Box<dyn Diagnostic + Send + Sync>,
+        inner: Box<PreprocessorError>,
     },
 
     #[error("Failed to load file {path:?}")]
     LoadFile {
         path: Utf8PathBuf,
-
         #[source]
         inner: Arc<std::io::Error>,
     },
 
     #[error("Failed to parse file")]
     ParseFile {
-        #[source_code]
-        src: NamedSource<String>,
-
-        #[related]
-        inner: Vec<SharedParseError>,
+        file_id: FileId,
+        inner: Vec<String>,
     },
 
     #[error("User error: {message}")]
     UserError {
-        #[source_code]
-        src: NamedSource<String>,
-
-        #[label = "'#error' preprocessor directive used here"]
-        span: SourceSpan,
-
+        file_id: FileId,
+        span: Range<usize>,
         message: String,
     },
 
     #[error("Invalid syntax in condition")]
     ConditionParse {
-        #[source_code]
-        src: NamedSource<String>,
-
-        #[label]
-        span: SourceSpan,
-
-        #[source]
-        #[diagnostic_source]
-        inner: Box<dyn Diagnostic + Send + Sync>,
+        file_id: FileId,
+        span: Range<usize>,
+        inner: String,
     },
 
     #[error("Could not evaluate condition")]
     ConditionEvaluation {
-        #[source_code]
-        src: NamedSource<String>,
-
-        #[label("{inner}")]
-        span: SourceSpan,
-
+        file_id: FileId,
+        span: Range<usize>,
         #[source]
         inner: EvaluationError,
     },
@@ -541,7 +519,8 @@ impl ConditionContext for Context {
 
     fn is_defined(&self, variable: &str) -> bool {
         // XXX: this does not work. Because we replace in #if expressions with
-        // definitions first, `defined(XXXX)` become `defined()`, which will never work
+        // definitions first, `defined(XXXX)` become `defined()`, which will
+        // never work
         self.definitions.contains_key(variable)
     }
 }
@@ -601,9 +580,12 @@ impl Context {
         self.definitions.remove(key);
     }
 
-    fn replace_for_if_expression<'a>(&'a self, input: &'a str) -> Vec<Located<&'a str>> {
-        // We first store words in a Vec, so that it's easier to peek for next/previous
-        // entries
+    fn replace_for_if_expression<'a>(
+        &'a self,
+        input: &'a str,
+    ) -> Vec<Located<&'a str>> {
+        // We first store words in a Vec, so that it's easier to peek for
+        // next/previous entries
         let words: Vec<&str> = input.split_word_bounds().collect();
 
         let mut result = Vec::with_capacity(words.len());
@@ -659,9 +641,9 @@ impl Context {
 #[cfg(test)]
 mod tests {
     use insta::assert_snapshot;
-    use miette::Report;
 
     use super::*;
+    use crate::diagnostic::{preprocessor_error_to_diagnostics, render_to_string};
 
     fn fs() -> InMemoryFilesystem {
         InMemoryFilesystem::new({
@@ -738,11 +720,25 @@ mod tests {
         })
     }
 
-    fn preprocess<P: AsRef<Utf8Path>>(path: P) -> Result<String, PreprocessorError> {
+    fn preprocess<P: AsRef<Utf8Path>>(
+        path: P,
+    ) -> Result<String, PreprocessorError> {
         let fs = fs();
-        let preprocessor = Workspace::new(&fs, path.as_ref());
-        let (_source_map, res) = preprocessor.preprocess()?;
-        Ok(res)
+        let mut workspace = Workspace::new(&fs, path.as_ref());
+        let result = workspace.preprocess()?;
+        Ok(result.source)
+    }
+
+    fn render_error(
+        workspace: &Workspace,
+        err: &PreprocessorError,
+    ) -> String {
+        let diagnostics = preprocessor_error_to_diagnostics(err);
+        diagnostics
+            .iter()
+            .map(|d| render_to_string(d, workspace.file_db()))
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     #[test]
@@ -782,10 +778,10 @@ mod tests {
             "}
             .into(),
         )]);
-        let workspace = Workspace::new(&fs, "/defined.S");
-        let res = workspace.preprocess();
-        let (_source_map, res) = res.expect("preprocessed");
-        assert_snapshot!(res);
+        let mut workspace = Workspace::new(&fs, "/defined.S");
+        let result = workspace.preprocess();
+        let result = result.expect("preprocessed");
+        assert_snapshot!(result.source);
     }
 
     #[test]
@@ -799,51 +795,34 @@ mod tests {
         }
     }
 
-    fn install_handler() {
-        let _ = miette::set_hook(Box::new(|_| {
-            Box::new(
-                miette::MietteHandlerOpts::new()
-                    .force_graphical(false)
-                    .force_narrated(false)
-                    .color(false)
-                    .terminal_links(false)
-                    .with_cause_chain()
-                    .unicode(false)
-                    .build(),
-            )
-        }));
-    }
-
     #[test]
     fn unknown_include_error_test() {
-        install_handler();
-        let fs = InMemoryFilesystem::new([("/include.S".into(), r#"#include "foo.S""#.into())]);
-        let workspace = Workspace::new(&fs, "/include.S");
+        let fs = InMemoryFilesystem::new([(
+            "/include.S".into(),
+            r#"#include "foo.S""#.into(),
+        )]);
+        let mut workspace = Workspace::new(&fs, "/include.S");
         let res = workspace.preprocess();
         let err = res.expect_err("should have failed");
-        let report = Report::new(err);
-        let report = format!("{report:?}");
+        let report = render_error(&workspace, &err);
         insta::assert_snapshot!(report);
     }
 
     #[test]
     fn user_error_in_include_test() {
-        install_handler();
         let fs = InMemoryFilesystem::new([
             ("/include.S".into(), r#"#include "error.S""#.into()),
             ("/error.S".into(), r#"#error "message""#.into()),
         ]);
-        let workspace = Workspace::new(&fs, "/include.S");
+        let mut workspace = Workspace::new(&fs, "/include.S");
         let res = workspace.preprocess();
         let err = res.expect_err("should have failed");
-        let report = Report::new(err);
-        let report = format!("{report:?}");
+        let report = render_error(&workspace, &err);
         insta::assert_snapshot!(report);
     }
 
     #[test]
     fn parse_error_in_include_test() {
-        install_handler();
         let fs = InMemoryFilesystem::new([
             ("/include.S".into(), r#"#include "invalid.S""#.into()),
             (
@@ -855,17 +834,15 @@ mod tests {
                 .into(),
             ),
         ]);
-        let workspace = Workspace::new(&fs, "/include.S");
+        let mut workspace = Workspace::new(&fs, "/include.S");
         let res = workspace.preprocess();
         let err = res.expect_err("should have failed");
-        let report = Report::new(err);
-        let report = format!("{report:?}");
+        let report = render_error(&workspace, &err);
         insta::assert_snapshot!(report);
     }
 
     #[test]
     fn condition_parse_error_test() {
-        install_handler();
         let fs = InMemoryFilesystem::new([(
             "/invalid.S".into(),
             indoc::indoc! {r"
@@ -875,11 +852,10 @@ mod tests {
                 "}
             .into(),
         )]);
-        let workspace = Workspace::new(&fs, "/invalid.S");
+        let mut workspace = Workspace::new(&fs, "/invalid.S");
         let res = workspace.preprocess();
         let err = res.expect_err("should have failed");
-        let report = Report::new(err);
-        let report = format!("{report:?}");
+        let report = render_error(&workspace, &err);
         insta::assert_snapshot!(report);
     }
 }

@@ -1,16 +1,15 @@
 ---
 source: emulator/src/preprocessor/mod.rs
-assertion_line: 863
+assertion_line: 842
 expression: report
 ---
-  x Failed to process included file
-  `->   x Failed to parse file
-      
-      Error:
-        x unexpected directive at byte 6: #else
-      
-   ,-[/include.S:1:10]
- 1 | #include "invalid.S"
-   :          ^^^^^|^^^^^
-   :               `-- File included here
-   `----
+error: unexpected directive at byte 6: #else
+  ┌─ /invalid.S:1:1
+  │
+1 │ hello
+  │ ^
+  │
+  ┌─ /include.S:1:10
+  │
+1 │ #include "invalid.S"
+  │          ----------- included from here

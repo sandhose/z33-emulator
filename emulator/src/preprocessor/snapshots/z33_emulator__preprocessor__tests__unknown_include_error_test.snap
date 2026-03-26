@@ -1,13 +1,10 @@
 ---
 source: emulator/src/preprocessor/mod.rs
+assertion_line: 809
 expression: report
 ---
-  x Failed to process included file
-  |->   x Failed to load file "/foo.S"
-  |   
-  `-> file not found
-   ,-[/include.S:1:10]
- 1 | #include "foo.S"
-   :          ^^^|^^^
-   :             `-- File included here
-   `----
+error: could not load file '/foo.S': file not found
+  ┌─ /include.S:1:10
+  │
+1 │ #include "foo.S"
+  │          ------- included from here
