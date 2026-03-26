@@ -1,12 +1,11 @@
 use std::str::FromStr;
 
+use chumsky::prelude::*;
 use thiserror::Error;
 use z33_emulator::parser::location::Locatable;
 use z33_emulator::parser::shared::{expression, register};
 use z33_emulator::parser::{ExpressionContext, ExpressionNode};
 use z33_emulator::runtime::{Computer, ExtractValue, Reg};
-
-use chumsky::prelude::*;
 
 type Extra<'a> = z33_emulator::parser::shared::Extra<'a>;
 
@@ -57,10 +56,7 @@ impl FromStr for Argument {
 fn argument_parser<'a>() -> impl Parser<'a, &'a str, Argument, Extra<'a>> {
     // Try indexed first: %reg +/- expr
     let indexed = register()
-        .then(
-            choice((just('+').to(true), just('-').to(false)))
-                .then(expression()),
-        )
+        .then(choice((just('+').to(true), just('-').to(false))).then(expression()))
         .map(|(reg, (is_plus, expr))| {
             let expr = if is_plus {
                 expr

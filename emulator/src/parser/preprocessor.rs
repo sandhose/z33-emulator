@@ -83,7 +83,11 @@ impl Node {
 /// newline itself).
 fn eat_end_of_line<'a>() -> impl Parser<'a, &'a str, (), Extra<'a>> + Clone {
     hspace()
-        .then(just("//").then(any().and_is(just('\n').not()).repeated()).or_not())
+        .then(
+            just("//")
+                .then(any().and_is(just('\n').not()).repeated())
+                .or_not(),
+        )
         .ignored()
 }
 
@@ -133,11 +137,9 @@ fn parse_definition(input: &str) -> Option<Node> {
                         .filter(|c: &char| *c == ' ' || *c == '\t')
                         .repeated()
                         .at_least(1)
-                        .ignore_then(
-                            directive_argument().map_with(|arg: &str, e| {
-                                arg.to_owned().with_location(span_to_range(e.span()))
-                            }),
-                        )
+                        .ignore_then(directive_argument().map_with(|arg: &str, e| {
+                            arg.to_owned().with_location(span_to_range(e.span()))
+                        }))
                         .or_not(),
                 ),
         )
@@ -181,10 +183,7 @@ fn parse_inclusion(input: &str) -> Option<Node> {
                 .repeated()
                 .at_least(1),
         )
-        .ignore_then(
-            string_literal()
-                .map_with(|s, e| s.with_location(span_to_range(e.span()))),
-        )
+        .ignore_then(string_literal().map_with(|s, e| s.with_location(span_to_range(e.span()))))
         .then_ignore(eat_end_of_line())
         .then_ignore(end())
         .map(|path| Node::Inclusion { path });
@@ -203,10 +202,7 @@ fn parse_error_directive(input: &str) -> Option<Node> {
                 .repeated()
                 .at_least(1),
         )
-        .ignore_then(
-            string_literal()
-                .map_with(|s, e| s.with_location(span_to_range(e.span()))),
-        )
+        .ignore_then(string_literal().map_with(|s, e| s.with_location(span_to_range(e.span()))))
         .then_ignore(eat_end_of_line())
         .then_ignore(end())
         .map(|message| Node::Error { message });
@@ -370,13 +366,14 @@ fn parse_chunks(input: &str, base_offset: usize) -> Result<Children, String> {
             pos = chunk_end;
             if pos < input.len() && input.as_bytes()[pos] == b'\n' {
                 if record_newline {
-                    let has_cr = line_end > 0
-                        && rest.as_bytes().get(line_end - 1) == Some(&b'\r');
-                    let nl_start = if has_cr { pos + base_offset - 1 } else { pos + base_offset };
+                    let has_cr = line_end > 0 && rest.as_bytes().get(line_end - 1) == Some(&b'\r');
+                    let nl_start = if has_cr {
+                        pos + base_offset - 1
+                    } else {
+                        pos + base_offset
+                    };
                     let nl_end = pos + base_offset + 1;
-                    chunks.push(
-                        Node::NewLine { crlf: has_cr }.with_location(nl_start..nl_end),
-                    );
+                    chunks.push(Node::NewLine { crlf: has_cr }.with_location(nl_start..nl_end));
                 }
                 pos += 1;
             }
@@ -387,13 +384,14 @@ fn parse_chunks(input: &str, base_offset: usize) -> Result<Children, String> {
             // Consume the newline and record it (Raw always records newlines)
             pos = chunk_end;
             if pos < input.len() && input.as_bytes()[pos] == b'\n' {
-                let has_cr = line_end > 0
-                    && rest.as_bytes().get(line_end - 1) == Some(&b'\r');
-                let nl_start = if has_cr { pos + base_offset - 1 } else { pos + base_offset };
+                let has_cr = line_end > 0 && rest.as_bytes().get(line_end - 1) == Some(&b'\r');
+                let nl_start = if has_cr {
+                    pos + base_offset - 1
+                } else {
+                    pos + base_offset
+                };
                 let nl_end = pos + base_offset + 1;
-                chunks.push(
-                    Node::NewLine { crlf: has_cr }.with_location(nl_start..nl_end),
-                );
+                chunks.push(Node::NewLine { crlf: has_cr }.with_location(nl_start..nl_end));
                 pos += 1;
             }
         } else {
@@ -501,10 +499,7 @@ fn parse_conditional_block(
 /// Parse chunks from `input[start..]` until hitting a `#elif`, `#else`, or
 /// `#endif` boundary. Returns the body chunks (with spans relative to the
 /// body start) and the byte offset of the boundary line.
-fn parse_body_until_boundary(
-    input: &str,
-    start: usize,
-) -> Result<(Children, usize), String> {
+fn parse_body_until_boundary(input: &str, start: usize) -> Result<(Children, usize), String> {
     let body_input = &input[start..];
 
     // Find where the body ends — scan for the first #elif/#else/#endif at
@@ -531,8 +526,7 @@ fn find_body_boundary(input: &str) -> Result<usize, String> {
         if trimmed.starts_with('#') {
             // Check for nested #if
             let after_hash = trimmed.strip_prefix('#').unwrap_or(trimmed).trim_start();
-            if after_hash.starts_with("if") && after_hash[2..].starts_with([' ', '\t'])
-            {
+            if after_hash.starts_with("if") && after_hash[2..].starts_with([' ', '\t']) {
                 depth += 1;
             } else if depth > 0 && after_hash.starts_with("endif") {
                 depth -= 1;

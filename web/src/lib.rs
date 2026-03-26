@@ -10,9 +10,8 @@ use wasm_bindgen::prelude::*;
 use z33_emulator::compiler::{check as compiler_check, compile};
 use z33_emulator::constants::Address;
 use z33_emulator::diagnostic::{
-    compilation_error_to_diagnostic, diagnostics_to_json,
-    parse_diagnostic_to_codespan, preprocessor_error_to_diagnostics,
-    resolve_to_original, simple_error, FileDatabase, FileId,
+    compilation_error_to_diagnostic, diagnostics_to_json, parse_diagnostic_to_codespan,
+    preprocessor_error_to_diagnostics, resolve_to_original, simple_error, FileDatabase, FileId,
 };
 use z33_emulator::preprocessor::{
     InMemoryFilesystem, PreprocessorError, ReferencingSourceMap, Workspace,
@@ -102,10 +101,7 @@ impl InMemoryPreprocessor {
         let preprocess_result = match self.preprocessor.preprocess() {
             Ok(o) => o,
             Err(e) => {
-                return CompilationResult::preprocessor_error(
-                    &e,
-                    self.preprocessor.file_db(),
-                );
+                return CompilationResult::preprocessor_error(&e, self.preprocessor.file_db());
             }
         };
         let source_str = &preprocess_result.source;
@@ -122,26 +118,19 @@ impl InMemoryPreprocessor {
             let diagnostics: Vec<_> = result
                 .diagnostics
                 .iter()
-                .filter(|d| {
-                    d.severity == z33_emulator::parser::DiagnosticSeverity::Error
-                })
+                .filter(|d| d.severity == z33_emulator::parser::DiagnosticSeverity::Error)
                 .map(|diag| {
-                    if let Some((file_id, range)) = resolve_to_original(
-                        &preprocess_result.source_map,
-                        diag.span.clone(),
-                    ) {
+                    if let Some((file_id, range)) =
+                        resolve_to_original(&preprocess_result.source_map, diag.span.clone())
+                    {
                         simple_error(&diag.message, file_id, range)
                     } else {
-                        parse_diagnostic_to_codespan(
-                            diag,
-                            preprocess_result.preprocessed_file_id,
-                        )
+                        parse_diagnostic_to_codespan(diag, preprocess_result.preprocessed_file_id)
                     }
                 })
                 .collect();
 
-            let json =
-                diagnostics_to_json(&diagnostics, self.preprocessor.file_db());
+            let json = diagnostics_to_json(&diagnostics, self.preprocessor.file_db());
             return CompilationResult::compilation_error(json);
         }
 
@@ -171,8 +160,7 @@ fn compose_source_maps(
     debug_source_map
         .iter()
         .filter_map(|(&address, range)| {
-            let (chunk_key, span) =
-                preprocessor_source_map.find_with_key(range.start)?;
+            let (chunk_key, span) = preprocessor_source_map.find_with_key(range.start)?;
             let start = span.range.start + (range.start - chunk_key);
             let end = span.range.start + (range.end - chunk_key);
             Some((
@@ -198,22 +186,15 @@ fn compiler_error_to_json(
     let location: Option<std::ops::Range<usize>> = match error {
         CompilationError::MemoryFill(e) => Some(e.location().clone()),
         CompilationError::MemoryLayout(e) => e.location().cloned(),
-        CompilationError::UnknownEntrypoint(_)
-        | CompilationError::HasParseErrors => None,
+        CompilationError::UnknownEntrypoint(_) | CompilationError::HasParseErrors => None,
     };
 
     // Try to map through the source map to the original file
     if let Some(loc) = &location {
-        if let Some((chunk_key, span_info)) =
-            source_map.find_with_key(loc.start)
-        {
+        if let Some((chunk_key, span_info)) = source_map.find_with_key(loc.start) {
             let start = span_info.range.start + (loc.start - chunk_key);
             let end = span_info.range.start + (loc.end - chunk_key);
-            let diag = simple_error(
-                error.to_string(),
-                span_info.file_id,
-                start..end,
-            );
+            let diag = simple_error(error.to_string(), span_info.file_id, start..end);
             return diagnostics_to_json(&[diag], file_db);
         }
     }
@@ -303,11 +284,8 @@ impl Program {
         tracing::info!("Cloned");
         let memory = MemoryObserver::new(memory);
 
-        let source_map = compose_source_maps(
-            &debug_info.source_map,
-            &self.source_map,
-            &self.file_db,
-        );
+        let source_map =
+            compose_source_maps(&debug_info.source_map, &self.source_map, &self.file_db);
 
         tracing::info!("Compiled");
 

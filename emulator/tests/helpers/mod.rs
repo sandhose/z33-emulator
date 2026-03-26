@@ -23,7 +23,11 @@ pub fn run_program(source: &str, entrypoint: &str, steps: Steps) -> String {
     assert!(
         result.diagnostics.is_empty(),
         "parse errors: {:?}",
-        result.diagnostics.iter().map(|d| &d.message).collect::<Vec<_>>()
+        result
+            .diagnostics
+            .iter()
+            .map(|d| &d.message)
+            .collect::<Vec<_>>()
     );
     let (mut computer, _debug_info) =
         compile(&result.program.inner, entrypoint).expect("compilation failed");
@@ -129,7 +133,11 @@ pub fn compile_program(source: &str, entrypoint: &str) -> String {
     assert!(
         result.diagnostics.is_empty(),
         "parse errors: {:?}",
-        result.diagnostics.iter().map(|d| &d.message).collect::<Vec<_>>()
+        result
+            .diagnostics
+            .iter()
+            .map(|d| &d.message)
+            .collect::<Vec<_>>()
     );
     let (computer, debug_info) =
         compile(&result.program.inner, entrypoint).expect("compilation failed");

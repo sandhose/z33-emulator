@@ -36,7 +36,6 @@ impl LineContent {
     pub(crate) fn is_directive(&self) -> bool {
         matches!(self, Self::Directive { .. })
     }
-
 }
 
 impl AstNode for LineContent {

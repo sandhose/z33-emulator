@@ -1,7 +1,8 @@
 //! Chumsky-based assembly parser with error recovery.
 //!
 //! This module replaces the nom-based assembly parser with one that can recover
-//! from syntax errors, producing partial ASTs alongside accumulated diagnostics.
+//! from syntax errors, producing partial ASTs alongside accumulated
+//! diagnostics.
 
 use chumsky::prelude::*;
 
@@ -11,9 +12,7 @@ use super::shared::{
     expression, hspace, hspace1, identifier, kw, register, span_to_range, string_literal, Extra,
     ParseDiagnostic,
 };
-use super::value::{
-    DirectiveArgument, DirectiveKind, InstructionArgument, InstructionKind,
-};
+use super::value::{DirectiveArgument, DirectiveKind, InstructionArgument, InstructionKind};
 use crate::parser::expression::Node as ExpressionNode;
 use crate::parser::shared::rich_to_diagnostic;
 
@@ -43,42 +42,39 @@ fn instruction_argument<'a>() -> impl Parser<'a, &'a str, InstructionArgument, E
                 .then(
                     choice((just('+').to(true), just('-').to(false)))
                         .then_ignore(hspace())
-                        .then(expression())
+                        .then(expression()),
                 )
                 .then_ignore(hspace())
                 .then_ignore(just(']'))
-
                 .map_with(|(register, (is_plus, expr)), e| {
                     let span = span_to_range(e.span());
                     // If minus, wrap in Invert
                     let value_node = if is_plus {
                         expr
                     } else {
-                        ExpressionNode::Invert(
-                            Box::new(expr).with_location(span.clone()),
-                        )
+                        ExpressionNode::Invert(Box::new(expr).with_location(span.clone()))
                     };
                     InstructionArgument::Indexed {
                         register,
                         value: value_node.with_location(span),
                     }
                 })
-            .or(
-                // Try indirect: [%reg]
-                register()
-                    .map_with(|r, e| r.with_location(span_to_range(e.span())))
-                    .then_ignore(hspace())
-                    .then_ignore(just(']'))
-                    .map(InstructionArgument::Indirect)
-            )
-            .or(
-                // Direct: [expr]
-                expression()
-                    .map_with(|n, e| n.with_location(span_to_range(e.span())))
-                    .then_ignore(hspace())
-                    .then_ignore(just(']'))
-                    .map(InstructionArgument::Direct)
-            ),
+                .or(
+                    // Try indirect: [%reg]
+                    register()
+                        .map_with(|r, e| r.with_location(span_to_range(e.span())))
+                        .then_ignore(hspace())
+                        .then_ignore(just(']'))
+                        .map(InstructionArgument::Indirect),
+                )
+                .or(
+                    // Direct: [expr]
+                    expression()
+                        .map_with(|n, e| n.with_location(span_to_range(e.span())))
+                        .then_ignore(hspace())
+                        .then_ignore(just(']'))
+                        .map(InstructionArgument::Direct),
+                ),
         )
         .recover_with(via_parser(
             just('[')
@@ -87,7 +83,8 @@ fn instruction_argument<'a>() -> impl Parser<'a, &'a str, InstructionArgument, E
                 .map(|_| InstructionArgument::Error),
         ));
 
-    // Order: try bracketed first (starts with [), then register (starts with %), then value
+    // Order: try bracketed first (starts with [), then register (starts with %),
+    // then value
     bracketed.or(reg).or(value)
 }
 
@@ -142,10 +139,7 @@ fn instruction_kind<'a>() -> impl Parser<'a, &'a str, InstructionKind, Extra<'a>
                 "trap" => Ok(K::Trap),
                 "xor" => Ok(K::Xor),
                 "debugreg" => Ok(K::DebugReg),
-                _ => Err(Rich::custom(
-                    span,
-                    format!("unknown instruction '{s}'"),
-                )),
+                _ => Err(Rich::custom(span, format!("unknown instruction '{s}'"))),
             }
         })
 }
@@ -187,10 +181,7 @@ fn line_content<'a>() -> impl Parser<'a, &'a str, Located<LineContent>, Extra<'a
     let directive = directive_kind()
         .map_with(|k, e| k.with_location(span_to_range(e.span())))
         .then_ignore(hspace1())
-        .then(
-            directive_argument()
-                .map_with(|a, e| a.with_location(span_to_range(e.span()))),
-        )
+        .then(directive_argument().map_with(|a, e| a.with_location(span_to_range(e.span()))))
         .map(|(kind, argument)| LineContent::Directive { kind, argument });
 
     // Instruction: mnemonic [arg [, arg]*]
@@ -201,11 +192,7 @@ fn line_content<'a>() -> impl Parser<'a, &'a str, Located<LineContent>, Extra<'a
                 .ignore_then(
                     instruction_argument()
                         .map_with(|a, e| a.with_location(span_to_range(e.span())))
-                        .separated_by(
-                            hspace()
-                                .then(just(','))
-                                .then(hspace()),
-                        )
+                        .separated_by(hspace().then(just(',')).then(hspace()))
                         .collect::<Vec<_>>(),
                 )
                 .or_not()
@@ -349,7 +336,6 @@ pub fn parse(input: &str) -> ParseResult {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use pretty_assertions::assert_eq;
@@ -359,14 +345,30 @@ mod tests {
     #[test]
     fn parse_empty() {
         let result = parse("");
-        assert!(result.diagnostics.is_empty(), "diagnostics: {:?}", result.diagnostics.iter().map(|d| &d.message).collect::<Vec<_>>());
+        assert!(
+            result.diagnostics.is_empty(),
+            "diagnostics: {:?}",
+            result
+                .diagnostics
+                .iter()
+                .map(|d| &d.message)
+                .collect::<Vec<_>>()
+        );
         assert_eq!(result.program.inner.lines.len(), 1); // One empty line
     }
 
     #[test]
     fn parse_simple_instruction() {
         let result = parse("    add %a, %b");
-        assert!(result.diagnostics.is_empty(), "diagnostics: {:?}", result.diagnostics.iter().map(|d| &d.message).collect::<Vec<_>>());
+        assert!(
+            result.diagnostics.is_empty(),
+            "diagnostics: {:?}",
+            result
+                .diagnostics
+                .iter()
+                .map(|d| &d.message)
+                .collect::<Vec<_>>()
+        );
         let lines = &result.program.inner.lines;
         assert_eq!(lines.len(), 1);
         let line = &lines[0].inner;
@@ -388,7 +390,15 @@ mod tests {
     #[test]
     fn parse_label_and_instruction() {
         let result = parse("main: add %a, %b");
-        assert!(result.diagnostics.is_empty(), "diagnostics: {:?}", result.diagnostics.iter().map(|d| &d.message).collect::<Vec<_>>());
+        assert!(
+            result.diagnostics.is_empty(),
+            "diagnostics: {:?}",
+            result
+                .diagnostics
+                .iter()
+                .map(|d| &d.message)
+                .collect::<Vec<_>>()
+        );
         let line = &result.program.inner.lines[0].inner;
         assert_eq!(line.symbols.len(), 1);
         assert_eq!(line.symbols[0].inner, "main");
@@ -398,7 +408,15 @@ mod tests {
     #[test]
     fn parse_directive() {
         let result = parse(".word 42");
-        assert!(result.diagnostics.is_empty(), "diagnostics: {:?}", result.diagnostics.iter().map(|d| &d.message).collect::<Vec<_>>());
+        assert!(
+            result.diagnostics.is_empty(),
+            "diagnostics: {:?}",
+            result
+                .diagnostics
+                .iter()
+                .map(|d| &d.message)
+                .collect::<Vec<_>>()
+        );
         let line = &result.program.inner.lines[0].inner;
         match &line.content {
             Some(Located {
@@ -418,7 +436,15 @@ mod tests {
     #[test]
     fn parse_string_directive() {
         let result = parse(r#".string "hello""#);
-        assert!(result.diagnostics.is_empty(), "diagnostics: {:?}", result.diagnostics.iter().map(|d| &d.message).collect::<Vec<_>>());
+        assert!(
+            result.diagnostics.is_empty(),
+            "diagnostics: {:?}",
+            result
+                .diagnostics
+                .iter()
+                .map(|d| &d.message)
+                .collect::<Vec<_>>()
+        );
         let line = &result.program.inner.lines[0].inner;
         match &line.content {
             Some(Located {
@@ -438,14 +464,30 @@ mod tests {
     #[test]
     fn parse_multiline_program() {
         let result = parse("main:\n    add %a, %b\n    reset");
-        assert!(result.diagnostics.is_empty(), "diagnostics: {:?}", result.diagnostics.iter().map(|d| &d.message).collect::<Vec<_>>());
+        assert!(
+            result.diagnostics.is_empty(),
+            "diagnostics: {:?}",
+            result
+                .diagnostics
+                .iter()
+                .map(|d| &d.message)
+                .collect::<Vec<_>>()
+        );
         assert_eq!(result.program.inner.lines.len(), 3);
     }
 
     #[test]
     fn parse_expression_precedence() {
         let result = parse(".word 5 + 2 * 3");
-        assert!(result.diagnostics.is_empty(), "diagnostics: {:?}", result.diagnostics.iter().map(|d| &d.message).collect::<Vec<_>>());
+        assert!(
+            result.diagnostics.is_empty(),
+            "diagnostics: {:?}",
+            result
+                .diagnostics
+                .iter()
+                .map(|d| &d.message)
+                .collect::<Vec<_>>()
+        );
         let line = &result.program.inner.lines[0].inner;
         match &line.content {
             Some(Located {
@@ -465,22 +507,54 @@ mod tests {
     #[test]
     fn parse_hex_literal() {
         let result = parse(".word 0xFF");
-        assert!(result.diagnostics.is_empty(), "diagnostics: {:?}", result.diagnostics.iter().map(|d| &d.message).collect::<Vec<_>>());
+        assert!(
+            result.diagnostics.is_empty(),
+            "diagnostics: {:?}",
+            result
+                .diagnostics
+                .iter()
+                .map(|d| &d.message)
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]
     fn parse_memory_access_modes() {
         // Direct
         let result = parse("ld %a, [42]");
-        assert!(result.diagnostics.is_empty(), "diagnostics: {:?}", result.diagnostics.iter().map(|d| &d.message).collect::<Vec<_>>());
+        assert!(
+            result.diagnostics.is_empty(),
+            "diagnostics: {:?}",
+            result
+                .diagnostics
+                .iter()
+                .map(|d| &d.message)
+                .collect::<Vec<_>>()
+        );
 
         // Indirect
         let result = parse("ld %a, [%b]");
-        assert!(result.diagnostics.is_empty(), "diagnostics: {:?}", result.diagnostics.iter().map(|d| &d.message).collect::<Vec<_>>());
+        assert!(
+            result.diagnostics.is_empty(),
+            "diagnostics: {:?}",
+            result
+                .diagnostics
+                .iter()
+                .map(|d| &d.message)
+                .collect::<Vec<_>>()
+        );
 
         // Indexed
         let result = parse("ld %a, [%b+2]");
-        assert!(result.diagnostics.is_empty(), "diagnostics: {:?}", result.diagnostics.iter().map(|d| &d.message).collect::<Vec<_>>());
+        assert!(
+            result.diagnostics.is_empty(),
+            "diagnostics: {:?}",
+            result
+                .diagnostics
+                .iter()
+                .map(|d| &d.message)
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]
@@ -498,13 +572,29 @@ mod tests {
         // Comments are stripped by the preprocessor before reaching the
         // assembly parser, so the parser only sees trailing whitespace.
         let result = parse("    add %a, %b    ");
-        assert!(result.diagnostics.is_empty(), "diagnostics: {:?}", result.diagnostics.iter().map(|d| &d.message).collect::<Vec<_>>());
+        assert!(
+            result.diagnostics.is_empty(),
+            "diagnostics: {:?}",
+            result
+                .diagnostics
+                .iter()
+                .map(|d| &d.message)
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]
     fn parse_no_argument_instruction() {
         let result = parse("    reset");
-        assert!(result.diagnostics.is_empty(), "diagnostics: {:?}", result.diagnostics.iter().map(|d| &d.message).collect::<Vec<_>>());
+        assert!(
+            result.diagnostics.is_empty(),
+            "diagnostics: {:?}",
+            result
+                .diagnostics
+                .iter()
+                .map(|d| &d.message)
+                .collect::<Vec<_>>()
+        );
         let line = &result.program.inner.lines[0].inner;
         match &line.content {
             Some(Located {
@@ -529,7 +619,15 @@ mod tests {
         //            0123456789012345678901234567
         let input = "main:\n    add %a, %b";
         let result = parse(input);
-        assert!(result.diagnostics.is_empty(), "{:?}", result.diagnostics.iter().map(|d| &d.message).collect::<Vec<_>>());
+        assert!(
+            result.diagnostics.is_empty(),
+            "{:?}",
+            result
+                .diagnostics
+                .iter()
+                .map(|d| &d.message)
+                .collect::<Vec<_>>()
+        );
 
         let lines = &result.program.inner.lines;
         assert_eq!(lines.len(), 2);
@@ -575,7 +673,15 @@ mod tests {
         //            0123456789012345
         let input = "foo: .word 42";
         let result = parse(input);
-        assert!(result.diagnostics.is_empty(), "{:?}", result.diagnostics.iter().map(|d| &d.message).collect::<Vec<_>>());
+        assert!(
+            result.diagnostics.is_empty(),
+            "{:?}",
+            result
+                .diagnostics
+                .iter()
+                .map(|d| &d.message)
+                .collect::<Vec<_>>()
+        );
 
         let line = &result.program.inner.lines[0];
         assert_eq!(line.location, 0..13); // absolute
@@ -594,7 +700,10 @@ mod tests {
                 // ".word" -> kind location covers "word" part
                 assert_eq!(kind.inner, DirectiveKind::Word);
                 // "42" is at position 6 in ".word 42"
-                assert_eq!(argument.inner, DirectiveArgument::Expression(ExpressionNode::Literal(42)));
+                assert_eq!(
+                    argument.inner,
+                    DirectiveArgument::Expression(ExpressionNode::Literal(42))
+                );
             }
             other => panic!("expected directive, got {other:?}"),
         }

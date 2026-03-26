@@ -7,8 +7,9 @@
 use std::collections::HashMap;
 
 use z33_emulator::diagnostic::{
-    compilation_error_to_diagnostic, parse_diagnostic_to_codespan, preprocessor_error_to_diagnostics,
-    render_to_string, resolve_to_original, simple_error, FileDatabase,
+    compilation_error_to_diagnostic, parse_diagnostic_to_codespan,
+    preprocessor_error_to_diagnostics, render_to_string, resolve_to_original, simple_error,
+    FileDatabase,
 };
 use z33_emulator::preprocessor::{InMemoryFilesystem, Workspace};
 use z33_emulator::{compile, parse};
@@ -64,8 +65,7 @@ fn check_full_pipeline_errors(input: &str) -> String {
     // If no parse errors, try compilation
     if result.diagnostics.is_empty() {
         if let Err(e) = compile(&result.program.inner, "main") {
-            let diag =
-                compilation_error_to_diagnostic(&e, preprocess_result.preprocessed_file_id);
+            let diag = compilation_error_to_diagnostic(&e, preprocess_result.preprocessed_file_id);
             buf.push_str(&render_to_string(&diag, workspace.file_db()));
         }
     }
@@ -120,23 +120,17 @@ fn preprocessor_error_directive() {
 
 #[test]
 fn preprocessor_missing_endif() {
-    insta::assert_snapshot!(check_full_pipeline_errors(
-        "#if true\nhello\n"
-    ));
+    insta::assert_snapshot!(check_full_pipeline_errors("#if true\nhello\n"));
 }
 
 #[test]
 fn preprocessor_bad_condition() {
-    insta::assert_snapshot!(check_full_pipeline_errors(
-        "#if (1 +\n#endif"
-    ));
+    insta::assert_snapshot!(check_full_pipeline_errors("#if (1 +\n#endif"));
 }
 
 #[test]
 fn preprocessor_missing_include() {
-    insta::assert_snapshot!(check_full_pipeline_errors(
-        r#"#include "missing.S""#
-    ));
+    insta::assert_snapshot!(check_full_pipeline_errors(r#"#include "missing.S""#));
 }
 
 // ---------------------------------------------------------------------------
@@ -145,37 +139,27 @@ fn preprocessor_missing_include() {
 
 #[test]
 fn compilation_duplicate_label() {
-    insta::assert_snapshot!(check_full_pipeline_errors(
-        "main:\n    nop\nmain:\n    nop"
-    ));
+    insta::assert_snapshot!(check_full_pipeline_errors("main:\n    nop\nmain:\n    nop"));
 }
 
 #[test]
 fn compilation_wrong_argument_type() {
     // cmp takes (ImmRegDirIndIdx, Reg) — `1` is Imm, not Reg
-    insta::assert_snapshot!(check_full_pipeline_errors(
-        "main:\n    cmp %a, 1"
-    ));
+    insta::assert_snapshot!(check_full_pipeline_errors("main:\n    cmp %a, 1"));
 }
 
 #[test]
 fn compilation_push_direct_memory() {
     // push takes ImmReg — [1234] is Dir
-    insta::assert_snapshot!(check_full_pipeline_errors(
-        "main:\n    push [1234]"
-    ));
+    insta::assert_snapshot!(check_full_pipeline_errors("main:\n    push [1234]"));
 }
 
 #[test]
 fn compilation_too_many_arguments() {
-    insta::assert_snapshot!(check_full_pipeline_errors(
-        "main:\n    add %a, %b, %a"
-    ));
+    insta::assert_snapshot!(check_full_pipeline_errors("main:\n    add %a, %b, %a"));
 }
 
 #[test]
 fn compilation_unknown_entrypoint() {
-    insta::assert_snapshot!(check_full_pipeline_errors(
-        "start:\n    nop"
-    ));
+    insta::assert_snapshot!(check_full_pipeline_errors("start:\n    nop"));
 }

@@ -55,9 +55,7 @@ impl MemoryFillError {
 
 #[derive(Debug, Error)]
 pub enum InstructionCompilationError {
-    #[error(
-        "'{instruction}' takes {expected} argument(s), got {got}"
-    )]
+    #[error("'{instruction}' takes {expected} argument(s), got {got}")]
     InvalidArgumentCount {
         instruction: InstructionKind,
         expected: usize,
@@ -94,16 +92,19 @@ fn get_arg(args: &[ImmRegDirIndIdx], index: usize) -> ImmRegDirIndIdx {
     args[index].clone()
 }
 
-/// Try to convert an argument at a given position, wrapping errors with context.
+/// Try to convert an argument at a given position, wrapping errors with
+/// context.
 fn convert_arg<T: TryFrom<ImmRegDirIndIdx, Error = ArgConversionError>>(
     kind: InstructionKind,
     args: &[ImmRegDirIndIdx],
     index: usize,
 ) -> Result<T, InstructionCompilationError> {
-    T::try_from(args[index].clone()).map_err(|source| InstructionCompilationError::InvalidArgumentType {
-        instruction: kind,
-        argument_index: index,
-        source,
+    T::try_from(args[index].clone()).map_err(|source| {
+        InstructionCompilationError::InvalidArgumentType {
+            instruction: kind,
+            argument_index: index,
+            source,
+        }
     })
 }
 
@@ -119,57 +120,96 @@ fn compile_instruction(
         // Binary ops: arg1 = ImmRegDirIndIdx, arg2 = Reg
         K::Add => {
             check_arg_count(kind, arguments, 2)?;
-            Ok(Instruction::Add(get_arg(arguments, 0), convert_arg(kind, arguments, 1)?))
+            Ok(Instruction::Add(
+                get_arg(arguments, 0),
+                convert_arg(kind, arguments, 1)?,
+            ))
         }
         K::And => {
             check_arg_count(kind, arguments, 2)?;
-            Ok(Instruction::And(get_arg(arguments, 0), convert_arg(kind, arguments, 1)?))
+            Ok(Instruction::And(
+                get_arg(arguments, 0),
+                convert_arg(kind, arguments, 1)?,
+            ))
         }
         K::Cmp => {
             check_arg_count(kind, arguments, 2)?;
-            Ok(Instruction::Cmp(get_arg(arguments, 0), convert_arg(kind, arguments, 1)?))
+            Ok(Instruction::Cmp(
+                get_arg(arguments, 0),
+                convert_arg(kind, arguments, 1)?,
+            ))
         }
         K::Div => {
             check_arg_count(kind, arguments, 2)?;
-            Ok(Instruction::Div(get_arg(arguments, 0), convert_arg(kind, arguments, 1)?))
+            Ok(Instruction::Div(
+                get_arg(arguments, 0),
+                convert_arg(kind, arguments, 1)?,
+            ))
         }
         K::Ld => {
             check_arg_count(kind, arguments, 2)?;
-            Ok(Instruction::Ld(get_arg(arguments, 0), convert_arg(kind, arguments, 1)?))
+            Ok(Instruction::Ld(
+                get_arg(arguments, 0),
+                convert_arg(kind, arguments, 1)?,
+            ))
         }
         K::Mul => {
             check_arg_count(kind, arguments, 2)?;
-            Ok(Instruction::Mul(get_arg(arguments, 0), convert_arg(kind, arguments, 1)?))
+            Ok(Instruction::Mul(
+                get_arg(arguments, 0),
+                convert_arg(kind, arguments, 1)?,
+            ))
         }
         K::Or => {
             check_arg_count(kind, arguments, 2)?;
-            Ok(Instruction::Or(get_arg(arguments, 0), convert_arg(kind, arguments, 1)?))
+            Ok(Instruction::Or(
+                get_arg(arguments, 0),
+                convert_arg(kind, arguments, 1)?,
+            ))
         }
         K::Shl => {
             check_arg_count(kind, arguments, 2)?;
-            Ok(Instruction::Shl(get_arg(arguments, 0), convert_arg(kind, arguments, 1)?))
+            Ok(Instruction::Shl(
+                get_arg(arguments, 0),
+                convert_arg(kind, arguments, 1)?,
+            ))
         }
         K::Shr => {
             check_arg_count(kind, arguments, 2)?;
-            Ok(Instruction::Shr(get_arg(arguments, 0), convert_arg(kind, arguments, 1)?))
+            Ok(Instruction::Shr(
+                get_arg(arguments, 0),
+                convert_arg(kind, arguments, 1)?,
+            ))
         }
         K::Sub => {
             check_arg_count(kind, arguments, 2)?;
-            Ok(Instruction::Sub(get_arg(arguments, 0), convert_arg(kind, arguments, 1)?))
+            Ok(Instruction::Sub(
+                get_arg(arguments, 0),
+                convert_arg(kind, arguments, 1)?,
+            ))
         }
         K::Xor => {
             check_arg_count(kind, arguments, 2)?;
-            Ok(Instruction::Xor(get_arg(arguments, 0), convert_arg(kind, arguments, 1)?))
+            Ok(Instruction::Xor(
+                get_arg(arguments, 0),
+                convert_arg(kind, arguments, 1)?,
+            ))
         }
 
         // DirIndIdx + Reg
         K::Fas => {
             check_arg_count(kind, arguments, 2)?;
-            Ok(Instruction::Fas(convert_arg(kind, arguments, 0)?, convert_arg(kind, arguments, 1)?))
+            Ok(Instruction::Fas(
+                convert_arg(kind, arguments, 0)?,
+                convert_arg(kind, arguments, 1)?,
+            ))
         }
         K::In => {
             check_arg_count(kind, arguments, 2)?;
-            Ok(Instruction::In(convert_arg(kind, arguments, 0)?, convert_arg(kind, arguments, 1)?))
+            Ok(Instruction::In(
+                convert_arg(kind, arguments, 0)?,
+                convert_arg(kind, arguments, 1)?,
+            ))
         }
 
         // Branches: 1 arg ImmRegDirIndIdx
@@ -229,28 +269,55 @@ fn compile_instruction(
         // ImmReg + DirIndIdx
         K::Out => {
             check_arg_count(kind, arguments, 2)?;
-            Ok(Instruction::Out(convert_arg(kind, arguments, 0)?, convert_arg(kind, arguments, 1)?))
+            Ok(Instruction::Out(
+                convert_arg(kind, arguments, 0)?,
+                convert_arg(kind, arguments, 1)?,
+            ))
         }
 
         // Reg + DirIndIdx
         K::St => {
             check_arg_count(kind, arguments, 2)?;
-            Ok(Instruction::St(convert_arg(kind, arguments, 0)?, convert_arg(kind, arguments, 1)?))
+            Ok(Instruction::St(
+                convert_arg(kind, arguments, 0)?,
+                convert_arg(kind, arguments, 1)?,
+            ))
         }
 
         // RegDirIndIdx + Reg
         K::Swap => {
             check_arg_count(kind, arguments, 2)?;
-            Ok(Instruction::Swap(convert_arg(kind, arguments, 0)?, convert_arg(kind, arguments, 1)?))
+            Ok(Instruction::Swap(
+                convert_arg(kind, arguments, 0)?,
+                convert_arg(kind, arguments, 1)?,
+            ))
         }
 
         // No arguments
-        K::Nop => { check_arg_count(kind, arguments, 0)?; Ok(Instruction::Nop) }
-        K::Reset => { check_arg_count(kind, arguments, 0)?; Ok(Instruction::Reset) }
-        K::Rti => { check_arg_count(kind, arguments, 0)?; Ok(Instruction::Rti) }
-        K::Rtn => { check_arg_count(kind, arguments, 0)?; Ok(Instruction::Rtn) }
-        K::Trap => { check_arg_count(kind, arguments, 0)?; Ok(Instruction::Trap) }
-        K::DebugReg => { check_arg_count(kind, arguments, 0)?; Ok(Instruction::DebugReg) }
+        K::Nop => {
+            check_arg_count(kind, arguments, 0)?;
+            Ok(Instruction::Nop)
+        }
+        K::Reset => {
+            check_arg_count(kind, arguments, 0)?;
+            Ok(Instruction::Reset)
+        }
+        K::Rti => {
+            check_arg_count(kind, arguments, 0)?;
+            Ok(Instruction::Rti)
+        }
+        K::Rtn => {
+            check_arg_count(kind, arguments, 0)?;
+            Ok(Instruction::Rtn)
+        }
+        K::Trap => {
+            check_arg_count(kind, arguments, 0)?;
+            Ok(Instruction::Trap)
+        }
+        K::DebugReg => {
+            check_arg_count(kind, arguments, 0)?;
+            Ok(Instruction::DebugReg)
+        }
     }
 }
 
@@ -326,16 +393,17 @@ fn compile_placement(labels: &Labels, placement: &Placement) -> Result<Cell, Mem
             let mut arg_spans = Vec::with_capacity(arguments.len());
             for (index, argument) in arguments.iter().enumerate() {
                 trace!("argument {} evaluation: {}", index, argument);
-                let value = argument
-                    .inner
-                    .evaluate(labels)
-                    .map_err(|source| MemoryFillError::Compute {
-                        location: Range {
-                            start: argument.location.start + line_location.start,
-                            end: argument.location.end + line_location.start,
-                        },
-                        source,
-                    })?;
+                let value =
+                    argument
+                        .inner
+                        .evaluate(labels)
+                        .map_err(|source| MemoryFillError::Compute {
+                            location: Range {
+                                start: argument.location.start + line_location.start,
+                                end: argument.location.end + line_location.start,
+                            },
+                            source,
+                        })?;
                 arg_values.push(value);
                 arg_spans.push(Range {
                     start: argument.location.start + line_location.start,
@@ -348,14 +416,13 @@ fn compile_placement(labels: &Labels, placement: &Placement) -> Result<Cell, Mem
                 end: kind.location.end + line_location.start,
             };
 
-            let instruction =
-                compile_instruction(kind.inner, &arg_values).map_err(|source| {
-                    MemoryFillError::InstructionCompilation {
-                        instruction_span: instruction_span.clone(),
-                        argument_spans: arg_spans,
-                        source,
-                    }
-                })?;
+            let instruction = compile_instruction(kind.inner, &arg_values).map_err(|source| {
+                MemoryFillError::InstructionCompilation {
+                    instruction_span: instruction_span.clone(),
+                    argument_spans: arg_spans,
+                    source,
+                }
+            })?;
             Ok(Cell::Instruction(Box::new(instruction)))
         }
     }

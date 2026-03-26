@@ -287,8 +287,8 @@ fn number_comparison<'a>() -> impl Parser<'a, &'a str, Node, Extra<'a>> + Clone 
         Lt,
     }
 
-    let located_expr = expression()
-        .map_with(|e, extra| e.with_location(span_to_range(extra.span())));
+    let located_expr =
+        expression().map_with(|e, extra| e.with_location(span_to_range(extra.span())));
 
     let op = choice((
         just("==").to(Cmp::Eq),
@@ -319,8 +319,7 @@ fn number_comparison<'a>() -> impl Parser<'a, &'a str, Node, Extra<'a>> + Clone 
 pub(crate) fn condition_parser<'a>() -> impl Parser<'a, &'a str, Node, Extra<'a>> + Clone {
     recursive(|condition| {
         // Atoms: parenthesized, defined(), bool literal, or number comparison
-        let paren = condition
-            .delimited_by(just('(').then(hspace()), hspace().then(just(')')));
+        let paren = condition.delimited_by(just('(').then(hspace()), hspace().then(just(')')));
 
         let atom = choice((
             paren,
@@ -334,9 +333,7 @@ pub(crate) fn condition_parser<'a>() -> impl Parser<'a, &'a str, Node, Extra<'a>
         let logical_expr = just('!')
             .ignore_then(hspace())
             .ignore_then(atom.clone())
-            .map_with(|node, e| {
-                Node::Not(Box::new(node).with_location(span_to_range(e.span())))
-            })
+            .map_with(|node, e| Node::Not(Box::new(node).with_location(span_to_range(e.span()))))
             .or(atom);
 
         // Logical AND

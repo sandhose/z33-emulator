@@ -50,29 +50,20 @@ impl RunOpt {
         if !result.diagnostics.is_empty() {
             for diag in &result.diagnostics {
                 // Try to map through source map to original file
-                if let Some((file_id, range)) = resolve_to_original(
-                    &preprocess_result.source_map,
-                    diag.span.clone(),
-                ) {
+                if let Some((file_id, range)) =
+                    resolve_to_original(&preprocess_result.source_map, diag.span.clone())
+                {
                     let codespan_diag = codespan_reporting::diagnostic::Diagnostic::error()
                         .with_message(&diag.message)
-                        .with_labels(vec![
-                            codespan_reporting::diagnostic::Label::primary(file_id, range),
-                        ]);
-                    eprint!(
-                        "{}",
-                        render_to_string(&codespan_diag, workspace.file_db())
-                    );
+                        .with_labels(vec![codespan_reporting::diagnostic::Label::primary(
+                            file_id, range,
+                        )]);
+                    eprint!("{}", render_to_string(&codespan_diag, workspace.file_db()));
                 } else {
                     // Fall back to rendering against preprocessed output
-                    let codespan_diag = parse_diagnostic_to_codespan(
-                        diag,
-                        preprocess_result.preprocessed_file_id,
-                    );
-                    eprint!(
-                        "{}",
-                        render_to_string(&codespan_diag, workspace.file_db())
-                    );
+                    let codespan_diag =
+                        parse_diagnostic_to_codespan(diag, preprocess_result.preprocessed_file_id);
+                    eprint!("{}", render_to_string(&codespan_diag, workspace.file_db()));
                 }
             }
             if result
@@ -98,14 +89,9 @@ impl RunOpt {
 
                 let _ = last_error;
 
-                let codespan_diag = compilation_error_to_diagnostic(
-                    &e,
-                    preprocess_result.preprocessed_file_id,
-                );
-                eprint!(
-                    "{}",
-                    render_to_string(&codespan_diag, workspace.file_db())
-                );
+                let codespan_diag =
+                    compilation_error_to_diagnostic(&e, preprocess_result.preprocessed_file_id);
+                eprint!("{}", render_to_string(&codespan_diag, workspace.file_db()));
                 exit(1);
             }
         };

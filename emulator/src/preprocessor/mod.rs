@@ -105,9 +105,7 @@ impl ReferencingSourceMap {
 
 impl From<SourceMap> for ReferencingSourceMap {
     fn from(value: SourceMap) -> Self {
-        Self {
-            spans: value.spans,
-        }
+        Self { spans: value.spans }
     }
 }
 
@@ -209,21 +207,20 @@ impl Workspace {
 
         // Parse the file content
         let source_str = source.as_str();
-        let content = parse(source_str)
-            .map(|chunks| {
-                // We parsed the chunks, now we find inclusions and resolve them
-                let mut references = HashMap::new();
-                for chunk in &chunks {
-                    chunk.inner.walk(&mut |node| {
-                        if let Node::Inclusion { path: inclusion } = node {
-                            let reference = Utf8PathBuf::from(inclusion.inner.clone());
-                            let resolved = fs.relative(Some(path), &reference);
-                            references.insert(reference, resolved);
-                        }
-                    });
-                }
-                FileContent { chunks, references }
-            });
+        let content = parse(source_str).map(|chunks| {
+            // We parsed the chunks, now we find inclusions and resolve them
+            let mut references = HashMap::new();
+            for chunk in &chunks {
+                chunk.inner.walk(&mut |node| {
+                    if let Node::Inclusion { path: inclusion } = node {
+                        let reference = Utf8PathBuf::from(inclusion.inner.clone());
+                        let resolved = fs.relative(Some(path), &reference);
+                        references.insert(reference, resolved);
+                    }
+                });
+            }
+            FileContent { chunks, references }
+        });
 
         // Copy the list of files to load, as it is annoying to borrow it
         // after insert
@@ -267,8 +264,9 @@ impl Workspace {
             },
         );
 
-        let preprocessed_file_id =
-            self.file_db.add("<preprocessed>".to_string(), string.clone());
+        let preprocessed_file_id = self
+            .file_db
+            .add("<preprocessed>".to_string(), string.clone());
 
         Ok(PreprocessResult {
             source_map,
@@ -298,21 +296,16 @@ impl Workspace {
             range: 0..source_len,
         };
 
-        let content = file.content.as_ref().map_err(|err| {
-            PreprocessorError::ParseFile {
+        let content = file
+            .content
+            .as_ref()
+            .map_err(|err| PreprocessorError::ParseFile {
                 file_id: file.file_id,
                 inner: vec![err.clone()],
-            }
-        })?;
+            })?;
 
         let mut buf = Vec::new();
-        self.process_chunks(
-            &mut buf,
-            &content.chunks,
-            &content.references,
-            ctx,
-            &stack,
-        )?;
+        self.process_chunks(&mut buf, &content.chunks, &content.references, ctx, &stack)?;
         Ok(buf)
     }
 
@@ -374,8 +367,8 @@ impl Workspace {
                     let (_stack, key) = stack.push(key);
                     let content = content.as_ref().map(|i| &i.inner);
                     // First replace existing definitions in the content
-                    let content = content
-                        .map(|c| ctx.replace(c).into_iter().map(|l| l.inner).collect());
+                    let content =
+                        content.map(|c| ctx.replace(c).into_iter().map(|l| l.inner).collect());
                     // Then add the definition
                     ctx.define(key.clone(), content);
                 }
@@ -394,14 +387,13 @@ impl Workspace {
                     };
 
                     // Then process it
-                    let content =
-                        self.preprocess_path(resolved, ctx).map_err(|inner| {
-                            PreprocessorError::InInclude {
-                                file_id: stack.file_id,
-                                span: stack.range.clone(),
-                                inner: Box::new(inner),
-                            }
-                        })?;
+                    let content = self.preprocess_path(resolved, ctx).map_err(|inner| {
+                        PreprocessorError::InInclude {
+                            file_id: stack.file_id,
+                            span: stack.range.clone(),
+                            inner: Box::new(inner),
+                        }
+                    })?;
 
                     buf.extend(content);
                 }
@@ -409,8 +401,7 @@ impl Workspace {
                 // r[impl asm.preprocessor.conditional]
                 Node::Condition { branches, fallback } => {
                     for branch in branches {
-                        let (condition_stack, condition) =
-                            stack.push(&branch.condition);
+                        let (condition_stack, condition) = stack.push(&branch.condition);
                         let condition: String = ctx
                             .replace_for_if_expression(condition)
                             .into_iter()
@@ -418,38 +409,32 @@ impl Workspace {
                             .collect();
 
                         let condition = condition.as_str();
-                        let expression =
-                            parse_condition(condition).map_err(|err_msg| {
-                                PreprocessorError::ConditionParse {
-                                    file_id: condition_stack.file_id,
-                                    span: condition_stack.range.clone(),
-                                    inner: err_msg,
-                                }
-                            })?;
+                        let expression = parse_condition(condition).map_err(|err_msg| {
+                            PreprocessorError::ConditionParse {
+                                file_id: condition_stack.file_id,
+                                span: condition_stack.range.clone(),
+                                inner: err_msg,
+                            }
+                        })?;
 
-                        let result =
-                            expression.evaluate(ctx).map_err(|inner| {
-                                PreprocessorError::ConditionEvaluation {
-                                    file_id: condition_stack.file_id,
-                                    span: condition_stack.range.clone(),
-                                    inner,
-                                }
-                            })?;
+                        let result = expression.evaluate(ctx).map_err(|inner| {
+                            PreprocessorError::ConditionEvaluation {
+                                file_id: condition_stack.file_id,
+                                span: condition_stack.range.clone(),
+                                inner,
+                            }
+                        })?;
 
                         if result {
                             let (stack, body) = stack.push(&branch.body);
-                            self.process_chunks(
-                                buf, body, references, ctx, &stack,
-                            )?;
+                            self.process_chunks(buf, body, references, ctx, &stack)?;
                             continue 'outer;
                         }
                     }
 
                     if let Some(ref body) = fallback {
                         let (stack, body) = stack.push(body);
-                        self.process_chunks(
-                            buf, body, references, ctx, &stack,
-                        )?;
+                        self.process_chunks(buf, body, references, ctx, &stack)?;
                     }
                 }
             }
@@ -477,10 +462,7 @@ pub enum PreprocessorError {
     },
 
     #[error("Failed to parse file")]
-    ParseFile {
-        file_id: FileId,
-        inner: Vec<String>,
-    },
+    ParseFile { file_id: FileId, inner: Vec<String> },
 
     #[error("User error: {message}")]
     UserError {
@@ -580,10 +562,7 @@ impl Context {
         self.definitions.remove(key);
     }
 
-    fn replace_for_if_expression<'a>(
-        &'a self,
-        input: &'a str,
-    ) -> Vec<Located<&'a str>> {
+    fn replace_for_if_expression<'a>(&'a self, input: &'a str) -> Vec<Located<&'a str>> {
         // We first store words in a Vec, so that it's easier to peek for
         // next/previous entries
         let words: Vec<&str> = input.split_word_bounds().collect();
@@ -720,19 +699,14 @@ mod tests {
         })
     }
 
-    fn preprocess<P: AsRef<Utf8Path>>(
-        path: P,
-    ) -> Result<String, PreprocessorError> {
+    fn preprocess<P: AsRef<Utf8Path>>(path: P) -> Result<String, PreprocessorError> {
         let fs = fs();
         let mut workspace = Workspace::new(&fs, path.as_ref());
         let result = workspace.preprocess()?;
         Ok(result.source)
     }
 
-    fn render_error(
-        workspace: &Workspace,
-        err: &PreprocessorError,
-    ) -> String {
+    fn render_error(workspace: &Workspace, err: &PreprocessorError) -> String {
         let diagnostics = preprocessor_error_to_diagnostics(err);
         diagnostics
             .iter()
@@ -797,10 +771,7 @@ mod tests {
 
     #[test]
     fn unknown_include_error_test() {
-        let fs = InMemoryFilesystem::new([(
-            "/include.S".into(),
-            r#"#include "foo.S""#.into(),
-        )]);
+        let fs = InMemoryFilesystem::new([("/include.S".into(), r#"#include "foo.S""#.into())]);
         let mut workspace = Workspace::new(&fs, "/include.S");
         let res = workspace.preprocess();
         let err = res.expect_err("should have failed");

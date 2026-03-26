@@ -1,8 +1,10 @@
 //! Centralized diagnostic infrastructure.
 //!
 //! Provides:
-//! - [`FileDatabase`] — a file storage backed by `codespan_reporting::files::SimpleFiles`
-//! - Conversion functions from error types to `codespan_reporting::diagnostic::Diagnostic`
+//! - [`FileDatabase`] — a file storage backed by
+//!   `codespan_reporting::files::SimpleFiles`
+//! - Conversion functions from error types to
+//!   `codespan_reporting::diagnostic::Diagnostic`
 //! - JSON serialization of diagnostics for the web IDE
 //! - Terminal rendering helpers for the CLI
 
@@ -75,17 +77,13 @@ impl FileDatabase {
 
 /// Convert a parser diagnostic to a codespan diagnostic.
 #[must_use]
-pub fn parse_diagnostic_to_codespan(
-    diag: &ParseDiagnostic,
-    file_id: FileId,
-) -> Diagnostic<FileId> {
+pub fn parse_diagnostic_to_codespan(diag: &ParseDiagnostic, file_id: FileId) -> Diagnostic<FileId> {
     let severity = match diag.severity {
         DiagnosticSeverity::Error => Severity::Error,
         DiagnosticSeverity::Warning => Severity::Warning,
     };
 
-    let mut labels = vec![Label::primary(file_id, diag.span.clone())
-        .with_message(&diag.message)];
+    let mut labels = vec![Label::primary(file_id, diag.span.clone()).with_message(&diag.message)];
 
     for (range, msg) in &diag.labels {
         labels.push(Label::secondary(file_id, range.clone()).with_message(msg));
@@ -102,9 +100,7 @@ pub fn parse_diagnostic_to_codespan(
 
 /// Convert a preprocessor error to one or more codespan diagnostics.
 #[must_use]
-pub fn preprocessor_error_to_diagnostics(
-    error: &PreprocessorError,
-) -> Vec<Diagnostic<FileId>> {
+pub fn preprocessor_error_to_diagnostics(error: &PreprocessorError) -> Vec<Diagnostic<FileId>> {
     match error {
         PreprocessorError::InInclude {
             file_id,
@@ -115,16 +111,14 @@ pub fn preprocessor_error_to_diagnostics(
             // Add a secondary label at the #include site to the first diagnostic
             if let Some(first) = diagnostics.first_mut() {
                 first.labels.push(
-                    Label::secondary(*file_id, span.clone())
-                        .with_message("included from here"),
+                    Label::secondary(*file_id, span.clone()).with_message("included from here"),
                 );
             }
             diagnostics
         }
 
         PreprocessorError::LoadFile { path, inner } => {
-            vec![Diagnostic::error()
-                .with_message(format!("could not load file '{path}': {inner}"))]
+            vec![Diagnostic::error().with_message(format!("could not load file '{path}': {inner}"))]
         }
 
         PreprocessorError::ParseFile { file_id, inner } => inner
@@ -144,8 +138,7 @@ pub fn preprocessor_error_to_diagnostics(
             vec![Diagnostic::error()
                 .with_message(format!("#error: {message}"))
                 .with_labels(vec![
-                    Label::primary(*file_id, span.clone())
-                        .with_message(message),
+                    Label::primary(*file_id, span.clone()).with_message(message)
                 ])]
         }
 
@@ -197,9 +190,7 @@ pub fn compilation_error_to_diagnostic(
         CE::UnknownEntrypoint(name) => {
             Diagnostic::error().with_message(format!("unknown entrypoint: {name}"))
         }
-        CE::HasParseErrors => {
-            Diagnostic::error().with_message("program contains syntax errors")
-        }
+        CE::HasParseErrors => Diagnostic::error().with_message("program contains syntax errors"),
     }
 }
 
@@ -207,20 +198,19 @@ fn memory_fill_error_to_diagnostic(
     error: &crate::compiler::memory::MemoryFillError,
     file_id: FileId,
 ) -> Diagnostic<FileId> {
-    use crate::compiler::memory::InstructionCompilationError as ICE;
-    use crate::compiler::memory::MemoryFillError as MFE;
+    use crate::compiler::memory::{InstructionCompilationError as ICE, MemoryFillError as MFE};
 
     match error {
         MFE::Evaluation { location, source } => Diagnostic::error()
             .with_message(format!("could not evaluate expression: {source}"))
             .with_labels(vec![
-                Label::primary(file_id, location.clone()).with_message(source.to_string()),
+                Label::primary(file_id, location.clone()).with_message(source.to_string())
             ]),
 
         MFE::Compute { location, source } => Diagnostic::error()
             .with_message(format!("could not compute argument: {source}"))
             .with_labels(vec![
-                Label::primary(file_id, location.clone()).with_message(source.to_string()),
+                Label::primary(file_id, location.clone()).with_message(source.to_string())
             ]),
 
         MFE::InstructionCompilation {
@@ -304,10 +294,7 @@ pub fn resolve_to_original(
 /// Serialize a codespan diagnostic to JSON matching the web app's report
 /// schema.
 #[must_use]
-pub fn diagnostic_to_json(
-    diag: &Diagnostic<FileId>,
-    db: &FileDatabase,
-) -> serde_json::Value {
+pub fn diagnostic_to_json(diag: &Diagnostic<FileId>, db: &FileDatabase) -> serde_json::Value {
     let severity = match diag.severity {
         Severity::Bug | Severity::Error => "error",
         Severity::Warning => "warning",
@@ -349,10 +336,7 @@ pub fn diagnostic_to_json(
 
 /// Serialize multiple diagnostics to a JSON array string.
 #[must_use]
-pub fn diagnostics_to_json(
-    diagnostics: &[Diagnostic<FileId>],
-    db: &FileDatabase,
-) -> String {
+pub fn diagnostics_to_json(diagnostics: &[Diagnostic<FileId>], db: &FileDatabase) -> String {
     let arr: Vec<serde_json::Value> = diagnostics
         .iter()
         .map(|d| diagnostic_to_json(d, db))
@@ -370,18 +354,10 @@ pub fn diagnostics_to_json(
 ///
 /// Panics if the diagnostic references an invalid file ID.
 #[must_use]
-pub fn render_to_string(
-    diag: &Diagnostic<FileId>,
-    db: &FileDatabase,
-) -> String {
+pub fn render_to_string(diag: &Diagnostic<FileId>, db: &FileDatabase) -> String {
     let config = term::Config::default();
     let mut buf = Vec::new();
-    term::emit_to_io_write(
-        &mut buf,
-        &config,
-        db.inner(),
-        diag,
-    )
-    .expect("diagnostic rendering failed");
+    term::emit_to_io_write(&mut buf, &config, db.inner(), diag)
+        .expect("diagnostic rendering failed");
     String::from_utf8(buf).expect("diagnostic output is valid UTF-8")
 }
