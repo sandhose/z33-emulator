@@ -182,26 +182,6 @@ impl std::fmt::Display for Node {
     }
 }
 
-impl Node {
-    fn offset(self, offset: usize) -> Self {
-        match self {
-            Node::BinaryOr(a, b) => Node::BinaryOr(a.offset(offset), b.offset(offset)),
-            Node::BinaryAnd(a, b) => Node::BinaryAnd(a.offset(offset), b.offset(offset)),
-            Node::LeftShift(a, b) => Node::LeftShift(a.offset(offset), b.offset(offset)),
-            Node::RightShift(a, b) => Node::RightShift(a.offset(offset), b.offset(offset)),
-            Node::Sum(a, b) => Node::Sum(a.offset(offset), b.offset(offset)),
-            Node::Substract(a, b) => Node::Substract(a.offset(offset), b.offset(offset)),
-            Node::Multiply(a, b) => Node::Multiply(a.offset(offset), b.offset(offset)),
-            Node::Divide(a, b) => Node::Divide(a.offset(offset), b.offset(offset)),
-            Node::Invert(a) => Node::Invert(a.offset(offset)),
-            Node::BinaryNot(a) => Node::BinaryNot(a.offset(offset)),
-            Node::Literal(a) => Node::Literal(a),
-            Node::Variable(a) => Node::Variable(a),
-            Node::Error => Node::Error,
-        }
-    }
-}
-
 pub trait Context {
     // TODO: use something else than Value
     fn resolve_variable(&self, variable: &str) -> Option<Value>;

@@ -8,15 +8,14 @@ use chumsky::prelude::*;
 use super::line::{Line, LineContent, Program};
 use super::location::{Locatable, Located};
 use super::shared::{
-    expression, hspace, hspace1, identifier, kw, number_literal, register, span_to_range,
-    string_literal, DiagnosticSeverity, Extra, ParseDiagnostic, Span,
+    expression, hspace, hspace1, identifier, kw, register, span_to_range, string_literal, Extra,
+    ParseDiagnostic,
 };
 use super::value::{
     DirectiveArgument, DirectiveKind, InstructionArgument, InstructionKind,
 };
-use crate::parser::expression::{Node as ExpressionNode, Value as ExpressionValue};
+use crate::parser::expression::Node as ExpressionNode;
 use crate::parser::shared::rich_to_diagnostic;
-use crate::runtime::Reg;
 
 /// Result of parsing: always produces a program, plus accumulated diagnostics.
 pub struct ParseResult {

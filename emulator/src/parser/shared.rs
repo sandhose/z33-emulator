@@ -6,7 +6,7 @@ use std::ops::Range;
 use chumsky::prelude::*;
 
 use super::expression::{Node as ExpressionNode, Value as ExpressionValue};
-use super::location::{Locatable, Located};
+use super::location::Locatable;
 use crate::runtime::Reg;
 
 // ---------------------------------------------------------------------------

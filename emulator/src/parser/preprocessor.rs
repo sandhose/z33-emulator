@@ -8,9 +8,7 @@
 use chumsky::prelude::*;
 
 use super::location::{Locatable, Located};
-use super::shared::{
-    hspace, identifier, span_to_range, string_literal, Extra, Span,
-};
+use super::shared::{hspace, identifier, span_to_range, string_literal, Extra};
 
 pub(crate) type Children = Vec<Located<Node>>;
 
@@ -551,44 +549,6 @@ fn find_body_boundary(input: &str) -> Result<usize, String> {
     }
 
     Err("unterminated #if block: missing #endif".to_string())
-}
-
-/// Offset the inner `Located` spans of a node by `offset` bytes.
-/// This makes spans absolute when the node was parsed from a line at a
-/// known position.
-fn offset_node(node: Node, offset: usize) -> Node {
-    match node {
-        Node::Definition { key, content } => Node::Definition {
-            key: Located {
-                inner: key.inner,
-                location: (key.location.start + offset)..(key.location.end + offset),
-            },
-            content: content.map(|c| Located {
-                inner: c.inner,
-                location: (c.location.start + offset)..(c.location.end + offset),
-            }),
-        },
-        Node::Undefine { key } => Node::Undefine {
-            key: Located {
-                inner: key.inner,
-                location: (key.location.start + offset)..(key.location.end + offset),
-            },
-        },
-        Node::Inclusion { path } => Node::Inclusion {
-            path: Located {
-                inner: path.inner,
-                location: (path.location.start + offset)..(path.location.end + offset),
-            },
-        },
-        Node::Error { message } => Node::Error {
-            message: Located {
-                inner: message.inner,
-                location: (message.location.start + offset)..(message.location.end + offset),
-            },
-        },
-        // Raw, NewLine, Condition don't need inner span adjustment
-        other => other,
-    }
 }
 
 #[cfg(test)]
