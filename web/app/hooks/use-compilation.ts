@@ -37,7 +37,7 @@ function applyReportDiagnostics(
 
     for (const raw of reports) {
       const reportObject = reportSchema.parse(raw);
-      if (!firstMessage) firstMessage = reportObject.message;
+      firstMessage ??= reportObject.message;
       for (const model of monaco.editor.getModels()) {
         const { markers, decorations } = toMonacoDiagnostics(
           model,

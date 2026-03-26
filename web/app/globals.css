@@ -180,34 +180,6 @@
   border-radius: 2px;
 }
 
-/* Diagnostic inline messages — shown after the line content */
-.diag-error-inline-message {
-  color: oklch(0.58 0.22 27 / 70%);
-  font-style: italic;
-}
-
-.dark .diag-error-inline-message {
-  color: oklch(0.704 0.191 22.216 / 70%);
-}
-
-.diag-warning-inline-message {
-  color: oklch(0.75 0.15 85 / 70%);
-  font-style: italic;
-}
-
-.dark .diag-warning-inline-message {
-  color: oklch(0.75 0.15 85 / 70%);
-}
-
-.diag-advice-inline-message {
-  color: oklch(0.6 0.12 250 / 60%);
-  font-style: italic;
-}
-
-.dark .diag-advice-inline-message {
-  color: oklch(0.6 0.12 250 / 60%);
-}
-
 /* Debug line highlight — Monaco decoration classes */
 .debug-line-highlight {
   background: oklch(0.9 0.1 100 / 40%);
