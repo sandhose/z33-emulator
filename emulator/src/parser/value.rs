@@ -10,6 +10,10 @@ use crate::runtime::Reg;
 #[derive(Display, FromStr, Clone, Copy, Debug, PartialEq)]
 #[display(style = "lowercase")]
 pub enum InstructionKind {
+    /// A parse-error placeholder. Never reaches the compiler — layout skips
+    /// lines with this kind.
+    #[display("<error>")]
+    Error,
     Add,
     And,
     Call,

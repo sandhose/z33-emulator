@@ -115,6 +115,9 @@ fn compile_instruction(
     use InstructionKind as K;
 
     match kind {
+        // Error instructions should be skipped during layout
+        K::Error => unreachable!("error instructions should be skipped during layout"),
+
         // Binary ops: arg1 = ImmRegDirIndIdx, arg2 = Reg
         K::Add => {
             check_arg_count(kind, arguments, 2)?;

@@ -96,18 +96,17 @@ fn instruction_kind<'a>() -> impl Parser<'a, &'a str, InstructionKind, Extra<'a>
     use InstructionKind as K;
 
     // Parse an identifier-like token and match against known mnemonics.
-    // We use `validate` instead of `try_map` because chumsky 0.12 reduces
-    // try_map error spans to the cursor position, losing the full identifier
-    // span. `validate` emits errors with the correct span as a side-effect.
+    // Uses validate() so that error spans cover the full identifier. Unknown
+    // instructions produce InstructionKind::Error (not a dummy like Nop),
+    // which the compiler skips during layout.
     any()
         .filter(|c: &char| c.is_ascii_alphabetic() || *c == '_')
         .repeated()
         .at_least(1)
         .to_slice()
         .validate(|s: &str, e, emitter| {
-            // Case-insensitive matching against all instruction mnemonics
-            let upper = s.to_ascii_lowercase();
-            match upper.as_str() {
+            let lower = s.to_ascii_lowercase();
+            match lower.as_str() {
                 "add" => K::Add,
                 "and" => K::And,
                 "call" => K::Call,
@@ -144,8 +143,7 @@ fn instruction_kind<'a>() -> impl Parser<'a, &'a str, InstructionKind, Extra<'a>
                 "debugreg" => K::DebugReg,
                 _ => {
                     emitter.emit(Rich::custom(e.span(), format!("unknown instruction '{s}'")));
-                    // Return a dummy value — the error is already emitted
-                    K::Nop
+                    K::Error
                 }
             }
         })
@@ -417,6 +415,7 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
+    use crate::runtime::Reg;
 
     #[test]
     fn parse_empty() {

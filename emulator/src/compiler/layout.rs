@@ -177,8 +177,7 @@ pub(crate) fn layout_memory(program: &[Located<Line>]) -> (Layout, Vec<MemoryLay
                 LineContent::Directive {
                     kind: Located { inner: Word, .. },
                     ..
-                }
-                | LineContent::Instruction { .. } => {
+                } => {
                     let abs_location = Range {
                         start: content.location.start + line_offset,
                         end: content.location.end + line_offset,
@@ -192,6 +191,28 @@ pub(crate) fn layout_memory(program: &[Located<Line>]) -> (Layout, Vec<MemoryLay
                     }
                     trace!(position, content = %content.inner, "Inserting line");
                     position += 1;
+                }
+
+                // Valid instructions (skip error placeholder instructions)
+                LineContent::Instruction { kind, .. } => {
+                    if kind.inner == crate::parser::value::InstructionKind::Error {
+                        // Skip — the diagnostic was already emitted by the
+                        // parser
+                    } else {
+                        let abs_location = Range {
+                            start: content.location.start + line_offset,
+                            end: content.location.end + line_offset,
+                        };
+                        if let Err(e) = layout.insert_placement(
+                            position,
+                            Placement::Line(content.clone().offset(line_offset)),
+                            abs_location,
+                        ) {
+                            errors.push(e);
+                        }
+                        trace!(position, content = %content.inner, "Inserting line");
+                        position += 1;
+                    }
                 }
 
                 // r[impl asm.directive.space]
@@ -326,7 +347,7 @@ mod tests {
             ),
         ];
 
-        let labels = layout_memory(&program).unwrap().labels;
+        let labels = layout_memory(&program).0.labels;
         let expected = BTreeMap::from_iter([
             ("main".into(), PROGRAM_START),
             ("loop".into(), PROGRAM_START + 1),
@@ -344,7 +365,7 @@ mod tests {
             ),
         ];
 
-        let labels = layout_memory(&program).unwrap().labels;
+        let labels = layout_memory(&program).0.labels;
         let expected = BTreeMap::from_iter(vec![("main".into(), 10)]);
         assert_eq!(labels, expected);
     }
@@ -364,7 +385,7 @@ mod tests {
             ),
         ];
 
-        let labels = layout_memory(&program).unwrap().labels;
+        let labels = layout_memory(&program).0.labels;
         let expected = BTreeMap::from_iter([
             ("first".into(), PROGRAM_START),
             ("second".into(), PROGRAM_START + 10),
@@ -389,7 +410,7 @@ mod tests {
             ),
         ];
 
-        let labels = layout_memory(&program).unwrap().labels;
+        let labels = layout_memory(&program).0.labels;
         let expected = BTreeMap::from_iter(vec![
             ("first".into(), PROGRAM_START),
             ("second".into(), PROGRAM_START + 1),
@@ -414,7 +435,7 @@ mod tests {
             ),
         ];
 
-        let labels = layout_memory(&program).unwrap().labels;
+        let labels = layout_memory(&program).0.labels;
         let expected = BTreeMap::from_iter([
             ("first".into(), PROGRAM_START),
             ("second".into(), PROGRAM_START + 6),
@@ -429,49 +450,52 @@ mod tests {
         let program: Vec<Located<Line>> =
             vec![Line::empty().symbol("hello"), Line::empty().symbol("hello")];
 
+        let (_, errors) = layout_memory(&program);
+        assert_eq!(errors.len(), 1);
         assert_eq!(
-            layout_memory(&program).err(),
-            Some(MemoryLayoutError::DuplicateLabel {
+            errors[0],
+            MemoryLayoutError::DuplicateLabel {
                 label: "hello".into(),
                 location: 0..0
-            })
+            }
         );
     }
 
     #[test]
     fn invalid_directive_argument_test() {
         let program: Vec<Located<Line>> = vec![Line::empty().directive(DirectiveKind::String, 3)];
-
+        let (_, errors) = layout_memory(&program);
+        assert_eq!(errors.len(), 1);
         assert_eq!(
-            layout_memory(&program).err(),
-            Some(MemoryLayoutError::InvalidDirectiveArgument {
+            errors[0],
+            MemoryLayoutError::InvalidDirectiveArgument {
                 kind: DirectiveKind::String,
-                location: 0..0 // argument: 3.into(),
-            })
+                location: 0..0,
+            }
         );
 
         let program: Vec<Located<Line>> =
             vec![Line::empty().directive(DirectiveKind::Space, "hello")];
-
+        let (_, errors) = layout_memory(&program);
+        assert_eq!(errors.len(), 1);
         assert_eq!(
-            layout_memory(&program).err(),
-            Some(MemoryLayoutError::InvalidDirectiveArgument {
+            errors[0],
+            MemoryLayoutError::InvalidDirectiveArgument {
                 kind: DirectiveKind::Space,
                 location: 0..0,
-                // argument: "hello".into(),
-            })
+            }
         );
 
         let program: Vec<Located<Line>> =
             vec![Line::empty().directive(DirectiveKind::Addr, "hello")];
-
+        let (_, errors) = layout_memory(&program);
+        assert_eq!(errors.len(), 1);
         assert_eq!(
-            layout_memory(&program).err(),
-            Some(MemoryLayoutError::InvalidDirectiveArgument {
+            errors[0],
+            MemoryLayoutError::InvalidDirectiveArgument {
                 kind: DirectiveKind::Addr,
                 location: 0..0,
-                // argument: "hello".into(),
-            })
+            }
         );
     }
 
@@ -485,9 +509,10 @@ mod tests {
             Line::empty().directive(DirectiveKind::Word, 0), // This overlaps with the second "l"
         ];
 
-        let err = layout_memory(&program).err().unwrap();
-        match err {
-            MemoryLayoutError::MemoryOverlap { address, .. } => assert_eq!(address, 14),
+        let (_, errors) = layout_memory(&program);
+        assert!(!errors.is_empty());
+        match &errors[0] {
+            MemoryLayoutError::MemoryOverlap { address, .. } => assert_eq!(*address, 14),
             other => panic!("expected MemoryOverlap, got {other:?}"),
         }
     }

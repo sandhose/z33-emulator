@@ -1,13 +1,13 @@
 ---
 source: emulator/tests/diagnostics.rs
-assertion_line: 108
+assertion_line: 114
 expression: "check_parse_errors(\"main:\\n    xyz\\n    add %a, %b\\n    !!!\\n    reset\")"
 ---
 error: unknown instruction 'xyz'
   ┌─ test.S:2:5
   │
 2 │     xyz
-  │     ^ unknown instruction 'xyz'
+  │     ^^^ unknown instruction 'xyz'
 
 error: unexpected '!', expected something else, '.', end of input
   ┌─ test.S:4:5
