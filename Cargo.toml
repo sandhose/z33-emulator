@@ -36,8 +36,6 @@ indoc = "2.0.7"
 insta = "1.46.3"
 js-sys = "0.3.91"
 miette = { version = "7.6.0", features = ["fancy"] }
-nom = "8.0.0"
-nom-language = "0.1.0"
 parse-display = "0.10.0"
 pretty_assertions = "1.4.1"
 rustyline = "17.0.2"

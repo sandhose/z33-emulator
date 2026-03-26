@@ -6,13 +6,23 @@ use std::sync::Arc;
 
 use camino::{Utf8Path, Utf8PathBuf};
 use miette::{Diagnostic, NamedSource, SourceSpan};
-use nom::combinator::all_consuming;
-use nom::{Finish, Offset, Parser};
 use thiserror::Error;
 use tracing::warn;
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::parser::condition::{parse_condition, Context as ConditionContext};
+
+/// Compute the byte offset of `substr` within `base`.
+/// Both must be slices of the same underlying string.
+fn str_offset(base: &str, substr: &str) -> usize {
+    let base_ptr = base.as_ptr() as usize;
+    let sub_ptr = substr.as_ptr() as usize;
+    debug_assert!(
+        sub_ptr >= base_ptr && sub_ptr <= base_ptr + base.len(),
+        "substr is not a subslice of base"
+    );
+    sub_ptr - base_ptr
+}
 use crate::parser::expression::{EmptyContext as EmptyExpressionContext, EvaluationError};
 use crate::parser::location::{Locatable, Located};
 use crate::parser::preprocessor::{parse, Node};
@@ -216,10 +226,8 @@ impl Workspace {
 
         // Parse the file content
         let source_str = source.as_str();
-        let content = all_consuming(parse)
-            .parse(source_str)
-            .finish()
-            .map(|(_rest, chunks)| {
+        let content = parse(source_str)
+            .map(|chunks| {
                 // We parsed the chunks, now we find inclusions and resolve them
                 let mut references = HashMap::new();
                 for chunk in &chunks {
@@ -233,8 +241,9 @@ impl Workspace {
                 }
                 FileContent { chunks, references }
             })
-            .map_err(|e: crate::parser::Error<&str>| {
-                let inner = e.to_miette_diagnostic(&source_str, 0).into();
+            .map_err(|err_msg| {
+                let inner: Arc<dyn Diagnostic + Send + Sync> =
+                    Arc::new(miette::MietteDiagnostic::new(err_msg));
                 SharedParseError { inner }
             });
 
@@ -416,10 +425,11 @@ impl Workspace {
                             .collect();
 
                         let condition = condition.as_str();
-                        let (_, expression) = parse_condition(condition).finish().map_err(
-                            |err: crate::parser::Error<&str>| {
+                        let expression = parse_condition(condition).map_err(
+                            |err_msg| {
                                 let (src, span) = condition_stack.context();
-                                let inner = err.to_miette_diagnostic(&condition, span.offset());
+                                let inner: Box<dyn miette::Diagnostic + Send + Sync> =
+                                    Box::new(miette::MietteDiagnostic::new(err_msg));
                                 PreprocessorError::ConditionParse { src, span, inner }
                             },
                         )?;
@@ -609,7 +619,7 @@ impl Context {
                 ignore_during_defined = false;
             }
 
-            let location = input.offset(word)..word.len();
+            let location = str_offset(input, word)..word.len();
             if ignore_during_defined {
                 result.push((*word).with_location(location));
             } else {
@@ -634,7 +644,7 @@ impl Context {
         input
             .split_word_bounds()
             .filter_map(|word| {
-                let location = input.offset(word)..word.len();
+                let location = str_offset(input, word)..word.len();
                 let replaced = match self.definitions.get(word) {
                     Some(Some(r)) => r,
                     Some(None) => return None,

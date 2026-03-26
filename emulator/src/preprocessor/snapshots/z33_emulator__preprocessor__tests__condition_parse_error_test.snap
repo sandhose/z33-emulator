@@ -1,16 +1,11 @@
 ---
 source: emulator/src/preprocessor/mod.rs
+assertion_line: 883
 expression: report
 ---
   x Invalid syntax in condition
-  `->   x invalid syntax
-         ,-[/invalid.S:2:6]
-       1 | hello
-       2 | #if (1 + 5
-         :      ^
-         :      `-- here
-       3 | #endif
-         `----
+  `->   x found end of input expected any, '*', '/', '+', '-', '<', '>', '&',
+        | '|', '=', or '!'
       
    ,-[/invalid.S:2:5]
  1 | hello

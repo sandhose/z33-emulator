@@ -1,18 +1,13 @@
 ---
 source: emulator/src/preprocessor/mod.rs
+assertion_line: 863
 expression: report
 ---
   x Failed to process included file
   `->   x Failed to parse file
       
       Error:
-        x invalid syntax
-         ,-[/invalid.S:2:1]
-       1 | hello
-       2 | #else
-         : ^
-         : `-- here
-         `----
+        x unexpected directive at byte 6: #else
       
    ,-[/include.S:1:10]
  1 | #include "invalid.S"

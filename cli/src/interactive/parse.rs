@@ -1,14 +1,15 @@
 use std::str::FromStr;
 
-use nom::branch::alt;
-use nom::character::complete::char;
-use nom::combinator::{all_consuming, map, value};
-use nom::{Finish, IResult, Offset, Parser};
-use nom_language::error::{convert_error, VerboseError};
 use thiserror::Error;
 use z33_emulator::parser::location::Locatable;
-use z33_emulator::parser::{parse_expression, parse_register, ExpressionContext, ExpressionNode};
+use z33_emulator::parser::shared::{expression, register};
+use z33_emulator::parser::{ExpressionContext, ExpressionNode};
 use z33_emulator::runtime::{Computer, ExtractValue, Reg};
+
+use chumsky::prelude::*;
+
+type Span = z33_emulator::parser::shared::Span;
+type Extra<'a> = z33_emulator::parser::shared::Extra<'a>;
 
 #[derive(Debug, Clone)]
 pub enum Argument {
@@ -50,50 +51,44 @@ impl FromStr for Argument {
     type Err = ParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        parse_address(s).map_err(|e| ParseError(convert_error(s, e)))
+        parse_address(s).map_err(ParseError)
     }
 }
 
-fn parse_indexed(input: &str) -> IResult<&str, Argument, VerboseError<&str>> {
-    #[derive(Clone, Copy)]
-    enum Sign {
-        Plus,
-        Minus,
-    }
-    use Sign::{Minus, Plus};
+fn argument_parser<'a>() -> impl Parser<'a, &'a str, Argument, Extra<'a>> {
+    // Try indexed first: %reg +/- expr
+    let indexed = register()
+        .then(
+            choice((just('+').to(true), just('-').to(false)))
+                .then(expression()),
+        )
+        .map(|(reg, (is_plus, expr))| {
+            let expr = if is_plus {
+                expr
+            } else {
+                ExpressionNode::Invert(Box::new(expr).with_location(0..0))
+            };
+            Argument::Indexed(reg, expr)
+        });
 
-    let (rest, reg) = parse_register(input)?;
-
-    let (rest, sign) = alt((
-        value(Plus, char('+')),  // "%a + …"
-        value(Minus, char('-')), // "%a - …"
+    choice((
+        expression().map(Argument::Direct),
+        indexed,
+        register().map(Argument::Indirect),
     ))
-    .parse(rest)?;
-
-    let start = rest;
-    let (rest, mut expr) = parse_expression(rest)?;
-
-    if let Minus = sign {
-        expr = ExpressionNode::Invert(
-            Box::new(expr).with_location(input.offset(start)..input.offset(rest)),
-        );
-    }
-
-    Ok((rest, Argument::Indexed(reg, expr)))
 }
 
-fn parse_address_inner(input: &str) -> IResult<&str, Argument, VerboseError<&str>> {
-    alt((
-        map(parse_expression, Argument::Direct),
-        parse_indexed,
-        map(parse_register, Argument::Indirect),
-    ))
-    .parse(input)
-}
-
-fn parse_address(input: &str) -> Result<Argument, VerboseError<&str>> {
-    let (_, ret) = all_consuming(parse_address_inner).parse(input).finish()?;
-    Ok(ret)
+fn parse_address(input: &str) -> Result<Argument, String> {
+    argument_parser()
+        .then_ignore(end())
+        .parse(input)
+        .into_result()
+        .map_err(|errs| {
+            errs.into_iter()
+                .map(|e| e.to_string())
+                .collect::<Vec<_>>()
+                .join("; ")
+        })
 }
 
 #[derive(Debug, Clone)]
@@ -106,23 +101,26 @@ impl FromStr for AssignmentTarget {
     type Err = ParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        parse_assignment_target(s).map_err(|e| ParseError(convert_error(s, e)))
+        parse_assignment_target(s).map_err(ParseError)
     }
 }
 
-fn parse_assignment_target_inner(
-    input: &str,
-) -> IResult<&str, AssignmentTarget, VerboseError<&str>> {
-    alt((
-        map(parse_expression, AssignmentTarget::Address),
-        map(parse_register, AssignmentTarget::Register),
+fn assignment_target_parser<'a>() -> impl Parser<'a, &'a str, AssignmentTarget, Extra<'a>> {
+    choice((
+        expression().map(AssignmentTarget::Address),
+        register().map(AssignmentTarget::Register),
     ))
-    .parse(input)
 }
 
-fn parse_assignment_target(input: &str) -> Result<AssignmentTarget, VerboseError<&str>> {
-    let (_, ret) = all_consuming(parse_assignment_target_inner)
+fn parse_assignment_target(input: &str) -> Result<AssignmentTarget, String> {
+    assignment_target_parser()
+        .then_ignore(end())
         .parse(input)
-        .finish()?;
-    Ok(ret)
+        .into_result()
+        .map_err(|errs| {
+            errs.into_iter()
+                .map(|e| e.to_string())
+                .collect::<Vec<_>>()
+                .join("; ")
+        })
 }

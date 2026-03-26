@@ -1,15 +1,18 @@
-use nom::branch::alt;
-use nom::bytes::complete::{tag, take_till};
-use nom::character::complete::{char, line_ending, not_line_ending, space0, space1};
-use nom::combinator::{fail, map, not, opt};
-use nom::sequence::preceded;
-use nom::{IResult, Offset, Parser};
+//! Preprocessor directive parser.
+//!
+//! Parses preprocessor directives (`#define`, `#include`, `#if`, etc.) and raw
+//! assembly lines from source files. Uses chumsky for individual directive
+//! parsing with an imperative top-level loop to handle the recursive
+//! `#if/#elif/#else/#endif` block structure.
 
-use super::literal::parse_string_literal;
+use chumsky::prelude::*;
+
 use super::location::{Locatable, Located};
-use super::{parse_identifier, ParseError};
+use super::shared::{
+    hspace, identifier, span_to_range, string_literal, Extra, Span,
+};
 
-type Children = Vec<Located<Node>>;
+pub(crate) type Children = Vec<Located<Node>>;
 
 #[derive(Debug, PartialEq)]
 pub(crate) struct ConditionBranch {
@@ -23,7 +26,7 @@ pub(crate) enum Node {
         content: String,
     },
     NewLine {
-        // Whether the line ending a '\r\n'
+        // Whether the line ending is '\r\n'
         crlf: bool,
     },
     Error {
@@ -74,295 +77,518 @@ impl Node {
     }
 }
 
-/// Eats the end of a line, including trailing spaces, inline comments and the
-/// line ending
-fn eat_end_of_line<'a, Error: ParseError<&'a str>>(input: &'a str) -> IResult<&'a str, (), Error> {
-    let (rest, _) = space0(input)?;
-    let (rest, _) = opt(preceded(tag("//"), not_line_ending)).parse(rest)?;
-    Ok((rest, ()))
+// ---------------------------------------------------------------------------
+// Chumsky sub-parsers for individual directive components
+// ---------------------------------------------------------------------------
+
+/// Consume trailing whitespace and an optional `//` comment (but NOT the
+/// newline itself).
+fn eat_end_of_line<'a>() -> impl Parser<'a, &'a str, (), Extra<'a>> + Clone {
+    hspace()
+        .then(just("//").then(any().and_is(just('\n').not()).repeated()).or_not())
+        .ignored()
 }
 
-/// Extracts the argument of a directive
-/// It tries to stop before any trailing whitespace or comment
-fn parse_directive_argument<'a, Error: ParseError<&'a str>>(
-    input: &'a str,
-) -> IResult<&'a str, &'a str, Error> {
-    let mut cursor = input;
-    loop {
-        let (rest, _) = space0(cursor)?;
+/// Extract a directive argument: greedily consume non-whitespace tokens
+/// separated by spaces, stopping before `//`, `\r\n`, `\n`, or EOF.
+/// Trailing whitespace before the terminator is NOT included.
+fn directive_argument<'a>() -> impl Parser<'a, &'a str, &'a str, Extra<'a>> + Clone {
+    // Match: one or more segments of non-space, non-comment text
+    any()
+        .filter(|c: &char| !matches!(c, ' ' | '\t' | '\r' | '\n' | '/'))
+        .repeated()
+        .at_least(1)
+        .then(
+            // Optionally continue after whitespace if the next segment isn't a
+            // comment/newline/EOF
+            any()
+                .filter(|c: &char| *c == ' ' || *c == '\t')
+                .repeated()
+                .at_least(1)
+                .then(
+                    any()
+                        .filter(|c: &char| !matches!(c, ' ' | '\t' | '\r' | '\n' | '/'))
+                        .repeated()
+                        .at_least(1),
+                )
+                .repeated(),
+        )
+        .to_slice()
+}
 
-        // peek at the next thing after the spaces
-        if let Some("//" | "\r\n") = rest.get(..2) {
-            break;
-        }
+/// Parse `#define KEY [VALUE]`
+fn parse_definition(input: &str) -> Option<Node> {
+    let parser = just('#')
+        .then(hspace())
+        .ignore_then(just("define"))
+        .ignore_then(
+            any()
+                .filter(|c: &char| *c == ' ' || *c == '\t')
+                .repeated()
+                .at_least(1),
+        )
+        .ignore_then(
+            identifier()
+                .map_with(|id: &str, e| id.to_owned().with_location(span_to_range(e.span())))
+                .then(
+                    any()
+                        .filter(|c: &char| *c == ' ' || *c == '\t')
+                        .repeated()
+                        .at_least(1)
+                        .ignore_then(
+                            directive_argument().map_with(|arg: &str, e| {
+                                arg.to_owned().with_location(span_to_range(e.span()))
+                            }),
+                        )
+                        .or_not(),
+                ),
+        )
+        .then_ignore(eat_end_of_line())
+        .then_ignore(end())
+        .map(|(key, content)| Node::Definition { key, content });
 
-        if let Some("\n") = rest.get(..1) {
-            break;
-        }
+    parser.parse(input).into_result().ok()
+}
 
-        if rest.is_empty() {
-            break;
-        }
+/// Parse `#undefine KEY`
+fn parse_undefine(input: &str) -> Option<Node> {
+    let parser = just('#')
+        .then(hspace())
+        .ignore_then(just("undefine"))
+        .ignore_then(
+            any()
+                .filter(|c: &char| *c == ' ' || *c == '\t')
+                .repeated()
+                .at_least(1),
+        )
+        .ignore_then(
+            identifier()
+                .map_with(|id: &str, e| id.to_owned().with_location(span_to_range(e.span()))),
+        )
+        .then_ignore(eat_end_of_line())
+        .then_ignore(end())
+        .map(|key| Node::Undefine { key });
 
-        let (rest, _) =
-            take_till(|c| c == ' ' || c == '\t' || c == '\r' || c == '\n' || c == '/')(rest)?;
-        cursor = rest;
+    parser.parse(input).into_result().ok()
+}
+
+/// Parse `#include "path"`
+fn parse_inclusion(input: &str) -> Option<Node> {
+    let parser = just('#')
+        .then(hspace())
+        .ignore_then(just("include"))
+        .ignore_then(
+            any()
+                .filter(|c: &char| *c == ' ' || *c == '\t')
+                .repeated()
+                .at_least(1),
+        )
+        .ignore_then(
+            string_literal()
+                .map_with(|s, e| s.with_location(span_to_range(e.span()))),
+        )
+        .then_ignore(eat_end_of_line())
+        .then_ignore(end())
+        .map(|path| Node::Inclusion { path });
+
+    parser.parse(input).into_result().ok()
+}
+
+/// Parse `#error "message"`
+fn parse_error_directive(input: &str) -> Option<Node> {
+    let parser = just('#')
+        .then(hspace())
+        .ignore_then(just("error"))
+        .ignore_then(
+            any()
+                .filter(|c: &char| *c == ' ' || *c == '\t')
+                .repeated()
+                .at_least(1),
+        )
+        .ignore_then(
+            string_literal()
+                .map_with(|s, e| s.with_location(span_to_range(e.span()))),
+        )
+        .then_ignore(eat_end_of_line())
+        .then_ignore(end())
+        .map(|message| Node::Error { message });
+
+    parser.parse(input).into_result().ok()
+}
+
+/// Parse `#if CONDITION` header, returning the condition text.
+fn parse_if_header(input: &str) -> Option<Located<String>> {
+    let parser = just('#')
+        .then(hspace())
+        .ignore_then(just("if"))
+        .ignore_then(
+            any()
+                .filter(|c: &char| *c == ' ' || *c == '\t')
+                .repeated()
+                .at_least(1),
+        )
+        .ignore_then(
+            directive_argument()
+                .map_with(|arg: &str, e| arg.to_owned().with_location(span_to_range(e.span()))),
+        )
+        .then_ignore(eat_end_of_line())
+        .then_ignore(end());
+
+    parser.parse(input).into_result().ok()
+}
+
+/// Check if a line is `#elif CONDITION`, returning the condition if so.
+fn parse_elif_header(input: &str) -> Option<Located<String>> {
+    let parser = just('#')
+        .then(hspace())
+        .ignore_then(just("elif"))
+        .ignore_then(
+            any()
+                .filter(|c: &char| *c == ' ' || *c == '\t')
+                .repeated()
+                .at_least(1),
+        )
+        .ignore_then(
+            directive_argument()
+                .map_with(|arg: &str, e| arg.to_owned().with_location(span_to_range(e.span()))),
+        )
+        .then_ignore(eat_end_of_line())
+        .then_ignore(end());
+
+    parser.parse(input).into_result().ok()
+}
+
+/// Check if a line is `#else`.
+fn is_else_directive(input: &str) -> bool {
+    let parser = just('#')
+        .then(hspace())
+        .ignore_then(just("else"))
+        .then_ignore(eat_end_of_line())
+        .then_ignore(end());
+
+    parser.parse(input).into_result().is_ok()
+}
+
+/// Check if a line is `#endif`.
+fn is_endif_directive(input: &str) -> bool {
+    let parser = just('#')
+        .then(hspace())
+        .ignore_then(just("endif"))
+        .then_ignore(eat_end_of_line())
+        .then_ignore(end());
+
+    parser.parse(input).into_result().is_ok()
+}
+
+/// Parse a raw (non-directive) line, stripping `//` comments.
+fn parse_raw_line(line: &str) -> Option<Node> {
+    // Raw lines must not start with '#'
+    if line.starts_with('#') {
+        return None;
     }
 
-    let index = input.offset(cursor);
-    if index == 0 {
-        return Err(nom::Err::Error(nom::error::ParseError::from_error_kind(
-            input,
-            nom::error::ErrorKind::Eof, // TODO: maybe not the best kind
-        )));
-    }
-
-    let content = &input[..index];
-    Ok((cursor, content))
-}
-
-fn parse_definition<'a, Error: ParseError<&'a str>>(
-    input: &'a str,
-) -> IResult<&'a str, Node, Error> {
-    let (rest, _) = char('#')(input)?;
-    let (rest, _) = space0(rest)?;
-    let (rest, _) = tag("define")(rest)?;
-    let (rest, _) = space1(rest)?;
-    let start = rest;
-    let (rest, key) = parse_identifier(rest)?;
-    let key = key
-        .to_owned()
-        .with_location(input.offset(start)..input.offset(rest));
-
-    let (rest, content) = opt(|rest| {
-        let (rest, _) = space1(rest)?;
-        let start = rest;
-        let (rest, content) = parse_directive_argument(rest)?;
-        let content = content
-            .to_owned()
-            .with_location(input.offset(start)..input.offset(rest));
-
-        Ok((rest, content))
-    })
-    .parse(rest)?;
-
-    let (rest, ()) = eat_end_of_line(rest)?;
-
-    Ok((rest, Node::Definition { key, content }))
-}
-
-fn parse_undefine<'a, Error: ParseError<&'a str>>(input: &'a str) -> IResult<&'a str, Node, Error> {
-    let (rest, _) = char('#')(input)?;
-    let (rest, _) = space0(rest)?;
-    let (rest, _) = tag("undefine")(rest)?;
-    let (rest, _) = space1(rest)?;
-
-    let start = rest;
-    let (rest, key) = parse_identifier(rest)?;
-    let key = key
-        .to_owned()
-        .with_location(input.offset(start)..input.offset(rest));
-
-    let (rest, ()) = eat_end_of_line(rest)?;
-
-    Ok((rest, Node::Undefine { key }))
-}
-
-fn parse_inclusion<'a, Error: ParseError<&'a str>>(
-    input: &'a str,
-) -> IResult<&'a str, Node, Error> {
-    // Parse "#include"
-    let (rest, _) = char('#')(input)?;
-    let (rest, _) = space0(rest)?;
-    let (rest, _) = tag("include")(rest)?;
-    let (rest, _) = space1(rest)?;
-
-    // Parse the argument
-    let start = rest;
-    let (rest, path) = parse_string_literal(rest)?;
-    let path = path.with_location(input.offset(start)..input.offset(rest));
-
-    let (rest, ()) = eat_end_of_line(rest)?;
-
-    Ok((rest, Node::Inclusion { path }))
-}
-
-fn parse_error<'a, Error: ParseError<&'a str>>(input: &'a str) -> IResult<&'a str, Node, Error> {
-    // Parse "#error"
-    let (rest, _) = char('#')(input)?;
-    let (rest, _) = space0(rest)?;
-    let (rest, _) = tag("error")(rest)?;
-    let (rest, _) = space1(rest)?;
-
-    // Parse the argument
-    let start = rest;
-    let (rest, message) = parse_string_literal(rest)?;
-    let message = message.with_location(input.offset(start)..input.offset(rest));
-
-    let (rest, ()) = eat_end_of_line(rest)?;
-
-    Ok((rest, Node::Error { message }))
-}
-
-fn parse_condition<'a, Error: ParseError<&'a str>>(
-    input: &'a str,
-) -> IResult<&'a str, Node, Error> {
-    // This structure helps parsing the else/elif/end directives
-    enum BranchDirective {
-        Else,
-        ElseIf(Located<String>),
-        EndIf,
-    }
-    use BranchDirective::{Else, ElseIf, EndIf};
-
-    // First, get the "#if"
-    let (rest, _) = char('#')(input)?;
-    let (rest, _) = space0(rest)?;
-    let (rest, _) = tag("if")(rest)?;
-    let (rest, _) = space1(rest)?;
-
-    // Then parse the first condition
-    let start = rest;
-    let (rest, condition) = parse_directive_argument(rest)?;
-    let condition = condition
-        .to_string()
-        .with_location(input.offset(start)..input.offset(rest));
-
-    let (rest, ()) = eat_end_of_line(rest)?;
-    let (rest, _) = line_ending(rest)?;
-
-    // Parse its body
-    let start = rest;
-    let (rest, body) = parse(rest)?;
-    let body = body.with_location(input.offset(start)..input.offset(rest));
-
-    // We have the first branch parsed, let's parse the others
-    let branch = ConditionBranch { condition, body };
-
-    let mut cursor = rest; // This saves current location in the input
-    let mut branches = vec![branch];
-    let mut fallback = None;
-
-    loop {
-        // First, get the "#if"
-        let (rest, _) = char('#')(cursor)?;
-        let (rest, _) = space0(rest)?;
-        let (rest, directive) = alt((
-            map(tag("endif"), |_| EndIf),
-            |rest| {
-                // Parse a "elif" directive
-                let (rest, _) = tag("elif")(rest)?;
-                let (rest, _) = space1(rest)?;
-                let start = rest;
-                let (rest, condition) = parse_directive_argument(rest)?;
-                let condition = condition
-                    .to_string()
-                    .with_location(input.offset(start)..input.offset(rest));
-                Ok((rest, ElseIf(condition)))
-            },
-            map(tag("else"), |_| Else),
-        ))
-        .parse(rest)?;
-
-        let (rest, ()) = eat_end_of_line(rest)?;
-
-        // We've got an "#endif" directive, get out of the loop
-        // We don't update the cursor here since we will be re-parsing the #endif
-        // directive afterward
-        if let EndIf = directive {
-            break;
-        }
-
-        let (rest, _) = line_ending(rest)?;
-
-        let start = rest;
-        let (rest, body) = parse(rest)?;
-        let body = body.with_location(input.offset(start)..input.offset(rest));
-
-        cursor = rest;
-
-        if let ElseIf(condition) = directive {
-            branches.push(ConditionBranch { condition, body });
-        } else {
-            fallback = Some(body);
-            break;
-        }
-    }
-
-    let (rest, _) = char('#')(cursor)?;
-    let (rest, _) = space0(rest)?;
-    let (rest, _) = tag("endif")(rest)?;
-
-    let (rest, ()) = eat_end_of_line(rest)?;
-
-    Ok((rest, Node::Condition { branches, fallback }))
-}
-
-fn parse_raw<'a, Error: ParseError<&'a str>>(input: &'a str) -> IResult<&'a str, Node, Error> {
-    let (rest, ()) = not(char('#')).parse(input)?;
-    let (rest, content) = not_line_ending(rest)?;
-    // Strip the comment from the content
-    let content = if let Some(i) = content.find("//") {
-        &content[..i]
+    // Strip inline comment
+    let content = if let Some(i) = line.find("//") {
+        &line[..i]
     } else {
-        content
+        line
     };
-    let content = content.to_string();
-    Ok((rest, Node::Raw { content }))
+
+    Some(Node::Raw {
+        content: content.to_string(),
+    })
 }
 
-fn parse_chunk<'a, Error: ParseError<&'a str>>(input: &'a str) -> IResult<&'a str, Node, Error> {
-    // If we're at the end of the input, just stop parsing,
-    // so that we don't emit an empty raw node
-    if input.is_empty() {
-        return fail().parse(input);
+// ---------------------------------------------------------------------------
+// Top-level parse function
+// ---------------------------------------------------------------------------
+
+/// Parse preprocessor directives and raw assembly lines.
+///
+/// Returns a list of `Located<Node>` where:
+/// - Top-level node locations are absolute byte offsets in `input`
+/// - Body locations inside `#if` blocks are also absolute in `input`
+/// - Body *contents* have locations relative to the body start
+///
+/// This matches the contract expected by `preprocessor/mod.rs`.
+pub(crate) fn parse(input: &str) -> Result<Children, String> {
+    let chunks = parse_chunks(input, 0)?;
+
+    // Verify all input was consumed. parse_chunks stops at #elif/#else/#endif
+    // boundaries — if we see those at the top level, it's a syntax error.
+    let consumed: usize = chunks.last().map_or(0, |c| c.location.end);
+    let remaining = input[consumed..].trim();
+    if !remaining.is_empty() {
+        let first_line = remaining.lines().next().unwrap_or(remaining);
+        return Err(format!(
+            "unexpected directive at byte {consumed}: {first_line}"
+        ));
     }
 
-    alt((
-        parse_definition, // #define X [Y]
-        parse_undefine,   // #undefine X
-        parse_inclusion,  // #include "X"
-        parse_condition,  // #if X ... [#elif Y ...] [#else Z ...] #endif
-        parse_error,      // #error "X"
-        parse_raw,        // anything else
-    ))
-    .parse(input)
+    Ok(chunks)
 }
 
-pub(crate) fn parse<'a, Error: ParseError<&'a str>>(
-    input: &'a str,
-) -> IResult<&'a str, Children, Error> {
+/// Recursive chunk parser. `base_offset` is the byte offset of `input`
+/// within the top-level source (used for absolute span computation in
+/// `#if` condition/body wrappers).
+fn parse_chunks(input: &str, base_offset: usize) -> Result<Children, String> {
     let mut chunks = Vec::new();
-    let mut cursor = input;
+    let mut pos = 0;
 
-    while let (rest, Some(chunk)) = opt(parse_chunk).parse(cursor)? {
-        let record_line_ending = chunk.should_record_line_ending();
-        let chunk = chunk.with_location(input.offset(cursor)..input.offset(rest));
-        chunks.push(chunk);
+    while pos < input.len() {
+        // Find the end of the current line
+        let rest = &input[pos..];
+        let line_end = rest.find('\n').unwrap_or(rest.len());
+        let line = if line_end > 0 && rest.as_bytes().get(line_end - 1) == Some(&b'\r') {
+            &rest[..line_end - 1]
+        } else {
+            &rest[..line_end]
+        };
+        let full_line_len = line_end; // bytes consumed (not including \n)
 
-        cursor = rest;
+        // Try to parse the line as a directive
+        if let Some(condition) = parse_if_header(line) {
+            // #if directive — condition span stays relative to the #if line.
+            // The Span::push() in mod.rs will compose it with the node's
+            // absolute location to get the final position.
 
-        if let Ok((rest, ending)) = line_ending::<_, nom::error::Error<_>>(rest) {
-            // We want to record line ending nodes only if we got a Raw or Inclusion node
-            // just before. This is because we echo those, and want to keep location
-            // information for them
-            if record_line_ending {
-                let chunk = Node::NewLine {
-                    crlf: ending.len() == 2,
+            let node_start = pos; // position of the #if line
+            let block_start = pos + full_line_len + 1; // skip past the \n
+            let (node, block_end) =
+                parse_conditional_block(input, block_start, base_offset, node_start, condition)?;
+
+            chunks.push(node.with_location((pos + base_offset)..(block_end + base_offset)));
+            pos = block_end;
+        } else if let Some(node) = parse_definition(line)
+            .or_else(|| parse_undefine(line))
+            .or_else(|| parse_inclusion(line))
+            .or_else(|| parse_error_directive(line))
+        {
+            let record_newline = node.should_record_line_ending();
+            let chunk_end = pos + full_line_len;
+            chunks.push(node.with_location((pos + base_offset)..(chunk_end + base_offset)));
+
+            // Consume the newline
+            pos = chunk_end;
+            if pos < input.len() && input.as_bytes()[pos] == b'\n' {
+                if record_newline {
+                    let has_cr = line_end > 0
+                        && rest.as_bytes().get(line_end - 1) == Some(&b'\r');
+                    let nl_start = if has_cr { pos + base_offset - 1 } else { pos + base_offset };
+                    let nl_end = pos + base_offset + 1;
+                    chunks.push(
+                        Node::NewLine { crlf: has_cr }.with_location(nl_start..nl_end),
+                    );
                 }
-                .with_location(input.offset(cursor)..input.offset(rest));
+                pos += 1;
+            }
+        } else if let Some(raw) = parse_raw_line(line) {
+            let chunk_end = pos + full_line_len;
+            chunks.push(raw.with_location((pos + base_offset)..(chunk_end + base_offset)));
 
-                chunks.push(chunk);
+            // Consume the newline and record it (Raw always records newlines)
+            pos = chunk_end;
+            if pos < input.len() && input.as_bytes()[pos] == b'\n' {
+                let has_cr = line_end > 0
+                    && rest.as_bytes().get(line_end - 1) == Some(&b'\r');
+                let nl_start = if has_cr { pos + base_offset - 1 } else { pos + base_offset };
+                let nl_end = pos + base_offset + 1;
+                chunks.push(
+                    Node::NewLine { crlf: has_cr }.with_location(nl_start..nl_end),
+                );
+                pos += 1;
+            }
+        } else {
+            // Unknown line starting with '#' that isn't a recognized
+            // directive — this is a boundary for #if body parsing.
+            // Return what we have; the caller will handle the rest.
+            break;
+        }
+    }
+
+    Ok(chunks)
+}
+
+/// Parse a `#if/#elif/#else/#endif` block starting after the first `#if`
+/// header line.
+///
+/// Returns `(Node::Condition { ... }, end_position)` where `end_position`
+/// is the byte offset in `input` right after the `#endif` line.
+fn parse_conditional_block(
+    input: &str,
+    start: usize,
+    base_offset: usize,
+    node_start: usize,
+    first_condition: Located<String>,
+) -> Result<(Node, usize), String> {
+    let mut branches = Vec::new();
+    let mut fallback = None;
+    let mut body_start = start;
+
+    // Parse the body of the first branch.
+    // Body location is relative to the Condition node start (node_start).
+    let (body_chunks, body_end) = parse_body_until_boundary(input, body_start)?;
+    let body = body_chunks.with_location(
+        (body_start - node_start + base_offset)..(body_end - node_start + base_offset),
+    );
+    branches.push(ConditionBranch {
+        condition: first_condition,
+        body,
+    });
+
+    let mut pos = body_end;
+
+    loop {
+        if pos >= input.len() {
+            return Err("unterminated #if block".to_string());
+        }
+
+        // Read the boundary line
+        let rest = &input[pos..];
+        let line_end = rest.find('\n').unwrap_or(rest.len());
+        let line = if line_end > 0 && rest.as_bytes().get(line_end - 1) == Some(&b'\r') {
+            &rest[..line_end - 1]
+        } else {
+            &rest[..line_end]
+        };
+
+        if is_endif_directive(line) {
+            // Consume the #endif line
+            pos += line_end;
+            if pos < input.len() && input.as_bytes()[pos] == b'\n' {
+                pos += 1;
+            }
+            break;
+        } else if let Some(mut condition) = parse_elif_header(line) {
+            // Offset condition span to be relative to the Condition node
+            // start (the #if line), not the #elif line
+            condition.location.start += pos - node_start;
+            condition.location.end += pos - node_start;
+
+            // Skip past the #elif line
+            pos += line_end;
+            if pos < input.len() && input.as_bytes()[pos] == b'\n' {
+                pos += 1;
             }
 
-            cursor = rest;
+            body_start = pos;
+            let (body_chunks, body_end) = parse_body_until_boundary(input, body_start)?;
+            let body = body_chunks.with_location(
+                (body_start - node_start + base_offset)..(body_end - node_start + base_offset),
+            );
+            branches.push(ConditionBranch { condition, body });
+            pos = body_end;
+        } else if is_else_directive(line) {
+            // Skip past the #else line
+            pos += line_end;
+            if pos < input.len() && input.as_bytes()[pos] == b'\n' {
+                pos += 1;
+            }
+
+            body_start = pos;
+            let (body_chunks, body_end) = parse_body_until_boundary(input, body_start)?;
+            let body = body_chunks.with_location(
+                (body_start - node_start + base_offset)..(body_end - node_start + base_offset),
+            );
+            fallback = Some(body);
+            pos = body_end;
         } else {
-            // Got no linebreak, get out of the loop
-            break;
+            return Err(format!("unexpected line in #if block: {line}"));
         }
     }
 
-    Ok((cursor, chunks))
+    Ok((Node::Condition { branches, fallback }, pos))
+}
+
+/// Parse chunks from `input[start..]` until hitting a `#elif`, `#else`, or
+/// `#endif` boundary. Returns the body chunks (with spans relative to the
+/// body start) and the byte offset of the boundary line.
+fn parse_body_until_boundary(
+    input: &str,
+    start: usize,
+) -> Result<(Children, usize), String> {
+    let body_input = &input[start..];
+
+    // Find where the body ends — scan for the first #elif/#else/#endif at
+    // the top level (accounting for nested #if blocks).
+    let boundary = find_body_boundary(body_input)?;
+    let body_slice = &body_input[..boundary];
+
+    // Parse the body slice — spans will be relative to body_slice start (= 0)
+    let chunks = parse_chunks(body_slice, 0)?;
+
+    Ok((chunks, start + boundary))
+}
+
+/// Scan through `input` to find the byte offset of the first
+/// `#elif`/`#else`/`#endif` at the top nesting level. Nested `#if` blocks
+/// are skipped.
+fn find_body_boundary(input: &str) -> Result<usize, String> {
+    let mut pos = 0;
+    let mut depth = 0;
+
+    for line in input.split('\n') {
+        let trimmed = line.trim_start();
+
+        if trimmed.starts_with('#') {
+            // Check for nested #if
+            let after_hash = trimmed.strip_prefix('#').unwrap_or(trimmed).trim_start();
+            if after_hash.starts_with("if") && after_hash[2..].starts_with([' ', '\t'])
+            {
+                depth += 1;
+            } else if depth > 0 && after_hash.starts_with("endif") {
+                depth -= 1;
+            } else if depth == 0
+                && (after_hash.starts_with("elif")
+                    || after_hash.starts_with("else")
+                    || after_hash.starts_with("endif"))
+            {
+                return Ok(pos);
+            }
+        }
+
+        pos += line.len() + 1; // +1 for the '\n'
+    }
+
+    Err("unterminated #if block: missing #endif".to_string())
+}
+
+/// Offset the inner `Located` spans of a node by `offset` bytes.
+/// This makes spans absolute when the node was parsed from a line at a
+/// known position.
+fn offset_node(node: Node, offset: usize) -> Node {
+    match node {
+        Node::Definition { key, content } => Node::Definition {
+            key: Located {
+                inner: key.inner,
+                location: (key.location.start + offset)..(key.location.end + offset),
+            },
+            content: content.map(|c| Located {
+                inner: c.inner,
+                location: (c.location.start + offset)..(c.location.end + offset),
+            }),
+        },
+        Node::Undefine { key } => Node::Undefine {
+            key: Located {
+                inner: key.inner,
+                location: (key.location.start + offset)..(key.location.end + offset),
+            },
+        },
+        Node::Inclusion { path } => Node::Inclusion {
+            path: Located {
+                inner: path.inner,
+                location: (path.location.start + offset)..(path.location.end + offset),
+            },
+        },
+        Node::Error { message } => Node::Error {
+            message: Located {
+                inner: message.inner,
+                location: (message.location.start + offset)..(message.location.end + offset),
+            },
+        },
+        // Raw, NewLine, Condition don't need inner span adjustment
+        other => other,
+    }
 }
 
 #[cfg(test)]
@@ -372,104 +598,68 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parse_directive_argument_test() {
-        let res = parse_directive_argument::<()>("foo").unwrap();
-        assert_eq!(res, ("", "foo"));
+    fn parse_raw_test() {
+        // It extracts the line
+        assert_eq!(
+            parse_raw_line("line"),
+            Some(Node::Raw {
+                content: "line".to_string()
+            })
+        );
+
+        // It extracts the line and discards the comment
+        assert_eq!(
+            parse_raw_line("line // comment"),
+            Some(Node::Raw {
+                content: "line ".to_string()
+            })
+        );
+
+        // Does not get directives
+        assert_eq!(parse_raw_line("#directive"), None);
     }
 
     #[test]
     fn parse_definition_test() {
-        let res = parse_definition::<()>("#define foo bar").unwrap();
         assert_eq!(
-            res,
-            (
-                "",
-                Node::Definition {
-                    key: "foo".to_owned().with_location(8..11),
-                    content: Some("bar".to_owned().with_location(12..15)),
-                }
-            )
+            parse_definition("#define foo bar"),
+            Some(Node::Definition {
+                key: "foo".to_owned().with_location(8..11),
+                content: Some("bar".to_owned().with_location(12..15)),
+            })
         );
 
-        let res = parse_definition::<()>("#define foo").unwrap();
         assert_eq!(
-            res,
-            (
-                "",
-                Node::Definition {
-                    key: "foo".to_owned().with_location(8..11),
-                    content: None,
-                }
-            )
+            parse_definition("#define foo"),
+            Some(Node::Definition {
+                key: "foo".to_owned().with_location(8..11),
+                content: None,
+            })
         );
 
-        let res = parse_definition::<()>("#define trailing ").unwrap();
         assert_eq!(
-            res,
-            (
-                "",
-                Node::Definition {
-                    key: "trailing".to_owned().with_location(8..16),
-                    content: None,
-                }
-            )
+            parse_definition("#define trailing "),
+            Some(Node::Definition {
+                key: "trailing".to_owned().with_location(8..16),
+                content: None,
+            })
         );
     }
 
     #[test]
     fn parse_inclusion_test() {
-        let res = parse_inclusion::<()>("#include \"foo\"").unwrap();
         assert_eq!(
-            res,
-            (
-                "",
-                Node::Inclusion {
-                    path: "foo".to_string().with_location(9..14)
-                }
-            )
+            parse_inclusion("#include \"foo\""),
+            Some(Node::Inclusion {
+                path: "foo".to_string().with_location(9..14)
+            })
         );
-    }
-
-    #[test]
-    fn parse_raw_test() {
-        // It extracts the line
-        let (rest, body) = parse_raw::<()>("line").unwrap();
-        assert_eq!(rest, "");
-        assert_eq!(
-            body,
-            Node::Raw {
-                content: "line".to_string()
-            }
-        );
-
-        // It extracts the line and discard the comment
-        let (rest, body) = parse_raw::<()>("line // comment").unwrap();
-        assert_eq!(rest, "");
-        assert_eq!(
-            body,
-            Node::Raw {
-                content: "line ".to_string()
-            }
-        );
-
-        // Gets only one line
-        let (rest, body) = parse_raw::<()>("line\nline").unwrap();
-        assert_eq!(rest, "\nline");
-        assert_eq!(
-            body,
-            Node::Raw {
-                content: "line".to_string()
-            }
-        );
-
-        // Does not get directives
-        assert!(parse_raw::<()>("#directive").is_err());
     }
 
     #[test]
     fn parse_simple_test() {
         use Node::{Definition, Error, Inclusion, NewLine, Raw, Undefine};
-        let (rest, body) = parse::<()>(indoc::indoc! {r#"
+        let body = parse(indoc::indoc! {r#"
             hello
             #include "foo"
             #define bar baz
@@ -479,7 +669,6 @@ mod tests {
             #define test
         "#})
         .unwrap();
-        assert_eq!(rest, "");
 
         assert_eq!(
             body,
@@ -524,7 +713,7 @@ mod tests {
     #[test]
     fn parse_weird_test() {
         use Node::{Definition, Error, Inclusion, NewLine, Raw, Undefine};
-        let (rest, body) = parse::<()>(indoc::indoc! {r#"
+        let body = parse(indoc::indoc! {r#"
             hello
             #  include   "foo"//comment
             # define   bar   baz  // comment
@@ -536,7 +725,6 @@ mod tests {
             empty line
         "#})
         .unwrap();
-        assert_eq!(rest, "");
 
         assert_eq!(
             body,
@@ -605,18 +793,18 @@ mod tests {
         "}
         .trim_end(); // Remove the trailing linebreak
 
-        // Check a few locations used bellow
+        // Check a few locations used below
         assert_eq!(&input[4..8], "true"); // line 1
         assert_eq!(&input[9..12], "foo"); // line 2
         assert_eq!(&input[40..44], "true"); // line 6
         assert_eq!(&input[63..69], "foobar"); // line 7
         assert_eq!(&input[76..79], "baz"); // line 9
 
-        let (rest, condition) = parse_condition::<()>(input).unwrap();
+        let body = parse(input).unwrap();
 
-        assert_eq!(rest, "");
+        assert_eq!(body.len(), 1);
         assert_eq!(
-            condition,
+            body[0],
             Condition {
                 branches: vec![
                     ConditionBranch {
@@ -641,7 +829,7 @@ mod tests {
                                 },],
                                 fallback: None,
                             }
-                            .with_location(4..24),
+                            .with_location(4..25),
                         ]
                         .with_location(9..34)
                     },
@@ -669,6 +857,7 @@ mod tests {
                     .with_location(76..80)
                 )
             }
+            .with_location(0..86)
         );
     }
 }
