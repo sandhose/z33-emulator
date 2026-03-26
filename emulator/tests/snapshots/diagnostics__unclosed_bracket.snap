@@ -3,11 +3,8 @@ source: emulator/tests/diagnostics.rs
 assertion_line: 97
 expression: "check_parse_errors(\"    ld [%sp+1, %a\")"
 ---
-error: found ',' expected something else, '*', '/', '+', '-', '<', '>', '&', '|', or ']'
+error: unexpected ',', expected something else, '*', '/', '+', '-', '<', '>', '&', '|', ']'
   ┌─ test.S:1:14
   │
 1 │     ld [%sp+1, %a
-  │              ^
-  │              │
-  │              found ',' expected something else, '*', '/', '+', '-', '<', '>', '&', '|', or ']'
-  │              ',' expected something else, '*', '/', '+', '-', '<', '>', '&', '|', or ']'
+  │              ^ unexpected ',', expected something else, '*', '/', '+', '-', '<', '>', '&', '|', ']'

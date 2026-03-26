@@ -3,11 +3,8 @@ source: emulator/tests/diagnostics.rs
 assertion_line: 87
 expression: "check_parse_errors(\"    ld %, %a\")"
 ---
-error: found ',' expected something else
+error: unexpected ',', expected something else
   ┌─ test.S:1:9
   │
 1 │     ld %, %a
-  │         ^
-  │         │
-  │         found ',' expected something else
-  │         ',' expected something else
+  │         ^ unexpected ',', expected something else

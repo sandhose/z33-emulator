@@ -163,6 +163,7 @@ fn directive_argument<'a>() -> impl Parser<'a, &'a str, DirectiveArgument, Extra
     string_literal()
         .map(DirectiveArgument::StringLiteral)
         .or(expression().map(DirectiveArgument::Expression))
+        .labelled("directive argument")
 }
 
 // ---------------------------------------------------------------------------
@@ -181,7 +182,11 @@ fn line_content<'a>() -> impl Parser<'a, &'a str, Located<LineContent>, Extra<'a
     let directive = directive_kind()
         .map_with(|k, e| k.with_location(span_to_range(e.span())))
         .then_ignore(hspace1())
-        .then(directive_argument().map_with(|a, e| a.with_location(span_to_range(e.span()))))
+        .then(
+            directive_argument()
+                .map_with(|a, e| a.with_location(span_to_range(e.span())))
+                .labelled("directive argument (expression or string literal)"),
+        )
         .map(|(kind, argument)| LineContent::Directive { kind, argument });
 
     // Instruction: mnemonic [arg [, arg]*]

@@ -3,17 +3,14 @@ source: emulator/tests/diagnostics.rs
 assertion_line: 107
 expression: "check_parse_errors(\"main:\\n    xyz\\n    add %a, %b\\n    !!!\\n    reset\")"
 ---
-error: unknown instruction 'xyz'
+error: unexpected 'x', expected something else, instruction or directive, end of input
   ┌─ test.S:2:5
   │
 2 │     xyz
-  │     ^ unknown instruction 'xyz'
+  │     ^ unexpected 'x', expected something else, instruction or directive, end of input
 
-error: found '!' expected something else, '.', or end of input
+error: unexpected '!', expected something else, instruction or directive, end of input
   ┌─ test.S:4:5
   │
 4 │     !!!
-  │     ^
-  │     │
-  │     found '!' expected something else, '.', or end of input
-  │     '!' expected something else, '.', or end of input
+  │     ^ unexpected '!', expected something else, instruction or directive, end of input

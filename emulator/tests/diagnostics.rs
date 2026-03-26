@@ -160,6 +160,12 @@ fn compilation_too_many_arguments() {
 }
 
 #[test]
+fn compilation_invalid_register() {
+    // %c is not a valid register
+    insta::assert_snapshot!(check_full_pipeline_errors("main:\n    jmp %c"));
+}
+
+#[test]
 fn compilation_unknown_entrypoint() {
     insta::assert_snapshot!(check_full_pipeline_errors("start:\n    nop"));
 }

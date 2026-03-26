@@ -42,19 +42,35 @@ pub enum DiagnosticSeverity {
 
 /// Convert a `Rich` error to a `ParseDiagnostic`.
 pub(crate) fn rich_to_diagnostic(error: &Rich<'_, char, Span>) -> ParseDiagnostic {
-    let span = span_to_range(*error.span());
-    let message = error.to_string();
+    use chumsky::error::RichReason;
 
-    let mut labels = Vec::new();
-    if let Some(label) = error.reason().to_string().strip_prefix("found ") {
-        labels.push((span.clone(), label.to_string()));
-    }
+    let span = span_to_range(*error.span());
+
+    let message = match error.reason() {
+        RichReason::Custom(msg) => msg.clone(),
+        RichReason::ExpectedFound { found, expected } => {
+            let found_str = match found {
+                Some(c) => format!("{c:?}"),
+                None => "end of input".to_string(),
+            };
+            // Collect expected items, deduplicating
+            let expected_str: Vec<_> = expected.iter().map(ToString::to_string).collect();
+            if expected_str.is_empty() {
+                format!("unexpected {found_str}")
+            } else {
+                format!(
+                    "unexpected {found_str}, expected {}",
+                    expected_str.join(", ")
+                )
+            }
+        }
+    };
 
     ParseDiagnostic {
         span,
         message,
         severity: DiagnosticSeverity::Error,
-        labels,
+        labels: Vec::new(),
     }
 }
 
@@ -211,15 +227,22 @@ pub(crate) fn bool_literal<'a>() -> impl Parser<'a, &'a str, bool, Extra<'a>> + 
 
 #[must_use]
 pub fn register<'a>() -> impl Parser<'a, &'a str, Reg, Extra<'a>> + Clone {
-    just('%').ignore_then(
-        // Order matters: longer matches first
-        kw("pc")
-            .to(Reg::PC)
-            .or(kw("sp").to(Reg::SP))
-            .or(kw("sr").to(Reg::SR))
-            .or(kw("a").to(Reg::A))
-            .or(kw("b").to(Reg::B)),
-    )
+    just('%')
+        .ignore_then(identifier())
+        .try_map(|name: &str, span| {
+            let lower = name.to_ascii_lowercase();
+            match lower.as_str() {
+                "a" => Ok(Reg::A),
+                "b" => Ok(Reg::B),
+                "pc" => Ok(Reg::PC),
+                "sp" => Ok(Reg::SP),
+                "sr" => Ok(Reg::SR),
+                _ => Err(Rich::custom(
+                    span,
+                    format!("unknown register '%{name}', valid registers: %a, %b, %pc, %sp, %sr"),
+                )),
+            }
+        })
 }
 
 // ---------------------------------------------------------------------------
