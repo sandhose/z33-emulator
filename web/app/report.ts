@@ -42,11 +42,23 @@ const MARKER_SEVERITY: Record<Report["severity"], monaco.MarkerSeverity> = {
 
 const SEVERITY_CLASSES: Record<
   Report["severity"],
-  { line: string; glyph: string }
+  { line: string; glyph: string; inlineMessage: string }
 > = {
-  error: { line: "diag-error-line", glyph: "diag-error-glyph" },
-  warning: { line: "diag-warning-line", glyph: "diag-warning-glyph" },
-  advice: { line: "diag-advice-line", glyph: "diag-advice-glyph" },
+  error: {
+    line: "diag-error-line",
+    glyph: "diag-error-glyph",
+    inlineMessage: "diag-error-inline-message",
+  },
+  warning: {
+    line: "diag-warning-line",
+    glyph: "diag-warning-glyph",
+    inlineMessage: "diag-warning-inline-message",
+  },
+  advice: {
+    line: "diag-advice-line",
+    glyph: "diag-advice-glyph",
+    inlineMessage: "diag-advice-inline-message",
+  },
 };
 
 const spanToPositions = (
@@ -148,10 +160,15 @@ export const toMonacoDiagnostics = (
     if (report.code !== undefined) marker.source = report.code;
     markers.push(marker);
 
-    // Whole-line background + gutter bar, one per affected line
+    // Whole-line background + gutter bar + inline message, one per affected line
     const lineNumber = positions.startLineNumber;
     if (!linesSeen.has(lineNumber)) {
       linesSeen.add(lineNumber);
+
+      // Build a short inline message: prefer the label text, fall back to
+      // the report message.
+      const inlineText = item.label || report.message;
+
       decorations.push({
         range: {
           startLineNumber: lineNumber,
@@ -163,6 +180,10 @@ export const toMonacoDiagnostics = (
           isWholeLine: true,
           className: classes.line,
           glyphMarginClassName: classes.glyph,
+          after: {
+            content: `  ${inlineText}`,
+            inlineClassName: classes.inlineMessage,
+          },
         },
       });
     }

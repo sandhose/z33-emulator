@@ -44,7 +44,10 @@ function applyReportDiagnostics(
           reportObject,
         );
         monaco.editor.setModelMarkers(model, "z33", [
-          ...monaco.editor.getModelMarkers({ resource: model.uri }),
+          ...monaco.editor.getModelMarkers({
+            resource: model.uri,
+            owner: "z33",
+          }),
           ...markers,
         ]);
         if (decorations.length > 0) {
