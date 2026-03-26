@@ -1,0 +1,13 @@
+---
+source: emulator/tests/diagnostics.rs
+assertion_line: 92
+expression: "check_parse_errors(\".word 0xGG\")"
+---
+error: found 'G' expected something else
+  ┌─ test.S:1:9
+  │
+1 │ .word 0xGG
+  │         ^
+  │         │
+  │         found 'G' expected something else
+  │         'G' expected something else

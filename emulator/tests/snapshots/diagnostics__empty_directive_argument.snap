@@ -1,0 +1,13 @@
+---
+source: emulator/tests/diagnostics.rs
+assertion_line: 102
+expression: "check_parse_errors(\".word\")"
+---
+error: found end of input expected any
+  ┌─ test.S:1:6
+  │
+1 │ .word
+  │      ^
+  │      
+  │      found end of input expected any
+  │      end of input expected any

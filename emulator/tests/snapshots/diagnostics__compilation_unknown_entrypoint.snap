@@ -1,0 +1,6 @@
+---
+source: emulator/tests/diagnostics.rs
+assertion_line: 155
+expression: "check_full_pipeline_errors(\"start:\\n    nop\")"
+---
+error: unknown entrypoint: main

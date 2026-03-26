@@ -1,0 +1,19 @@
+---
+source: emulator/tests/diagnostics.rs
+assertion_line: 107
+expression: "check_parse_errors(\"main:\\n    xyz\\n    add %a, %b\\n    !!!\\n    reset\")"
+---
+error: unknown instruction 'xyz'
+  ┌─ test.S:2:5
+  │
+2 │     xyz
+  │     ^ unknown instruction 'xyz'
+
+error: found '!' expected something else, '.', or end of input
+  ┌─ test.S:4:5
+  │
+4 │     !!!
+  │     ^
+  │     │
+  │     found '!' expected something else, '.', or end of input
+  │     '!' expected something else, '.', or end of input
