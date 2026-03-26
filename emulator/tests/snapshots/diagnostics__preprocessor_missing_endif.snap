@@ -1,0 +1,10 @@
+---
+source: emulator/tests/diagnostics.rs
+assertion_line: 123
+expression: "check_full_pipeline_errors(\"#if true\\nhello\\n\")"
+---
+error: unterminated #if block: missing #endif
+  ┌─ /test.S:1:1
+  │
+1 │ #if true
+  │ ^

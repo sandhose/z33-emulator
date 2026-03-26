@@ -1,0 +1,10 @@
+---
+source: emulator/tests/diagnostics.rs
+assertion_line: 171
+expression: "check_full_pipeline_errors(\"main:\\n    add %a, %b, %a\")"
+---
+error: 'add' takes 2 argument(s), got 3
+  ┌─ <preprocessed>:2:5
+  │
+2 │     add %a, %b, %a
+  │     ^^^ expected 2 argument(s)

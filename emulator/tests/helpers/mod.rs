@@ -16,11 +16,35 @@ pub enum Steps {
 #[must_use]
 pub fn run_program(source: &str, entrypoint: &str, steps: Steps) -> String {
     let fs = InMemoryFilesystem::new([("/main.S".into(), source.into())]);
-    let workspace = Workspace::new(&fs, "/main.S");
-    let (_source_map, preprocessed) = workspace.preprocess().expect("preprocess failed");
-    let program = parse(&preprocessed).expect("parse failed");
-    let (mut computer, _debug_info) =
-        compile(&program.inner, entrypoint).expect("compilation failed");
+    let mut workspace = Workspace::new(&fs, "/main.S");
+    let preprocess_result = workspace.preprocess().expect("preprocess failed");
+    let preprocessed = preprocess_result.source;
+    let result = parse(&preprocessed);
+    assert!(
+        result.diagnostics.is_empty(),
+        "parse errors: {:?}",
+        result
+            .diagnostics
+            .iter()
+            .map(|d| &d.message)
+            .collect::<Vec<_>>()
+    );
+    let compile_result = compile(
+        &result.program.inner,
+        &result.diagnostics,
+        Some(entrypoint),
+        0,
+    );
+    assert!(
+        compile_result.diagnostics.is_empty(),
+        "compilation errors: {:?}",
+        compile_result
+            .diagnostics
+            .iter()
+            .map(|d| &d.message)
+            .collect::<Vec<_>>()
+    );
+    let mut computer = compile_result.computer.expect("no errors but no computer");
 
     let halt_reason = match steps {
         Steps::Count(n) => {
@@ -116,12 +140,37 @@ fn format_state(computer: &Computer, halt_reason: Option<&str>) -> String {
 #[must_use]
 pub fn compile_program(source: &str, entrypoint: &str) -> String {
     let fs = InMemoryFilesystem::new([("/main.S".into(), source.into())]);
-    let workspace = Workspace::new(&fs, "/main.S");
-    let (_source_map, preprocessed) = workspace.preprocess().expect("preprocess failed");
-    let program = parse(&preprocessed).expect("parse failed");
-    let (computer, debug_info) = compile(&program.inner, entrypoint).expect("compilation failed");
+    let mut workspace = Workspace::new(&fs, "/main.S");
+    let preprocess_result = workspace.preprocess().expect("preprocess failed");
+    let preprocessed = preprocess_result.source;
+    let result = parse(&preprocessed);
+    assert!(
+        result.diagnostics.is_empty(),
+        "parse errors: {:?}",
+        result
+            .diagnostics
+            .iter()
+            .map(|d| &d.message)
+            .collect::<Vec<_>>()
+    );
+    let compile_result = compile(
+        &result.program.inner,
+        &result.diagnostics,
+        Some(entrypoint),
+        0,
+    );
+    assert!(
+        compile_result.diagnostics.is_empty(),
+        "compilation errors: {:?}",
+        compile_result
+            .diagnostics
+            .iter()
+            .map(|d| &d.message)
+            .collect::<Vec<_>>()
+    );
+    let computer = compile_result.computer.expect("no errors but no computer");
 
-    format_compilation(&computer, &debug_info)
+    format_compilation(&computer, &compile_result.debug_info)
 }
 
 fn format_compilation(computer: &Computer, debug_info: &DebugInfo) -> String {

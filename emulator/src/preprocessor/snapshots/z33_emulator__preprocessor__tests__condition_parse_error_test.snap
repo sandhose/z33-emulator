@@ -1,20 +1,10 @@
 ---
 source: emulator/src/preprocessor/mod.rs
+assertion_line: 860
 expression: report
 ---
-  x Invalid syntax in condition
-  `->   x invalid syntax
-         ,-[/invalid.S:2:6]
-       1 | hello
-       2 | #if (1 + 5
-         :      ^
-         :      `-- here
-       3 | #endif
-         `----
-      
-   ,-[/invalid.S:2:5]
- 1 | hello
- 2 | #if (1 + 5
-   :     ^^^^^^
- 3 | #endif
-   `----
+error: invalid condition syntax: found end of input expected any, '*', '/', '+', '-', '<', '>', '&', '|', '=', or '!'
+  ┌─ /invalid.S:2:5
+  │
+2 │ #if (1 + 5
+  │     ^^^^^^

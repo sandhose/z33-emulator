@@ -17,11 +17,10 @@ workspace = true
 anstyle.workspace = true
 anyhow.workspace = true
 camino.workspace = true
+chumsky.workspace = true
 clap.workspace = true
+codespan-reporting.workspace = true
 clap_complete.workspace = true
-miette = { workspace = true, features = ["fancy"] }
-nom.workspace = true
-nom-language.workspace = true
 rustyline.workspace = true
 rustyline-derive.workspace = true
 shell-words.workspace = true

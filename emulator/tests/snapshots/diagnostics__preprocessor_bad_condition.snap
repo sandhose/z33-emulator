@@ -1,0 +1,10 @@
+---
+source: emulator/tests/diagnostics.rs
+assertion_line: 130
+expression: "check_full_pipeline_errors(\"#if (1 +\\n#endif\")"
+---
+error: invalid condition syntax: found end of input expected any, '-', '~', '0', or '('
+  ┌─ /test.S:1:5
+  │
+1 │ #if (1 +
+  │     ^^^^

@@ -44,23 +44,22 @@ pub(crate) enum Placement {
 #[derive(Default)]
 pub struct Layout {
     pub labels: Labels,
-    pub(crate) memory: HashMap<Address, Placement>,
+    /// Maps address → (placement, source location of the directive that placed
+    /// it)
+    pub(crate) memory: HashMap<Address, (Placement, Range<usize>)>,
 }
 
 impl Layout {
     /// Extract a source map mapping addresses to byte ranges in the
     /// preprocessor output.
     ///
-    /// Only includes entries for `Placement::Line` (instructions and `.word`
-    /// directives).
+    /// Every placement now carries its source location, so the source map
+    /// covers all memory cells (instructions, `.word`, `.space`, `.string`).
     #[must_use]
     pub fn source_map(&self) -> BTreeMap<Address, Range<usize>> {
         self.memory
             .iter()
-            .filter_map(|(address, placement)| match placement {
-                Placement::Line(located) => Some((*address, located.location.clone())),
-                _ => None,
-            })
+            .map(|(address, (_, location))| (*address, location.clone()))
             .collect()
     }
 
@@ -68,12 +67,17 @@ impl Layout {
         &mut self,
         address: Address,
         placement: Placement,
+        location: Range<usize>,
     ) -> Result<(), MemoryLayoutError> {
-        if self.memory.contains_key(&address) {
-            return Err(MemoryLayoutError::MemoryOverlap { address });
+        if let Some((_, original_location)) = self.memory.get(&address) {
+            return Err(MemoryLayoutError::MemoryOverlap {
+                address,
+                original_location: original_location.clone(),
+                new_location: location,
+            });
         }
 
-        self.memory.insert(address, placement);
+        self.memory.insert(address, (placement, location));
         Ok(())
     }
 
@@ -116,7 +120,13 @@ pub enum MemoryLayoutError {
     },
 
     #[error("address {address} is already filled")]
-    MemoryOverlap { address: Address },
+    MemoryOverlap {
+        address: Address,
+        /// Location of the directive that originally filled this address.
+        original_location: Range<usize>,
+        /// Location of the directive that is trying to overwrite it.
+        new_location: Range<usize>,
+    },
 }
 
 impl MemoryLayoutError {
@@ -124,23 +134,29 @@ impl MemoryLayoutError {
     pub fn location(&self) -> Option<&Range<usize>> {
         match self {
             MemoryLayoutError::DuplicateLabel { location, .. }
-            | MemoryLayoutError::InvalidDirectiveArgument { location, .. } => Some(location),
-            MemoryLayoutError::DirectiveArgumentEvaluation { .. }
-            | MemoryLayoutError::MemoryOverlap { .. } => None,
+            | MemoryLayoutError::InvalidDirectiveArgument { location, .. }
+            | MemoryLayoutError::MemoryOverlap {
+                new_location: location,
+                ..
+            } => Some(location),
+            MemoryLayoutError::DirectiveArgumentEvaluation { .. } => None,
         }
     }
 }
 
-/// Lays out the memory
+/// Lays out the memory, collecting all errors instead of stopping at the first.
 ///
-/// It places the labels & prepare a hashmap of cells to be filled.
+/// Always produces a `Layout` (possibly partial) plus a vector of errors.
+/// Labels are always collected even when other errors occur. Error lines
+/// (`LineContent::Error`) are silently skipped.
 #[tracing::instrument(skip(program))]
-pub(crate) fn layout_memory(program: &[Located<Line>]) -> Result<Layout, MemoryLayoutError> {
+#[allow(clippy::too_many_lines)]
+pub(crate) fn layout_memory(program: &[Located<Line>]) -> (Layout, Vec<MemoryLayoutError>) {
     use DirectiveKind::{Addr, Space, String, Word};
-    use MemoryLayoutError::{DirectiveArgumentEvaluation, InvalidDirectiveArgument};
 
     debug!(lines = program.len(), "Laying out memory");
     let mut layout: Layout = Layout::default();
+    let mut errors: Vec<MemoryLayoutError> = Vec::new();
     let mut position = PROGRAM_START;
 
     for line in program {
@@ -149,7 +165,9 @@ pub(crate) fn layout_memory(program: &[Located<Line>]) -> Result<Layout, MemoryL
         for key in line.symbols.clone() {
             let key = key.offset(line_offset);
             trace!(key = %key.inner, position, "Inserting label");
-            layout.insert_label(key, position)?;
+            if let Err(e) = layout.insert_label(key, position) {
+                errors.push(e);
+            }
         }
 
         if let Some(ref content) = line.content {
@@ -159,15 +177,42 @@ pub(crate) fn layout_memory(program: &[Located<Line>]) -> Result<Layout, MemoryL
                 LineContent::Directive {
                     kind: Located { inner: Word, .. },
                     ..
-                }
-                | LineContent::Instruction { .. } => {
-                    layout.insert_placement(
+                } => {
+                    let abs_location = Range {
+                        start: content.location.start + line_offset,
+                        end: content.location.end + line_offset,
+                    };
+                    if let Err(e) = layout.insert_placement(
                         position,
                         Placement::Line(content.clone().offset(line_offset)),
-                    )?;
+                        abs_location,
+                    ) {
+                        errors.push(e);
+                    }
                     trace!(position, content = %content.inner, "Inserting line");
-                    position += 1; // Instructions and word directives take one
-                                   // memory cell
+                    position += 1;
+                }
+
+                // Valid instructions (skip error placeholder instructions)
+                LineContent::Instruction { kind, .. } => {
+                    if kind.inner == crate::parser::value::InstructionKind::Error {
+                        // Skip — the diagnostic was already emitted by the
+                        // parser
+                    } else {
+                        let abs_location = Range {
+                            start: content.location.start + line_offset,
+                            end: content.location.end + line_offset,
+                        };
+                        if let Err(e) = layout.insert_placement(
+                            position,
+                            Placement::Line(content.clone().offset(line_offset)),
+                            abs_location,
+                        ) {
+                            errors.push(e);
+                        }
+                        trace!(position, content = %content.inner, "Inserting line");
+                        position += 1;
+                    }
                 }
 
                 // r[impl asm.directive.space]
@@ -178,21 +223,31 @@ pub(crate) fn layout_memory(program: &[Located<Line>]) -> Result<Layout, MemoryL
                             inner: DirectiveArgument::Expression(e),
                             ..
                         },
-                } => {
-                    let size = e.evaluate(&EmptyExpressionContext).map_err(|source| {
-                        DirectiveArgumentEvaluation {
+                } => match e.evaluate(&EmptyExpressionContext) {
+                    Ok(size) => {
+                        trace!(size, position, "Reserving space");
+                        let abs_location = Range {
+                            start: content.location.start + line_offset,
+                            end: content.location.end + line_offset,
+                        };
+                        for _ in 0..size {
+                            if let Err(e) = layout.insert_placement(
+                                position,
+                                Placement::Reserved,
+                                abs_location.clone(),
+                            ) {
+                                errors.push(e);
+                            }
+                            position += 1;
+                        }
+                    }
+                    Err(source) => {
+                        errors.push(MemoryLayoutError::DirectiveArgumentEvaluation {
                             kind: Space,
                             source,
-                        }
-                    })?;
-
-                    trace!(size, position, "Reserving space");
-
-                    for _ in 0..size {
-                        layout.insert_placement(position, Placement::Reserved)?;
-                        position += 1;
+                        });
                     }
-                }
+                },
 
                 // r[impl asm.directive.addr]
                 LineContent::Directive {
@@ -202,16 +257,18 @@ pub(crate) fn layout_memory(program: &[Located<Line>]) -> Result<Layout, MemoryL
                             inner: DirectiveArgument::Expression(e),
                             ..
                         },
-                } => {
-                    let addr = e
-                        .evaluate(&EmptyExpressionContext)
-                        .map_err(|source| DirectiveArgumentEvaluation { kind: Addr, source })?;
-
-                    debug!(addr, "Changing address");
-
-                    // The ".addr N" directive changes the current address to N
-                    position = addr;
-                }
+                } => match e.evaluate(&EmptyExpressionContext) {
+                    Ok(addr) => {
+                        debug!(addr, "Changing address");
+                        position = addr;
+                    }
+                    Err(source) => {
+                        errors.push(MemoryLayoutError::DirectiveArgumentEvaluation {
+                            kind: Addr,
+                            source,
+                        });
+                    }
+                },
 
                 // r[impl asm.directive.string]
                 LineContent::Directive {
@@ -223,18 +280,30 @@ pub(crate) fn layout_memory(program: &[Located<Line>]) -> Result<Layout, MemoryL
                         },
                 } => {
                     trace!(position, string = string.as_str(), "Inserting string");
-                    // Fill the memory with the chars of the string
+                    let abs_location = Range {
+                        start: content.location.start + line_offset,
+                        end: content.location.end + line_offset,
+                    };
                     for c in string.chars() {
-                        layout.insert_placement(position, Placement::Char(c))?;
+                        if let Err(e) = layout.insert_placement(
+                            position,
+                            Placement::Char(c),
+                            abs_location.clone(),
+                        ) {
+                            errors.push(e);
+                        }
                         position += 1;
                     }
 
-                    layout.insert_placement(position, Placement::Nul)?;
+                    if let Err(e) = layout.insert_placement(position, Placement::Nul, abs_location)
+                    {
+                        errors.push(e);
+                    }
                     position += 1;
                 }
 
                 LineContent::Directive { kind, .. } => {
-                    return Err(InvalidDirectiveArgument {
+                    errors.push(MemoryLayoutError::InvalidDirectiveArgument {
                         kind: kind.inner,
                         location: Range {
                             start: kind.location.start + content_offset,
@@ -242,11 +311,14 @@ pub(crate) fn layout_memory(program: &[Located<Line>]) -> Result<Layout, MemoryL
                         },
                     });
                 }
+
+                // Skip error recovery placeholders
+                LineContent::Error => {}
             }
         }
     }
 
-    Ok(layout)
+    (layout, errors)
 }
 
 #[cfg(test)]
@@ -275,7 +347,7 @@ mod tests {
             ),
         ];
 
-        let labels = layout_memory(&program).unwrap().labels;
+        let labels = layout_memory(&program).0.labels;
         let expected = BTreeMap::from_iter([
             ("main".into(), PROGRAM_START),
             ("loop".into(), PROGRAM_START + 1),
@@ -293,7 +365,7 @@ mod tests {
             ),
         ];
 
-        let labels = layout_memory(&program).unwrap().labels;
+        let labels = layout_memory(&program).0.labels;
         let expected = BTreeMap::from_iter(vec![("main".into(), 10)]);
         assert_eq!(labels, expected);
     }
@@ -313,7 +385,7 @@ mod tests {
             ),
         ];
 
-        let labels = layout_memory(&program).unwrap().labels;
+        let labels = layout_memory(&program).0.labels;
         let expected = BTreeMap::from_iter([
             ("first".into(), PROGRAM_START),
             ("second".into(), PROGRAM_START + 10),
@@ -338,7 +410,7 @@ mod tests {
             ),
         ];
 
-        let labels = layout_memory(&program).unwrap().labels;
+        let labels = layout_memory(&program).0.labels;
         let expected = BTreeMap::from_iter(vec![
             ("first".into(), PROGRAM_START),
             ("second".into(), PROGRAM_START + 1),
@@ -363,7 +435,7 @@ mod tests {
             ),
         ];
 
-        let labels = layout_memory(&program).unwrap().labels;
+        let labels = layout_memory(&program).0.labels;
         let expected = BTreeMap::from_iter([
             ("first".into(), PROGRAM_START),
             ("second".into(), PROGRAM_START + 6),
@@ -378,49 +450,52 @@ mod tests {
         let program: Vec<Located<Line>> =
             vec![Line::empty().symbol("hello"), Line::empty().symbol("hello")];
 
+        let (_, errors) = layout_memory(&program);
+        assert_eq!(errors.len(), 1);
         assert_eq!(
-            layout_memory(&program).err(),
-            Some(MemoryLayoutError::DuplicateLabel {
+            errors[0],
+            MemoryLayoutError::DuplicateLabel {
                 label: "hello".into(),
                 location: 0..0
-            })
+            }
         );
     }
 
     #[test]
     fn invalid_directive_argument_test() {
         let program: Vec<Located<Line>> = vec![Line::empty().directive(DirectiveKind::String, 3)];
-
+        let (_, errors) = layout_memory(&program);
+        assert_eq!(errors.len(), 1);
         assert_eq!(
-            layout_memory(&program).err(),
-            Some(MemoryLayoutError::InvalidDirectiveArgument {
+            errors[0],
+            MemoryLayoutError::InvalidDirectiveArgument {
                 kind: DirectiveKind::String,
-                location: 0..0 // argument: 3.into(),
-            })
+                location: 0..0,
+            }
         );
 
         let program: Vec<Located<Line>> =
             vec![Line::empty().directive(DirectiveKind::Space, "hello")];
-
+        let (_, errors) = layout_memory(&program);
+        assert_eq!(errors.len(), 1);
         assert_eq!(
-            layout_memory(&program).err(),
-            Some(MemoryLayoutError::InvalidDirectiveArgument {
+            errors[0],
+            MemoryLayoutError::InvalidDirectiveArgument {
                 kind: DirectiveKind::Space,
                 location: 0..0,
-                // argument: "hello".into(),
-            })
+            }
         );
 
         let program: Vec<Located<Line>> =
             vec![Line::empty().directive(DirectiveKind::Addr, "hello")];
-
+        let (_, errors) = layout_memory(&program);
+        assert_eq!(errors.len(), 1);
         assert_eq!(
-            layout_memory(&program).err(),
-            Some(MemoryLayoutError::InvalidDirectiveArgument {
+            errors[0],
+            MemoryLayoutError::InvalidDirectiveArgument {
                 kind: DirectiveKind::Addr,
                 location: 0..0,
-                // argument: "hello".into(),
-            })
+            }
         );
     }
 
@@ -434,9 +509,11 @@ mod tests {
             Line::empty().directive(DirectiveKind::Word, 0), // This overlaps with the second "l"
         ];
 
-        assert_eq!(
-            layout_memory(&program).err(),
-            Some(MemoryLayoutError::MemoryOverlap { address: 14 })
-        );
+        let (_, errors) = layout_memory(&program);
+        assert!(!errors.is_empty());
+        match &errors[0] {
+            MemoryLayoutError::MemoryOverlap { address, .. } => assert_eq!(*address, 14),
+            other => panic!("expected MemoryOverlap, got {other:?}"),
+        }
     }
 }

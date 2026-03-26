@@ -356,12 +356,16 @@ mod conversions {
 
     /// Valid argument kinds
     #[derive(PartialEq, Eq, Clone, Debug, Display)]
-    #[display(style = "lowercase")]
     pub enum ArgKind {
+        #[display("immediate value")]
         Imm,
+        #[display("register")]
         Reg,
+        #[display("indirect memory [%reg]")]
         Ind,
+        #[display("direct memory [addr]")]
         Dir,
+        #[display("indexed memory [%reg+offset]")]
         Idx,
     }
 

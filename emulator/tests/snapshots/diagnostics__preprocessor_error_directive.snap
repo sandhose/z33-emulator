@@ -1,0 +1,10 @@
+---
+source: emulator/tests/diagnostics.rs
+assertion_line: 118
+expression: "check_full_pipeline_errors(r#\"#error \"stop here\"\"#)"
+---
+error: #error: stop here
+  ┌─ /test.S:1:8
+  │
+1 │ #error "stop here"
+  │        ^^^^^^^^^^^ stop here

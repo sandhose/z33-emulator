@@ -585,7 +585,7 @@ fn preprocessor_error() {
         "/main.S".into(),
         "#error \"test error\"\nmain: reset\n".into(),
     )]);
-    let workspace = Workspace::new(&fs, "/main.S");
+    let mut workspace = Workspace::new(&fs, "/main.S");
     let result = workspace.preprocess();
     assert!(result.is_err(), "expected preprocessor error");
     let err = format!("{}", result.unwrap_err());

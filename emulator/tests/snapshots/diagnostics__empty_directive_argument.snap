@@ -1,0 +1,10 @@
+---
+source: emulator/tests/diagnostics.rs
+assertion_line: 102
+expression: "check_parse_errors(\".word\")"
+---
+error: unexpected end of input, expected any
+  ┌─ test.S:1:6
+  │
+1 │ .word
+  │      ^ unexpected end of input, expected any

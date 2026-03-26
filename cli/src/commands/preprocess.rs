@@ -14,9 +14,9 @@ impl PreprocessOpt {
     pub fn exec(self) -> anyhow::Result<()> {
         let fs = NativeFilesystem::from_env()?;
         info!(path = ?self.input, "Reading program");
-        let preprocessor = Workspace::new(&fs, &self.input);
-        let (_source_map, source) = preprocessor.preprocess()?;
-        println!("{source}");
+        let mut preprocessor = Workspace::new(&fs, &self.input);
+        let result = preprocessor.preprocess()?;
+        println!("{}", result.source);
         Ok(())
     }
 }

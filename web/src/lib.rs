@@ -4,12 +4,15 @@ use std::ops::Range;
 use std::rc::Rc;
 
 use camino::Utf8PathBuf;
-use miette::JSONReportHandler;
 use serde::{Deserialize, Serialize};
 use tsify::Tsify;
 use wasm_bindgen::prelude::*;
-use z33_emulator::compiler::{check as compiler_check, compile};
+use z33_emulator::compile;
 use z33_emulator::constants::Address;
+use z33_emulator::diagnostic::{
+    diagnostics_to_json, preprocessor_error_to_diagnostics, resolve_diagnostic_spans, FileDatabase,
+    FileId,
+};
 use z33_emulator::preprocessor::{
     InMemoryFilesystem, PreprocessorError, ReferencingSourceMap, Workspace,
 };
@@ -19,13 +22,11 @@ use z33_emulator::runtime::{Memory, ProcessorError};
 fn start() {
     console_error_panic_hook::set_once();
     tracing_wasm::set_as_global_default();
-    miette::set_hook(Box::new(|_| Box::new(JSONReportHandler))).unwrap();
 }
 
 #[wasm_bindgen]
 pub struct InMemoryPreprocessor {
     preprocessor: Workspace,
-    files: HashMap<String, String>,
 }
 
 #[derive(Default, Deserialize, Tsify)]
@@ -35,32 +36,17 @@ pub struct InputFiles(HashMap<Utf8PathBuf, String>);
 #[wasm_bindgen]
 pub struct CompilationResult {
     program: Option<Program>,
-    preprocessor: Option<miette::Report>,
-    compilation: Option<miette::Report>,
+    /// JSON-formatted diagnostic report, if there was an error.
+    report_json: Option<String>,
 }
 
 impl CompilationResult {
-    fn preprocessor_error(v: PreprocessorError) -> Self {
+    fn preprocessor_error(err: &PreprocessorError, db: &FileDatabase) -> Self {
+        let diagnostics = preprocessor_error_to_diagnostics(err);
+        let json = diagnostics_to_json(&diagnostics, db);
         Self {
             program: None,
-            preprocessor: Some(miette::Report::new(v)),
-            compilation: None,
-        }
-    }
-
-    fn compilation_error(v: miette::Report) -> Self {
-        Self {
-            program: None,
-            preprocessor: None,
-            compilation: Some(v),
-        }
-    }
-
-    fn new(v: Program) -> Self {
-        Self {
-            program: Some(v),
-            preprocessor: None,
-            compilation: None,
+            report_json: Some(json),
         }
     }
 }
@@ -76,22 +62,8 @@ impl CompilationResult {
     #[wasm_bindgen(getter)]
     #[must_use]
     pub fn report(&self) -> Option<String> {
-        if let Some(report) = &self.preprocessor {
-            return Some(format!("{report:?}"));
-        }
-
-        if let Some(report) = &self.compilation {
-            return Some(format!("{report:?}"));
-        }
-
-        None
+        self.report_json.clone()
     }
-}
-
-fn char_offset(a: &str, b: &str) -> usize {
-    let a = a.as_ptr();
-    let b = b.as_ptr();
-    b as usize - a as usize
 }
 
 #[wasm_bindgen]
@@ -99,18 +71,10 @@ impl InMemoryPreprocessor {
     #[wasm_bindgen(constructor)]
     #[must_use]
     pub fn new(files: InputFiles, entrypoint: String) -> Self {
-        let files_map: HashMap<String, String> = files
-            .0
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.clone()))
-            .collect();
         let fs = InMemoryFilesystem::new(files.0);
         let entrypoint = Utf8PathBuf::from(entrypoint);
         let preprocessor = Workspace::new(&fs, &entrypoint);
-        Self {
-            preprocessor,
-            files: files_map,
-        }
+        Self { preprocessor }
     }
 
     /// Compile the given file
@@ -120,31 +84,50 @@ impl InMemoryPreprocessor {
     /// Returns an error if the file could not be preprocessed or compiled.
     #[allow(clippy::missing_panics_doc)]
     pub fn compile(&mut self) -> CompilationResult {
-        let (source_map, source) = match self.preprocessor.preprocess() {
+        let preprocess_result = match self.preprocessor.preprocess() {
             Ok(o) => o,
-            Err(e) => return CompilationResult::preprocessor_error(e),
-        };
-        let source_str = &source;
-        let program = z33_emulator::parser::parse(source_str);
-        match program {
-            Ok(program) => CompilationResult::new(Program {
-                source_map: source_map.into(),
-                files: self.files.clone(),
-                program,
-            }),
             Err(e) => {
-                // The nom errors are… bad. Let's just print the first location
-                let (location, _kind) = e.errors.first().expect("at least one error");
-                let offset = char_offset(source_str, location);
-                // Find the corresponding span from the source map
-                let span = source_map
-                    .find(offset)
-                    .expect("source info to be available");
-                let labels = vec![miette::LabeledSpan::underline(span.span.clone())];
-                let report = miette::miette!(labels = labels, "Failed to parse program")
-                    .with_source_code(span.source.clone());
-                CompilationResult::compilation_error(report)
+                return CompilationResult::preprocessor_error(&e, self.preprocessor.file_db());
             }
+        };
+        let source_str = &preprocess_result.source;
+        let source_map: ReferencingSourceMap = preprocess_result.source_map.into();
+        let parse_result = z33_emulator::parser::parse(source_str);
+
+        // Run the full pipeline — compile() handles parse diagnostics,
+        // layout, and fill, returning all diagnostics merged.
+        let compile_result = z33_emulator::compile(
+            &parse_result.program.inner,
+            &parse_result.diagnostics,
+            None, // check-only, no entrypoint
+            preprocess_result.preprocessed_file_id,
+        );
+
+        // Resolve all diagnostic spans through the source map
+        let diagnostics: Vec<_> = compile_result
+            .diagnostics
+            .iter()
+            .map(|d| resolve_diagnostic_spans(d, &source_map))
+            .collect();
+
+        let report_json = if diagnostics.is_empty() {
+            None
+        } else {
+            Some(diagnostics_to_json(
+                &diagnostics,
+                self.preprocessor.file_db(),
+            ))
+        };
+
+        CompilationResult {
+            program: Some(Program {
+                source_map,
+                file_db: self.preprocessor.file_db().clone(),
+                preprocessed_file_id: preprocess_result.preprocessed_file_id,
+                program: parse_result.program,
+                parse_diagnostics: parse_result.diagnostics,
+            }),
+            report_json,
         }
     }
 }
@@ -162,17 +145,18 @@ pub struct SourceLocation {
 fn compose_source_maps(
     debug_source_map: &BTreeMap<Address, Range<usize>>,
     preprocessor_source_map: &ReferencingSourceMap,
+    file_db: &FileDatabase,
 ) -> BTreeMap<Address, SourceLocation> {
     debug_source_map
         .iter()
         .filter_map(|(&address, range)| {
             let (chunk_key, span) = preprocessor_source_map.find_with_key(range.start)?;
-            let start = span.span.start + (range.start - chunk_key);
-            let end = span.span.start + (range.end - chunk_key);
+            let start = span.range.start + (range.start - chunk_key);
+            let end = span.range.start + (range.end - chunk_key);
             Some((
                 address,
                 SourceLocation {
-                    file: span.name.clone(),
+                    file: file_db.name(span.file_id),
                     span: (start, end),
                 },
             ))
@@ -180,57 +164,15 @@ fn compose_source_maps(
         .collect()
 }
 
-fn compiler_error_to_report(
-    error: &z33_emulator::compiler::CompilationError,
-    source_map: &ReferencingSourceMap,
-    files: &HashMap<String, String>,
-) -> miette::Report {
-    use std::error::Error as StdError;
-
-    use z33_emulator::compiler::CompilationError;
-
-    // Build a full message by walking the error source chain
-    let mut msg = error.to_string();
-    let mut cause: Option<&dyn StdError> = StdError::source(error);
-    while let Some(c) = cause {
-        msg.push_str(": ");
-        msg.push_str(&c.to_string());
-        cause = c.source();
-    }
-
-    // Extract the byte range in the preprocessed source, if available
-    let location: Option<std::ops::Range<usize>> = match error {
-        CompilationError::MemoryFill(e) => Some(e.location().clone()),
-        CompilationError::MemoryLayout(e) => e.location().cloned(),
-        CompilationError::UnknownEntrypoint(_) => None,
-    };
-
-    if let Some(loc) = location {
-        if let Some((chunk_key, span_info)) = source_map.find_with_key(loc.start) {
-            if let Some(content) = files.get(&span_info.name) {
-                let start = span_info.span.start + (loc.start - chunk_key);
-                let end = span_info.span.start + (loc.end - chunk_key);
-                let named_source =
-                    miette::NamedSource::new(span_info.name.clone(), content.clone());
-                return miette::miette!(
-                    labels = vec![miette::LabeledSpan::underline(start..end)],
-                    "{msg}"
-                )
-                .with_source_code(named_source);
-            }
-        }
-    }
-
-    miette::miette!("{msg}")
-}
-
 #[wasm_bindgen]
 #[derive(Clone)]
 #[allow(clippy::struct_field_names)]
 pub struct Program {
     source_map: ReferencingSourceMap,
-    files: HashMap<String, String>,
+    file_db: FileDatabase,
+    preprocessed_file_id: FileId,
     program: z33_emulator::parser::location::Located<z33_emulator::parser::Program>,
+    parse_diagnostics: Vec<z33_emulator::parser::ParseDiagnostic>,
 }
 
 #[wasm_bindgen]
@@ -257,18 +199,26 @@ impl Program {
 
     /// Check whether the program can be assembled (layout + fill phases).
     ///
-    /// Returns a JSON-formatted miette report string on failure, or `None` on
-    /// success.
+    /// Returns a JSON-formatted diagnostic report string on failure, or
+    /// `None` on success.
     #[wasm_bindgen]
     #[must_use]
     pub fn check(&self) -> Option<String> {
-        match compiler_check(&self.program.inner) {
-            Ok(()) => None,
-            Err(ref e) => {
-                let report = compiler_error_to_report(e, &self.source_map, &self.files);
-                Some(format!("{report:?}"))
-            }
+        let result = compile(
+            &self.program.inner,
+            &self.parse_diagnostics,
+            None,
+            self.preprocessed_file_id,
+        );
+        if result.diagnostics.is_empty() {
+            return None;
         }
+        let diagnostics: Vec<_> = result
+            .diagnostics
+            .iter()
+            .map(|d| resolve_diagnostic_spans(d, &self.source_map))
+            .collect();
+        Some(diagnostics_to_json(&diagnostics, &self.file_db))
     }
 
     /// Compile the program at the given entrypoint
@@ -276,11 +226,33 @@ impl Program {
     /// # Errors
     ///
     /// Returns an error if the program could not be compiled.
+    ///
+    /// # Panics
+    ///
+    /// Panics if compilation reports no errors but produces no computer
+    /// (should never happen).
     #[wasm_bindgen]
     pub fn compile(&self, entrypoint: &str) -> Result<Computer, JsValue> {
         tracing::info!("Compiling");
-        let (computer, debug_info) =
-            compile(&self.program.inner, entrypoint).map_err(|e| format!("{e}"))?;
+        let result = compile(
+            &self.program.inner,
+            &self.parse_diagnostics,
+            Some(entrypoint),
+            self.preprocessed_file_id,
+        );
+
+        if !result.diagnostics.is_empty() {
+            let diagnostics: Vec<_> = result
+                .diagnostics
+                .iter()
+                .map(|d| resolve_diagnostic_spans(d, &self.source_map))
+                .collect();
+            let json = diagnostics_to_json(&diagnostics, &self.file_db);
+            return Err(JsValue::from_str(&json));
+        }
+
+        let computer = result.computer.expect("no errors but no computer");
+        let debug_info = result.debug_info;
 
         let registers = Observable::new(Registers {
             a: Cell::from_runtime_cell(&computer.registers.a),
@@ -297,7 +269,8 @@ impl Program {
         tracing::info!("Cloned");
         let memory = MemoryObserver::new(memory);
 
-        let source_map = compose_source_maps(&debug_info.source_map, &self.source_map);
+        let source_map =
+            compose_source_maps(&debug_info.source_map, &self.source_map, &self.file_db);
 
         tracing::info!("Compiled");
 

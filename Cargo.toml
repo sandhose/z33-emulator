@@ -28,20 +28,20 @@ anstyle = "1.0.14"
 anyhow = "1.0.102"
 bitflags = "2.11.0"
 camino = { version = "1.2.2", features = ["serde1"] }
+chumsky = { version = "0.12.0", default-features = false, features = ["std", "pratt"] }
 clap = { version = "4.6.0", features = ["derive"] }
+codespan-reporting = "0.13.1"
 clap_complete = "4.6.0"
 console_error_panic_hook = "0.1.7"
 indoc = "2.0.7"
 insta = "1.46.3"
 js-sys = "0.3.91"
-miette = "7.6.0"
-nom = "8.0.0"
-nom-language = "0.1.0"
 parse-display = "0.10.0"
 pretty_assertions = "1.4.1"
 rustyline = "17.0.2"
 rustyline-derive = "0.11.1"
 serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1"
 serde-wasm-bindgen = "0.6.5"
 shell-words = "1.1.1"
 thiserror = "2.0.18"

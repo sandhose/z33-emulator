@@ -30,16 +30,35 @@ function applyReportDiagnostics(
   decorationIds: Map<string, string[]>,
 ): string | null {
   try {
-    const reportObject = reportSchema.parse(JSON.parse(reportJson));
-    for (const model of monaco.editor.getModels()) {
-      const { markers, decorations } = toMonacoDiagnostics(model, reportObject);
-      monaco.editor.setModelMarkers(model, "z33", markers);
-      if (decorations.length > 0) {
-        const ids = model.deltaDecorations([], decorations);
-        decorationIds.set(model.uri.toString(), ids);
+    const parsed = JSON.parse(reportJson);
+    // Support both a single report object and an array of reports
+    const reports: unknown[] = Array.isArray(parsed) ? parsed : [parsed];
+    let firstMessage: string | null = null;
+
+    for (const raw of reports) {
+      const reportObject = reportSchema.parse(raw);
+      firstMessage ??= reportObject.message;
+      for (const model of monaco.editor.getModels()) {
+        const { markers, decorations } = toMonacoDiagnostics(
+          model,
+          reportObject,
+        );
+        monaco.editor.setModelMarkers(model, "z33", [
+          ...monaco.editor.getModelMarkers({
+            resource: model.uri,
+            owner: "z33",
+          }),
+          ...markers,
+        ]);
+        if (decorations.length > 0) {
+          const existing = decorationIds.get(model.uri.toString()) ?? [];
+          const ids = model.deltaDecorations([], decorations);
+          decorationIds.set(model.uri.toString(), [...existing, ...ids]);
+        }
       }
     }
-    return reportObject.message;
+
+    return firstMessage;
   } catch (e) {
     console.warn(e);
     return null;
@@ -90,30 +109,42 @@ export function useCompilation(activeFile: string, monacoInstance: Monaco) {
     }
     decorationIds.current.clear();
 
+    // Apply parse error diagnostics first (if any)
+    let errorMessage: string | null = null;
+    if (report) {
+      errorMessage =
+        applyReportDiagnostics(monacoInstance, report, decorationIds.current) ??
+        "Failed to parse";
+    }
+
     if (prog) {
-      // Check for fill/layout errors (unresolved labels, etc.)
+      // Run check (layout + fill) to find compilation errors too.
+      // These are shown IN ADDITION to any parse errors.
       const checkReport = prog.check();
       if (checkReport !== undefined) {
-        const message =
+        errorMessage =
           applyReportDiagnostics(
             monacoInstance,
             checkReport,
             decorationIds.current,
-          ) ?? "Compilation failed";
-        setCompilationResult({ type: "error", message });
-        return;
+          ) ??
+          errorMessage ??
+          "Compilation failed";
       }
 
-      setCompilationResult({
-        type: "success",
-        labels: prog.labels,
-        compileFn: (ep) => prog.compile(ep),
-      });
-    } else if (report) {
-      const message =
-        applyReportDiagnostics(monacoInstance, report, decorationIds.current) ??
-        "Failed to parse";
-      setCompilationResult({ type: "error", message });
+      if (errorMessage) {
+        // There are errors, but we still have labels for the entrypoint selector
+        setCompilationResult({ type: "error", message: errorMessage });
+      } else {
+        setCompilationResult({
+          type: "success",
+          labels: prog.labels,
+          compileFn: (ep) => prog.compile(ep),
+        });
+      }
+    } else if (errorMessage) {
+      // Preprocessor error — no program at all
+      setCompilationResult({ type: "error", message: errorMessage });
     }
   }, [monacoInstance, activeFile]);
 

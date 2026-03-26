@@ -1,0 +1,12 @@
+---
+source: emulator/tests/diagnostics.rs
+assertion_line: 148
+expression: "check_full_pipeline_errors(\"main:\\n    cmp %a, 1\")"
+---
+error: invalid argument for 'cmp'
+  ┌─ <preprocessed>:2:13
+  │
+2 │     cmp %a, 1
+  │     ---     ^ invalid argument type 'immediate value', expected 'register'
+  │     │        
+  │     in instruction 'cmp'

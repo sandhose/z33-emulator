@@ -1,0 +1,13 @@
+---
+source: emulator/tests/diagnostics.rs
+assertion_line: 178
+expression: "check_full_pipeline_errors(\"main:\\n    .addr 10\\n    .string \\\"hello\\\"\\n    .addr 14\\n    .word 0\")"
+---
+error: memory overlap at address 14
+  ┌─ <preprocessed>:5:5
+  │
+3 │     .string "hello"
+  │     --------------- already filled by this directive
+4 │     .addr 14
+5 │     .word 0
+  │     ^^^^^^^ tries to write to address 14

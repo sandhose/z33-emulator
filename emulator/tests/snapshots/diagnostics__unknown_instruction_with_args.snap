@@ -1,0 +1,10 @@
+---
+source: emulator/tests/diagnostics.rs
+assertion_line: 90
+expression: "check_parse_errors(\"    invalid %a\")"
+---
+error: unknown instruction 'invalid'
+  ┌─ test.S:1:5
+  │
+1 │     invalid %a
+  │     ^^^^^^^ unknown instruction 'invalid'

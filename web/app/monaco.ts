@@ -1,6 +1,12 @@
 import { loader } from "@monaco-editor/react";
 import * as monaco from "monaco-editor/esm/vs/editor/editor.api.js";
 
+// Import editor contributions that aren't included in the minimal editor.api.js
+// bundle. These register hover providers, marker tooltips, etc.
+// Registers the hover contribution (marker tooltips, etc.) which isn't
+// included in the minimal editor.api.js bundle.
+import "monaco-editor/esm/vs/editor/contrib/hover/browser/hoverContribution.js";
+
 import editorWorker from "monaco-editor/esm/vs/editor/editor.worker?worker";
 
 self.MonacoEnvironment = {
