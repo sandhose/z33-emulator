@@ -4,12 +4,8 @@
 //! location, and remain stable across changes. Uses `insta` for snapshot
 //! testing with `codespan_reporting::term` for rendering.
 
-use std::collections::HashMap;
-
 use z33_emulator::diagnostic::{
-    compilation_error_to_diagnostic, parse_diagnostic_to_codespan,
-    preprocessor_error_to_diagnostics, render_to_string, resolve_to_original, simple_error,
-    FileDatabase,
+    parse_diagnostic_to_codespan, preprocessor_error_to_diagnostics, render_to_string, FileDatabase,
 };
 use z33_emulator::preprocessor::{InMemoryFilesystem, Workspace};
 use z33_emulator::{compile, parse};
@@ -31,8 +27,8 @@ fn check_parse_errors(input: &str) -> String {
     buf
 }
 
-/// Preprocess and parse a program, rendering any parse diagnostics mapped
-/// back to the original source file.
+/// Run the full pipeline (preprocess → parse → compile) and render all
+/// diagnostics as a snapshot string.
 fn check_full_pipeline_errors(input: &str) -> String {
     let fs = InMemoryFilesystem::new([("/test.S".into(), input.into())]);
     let mut workspace = Workspace::new(&fs, "/test.S");
@@ -48,28 +44,20 @@ fn check_full_pipeline_errors(input: &str) -> String {
         }
     };
 
-    let result = parse(&preprocess_result.source);
-    let source_map: z33_emulator::preprocessor::ReferencingSourceMap =
-        preprocess_result.source_map.into();
+    let parse_result = parse(&preprocess_result.source);
+
+    // compile() merges parse + layout + fill diagnostics
+    let compile_result = compile(
+        &parse_result.program.inner,
+        &parse_result.diagnostics,
+        Some("main"),
+        preprocess_result.preprocessed_file_id,
+    );
+
     let mut buf = String::new();
-
-    for diag in &result.diagnostics {
-        let codespan_diag =
-            if let Some((file_id, range)) = resolve_to_original(&source_map, diag.span.clone()) {
-                simple_error(&diag.message, file_id, range)
-            } else {
-                parse_diagnostic_to_codespan(diag, preprocess_result.preprocessed_file_id)
-            };
-        buf.push_str(&render_to_string(&codespan_diag, workspace.file_db()));
+    for diag in &compile_result.diagnostics {
+        buf.push_str(&render_to_string(diag, workspace.file_db()));
     }
-
-    // Always try compilation (layout + fill accumulate errors)
-    let compile_result = compile(&result.program.inner, "main");
-    for e in &compile_result.errors {
-        let diag = compilation_error_to_diagnostic(e, preprocess_result.preprocessed_file_id);
-        buf.push_str(&render_to_string(&diag, workspace.file_db()));
-    }
-
     buf
 }
 

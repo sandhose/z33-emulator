@@ -1,10 +1,10 @@
 ---
 source: emulator/tests/diagnostics.rs
-assertion_line: 165
+assertion_line: 160
 expression: "check_full_pipeline_errors(\"main:\\n    jmp %c\")"
 ---
 error: unknown register '%c', valid registers: %a, %b, %pc, %sp, %sr
-  ┌─ /test.S:2:9
+  ┌─ <preprocessed>:2:9
   │
 2 │     jmp %c
-  │         ^
+  │         ^ unknown register '%c', valid registers: %a, %b, %pc, %sp, %sr

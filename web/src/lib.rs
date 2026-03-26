@@ -7,12 +7,11 @@ use camino::Utf8PathBuf;
 use serde::{Deserialize, Serialize};
 use tsify::Tsify;
 use wasm_bindgen::prelude::*;
-use z33_emulator::compiler::{check as compiler_check, compile};
+use z33_emulator::compile;
 use z33_emulator::constants::Address;
 use z33_emulator::diagnostic::{
-    compilation_error_to_diagnostic, diagnostics_to_json, parse_diagnostic_to_codespan,
-    preprocessor_error_to_diagnostics, resolve_diagnostic_spans, resolve_to_original, simple_error,
-    FileDatabase, FileId,
+    diagnostics_to_json, preprocessor_error_to_diagnostics, resolve_diagnostic_spans, FileDatabase,
+    FileId,
 };
 use z33_emulator::preprocessor::{
     InMemoryFilesystem, PreprocessorError, ReferencingSourceMap, Workspace,
@@ -93,39 +92,40 @@ impl InMemoryPreprocessor {
         };
         let source_str = &preprocess_result.source;
         let source_map: ReferencingSourceMap = preprocess_result.source_map.into();
-        let result = z33_emulator::parser::parse(source_str);
+        let parse_result = z33_emulator::parser::parse(source_str);
 
-        // Convert parse diagnostics to codespan format
-        let parse_diagnostics: Vec<_> = result
+        // Run the full pipeline — compile() handles parse diagnostics,
+        // layout, and fill, returning all diagnostics merged.
+        let compile_result = z33_emulator::compile(
+            &parse_result.program.inner,
+            &parse_result.diagnostics,
+            None, // check-only, no entrypoint
+            preprocess_result.preprocessed_file_id,
+        );
+
+        // Resolve all diagnostic spans through the source map
+        let diagnostics: Vec<_> = compile_result
             .diagnostics
             .iter()
-            .filter(|d| d.severity == z33_emulator::parser::DiagnosticSeverity::Error)
-            .map(|diag| {
-                if let Some((file_id, range)) = resolve_to_original(&source_map, diag.span.clone())
-                {
-                    simple_error(&diag.message, file_id, range)
-                } else {
-                    parse_diagnostic_to_codespan(diag, preprocess_result.preprocessed_file_id)
-                }
-            })
+            .map(|d| resolve_diagnostic_spans(d, &source_map))
             .collect();
 
-        let report_json = if parse_diagnostics.is_empty() {
+        let report_json = if diagnostics.is_empty() {
             None
         } else {
             Some(diagnostics_to_json(
-                &parse_diagnostics,
+                &diagnostics,
                 self.preprocessor.file_db(),
             ))
         };
 
-        // Always create a Program — labels and check() work even with errors
         CompilationResult {
             program: Some(Program {
                 source_map,
                 file_db: self.preprocessor.file_db().clone(),
                 preprocessed_file_id: preprocess_result.preprocessed_file_id,
-                program: result.program,
+                program: parse_result.program,
+                parse_diagnostics: parse_result.diagnostics,
             }),
             report_json,
         }
@@ -172,6 +172,7 @@ pub struct Program {
     file_db: FileDatabase,
     preprocessed_file_id: FileId,
     program: z33_emulator::parser::location::Located<z33_emulator::parser::Program>,
+    parse_diagnostics: Vec<z33_emulator::parser::ParseDiagnostic>,
 }
 
 #[wasm_bindgen]
@@ -203,17 +204,19 @@ impl Program {
     #[wasm_bindgen]
     #[must_use]
     pub fn check(&self) -> Option<String> {
-        let result = compiler_check(&self.program.inner);
-        if result.errors.is_empty() {
+        let result = compile(
+            &self.program.inner,
+            &self.parse_diagnostics,
+            None,
+            self.preprocessed_file_id,
+        );
+        if result.diagnostics.is_empty() {
             return None;
         }
         let diagnostics: Vec<_> = result
-            .errors
+            .diagnostics
             .iter()
-            .map(|e| {
-                let diag = compilation_error_to_diagnostic(e, self.preprocessed_file_id);
-                resolve_diagnostic_spans(&diag, &self.source_map)
-            })
+            .map(|d| resolve_diagnostic_spans(d, &self.source_map))
             .collect();
         Some(diagnostics_to_json(&diagnostics, &self.file_db))
     }
@@ -231,16 +234,18 @@ impl Program {
     #[wasm_bindgen]
     pub fn compile(&self, entrypoint: &str) -> Result<Computer, JsValue> {
         tracing::info!("Compiling");
-        let result = compile(&self.program.inner, entrypoint);
+        let result = compile(
+            &self.program.inner,
+            &self.parse_diagnostics,
+            Some(entrypoint),
+            self.preprocessed_file_id,
+        );
 
-        if !result.errors.is_empty() {
+        if !result.diagnostics.is_empty() {
             let diagnostics: Vec<_> = result
-                .errors
+                .diagnostics
                 .iter()
-                .map(|e| {
-                    let diag = compilation_error_to_diagnostic(e, self.preprocessed_file_id);
-                    resolve_diagnostic_spans(&diag, &self.source_map)
-                })
+                .map(|d| resolve_diagnostic_spans(d, &self.source_map))
                 .collect();
             let json = diagnostics_to_json(&diagnostics, &self.file_db);
             return Err(JsValue::from_str(&json));

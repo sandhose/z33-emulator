@@ -26,6 +26,7 @@ pub(crate) fn span_to_range(span: Span) -> Range<usize> {
 }
 
 /// A diagnostic produced during parsing.
+#[derive(Clone)]
 pub struct ParseDiagnostic {
     pub span: Range<usize>,
     pub message: String,

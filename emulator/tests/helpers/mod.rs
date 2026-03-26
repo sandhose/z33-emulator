@@ -29,11 +29,20 @@ pub fn run_program(source: &str, entrypoint: &str, steps: Steps) -> String {
             .map(|d| &d.message)
             .collect::<Vec<_>>()
     );
-    let compile_result = compile(&result.program.inner, entrypoint);
+    let compile_result = compile(
+        &result.program.inner,
+        &result.diagnostics,
+        Some(entrypoint),
+        0,
+    );
     assert!(
-        compile_result.errors.is_empty(),
+        compile_result.diagnostics.is_empty(),
         "compilation errors: {:?}",
-        compile_result.errors
+        compile_result
+            .diagnostics
+            .iter()
+            .map(|d| &d.message)
+            .collect::<Vec<_>>()
     );
     let mut computer = compile_result.computer.expect("no errors but no computer");
 
@@ -144,11 +153,20 @@ pub fn compile_program(source: &str, entrypoint: &str) -> String {
             .map(|d| &d.message)
             .collect::<Vec<_>>()
     );
-    let compile_result = compile(&result.program.inner, entrypoint);
+    let compile_result = compile(
+        &result.program.inner,
+        &result.diagnostics,
+        Some(entrypoint),
+        0,
+    );
     assert!(
-        compile_result.errors.is_empty(),
+        compile_result.diagnostics.is_empty(),
         "compilation errors: {:?}",
-        compile_result.errors
+        compile_result
+            .diagnostics
+            .iter()
+            .map(|d| &d.message)
+            .collect::<Vec<_>>()
     );
     let computer = compile_result.computer.expect("no errors but no computer");
 

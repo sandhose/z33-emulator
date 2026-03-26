@@ -67,5 +67,5 @@ pub mod parser;
 pub mod preprocessor;
 pub mod runtime;
 
-pub use self::compiler::{check, compile, CompileResult};
+pub use self::compiler::{compile, CompileResult};
 pub use self::parser::{parse, ParseResult};

@@ -10,6 +10,8 @@
 //! some neat tricks, especially calculating the offset of a property from the
 //! input string.
 
+#[cfg(test)]
+use super::location::Locatable;
 use super::location::Located;
 use super::value::{DirectiveArgument, DirectiveKind, InstructionArgument, InstructionKind};
 use crate::ast::{AstNode, Node, NodeKind};

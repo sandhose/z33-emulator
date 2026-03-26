@@ -4,10 +4,9 @@ use camino::Utf8PathBuf;
 use clap::{ArgAction, Parser, ValueHint};
 use tracing::{debug, info};
 use z33_emulator::diagnostic::{
-    compilation_error_to_diagnostic, parse_diagnostic_to_codespan,
-    preprocessor_error_to_diagnostics, render_to_string, resolve_to_original,
+    preprocessor_error_to_diagnostics, render_to_string, resolve_diagnostic_spans,
 };
-use z33_emulator::preprocessor::{NativeFilesystem, Workspace};
+use z33_emulator::preprocessor::{NativeFilesystem, ReferencingSourceMap, Workspace};
 use z33_emulator::{compile, parse};
 
 use crate::interactive::run_interactive;
@@ -44,47 +43,24 @@ impl RunOpt {
             }
         };
         let source = preprocess_result.source.as_str();
-        let source_map: z33_emulator::preprocessor::ReferencingSourceMap =
-            preprocess_result.source_map.into();
+        let source_map: ReferencingSourceMap = preprocess_result.source_map.into();
 
         debug!("Parsing program");
-        let result = parse(source);
-        if !result.diagnostics.is_empty() {
-            for diag in &result.diagnostics {
-                // Try to map through source map to original file
-                if let Some((file_id, range)) = resolve_to_original(&source_map, diag.span.clone())
-                {
-                    let codespan_diag = codespan_reporting::diagnostic::Diagnostic::error()
-                        .with_message(&diag.message)
-                        .with_labels(vec![codespan_reporting::diagnostic::Label::primary(
-                            file_id, range,
-                        )]);
-                    eprint!("{}", render_to_string(&codespan_diag, workspace.file_db()));
-                } else {
-                    // Fall back to rendering against preprocessed output
-                    let codespan_diag =
-                        parse_diagnostic_to_codespan(diag, preprocess_result.preprocessed_file_id);
-                    eprint!("{}", render_to_string(&codespan_diag, workspace.file_db()));
-                }
-            }
-            if result
-                .diagnostics
-                .iter()
-                .any(|d| d.severity == z33_emulator::parser::DiagnosticSeverity::Error)
-            {
-                exit(1);
-            }
-        }
-        let program = result.program;
+        let parse_result = parse(source);
 
         debug!(entrypoint = %self.entrypoint, "Building computer");
-        let compile_result = compile(&program.inner, &self.entrypoint);
+        let compile_result = compile(
+            &parse_result.program.inner,
+            &parse_result.diagnostics,
+            Some(&self.entrypoint),
+            preprocess_result.preprocessed_file_id,
+        );
 
-        if !compile_result.errors.is_empty() {
-            for e in &compile_result.errors {
-                let codespan_diag =
-                    compilation_error_to_diagnostic(e, preprocess_result.preprocessed_file_id);
-                eprint!("{}", render_to_string(&codespan_diag, workspace.file_db()));
+        // Show all diagnostics (parse + compilation), resolved to original files
+        if !compile_result.diagnostics.is_empty() {
+            for diag in &compile_result.diagnostics {
+                let resolved = resolve_diagnostic_spans(diag, &source_map);
+                eprint!("{}", render_to_string(&resolved, workspace.file_db()));
             }
             exit(1);
         }
@@ -98,8 +74,6 @@ impl RunOpt {
         } else {
             computer.run()?;
         }
-
-        info!(registers = %computer.registers, "End of program");
 
         Ok(())
     }
