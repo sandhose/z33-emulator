@@ -47,9 +47,6 @@ The operand cost depends on the addressing mode used:
 | Indirect | 1 |
 | Indexed | 1 |
 
-r[exec.cycles.debugreg]
-The only exception is `debugreg`, which costs 0 cycles.
-
 ## Privilege Levels
 
 The Z33 has two privilege levels, determined by the S (Supervisor) bit in `%sr`:

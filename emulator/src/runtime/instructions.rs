@@ -1,7 +1,7 @@
 use std::convert::TryInto;
 
 use parse_display::Display;
-use tracing::{debug, info};
+use tracing::debug;
 
 use super::arguments::{
     DirIndIdx, ExtractValue, ImmReg, ImmRegDirIndIdx, RegDirIndIdx, ResolveAddress,
@@ -144,10 +144,6 @@ pub enum Instruction {
     /// Bitwise `xor` with a given value
     #[display("xor  {0}, {1}")]
     Xor(ImmRegDirIndIdx, Reg),
-
-    /// Show registers content
-    #[display("debugreg")]
-    DebugReg,
 }
 
 impl Instruction {
@@ -516,10 +512,6 @@ impl Instruction {
                 computer.registers.sr.set(StatusRegister::ZERO, res == 0);
                 computer.registers.sr.set(StatusRegister::NEGATIVE, res < 0);
             }
-
-            Self::DebugReg => {
-                info!("debugreg: {}", computer.registers);
-            }
         }
 
         Ok(())
@@ -531,9 +523,6 @@ impl Instruction {
         // All instruction cost one CPU cycle itself, plus the cost of each of its
         // arguments
         match self {
-            // r[impl exec.cycles.debugreg]
-            Self::DebugReg => 0, // The only exception being `debugreg`, which costs nothing
-
             // imm|reg|dir|ind|idx, reg
             Self::Div(a, _)
             | Self::Or(a, _)

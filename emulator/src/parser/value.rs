@@ -47,7 +47,6 @@ pub enum InstructionKind {
     Swap,
     Trap,
     Xor,
-    DebugReg,
 }
 
 impl AstNode for InstructionKind {

@@ -10,13 +10,7 @@ This specification documents `.space` as reserving cells. The reference card's u
 
 ---
 
-## 2. `debugreg` Instruction
-
-The `debugreg` instruction is present in the emulator but not documented in the reference card. It has zero cycle cost and no architectural effect — it simply logs the current register state for debugging purposes.
-
----
-
-## 3. `swap` with Memory — Cell Type Preservation
+## 2. `swap` with Memory — Cell Type Preservation
 
 When `swap` operates on a memory location and a register, both the memory read and the register read use `extract_cell()`, which preserves the full Cell type (including Instruction cells). The emulator's `write` method is generic (`T: Into<Cell>`), so `swap` actually preserves full cell types in both directions. This contrasts with `st`, which calls `extract_word()` and only stores a Word value.
 
