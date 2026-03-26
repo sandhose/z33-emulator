@@ -184,7 +184,6 @@ pub fn compilation_error_to_diagnostic(
         CE::UnknownEntrypoint(name) => {
             Diagnostic::error().with_message(format!("unknown entrypoint: {name}"))
         }
-        CE::HasParseErrors => Diagnostic::error().with_message("program contains syntax errors"),
     }
 }
 

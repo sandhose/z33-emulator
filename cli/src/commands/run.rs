@@ -78,15 +78,19 @@ impl RunOpt {
         let program = result.program;
 
         debug!(entrypoint = %self.entrypoint, "Building computer");
-        let (mut computer, debug_info) = match compile(&program.inner, &self.entrypoint) {
-            Ok(p) => p,
-            Err(e) => {
+        let compile_result = compile(&program.inner, &self.entrypoint);
+
+        if !compile_result.errors.is_empty() {
+            for e in &compile_result.errors {
                 let codespan_diag =
-                    compilation_error_to_diagnostic(&e, preprocess_result.preprocessed_file_id);
+                    compilation_error_to_diagnostic(e, preprocess_result.preprocessed_file_id);
                 eprint!("{}", render_to_string(&codespan_diag, workspace.file_db()));
-                exit(1);
             }
-        };
+            exit(1);
+        }
+
+        let mut computer = compile_result.computer.expect("no errors but no computer");
+        let debug_info = compile_result.debug_info;
 
         info!("Running program");
         if self.interactive {

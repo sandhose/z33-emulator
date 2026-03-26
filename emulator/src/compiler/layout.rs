@@ -144,17 +144,19 @@ impl MemoryLayoutError {
     }
 }
 
-/// Lays out the memory
+/// Lays out the memory, collecting all errors instead of stopping at the first.
 ///
-/// It places the labels & prepare a hashmap of cells to be filled.
+/// Always produces a `Layout` (possibly partial) plus a vector of errors.
+/// Labels are always collected even when other errors occur. Error lines
+/// (`LineContent::Error`) are silently skipped.
 #[tracing::instrument(skip(program))]
 #[allow(clippy::too_many_lines)]
-pub(crate) fn layout_memory(program: &[Located<Line>]) -> Result<Layout, MemoryLayoutError> {
+pub(crate) fn layout_memory(program: &[Located<Line>]) -> (Layout, Vec<MemoryLayoutError>) {
     use DirectiveKind::{Addr, Space, String, Word};
-    use MemoryLayoutError::{DirectiveArgumentEvaluation, InvalidDirectiveArgument};
 
     debug!(lines = program.len(), "Laying out memory");
     let mut layout: Layout = Layout::default();
+    let mut errors: Vec<MemoryLayoutError> = Vec::new();
     let mut position = PROGRAM_START;
 
     for line in program {
@@ -163,7 +165,9 @@ pub(crate) fn layout_memory(program: &[Located<Line>]) -> Result<Layout, MemoryL
         for key in line.symbols.clone() {
             let key = key.offset(line_offset);
             trace!(key = %key.inner, position, "Inserting label");
-            layout.insert_label(key, position)?;
+            if let Err(e) = layout.insert_label(key, position) {
+                errors.push(e);
+            }
         }
 
         if let Some(ref content) = line.content {
@@ -179,14 +183,15 @@ pub(crate) fn layout_memory(program: &[Located<Line>]) -> Result<Layout, MemoryL
                         start: content.location.start + line_offset,
                         end: content.location.end + line_offset,
                     };
-                    layout.insert_placement(
+                    if let Err(e) = layout.insert_placement(
                         position,
                         Placement::Line(content.clone().offset(line_offset)),
                         abs_location,
-                    )?;
+                    ) {
+                        errors.push(e);
+                    }
                     trace!(position, content = %content.inner, "Inserting line");
-                    position += 1; // Instructions and word directives take one
-                                   // memory cell
+                    position += 1;
                 }
 
                 // r[impl asm.directive.space]
@@ -197,29 +202,31 @@ pub(crate) fn layout_memory(program: &[Located<Line>]) -> Result<Layout, MemoryL
                             inner: DirectiveArgument::Expression(e),
                             ..
                         },
-                } => {
-                    let size = e.evaluate(&EmptyExpressionContext).map_err(|source| {
-                        DirectiveArgumentEvaluation {
+                } => match e.evaluate(&EmptyExpressionContext) {
+                    Ok(size) => {
+                        trace!(size, position, "Reserving space");
+                        let abs_location = Range {
+                            start: content.location.start + line_offset,
+                            end: content.location.end + line_offset,
+                        };
+                        for _ in 0..size {
+                            if let Err(e) = layout.insert_placement(
+                                position,
+                                Placement::Reserved,
+                                abs_location.clone(),
+                            ) {
+                                errors.push(e);
+                            }
+                            position += 1;
+                        }
+                    }
+                    Err(source) => {
+                        errors.push(MemoryLayoutError::DirectiveArgumentEvaluation {
                             kind: Space,
                             source,
-                        }
-                    })?;
-
-                    trace!(size, position, "Reserving space");
-
-                    let abs_location = Range {
-                        start: content.location.start + line_offset,
-                        end: content.location.end + line_offset,
-                    };
-                    for _ in 0..size {
-                        layout.insert_placement(
-                            position,
-                            Placement::Reserved,
-                            abs_location.clone(),
-                        )?;
-                        position += 1;
+                        });
                     }
-                }
+                },
 
                 // r[impl asm.directive.addr]
                 LineContent::Directive {
@@ -229,16 +236,18 @@ pub(crate) fn layout_memory(program: &[Located<Line>]) -> Result<Layout, MemoryL
                             inner: DirectiveArgument::Expression(e),
                             ..
                         },
-                } => {
-                    let addr = e
-                        .evaluate(&EmptyExpressionContext)
-                        .map_err(|source| DirectiveArgumentEvaluation { kind: Addr, source })?;
-
-                    debug!(addr, "Changing address");
-
-                    // The ".addr N" directive changes the current address to N
-                    position = addr;
-                }
+                } => match e.evaluate(&EmptyExpressionContext) {
+                    Ok(addr) => {
+                        debug!(addr, "Changing address");
+                        position = addr;
+                    }
+                    Err(source) => {
+                        errors.push(MemoryLayoutError::DirectiveArgumentEvaluation {
+                            kind: Addr,
+                            source,
+                        });
+                    }
+                },
 
                 // r[impl asm.directive.string]
                 LineContent::Directive {
@@ -254,22 +263,26 @@ pub(crate) fn layout_memory(program: &[Located<Line>]) -> Result<Layout, MemoryL
                         start: content.location.start + line_offset,
                         end: content.location.end + line_offset,
                     };
-                    // Fill the memory with the chars of the string
                     for c in string.chars() {
-                        layout.insert_placement(
+                        if let Err(e) = layout.insert_placement(
                             position,
                             Placement::Char(c),
                             abs_location.clone(),
-                        )?;
+                        ) {
+                            errors.push(e);
+                        }
                         position += 1;
                     }
 
-                    layout.insert_placement(position, Placement::Nul, abs_location)?;
+                    if let Err(e) = layout.insert_placement(position, Placement::Nul, abs_location)
+                    {
+                        errors.push(e);
+                    }
                     position += 1;
                 }
 
                 LineContent::Directive { kind, .. } => {
-                    return Err(InvalidDirectiveArgument {
+                    errors.push(MemoryLayoutError::InvalidDirectiveArgument {
                         kind: kind.inner,
                         location: Range {
                             start: kind.location.start + content_offset,
@@ -284,7 +297,7 @@ pub(crate) fn layout_memory(program: &[Located<Line>]) -> Result<Layout, MemoryL
         }
     }
 
-    Ok(layout)
+    (layout, errors)
 }
 
 #[cfg(test)]

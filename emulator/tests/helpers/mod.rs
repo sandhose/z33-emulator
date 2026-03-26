@@ -29,8 +29,13 @@ pub fn run_program(source: &str, entrypoint: &str, steps: Steps) -> String {
             .map(|d| &d.message)
             .collect::<Vec<_>>()
     );
-    let (mut computer, _debug_info) =
-        compile(&result.program.inner, entrypoint).expect("compilation failed");
+    let compile_result = compile(&result.program.inner, entrypoint);
+    assert!(
+        compile_result.errors.is_empty(),
+        "compilation errors: {:?}",
+        compile_result.errors
+    );
+    let mut computer = compile_result.computer.expect("no errors but no computer");
 
     let halt_reason = match steps {
         Steps::Count(n) => {
@@ -139,10 +144,15 @@ pub fn compile_program(source: &str, entrypoint: &str) -> String {
             .map(|d| &d.message)
             .collect::<Vec<_>>()
     );
-    let (computer, debug_info) =
-        compile(&result.program.inner, entrypoint).expect("compilation failed");
+    let compile_result = compile(&result.program.inner, entrypoint);
+    assert!(
+        compile_result.errors.is_empty(),
+        "compilation errors: {:?}",
+        compile_result.errors
+    );
+    let computer = compile_result.computer.expect("no errors but no computer");
 
-    format_compilation(&computer, &debug_info)
+    format_compilation(&computer, &compile_result.debug_info)
 }
 
 fn format_compilation(computer: &Computer, debug_info: &DebugInfo) -> String {

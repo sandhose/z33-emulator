@@ -7,7 +7,7 @@ use tracing::debug;
 use self::layout::MemoryLayoutError;
 use self::memory::MemoryFillError;
 use crate::constants as C;
-use crate::parser::line::{LineContent, Program};
+use crate::parser::line::Program;
 use crate::runtime::{Computer, Registers};
 
 pub mod layout;
@@ -15,7 +15,7 @@ pub mod memory;
 
 type Labels = BTreeMap<String, C::Address>;
 
-/// Holds informations about the compilation
+/// Holds information about the compilation — always available even with errors.
 pub struct DebugInfo {
     /// Map of labels to addresses
     pub labels: Labels,
@@ -34,69 +34,98 @@ pub enum CompilationError {
 
     #[error("unknown entrypoint: {0}")]
     UnknownEntrypoint(String),
-
-    #[error("program contains syntax errors")]
-    HasParseErrors,
 }
 
-/// Check whether the program contains any error-recovery placeholders.
-fn has_parse_errors(program: &Program) -> bool {
-    program.lines.iter().any(|line| {
-        line.inner
-            .content
-            .as_ref()
-            .is_some_and(|c| matches!(c.inner, LineContent::Error))
-    })
+/// Result of compilation. Always produces `debug_info` (labels + source map).
+/// Only produces a runnable `Computer` if there are zero errors.
+pub struct CompileResult {
+    /// A runnable computer, only if compilation had no errors.
+    pub computer: Option<Computer>,
+
+    /// Debug info (labels, source map) — always available.
+    pub debug_info: DebugInfo,
+
+    /// All accumulated errors from layout and fill stages.
+    pub errors: Vec<CompilationError>,
 }
 
 /// Run layout and fill without selecting an entrypoint.
-/// Returns `Ok(())` if the program can be assembled, or a `CompilationError`.
-pub fn check(program: &Program) -> Result<(), CompilationError> {
-    if has_parse_errors(program) {
-        return Err(CompilationError::HasParseErrors);
+///
+/// Returns all errors found plus the debug info (labels, source map).
+pub fn check(program: &Program) -> CompileResult {
+    let (layout, layout_errors) = self::layout::layout_memory(&program.lines);
+    let (memory, fill_errors) = self::memory::fill_memory(&layout);
+
+    let errors: Vec<CompilationError> = layout_errors
+        .into_iter()
+        .map(CompilationError::from)
+        .chain(fill_errors.into_iter().map(CompilationError::from))
+        .collect();
+
+    let computer = if errors.is_empty() {
+        Some(Computer {
+            memory,
+            registers: Registers::default(),
+            ..Default::default()
+        })
+    } else {
+        None
+    };
+
+    // Compute source_map before moving labels
+    let source_map = layout.source_map();
+    let debug_info = DebugInfo {
+        labels: layout.labels,
+        source_map,
+    };
+
+    CompileResult {
+        computer,
+        debug_info,
+        errors,
     }
-    let layout = self::layout::layout_memory(&program.lines)?;
-    self::memory::fill_memory(&layout)?;
-    Ok(())
 }
 
 #[tracing::instrument(skip(program))]
-pub fn compile(
-    program: &Program,
-    entrypoint: &str,
-) -> Result<(Computer, DebugInfo), CompilationError> {
-    if has_parse_errors(program) {
-        return Err(CompilationError::HasParseErrors);
-    }
-    let layout = self::layout::layout_memory(&program.lines)?;
-    let memory = self::memory::fill_memory(&layout)?;
+pub fn compile(program: &Program, entrypoint: &str) -> CompileResult {
+    let (layout, layout_errors) = self::layout::layout_memory(&program.lines);
+    let (memory, fill_errors) = self::memory::fill_memory(&layout);
 
-    // Lookup the entrypoint
-    let pc = *layout
-        .labels
-        .get(entrypoint)
-        .ok_or_else(|| CompilationError::UnknownEntrypoint(entrypoint.to_string()))?;
-    debug!(pc, entrypoint, "Found entrypoint");
+    let mut errors: Vec<CompilationError> = layout_errors
+        .into_iter()
+        .map(CompilationError::from)
+        .chain(fill_errors.into_iter().map(CompilationError::from))
+        .collect();
 
-    // r[impl arch.initial-state]
-    let computer = Computer {
-        memory,
-        registers: Registers {
-            pc,
-            sp: C::STACK_START,
-            ..Default::default()
-        },
-        ..Default::default()
+    let computer = if errors.is_empty() {
+        if let Some(&pc) = layout.labels.get(entrypoint) {
+            debug!(pc, entrypoint, "Found entrypoint");
+            Some(Computer {
+                memory,
+                registers: Registers {
+                    pc,
+                    sp: C::STACK_START,
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
+        } else {
+            errors.push(CompilationError::UnknownEntrypoint(entrypoint.to_string()));
+            None
+        }
+    } else {
+        None
     };
 
+    let source_map = layout.source_map();
     let debug_info = DebugInfo {
-        labels: layout
-            .labels
-            .iter()
-            .map(|(key, value)| (key.clone(), *value))
-            .collect(),
-        source_map: layout.source_map(),
+        labels: layout.labels,
+        source_map,
     };
 
-    Ok((computer, debug_info))
+    CompileResult {
+        computer,
+        debug_info,
+        errors,
+    }
 }

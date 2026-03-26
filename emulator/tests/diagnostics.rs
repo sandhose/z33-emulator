@@ -63,12 +63,11 @@ fn check_full_pipeline_errors(input: &str) -> String {
         buf.push_str(&render_to_string(&codespan_diag, workspace.file_db()));
     }
 
-    // If no parse errors, try compilation
-    if result.diagnostics.is_empty() {
-        if let Err(e) = compile(&result.program.inner, "main") {
-            let diag = compilation_error_to_diagnostic(&e, preprocess_result.preprocessed_file_id);
-            buf.push_str(&render_to_string(&diag, workspace.file_db()));
-        }
+    // Always try compilation (layout + fill accumulate errors)
+    let compile_result = compile(&result.program.inner, "main");
+    for e in &compile_result.errors {
+        let diag = compilation_error_to_diagnostic(e, preprocess_result.preprocessed_file_id);
+        buf.push_str(&render_to_string(&diag, workspace.file_db()));
     }
 
     buf

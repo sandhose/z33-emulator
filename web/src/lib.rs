@@ -177,19 +177,6 @@ fn compose_source_maps(
         .collect()
 }
 
-fn compiler_error_to_json(
-    error: &z33_emulator::compiler::CompilationError,
-    preprocessed_file_id: FileId,
-    source_map: &ReferencingSourceMap,
-    file_db: &FileDatabase,
-) -> String {
-    // Get the rich diagnostic (with instruction/argument-level labels)
-    let diag = compilation_error_to_diagnostic(error, preprocessed_file_id);
-    // Resolve all label spans through the source map to original files
-    let diag = resolve_diagnostic_spans(&diag, source_map);
-    diagnostics_to_json(&[diag], file_db)
-}
-
 #[wasm_bindgen]
 #[derive(Clone)]
 #[allow(clippy::struct_field_names)]
@@ -229,15 +216,19 @@ impl Program {
     #[wasm_bindgen]
     #[must_use]
     pub fn check(&self) -> Option<String> {
-        match compiler_check(&self.program.inner) {
-            Ok(()) => None,
-            Err(ref e) => Some(compiler_error_to_json(
-                e,
-                self.preprocessed_file_id,
-                &self.source_map,
-                &self.file_db,
-            )),
+        let result = compiler_check(&self.program.inner);
+        if result.errors.is_empty() {
+            return None;
         }
+        let diagnostics: Vec<_> = result
+            .errors
+            .iter()
+            .map(|e| {
+                let diag = compilation_error_to_diagnostic(e, self.preprocessed_file_id);
+                resolve_diagnostic_spans(&diag, &self.source_map)
+            })
+            .collect();
+        Some(diagnostics_to_json(&diagnostics, &self.file_db))
     }
 
     /// Compile the program at the given entrypoint
@@ -245,19 +236,31 @@ impl Program {
     /// # Errors
     ///
     /// Returns an error if the program could not be compiled.
+    ///
+    /// # Panics
+    ///
+    /// Panics if compilation reports no errors but produces no computer
+    /// (should never happen).
     #[wasm_bindgen]
     pub fn compile(&self, entrypoint: &str) -> Result<Computer, JsValue> {
         tracing::info!("Compiling");
-        let (computer, debug_info) = compile(&self.program.inner, entrypoint).map_err(|e| {
-            // Produce rich diagnostic JSON instead of a plain error string
-            let json = compiler_error_to_json(
-                &e,
-                self.preprocessed_file_id,
-                &self.source_map,
-                &self.file_db,
-            );
-            JsValue::from_str(&json)
-        })?;
+        let result = compile(&self.program.inner, entrypoint);
+
+        if !result.errors.is_empty() {
+            let diagnostics: Vec<_> = result
+                .errors
+                .iter()
+                .map(|e| {
+                    let diag = compilation_error_to_diagnostic(e, self.preprocessed_file_id);
+                    resolve_diagnostic_spans(&diag, &self.source_map)
+                })
+                .collect();
+            let json = diagnostics_to_json(&diagnostics, &self.file_db);
+            return Err(JsValue::from_str(&json));
+        }
+
+        let computer = result.computer.expect("no errors but no computer");
+        let debug_info = result.debug_info;
 
         let registers = Observable::new(Registers {
             a: Cell::from_runtime_cell(&computer.registers.a),

@@ -428,31 +428,35 @@ fn compile_placement(labels: &Labels, placement: &Placement) -> Result<Cell, Mem
     }
 }
 
+/// Fill memory from the layout, collecting all errors instead of stopping at
+/// the first.
+///
+/// Always produces a `Memory` (with `Cell::Empty` for failed placements) plus
+/// a vector of errors.
 #[tracing::instrument(skip(layout))]
-pub(crate) fn fill_memory(layout: &Layout) -> Result<Memory, MemoryFillError> {
+pub(crate) fn fill_memory(layout: &Layout) -> (Memory, Vec<MemoryFillError>) {
     debug!(
         placements = layout.memory.len(),
         labels = ?layout.labels,
         "Filling memory"
     );
     let mut memory = Memory::default();
+    let mut errors = Vec::new();
 
-    let cells: Result<HashMap<C::Address, Cell>, MemoryFillError> = layout
-        .memory
-        .iter()
-        .map(|(index, (placement, _location))| {
-            let span = span!(Level::TRACE, "placement", index);
-            let _guard = span.enter();
-            let cell = compile_placement(&layout.labels, placement)?;
-            Ok((*index, cell))
-        })
-        .collect();
-
-    for (address, content) in cells? {
-        trace!(address, content = %content, "Filling cell");
-        let cell = memory.get_mut(address).unwrap();
-        *cell = content;
+    for (index, (placement, _location)) in &layout.memory {
+        let span = span!(Level::TRACE, "placement", index);
+        let _guard = span.enter();
+        match compile_placement(&layout.labels, placement) {
+            Ok(cell) => {
+                trace!(address = index, content = %cell, "Filling cell");
+                let dest = memory.get_mut(*index).unwrap();
+                *dest = cell;
+            }
+            Err(e) => {
+                errors.push(e);
+            }
+        }
     }
 
-    Ok(memory)
+    (memory, errors)
 }
