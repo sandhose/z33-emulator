@@ -2,7 +2,7 @@ use std::process::exit;
 
 use camino::Utf8PathBuf;
 use clap::{ArgAction, Parser, ValueHint};
-use tracing::{debug, error, info};
+use tracing::{debug, info};
 use z33_emulator::diagnostic::{
     compilation_error_to_diagnostic, parse_diagnostic_to_codespan,
     preprocessor_error_to_diagnostics, render_to_string, resolve_to_original,
@@ -81,15 +81,6 @@ impl RunOpt {
         let (mut computer, debug_info) = match compile(&program.inner, &self.entrypoint) {
             Ok(p) => p,
             Err(e) => {
-                // TODO: some cleanup needed
-                let mut last_error = &e as &dyn std::error::Error;
-                for error in anyhow::Chain::new(&e) {
-                    error!("{}", error);
-                    last_error = error;
-                }
-
-                let _ = last_error;
-
                 let codespan_diag =
                     compilation_error_to_diagnostic(&e, preprocess_result.preprocessed_file_id);
                 eprint!("{}", render_to_string(&codespan_diag, workspace.file_db()));

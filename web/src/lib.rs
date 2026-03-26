@@ -248,8 +248,16 @@ impl Program {
     #[wasm_bindgen]
     pub fn compile(&self, entrypoint: &str) -> Result<Computer, JsValue> {
         tracing::info!("Compiling");
-        let (computer, debug_info) =
-            compile(&self.program.inner, entrypoint).map_err(|e| format!("{e}"))?;
+        let (computer, debug_info) = compile(&self.program.inner, entrypoint).map_err(|e| {
+            // Produce rich diagnostic JSON instead of a plain error string
+            let json = compiler_error_to_json(
+                &e,
+                self.preprocessed_file_id,
+                &self.source_map,
+                &self.file_db,
+            );
+            JsValue::from_str(&json)
+        })?;
 
         let registers = Observable::new(Registers {
             a: Cell::from_runtime_cell(&computer.registers.a),
