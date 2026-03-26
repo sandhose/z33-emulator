@@ -174,6 +174,11 @@ fn compilation_invalid_register() {
 }
 
 #[test]
+fn compilation_undefined_label() {
+    insta::assert_snapshot!(check_full_pipeline_errors("main:\n    cmp foo, %a"));
+}
+
+#[test]
 fn compilation_unknown_entrypoint() {
     insta::assert_snapshot!(check_full_pipeline_errors("start:\n    nop"));
 }

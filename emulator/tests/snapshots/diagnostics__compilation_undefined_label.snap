@@ -1,0 +1,10 @@
+---
+source: emulator/tests/diagnostics.rs
+assertion_line: 178
+expression: "check_full_pipeline_errors(\"main:\\n    cmp foo, %a\")"
+---
+error: undefined label or macro 'foo'
+  ┌─ <preprocessed>:2:9
+  │
+2 │     cmp foo, %a
+  │         ^^^ not defined

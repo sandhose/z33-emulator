@@ -194,6 +194,64 @@ pub fn compilation_error_to_diagnostic(
     }
 }
 
+fn evaluation_error_to_diagnostic(
+    error: &crate::parser::expression::EvaluationError,
+    file_id: FileId,
+    location: Range<usize>,
+) -> Diagnostic<FileId> {
+    use crate::parser::expression::EvaluationError as EE;
+
+    match error {
+        EE::UndefinedVariable { variable } => Diagnostic::error()
+            .with_message(format!("undefined label or macro '{variable}'"))
+            .with_labels(vec![
+                Label::primary(file_id, location).with_message("not defined")
+            ]),
+
+        EE::Downcast => Diagnostic::error()
+            .with_message("value out of range")
+            .with_labels(vec![
+                Label::primary(file_id, location).with_message("could not convert value")
+            ]),
+
+        EE::Overflow => Diagnostic::error()
+            .with_message("arithmetic overflow")
+            .with_labels(vec![Label::primary(file_id, location)]),
+
+        EE::DivByZero => Diagnostic::error()
+            .with_message("division by zero")
+            .with_labels(vec![Label::primary(file_id, location)]),
+
+        EE::Shift => Diagnostic::error()
+            .with_message("invalid bit shift")
+            .with_labels(vec![Label::primary(file_id, location)]),
+
+        EE::Expression {
+            location: inner_loc,
+            inner,
+        } => evaluation_error_to_diagnostic(inner, file_id, inner_loc.clone()),
+
+        EE::Error => Diagnostic::error()
+            .with_message("expression contains errors")
+            .with_labels(vec![Label::primary(file_id, location)]),
+    }
+}
+
+fn compute_error_to_diagnostic(
+    error: &crate::parser::value::ComputeError,
+    file_id: FileId,
+    location: Range<usize>,
+) -> Diagnostic<FileId> {
+    use crate::parser::value::ComputeError as CE;
+
+    match error {
+        CE::Evaluation(inner) => evaluation_error_to_diagnostic(inner, file_id, location),
+        CE::Error => Diagnostic::error()
+            .with_message("cannot evaluate error placeholder")
+            .with_labels(vec![Label::primary(file_id, location)]),
+    }
+}
+
 fn memory_fill_error_to_diagnostic(
     error: &crate::compiler::memory::MemoryFillError,
     file_id: FileId,
@@ -201,17 +259,13 @@ fn memory_fill_error_to_diagnostic(
     use crate::compiler::memory::{InstructionCompilationError as ICE, MemoryFillError as MFE};
 
     match error {
-        MFE::Evaluation { location, source } => Diagnostic::error()
-            .with_message(format!("could not evaluate expression: {source}"))
-            .with_labels(vec![
-                Label::primary(file_id, location.clone()).with_message(source.to_string())
-            ]),
+        MFE::Evaluation { location, source } => {
+            evaluation_error_to_diagnostic(source, file_id, location.clone())
+        }
 
-        MFE::Compute { location, source } => Diagnostic::error()
-            .with_message(format!("could not compute argument: {source}"))
-            .with_labels(vec![
-                Label::primary(file_id, location.clone()).with_message(source.to_string())
-            ]),
+        MFE::Compute { location, source } => {
+            compute_error_to_diagnostic(source, file_id, location.clone())
+        }
 
         MFE::InstructionCompilation {
             instruction_span,
