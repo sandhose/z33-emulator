@@ -84,6 +84,13 @@ fn unknown_instruction() {
 }
 
 #[test]
+fn unknown_instruction_with_args() {
+    // "invalid" should be reported as unknown instruction, not as a label missing
+    // ':'
+    insta::assert_snapshot!(check_parse_errors("    invalid %a"));
+}
+
+#[test]
 fn missing_register_name() {
     insta::assert_snapshot!(check_parse_errors("    ld %, %a"));
 }

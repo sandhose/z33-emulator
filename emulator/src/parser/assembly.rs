@@ -171,10 +171,20 @@ fn directive_argument<'a>() -> impl Parser<'a, &'a str, DirectiveArgument, Extra
 // ---------------------------------------------------------------------------
 
 fn symbol_definition<'a>() -> impl Parser<'a, &'a str, Located<String>, Extra<'a>> + Clone {
+    // Parse `identifier :` as a unit. The identifier is followed by optional
+    // whitespace then `:`. We use `then` + `just(':')` so that if `:` is
+    // absent, chumsky backtracks cleanly and tries instruction parsing instead.
     identifier()
-        .map_with(|i: &str, e| i.to_string().with_location(span_to_range(e.span())))
         .then_ignore(hspace())
         .then_ignore(just(':'))
+        .map_with(|i: &str, e| {
+            // The span covers just the identifier (not the colon), but we
+            // need to get the identifier span before the colon. We know the
+            // identifier is at the start of the match.
+            let full_span = span_to_range(e.span());
+            i.to_string()
+                .with_location(full_span.start..full_span.start + i.len())
+        })
 }
 
 fn line_content<'a>() -> impl Parser<'a, &'a str, Located<LineContent>, Extra<'a>> + Clone {
