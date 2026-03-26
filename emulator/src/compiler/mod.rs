@@ -11,7 +11,7 @@ use crate::parser::line::{LineContent, Program};
 use crate::runtime::{Computer, Registers};
 
 pub mod layout;
-pub(crate) mod memory;
+pub mod memory;
 
 type Labels = BTreeMap<String, C::Address>;
 

@@ -151,6 +151,29 @@ fn compilation_duplicate_label() {
 }
 
 #[test]
+fn compilation_wrong_argument_type() {
+    // cmp takes (ImmRegDirIndIdx, Reg) — `1` is Imm, not Reg
+    insta::assert_snapshot!(check_full_pipeline_errors(
+        "main:\n    cmp %a, 1"
+    ));
+}
+
+#[test]
+fn compilation_push_direct_memory() {
+    // push takes ImmReg — [1234] is Dir
+    insta::assert_snapshot!(check_full_pipeline_errors(
+        "main:\n    push [1234]"
+    ));
+}
+
+#[test]
+fn compilation_too_many_arguments() {
+    insta::assert_snapshot!(check_full_pipeline_errors(
+        "main:\n    add %a, %b, %a"
+    ));
+}
+
+#[test]
 fn compilation_unknown_entrypoint() {
     insta::assert_snapshot!(check_full_pipeline_errors(
         "start:\n    nop"

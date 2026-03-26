@@ -189,20 +189,82 @@ pub fn compilation_error_to_diagnostic(
         CE::MemoryLayout(e) => {
             let mut diag = Diagnostic::error().with_message(e.to_string());
             if let Some(loc) = e.location() {
-                diag.labels
-                    .push(Label::primary(file_id, loc.clone()));
+                diag.labels.push(Label::primary(file_id, loc.clone()));
             }
             diag
         }
-        CE::MemoryFill(e) => Diagnostic::error()
-            .with_message(e.to_string())
-            .with_labels(vec![Label::primary(file_id, e.location().clone())]),
+        CE::MemoryFill(e) => memory_fill_error_to_diagnostic(e, file_id),
         CE::UnknownEntrypoint(name) => {
             Diagnostic::error().with_message(format!("unknown entrypoint: {name}"))
         }
         CE::HasParseErrors => {
             Diagnostic::error().with_message("program contains syntax errors")
         }
+    }
+}
+
+fn memory_fill_error_to_diagnostic(
+    error: &crate::compiler::memory::MemoryFillError,
+    file_id: FileId,
+) -> Diagnostic<FileId> {
+    use crate::compiler::memory::InstructionCompilationError as ICE;
+    use crate::compiler::memory::MemoryFillError as MFE;
+
+    match error {
+        MFE::Evaluation { location, source } => Diagnostic::error()
+            .with_message(format!("could not evaluate expression: {source}"))
+            .with_labels(vec![
+                Label::primary(file_id, location.clone()).with_message(source.to_string()),
+            ]),
+
+        MFE::Compute { location, source } => Diagnostic::error()
+            .with_message(format!("could not compute argument: {source}"))
+            .with_labels(vec![
+                Label::primary(file_id, location.clone()).with_message(source.to_string()),
+            ]),
+
+        MFE::InstructionCompilation {
+            instruction_span,
+            argument_spans,
+            source,
+        } => match source {
+            ICE::InvalidArgumentCount {
+                instruction,
+                expected,
+                got,
+            } => Diagnostic::error()
+                .with_message(format!(
+                    "'{instruction}' takes {expected} argument(s), got {got}"
+                ))
+                .with_labels(vec![Label::primary(file_id, instruction_span.clone())
+                    .with_message(format!("expected {expected} argument(s)"))]),
+
+            ICE::InvalidArgumentType {
+                instruction,
+                argument_index,
+                source: conversion_error,
+            } => {
+                let mut labels = Vec::new();
+
+                // Primary label on the argument that failed
+                if let Some(arg_span) = argument_spans.get(*argument_index) {
+                    labels.push(
+                        Label::primary(file_id, arg_span.clone())
+                            .with_message(conversion_error.to_string()),
+                    );
+                }
+
+                // Secondary label on the instruction name for context
+                labels.push(
+                    Label::secondary(file_id, instruction_span.clone())
+                        .with_message(format!("in instruction '{instruction}'")),
+                );
+
+                Diagnostic::error()
+                    .with_message(format!("invalid argument for '{instruction}'"))
+                    .with_labels(labels)
+            }
+        },
     }
 }
 

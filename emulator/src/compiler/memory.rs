@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryFrom;
 use std::ops::Range;
 
 use thiserror::Error;
@@ -24,267 +24,233 @@ pub enum MemoryFillError {
 
     #[error("could not compute instruction argument")]
     Compute {
+        /// Span of the argument that failed evaluation
         location: Range<usize>,
         source: ComputeError,
     },
 
-    #[error("could not compile instruction")]
+    #[error("{source}")]
     InstructionCompilation {
-        location: Range<usize>,
+        /// Span of the instruction mnemonic
+        instruction_span: Range<usize>,
+        /// Spans of each argument (indexed same as the instruction arguments)
+        argument_spans: Vec<Range<usize>>,
         source: InstructionCompilationError,
     },
 }
 
 impl MemoryFillError {
+    /// The primary location for this error (for backward compat).
+    #[must_use]
     pub fn location(&self) -> &Range<usize> {
         match self {
             MemoryFillError::Evaluation { location, .. }
-            | MemoryFillError::Compute { location, .. }
-            | MemoryFillError::InstructionCompilation { location, .. } => location,
+            | MemoryFillError::Compute { location, .. } => location,
+            MemoryFillError::InstructionCompilation {
+                instruction_span, ..
+            } => instruction_span,
         }
     }
 }
 
 #[derive(Debug, Error)]
 pub enum InstructionCompilationError {
-    #[error("invalid number of arguments: expected {expected}, got {got}")]
-    InvalidArgumentNumber { expected: usize, got: usize },
+    #[error(
+        "'{instruction}' takes {expected} argument(s), got {got}"
+    )]
+    InvalidArgumentCount {
+        instruction: InstructionKind,
+        expected: usize,
+        got: usize,
+    },
 
-    #[error(transparent)]
-    ArgumentConversion(#[from] ArgConversionError),
+    #[error("invalid argument for '{instruction}'")]
+    InvalidArgumentType {
+        instruction: InstructionKind,
+        /// 0-indexed position of the argument that failed
+        argument_index: usize,
+        source: ArgConversionError,
+    },
 }
 
-impl From<std::convert::Infallible> for InstructionCompilationError {
-    fn from(_: std::convert::Infallible) -> Self {
-        unreachable!()
-    }
-}
-
-fn get_tuple<X, Y>(args: Vec<ImmRegDirIndIdx>) -> Result<(X, Y), InstructionCompilationError>
-where
-    X: TryFrom<ImmRegDirIndIdx>,
-    Y: TryFrom<ImmRegDirIndIdx>,
-    X::Error: Into<InstructionCompilationError>,
-    Y::Error: Into<InstructionCompilationError>,
-{
-    let [x, y]: [ImmRegDirIndIdx; 2] = args.try_into().map_err(|args: Vec<_>| {
-        InstructionCompilationError::InvalidArgumentNumber {
-            expected: 2,
-            got: args.len(),
-        }
-    })?;
-
-    Ok((
-        X::try_from(x).map_err(Into::into)?,
-        Y::try_from(y).map_err(Into::into)?,
-    ))
-}
-
-fn get_singleton<X>(args: Vec<ImmRegDirIndIdx>) -> Result<X, InstructionCompilationError>
-where
-    X: TryFrom<ImmRegDirIndIdx>,
-    X::Error: Into<InstructionCompilationError>,
-{
-    let [x]: [ImmRegDirIndIdx; 1] = args.try_into().map_err(|args: Vec<_>| {
-        InstructionCompilationError::InvalidArgumentNumber {
-            expected: 1,
-            got: args.len(),
-        }
-    })?;
-
-    X::try_from(x).map_err(Into::into)
-}
-
-#[allow(clippy::needless_pass_by_value)]
-fn get_none(args: Vec<ImmRegDirIndIdx>) -> Result<(), InstructionCompilationError> {
-    if !args.is_empty() {
-        return Err(InstructionCompilationError::InvalidArgumentNumber {
-            expected: 0,
+/// Check argument count, returning the instruction kind in errors.
+fn check_arg_count(
+    kind: InstructionKind,
+    args: &[ImmRegDirIndIdx],
+    expected: usize,
+) -> Result<(), InstructionCompilationError> {
+    if args.len() != expected {
+        return Err(InstructionCompilationError::InvalidArgumentCount {
+            instruction: kind,
+            expected,
             got: args.len(),
         });
     }
-
     Ok(())
+}
+
+/// Get an argument at a given position without type conversion.
+fn get_arg(args: &[ImmRegDirIndIdx], index: usize) -> ImmRegDirIndIdx {
+    args[index].clone()
+}
+
+/// Try to convert an argument at a given position, wrapping errors with context.
+fn convert_arg<T: TryFrom<ImmRegDirIndIdx, Error = ArgConversionError>>(
+    kind: InstructionKind,
+    args: &[ImmRegDirIndIdx],
+    index: usize,
+) -> Result<T, InstructionCompilationError> {
+    T::try_from(args[index].clone()).map_err(|source| InstructionCompilationError::InvalidArgumentType {
+        instruction: kind,
+        argument_index: index,
+        source,
+    })
 }
 
 #[tracing::instrument]
 #[expect(clippy::too_many_lines)]
 fn compile_instruction(
     kind: InstructionKind,
-    arguments: Vec<ImmRegDirIndIdx>,
+    arguments: &[ImmRegDirIndIdx],
 ) -> Result<Instruction, InstructionCompilationError> {
     use InstructionKind as K;
 
     match kind {
+        // Binary ops: arg1 = ImmRegDirIndIdx, arg2 = Reg
         K::Add => {
-            let (a, b) = get_tuple(arguments)?;
-            Ok(Instruction::Add(a, b))
+            check_arg_count(kind, arguments, 2)?;
+            Ok(Instruction::Add(get_arg(arguments, 0), convert_arg(kind, arguments, 1)?))
         }
-
         K::And => {
-            let (a, b) = get_tuple(arguments)?;
-            Ok(Instruction::And(a, b))
+            check_arg_count(kind, arguments, 2)?;
+            Ok(Instruction::And(get_arg(arguments, 0), convert_arg(kind, arguments, 1)?))
         }
-
-        K::Call => {
-            let a = get_singleton(arguments)?;
-            Ok(Instruction::Call(a))
-        }
-
         K::Cmp => {
-            let (a, b) = get_tuple(arguments)?;
-            Ok(Instruction::Cmp(a, b))
+            check_arg_count(kind, arguments, 2)?;
+            Ok(Instruction::Cmp(get_arg(arguments, 0), convert_arg(kind, arguments, 1)?))
         }
-
         K::Div => {
-            let (a, b) = get_tuple(arguments)?;
-            Ok(Instruction::Div(a, b))
+            check_arg_count(kind, arguments, 2)?;
+            Ok(Instruction::Div(get_arg(arguments, 0), convert_arg(kind, arguments, 1)?))
         }
-
-        K::Fas => {
-            let (a, b) = get_tuple(arguments)?;
-            Ok(Instruction::Fas(a, b))
-        }
-
-        K::In => {
-            let (a, b) = get_tuple(arguments)?;
-            Ok(Instruction::In(a, b))
-        }
-
-        K::Jmp => {
-            let a = get_singleton(arguments)?;
-            Ok(Instruction::Jmp(a))
-        }
-
-        K::Jeq => {
-            let a = get_singleton(arguments)?;
-            Ok(Instruction::Jeq(a))
-        }
-
-        K::Jne => {
-            let a = get_singleton(arguments)?;
-            Ok(Instruction::Jne(a))
-        }
-
-        K::Jle => {
-            let a = get_singleton(arguments)?;
-            Ok(Instruction::Jle(a))
-        }
-
-        K::Jlt => {
-            let a = get_singleton(arguments)?;
-            Ok(Instruction::Jlt(a))
-        }
-
-        K::Jge => {
-            let a = get_singleton(arguments)?;
-            Ok(Instruction::Jge(a))
-        }
-
-        K::Jgt => {
-            let a = get_singleton(arguments)?;
-            Ok(Instruction::Jgt(a))
-        }
-
         K::Ld => {
-            let (a, b) = get_tuple(arguments)?;
-            Ok(Instruction::Ld(a, b))
+            check_arg_count(kind, arguments, 2)?;
+            Ok(Instruction::Ld(get_arg(arguments, 0), convert_arg(kind, arguments, 1)?))
         }
-
         K::Mul => {
-            let (a, b) = get_tuple(arguments)?;
-            Ok(Instruction::Mul(a, b))
+            check_arg_count(kind, arguments, 2)?;
+            Ok(Instruction::Mul(get_arg(arguments, 0), convert_arg(kind, arguments, 1)?))
         }
-
-        K::Neg => {
-            let a = get_singleton(arguments)?;
-            Ok(Instruction::Neg(a))
-        }
-
-        K::Nop => {
-            get_none(arguments)?;
-            Ok(Instruction::Nop)
-        }
-
-        K::Not => {
-            let a = get_singleton(arguments)?;
-            Ok(Instruction::Not(a))
-        }
-
         K::Or => {
-            let (a, b) = get_tuple(arguments)?;
-            Ok(Instruction::Or(a, b))
+            check_arg_count(kind, arguments, 2)?;
+            Ok(Instruction::Or(get_arg(arguments, 0), convert_arg(kind, arguments, 1)?))
         }
-
-        K::Out => {
-            let (a, b) = get_tuple(arguments)?;
-            Ok(Instruction::Out(a, b))
-        }
-
-        K::Pop => {
-            let a = get_singleton(arguments)?;
-            Ok(Instruction::Pop(a))
-        }
-
-        K::Push => {
-            let a = get_singleton(arguments)?;
-            Ok(Instruction::Push(a))
-        }
-
-        K::Reset => {
-            get_none(arguments)?;
-            Ok(Instruction::Reset)
-        }
-
-        K::Rti => {
-            get_none(arguments)?;
-            Ok(Instruction::Rti)
-        }
-
-        K::Rtn => {
-            get_none(arguments)?;
-            Ok(Instruction::Rtn)
-        }
-
         K::Shl => {
-            let (a, b) = get_tuple(arguments)?;
-            Ok(Instruction::Shl(a, b))
+            check_arg_count(kind, arguments, 2)?;
+            Ok(Instruction::Shl(get_arg(arguments, 0), convert_arg(kind, arguments, 1)?))
         }
-
         K::Shr => {
-            let (a, b) = get_tuple(arguments)?;
-            Ok(Instruction::Shr(a, b))
+            check_arg_count(kind, arguments, 2)?;
+            Ok(Instruction::Shr(get_arg(arguments, 0), convert_arg(kind, arguments, 1)?))
         }
-
-        K::St => {
-            let (a, b) = get_tuple(arguments)?;
-            Ok(Instruction::St(a, b))
-        }
-
         K::Sub => {
-            let (a, b) = get_tuple(arguments)?;
-            Ok(Instruction::Sub(a, b))
+            check_arg_count(kind, arguments, 2)?;
+            Ok(Instruction::Sub(get_arg(arguments, 0), convert_arg(kind, arguments, 1)?))
         }
-
-        K::Swap => {
-            let (a, b) = get_tuple(arguments)?;
-            Ok(Instruction::Swap(a, b))
-        }
-
-        K::Trap => {
-            get_none(arguments)?;
-            Ok(Instruction::Trap)
-        }
-
         K::Xor => {
-            let (a, b) = get_tuple(arguments)?;
-            Ok(Instruction::Xor(a, b))
+            check_arg_count(kind, arguments, 2)?;
+            Ok(Instruction::Xor(get_arg(arguments, 0), convert_arg(kind, arguments, 1)?))
         }
 
-        K::DebugReg => {
-            get_none(arguments)?;
-            Ok(Instruction::DebugReg)
+        // DirIndIdx + Reg
+        K::Fas => {
+            check_arg_count(kind, arguments, 2)?;
+            Ok(Instruction::Fas(convert_arg(kind, arguments, 0)?, convert_arg(kind, arguments, 1)?))
         }
+        K::In => {
+            check_arg_count(kind, arguments, 2)?;
+            Ok(Instruction::In(convert_arg(kind, arguments, 0)?, convert_arg(kind, arguments, 1)?))
+        }
+
+        // Branches: 1 arg ImmRegDirIndIdx
+        K::Call => {
+            check_arg_count(kind, arguments, 1)?;
+            Ok(Instruction::Call(get_arg(arguments, 0)))
+        }
+        K::Jmp => {
+            check_arg_count(kind, arguments, 1)?;
+            Ok(Instruction::Jmp(get_arg(arguments, 0)))
+        }
+        K::Jeq => {
+            check_arg_count(kind, arguments, 1)?;
+            Ok(Instruction::Jeq(get_arg(arguments, 0)))
+        }
+        K::Jne => {
+            check_arg_count(kind, arguments, 1)?;
+            Ok(Instruction::Jne(get_arg(arguments, 0)))
+        }
+        K::Jle => {
+            check_arg_count(kind, arguments, 1)?;
+            Ok(Instruction::Jle(get_arg(arguments, 0)))
+        }
+        K::Jlt => {
+            check_arg_count(kind, arguments, 1)?;
+            Ok(Instruction::Jlt(get_arg(arguments, 0)))
+        }
+        K::Jge => {
+            check_arg_count(kind, arguments, 1)?;
+            Ok(Instruction::Jge(get_arg(arguments, 0)))
+        }
+        K::Jgt => {
+            check_arg_count(kind, arguments, 1)?;
+            Ok(Instruction::Jgt(get_arg(arguments, 0)))
+        }
+
+        // Unary register ops
+        K::Neg => {
+            check_arg_count(kind, arguments, 1)?;
+            Ok(Instruction::Neg(convert_arg(kind, arguments, 0)?))
+        }
+        K::Not => {
+            check_arg_count(kind, arguments, 1)?;
+            Ok(Instruction::Not(convert_arg(kind, arguments, 0)?))
+        }
+        K::Pop => {
+            check_arg_count(kind, arguments, 1)?;
+            Ok(Instruction::Pop(convert_arg(kind, arguments, 0)?))
+        }
+
+        // ImmReg source
+        K::Push => {
+            check_arg_count(kind, arguments, 1)?;
+            Ok(Instruction::Push(convert_arg(kind, arguments, 0)?))
+        }
+
+        // ImmReg + DirIndIdx
+        K::Out => {
+            check_arg_count(kind, arguments, 2)?;
+            Ok(Instruction::Out(convert_arg(kind, arguments, 0)?, convert_arg(kind, arguments, 1)?))
+        }
+
+        // Reg + DirIndIdx
+        K::St => {
+            check_arg_count(kind, arguments, 2)?;
+            Ok(Instruction::St(convert_arg(kind, arguments, 0)?, convert_arg(kind, arguments, 1)?))
+        }
+
+        // RegDirIndIdx + Reg
+        K::Swap => {
+            check_arg_count(kind, arguments, 2)?;
+            Ok(Instruction::Swap(convert_arg(kind, arguments, 0)?, convert_arg(kind, arguments, 1)?))
+        }
+
+        // No arguments
+        K::Nop => { check_arg_count(kind, arguments, 0)?; Ok(Instruction::Nop) }
+        K::Reset => { check_arg_count(kind, arguments, 0)?; Ok(Instruction::Reset) }
+        K::Rti => { check_arg_count(kind, arguments, 0)?; Ok(Instruction::Rti) }
+        K::Rtn => { check_arg_count(kind, arguments, 0)?; Ok(Instruction::Rtn) }
+        K::Trap => { check_arg_count(kind, arguments, 0)?; Ok(Instruction::Trap) }
+        K::DebugReg => { check_arg_count(kind, arguments, 0)?; Ok(Instruction::DebugReg) }
     }
 }
 
@@ -353,33 +319,43 @@ fn compile_placement(labels: &Labels, placement: &Placement) -> Result<Cell, Mem
         }) => {
             let span = span!(Level::TRACE, "line", %kind);
             let _guard = span.enter();
-            let arguments: Result<Vec<_>, _> = arguments
-                .iter()
-                .enumerate()
-                .map(|(index, argument)| {
-                    trace!("argument {} evaluation: {}", index, argument);
-                    argument
-                        .inner
-                        .evaluate(labels)
-                        .map_err(|source| MemoryFillError::Compute {
-                            location: Range {
-                                start: argument.location.start + line_location.start,
-                                end: argument.location.end + line_location.start,
-                            },
-                            source,
-                        })
-                })
-                .collect();
-            let arguments = arguments?;
-            let instruction = compile_instruction(kind.inner, arguments).map_err(|source| {
-                MemoryFillError::InstructionCompilation {
-                    location: Range {
-                        start: kind.location.start + line_location.start,
-                        end: kind.location.end + line_location.start,
-                    },
-                    source,
-                }
-            })?;
+
+            // Evaluate each argument, collecting (value, absolute_span) pairs.
+            // If evaluation fails, we bail immediately with the argument span.
+            let mut arg_values = Vec::with_capacity(arguments.len());
+            let mut arg_spans = Vec::with_capacity(arguments.len());
+            for (index, argument) in arguments.iter().enumerate() {
+                trace!("argument {} evaluation: {}", index, argument);
+                let value = argument
+                    .inner
+                    .evaluate(labels)
+                    .map_err(|source| MemoryFillError::Compute {
+                        location: Range {
+                            start: argument.location.start + line_location.start,
+                            end: argument.location.end + line_location.start,
+                        },
+                        source,
+                    })?;
+                arg_values.push(value);
+                arg_spans.push(Range {
+                    start: argument.location.start + line_location.start,
+                    end: argument.location.end + line_location.start,
+                });
+            }
+
+            let instruction_span = Range {
+                start: kind.location.start + line_location.start,
+                end: kind.location.end + line_location.start,
+            };
+
+            let instruction =
+                compile_instruction(kind.inner, &arg_values).map_err(|source| {
+                    MemoryFillError::InstructionCompilation {
+                        instruction_span: instruction_span.clone(),
+                        argument_spans: arg_spans,
+                        source,
+                    }
+                })?;
             Ok(Cell::Instruction(Box::new(instruction)))
         }
     }

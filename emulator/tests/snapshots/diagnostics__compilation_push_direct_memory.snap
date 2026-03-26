@@ -1,0 +1,12 @@
+---
+source: emulator/tests/diagnostics.rs
+assertion_line: 164
+expression: "check_full_pipeline_errors(\"main:\\n    push [1234]\")"
+---
+error: invalid argument for 'push'
+  ┌─ <preprocessed>:2:10
+  │
+2 │     push [1234]
+  │     ---- ^^^^^^ invalid argument type 'dir', expected 'imm/reg'
+  │     │     
+  │     in instruction 'push'
