@@ -179,18 +179,47 @@ pub fn compilation_error_to_diagnostic(
     use crate::compiler::CompilationError as CE;
 
     match error {
-        CE::MemoryLayout(e) => {
-            let mut diag = Diagnostic::error().with_message(e.to_string());
-            if let Some(loc) = e.location() {
-                diag.labels.push(Label::primary(file_id, loc.clone()));
-            }
-            diag
-        }
+        CE::MemoryLayout(e) => layout_error_to_diagnostic(e, file_id),
         CE::MemoryFill(e) => memory_fill_error_to_diagnostic(e, file_id),
         CE::UnknownEntrypoint(name) => {
             Diagnostic::error().with_message(format!("unknown entrypoint: {name}"))
         }
         CE::HasParseErrors => Diagnostic::error().with_message("program contains syntax errors"),
+    }
+}
+
+fn layout_error_to_diagnostic(
+    error: &crate::compiler::layout::MemoryLayoutError,
+    file_id: FileId,
+) -> Diagnostic<FileId> {
+    use crate::compiler::layout::MemoryLayoutError as MLE;
+
+    match error {
+        MLE::DuplicateLabel { label, location } => Diagnostic::error()
+            .with_message(format!("duplicate label '{label}'"))
+            .with_labels(vec![Label::primary(file_id, location.clone())
+                .with_message("defined a second time here")]),
+
+        MLE::InvalidDirectiveArgument { kind, location } => Diagnostic::error()
+            .with_message(format!("invalid argument for directive '.{kind}'"))
+            .with_labels(vec![Label::primary(file_id, location.clone())]),
+
+        MLE::DirectiveArgumentEvaluation { kind, source } => Diagnostic::error().with_message(
+            format!("could not evaluate argument for directive '.{kind}': {source}"),
+        ),
+
+        MLE::MemoryOverlap {
+            address,
+            original_location,
+            new_location,
+        } => Diagnostic::error()
+            .with_message(format!("memory overlap at address {address}"))
+            .with_labels(vec![
+                Label::primary(file_id, new_location.clone())
+                    .with_message(format!("tries to write to address {address}")),
+                Label::secondary(file_id, original_location.clone())
+                    .with_message("already filled by this directive"),
+            ]),
     }
 }
 

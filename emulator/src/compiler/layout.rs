@@ -44,23 +44,22 @@ pub(crate) enum Placement {
 #[derive(Default)]
 pub struct Layout {
     pub labels: Labels,
-    pub(crate) memory: HashMap<Address, Placement>,
+    /// Maps address → (placement, source location of the directive that placed
+    /// it)
+    pub(crate) memory: HashMap<Address, (Placement, Range<usize>)>,
 }
 
 impl Layout {
     /// Extract a source map mapping addresses to byte ranges in the
     /// preprocessor output.
     ///
-    /// Only includes entries for `Placement::Line` (instructions and `.word`
-    /// directives).
+    /// Every placement now carries its source location, so the source map
+    /// covers all memory cells (instructions, `.word`, `.space`, `.string`).
     #[must_use]
     pub fn source_map(&self) -> BTreeMap<Address, Range<usize>> {
         self.memory
             .iter()
-            .filter_map(|(address, placement)| match placement {
-                Placement::Line(located) => Some((*address, located.location.clone())),
-                _ => None,
-            })
+            .map(|(address, (_, location))| (*address, location.clone()))
             .collect()
     }
 
@@ -70,11 +69,15 @@ impl Layout {
         placement: Placement,
         location: Range<usize>,
     ) -> Result<(), MemoryLayoutError> {
-        if self.memory.contains_key(&address) {
-            return Err(MemoryLayoutError::MemoryOverlap { address, location });
+        if let Some((_, original_location)) = self.memory.get(&address) {
+            return Err(MemoryLayoutError::MemoryOverlap {
+                address,
+                original_location: original_location.clone(),
+                new_location: location,
+            });
         }
 
-        self.memory.insert(address, placement);
+        self.memory.insert(address, (placement, location));
         Ok(())
     }
 
@@ -119,9 +122,10 @@ pub enum MemoryLayoutError {
     #[error("address {address} is already filled")]
     MemoryOverlap {
         address: Address,
-        /// Location of the line/directive that is trying to write to an
-        /// already-filled address.
-        location: Range<usize>,
+        /// Location of the directive that originally filled this address.
+        original_location: Range<usize>,
+        /// Location of the directive that is trying to overwrite it.
+        new_location: Range<usize>,
     },
 }
 
@@ -131,7 +135,10 @@ impl MemoryLayoutError {
         match self {
             MemoryLayoutError::DuplicateLabel { location, .. }
             | MemoryLayoutError::InvalidDirectiveArgument { location, .. }
-            | MemoryLayoutError::MemoryOverlap { location, .. } => Some(location),
+            | MemoryLayoutError::MemoryOverlap {
+                new_location: location,
+                ..
+            } => Some(location),
             MemoryLayoutError::DirectiveArgumentEvaluation { .. } => None,
         }
     }

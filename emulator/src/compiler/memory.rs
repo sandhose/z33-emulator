@@ -440,7 +440,7 @@ pub(crate) fn fill_memory(layout: &Layout) -> Result<Memory, MemoryFillError> {
     let cells: Result<HashMap<C::Address, Cell>, MemoryFillError> = layout
         .memory
         .iter()
-        .map(|(index, placement)| {
+        .map(|(index, (placement, _location))| {
             let span = span!(Level::TRACE, "placement", index);
             let _guard = span.enter();
             let cell = compile_placement(&layout.labels, placement)?;
