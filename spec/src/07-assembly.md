@@ -134,7 +134,7 @@ r[asm.preprocessor.conditional]
 Example:
 ```z33
 #if defined(DEBUG)
-    debugreg
+    nop
 #endif
 ```
 

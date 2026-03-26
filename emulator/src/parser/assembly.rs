@@ -140,7 +140,6 @@ fn instruction_kind<'a>() -> impl Parser<'a, &'a str, InstructionKind, Extra<'a>
                 "swap" => K::Swap,
                 "trap" => K::Trap,
                 "xor" => K::Xor,
-                "debugreg" => K::DebugReg,
                 _ => {
                     emitter.emit(Rich::custom(e.span(), format!("unknown instruction '{s}'")));
                     K::Error

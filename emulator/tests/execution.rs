@@ -224,31 +224,6 @@ fn cycles_exception_recovery() {
     ");
 }
 
-#[test]
-fn cycles_debugreg_costs_zero() {
-    // r[verify exec.cycles.debugreg]
-    // debugreg costs 0 cycles. So ld + debugreg = 1 cycle after 2 steps.
-    let state = run_program(
-        indoc! {"
-            main:
-                ld 1, %a
-                debugreg
-                reset
-        "},
-        "main",
-        Steps::Count(2),
-    );
-    insta::assert_snapshot!(state, @r"
-    Registers:
-      %a  = 1
-      %b  = 0
-      %pc = 1002
-      %sp = 10000
-      %sr = SUPERVISOR
-    Cycles: 1
-    ");
-}
-
 // =============================================================================
 // PRIVILEGE MODE
 // =============================================================================

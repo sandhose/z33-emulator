@@ -1,6 +1,6 @@
 # Instruction Set Reference
 
-The Z33 has **34 instructions** organized into seven categories.
+The Z33 has **33 instructions** organized into seven categories.
 
 ## Instruction Entry Format
 
@@ -50,7 +50,6 @@ Each instruction entry documents:
 | `fas` | *dir/ind/idx*, *reg* | Synchronization | Fetch-and-set |
 | `in` | *dir/ind/idx*, *reg* | I/O | Read from I/O port (privileged) |
 | `out` | *imm/reg*, *dir/ind/idx* | I/O | Write to I/O port (privileged) |
-| `debugreg` | — | Debug | Display register contents |
 
 ## Cycle Cost
 
@@ -65,5 +64,3 @@ Every instruction costs **1 base cycle** plus the cost of its addressing modes:
 | Indexed (*idx*) | 1 cycle |
 
 For example, `add [%a+5], %b` costs 1 (base) + 1 (indexed source) + 0 (register dest) = **2 cycles**.
-
-The sole exception is `debugreg`, which costs **0 cycles** (it is a debug-only instruction with no architectural effect).

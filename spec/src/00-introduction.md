@@ -12,7 +12,7 @@ This specification defines:
 
 - The programmer-visible state (registers, memory, status flags)
 - All addressing modes
-- The complete instruction set (34 instructions)
+- The complete instruction set (33 instructions)
 - The execution model (fetch-decode-execute cycle, privilege levels)
 - Exception and interrupt handling
 - The assembly language syntax and directives

@@ -315,10 +315,6 @@ fn compile_instruction(
             check_arg_count(kind, arguments, 0)?;
             Ok(Instruction::Trap)
         }
-        K::DebugReg => {
-            check_arg_count(kind, arguments, 0)?;
-            Ok(Instruction::DebugReg)
-        }
     }
 }
 
