@@ -24,7 +24,7 @@ pub struct DocumentState {
     /// The original source as provided by the editor.
     original_source: String,
     /// Maps byte offsets in the preprocessed source back to the original.
-    /// `None` when preprocessing failed or was skipped (no directives).
+    /// `None` when preprocessing failed.
     source_map: Option<ReferencingSourceMap>,
     /// File ID of the original source in the file database (always 0 for
     /// single-file workspaces).
@@ -38,103 +38,10 @@ pub struct DocumentState {
     fill_errors: Vec<MemoryFillError>,
 }
 
-/// Check if the source has any preprocessor directives that require the
-/// full preprocessor pipeline. Lines starting with `#` (after whitespace)
-/// are preprocessor directives; `#` after non-whitespace is a comment.
-fn needs_preprocessor(source: &str) -> bool {
-    for line in source.lines() {
-        let trimmed = line.trim_start();
-        if let Some(after_hash) = trimmed.strip_prefix('#') {
-            // Could be #include, #define, #ifdef, #if, #error, #undef, etc.
-            // But also just `#` as a comment at the start of a line.
-            let after_hash = after_hash.trim_start();
-            if after_hash.starts_with("include")
-                || after_hash.starts_with("define")
-                || after_hash.starts_with("undef")
-                || after_hash.starts_with("ifdef")
-                || after_hash.starts_with("ifndef")
-                || after_hash.starts_with("if ")
-                || after_hash.starts_with("if(")
-                || after_hash.starts_with("else")
-                || after_hash.starts_with("endif")
-                || after_hash.starts_with("error")
-            {
-                return true;
-            }
-        }
-    }
-    false
-}
-
-/// Strip comments from the source, preserving byte offsets by replacing
-/// comment content with spaces. Comments start with `#` (not inside
-/// strings) and extend to end of line.
-fn strip_comments(source: &str) -> String {
-    let mut result = String::with_capacity(source.len());
-    for line in source.split('\n') {
-        let mut in_string = false;
-        let mut comment_start = None;
-        for (i, b) in line.bytes().enumerate() {
-            match b {
-                b'"' => in_string = !in_string,
-                b'#' if !in_string => {
-                    comment_start = Some(i);
-                    break;
-                }
-                _ => {}
-            }
-        }
-        if let Some(start) = comment_start {
-            result.push_str(&line[..start]);
-            // Pad with spaces to preserve byte offsets
-            for _ in start..line.len() {
-                result.push(' ');
-            }
-        } else {
-            result.push_str(line);
-        }
-        result.push('\n');
-    }
-    // Remove trailing \n that we added for the last line
-    if !source.ends_with('\n') && result.ends_with('\n') {
-        result.pop();
-    }
-    result
-}
-
 impl DocumentState {
     /// Analyze a document through the full pipeline.
     #[must_use]
     pub fn new(source: String) -> Self {
-        if needs_preprocessor(&source) {
-            Self::new_with_preprocessor(source)
-        } else {
-            Self::new_fast(source)
-        }
-    }
-
-    /// Fast path: strip comments and parse directly, skipping the
-    /// preprocessor. Used when no preprocessor directives are present.
-    fn new_fast(source: String) -> Self {
-        let stripped = strip_comments(&source);
-        let parse_result = parser::parse(&stripped);
-        let (layout, layout_errors) = layout::layout_memory(&parse_result.program.inner.lines);
-        let (_, fill_errors) = memory::fill_memory(&layout);
-
-        Self {
-            original_source: source,
-            source_map: None,
-            original_file_id: 0,
-            preprocessor_error: None,
-            parse_result: Some(parse_result),
-            layout,
-            layout_errors,
-            fill_errors,
-        }
-    }
-
-    /// Full path: run the preprocessor pipeline for files with directives.
-    fn new_with_preprocessor(source: String) -> Self {
         let fs = InMemoryFilesystem::new([(Utf8PathBuf::from(VIRTUAL_FILENAME), source.clone())]);
         let mut workspace = Workspace::new(&fs, VIRTUAL_FILENAME);
 
@@ -213,13 +120,10 @@ impl DocumentState {
 
     /// Map a byte range in the preprocessed source back to a byte range in
     /// the original source. Returns the span unchanged if no source map is
-    /// available (fast path / no preprocessor directives).
+    /// available.
     #[must_use]
     pub fn resolve_span(&self, span: std::ops::Range<usize>) -> Option<std::ops::Range<usize>> {
         let Some(source_map) = self.source_map.as_ref() else {
-            // No source map — spans are already in original coordinates
-            // (fast path with just comment stripping, which preserves offsets
-            // because we replace comments with spaces up to the newline)
             return Some(span);
         };
         let (file_id, range) = diagnostic::resolve_to_original(source_map, span)?;
