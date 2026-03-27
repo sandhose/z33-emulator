@@ -2,8 +2,9 @@ use std::collections::HashMap;
 
 use dashmap::DashMap;
 use tower_lsp::lsp_types::{
-    CompletionOptions, CompletionParams, CompletionResponse, DidChangeTextDocumentParams,
-    DidCloseTextDocumentParams, DidOpenTextDocumentParams, DocumentSymbolParams,
+    CodeLens, CodeLensOptions, Command, CompletionOptions, CompletionParams, CompletionResponse,
+    DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
+    DocumentHighlight, DocumentHighlightKind, DocumentHighlightParams, DocumentSymbolParams,
     DocumentSymbolResponse, GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverContents,
     HoverParams, HoverProviderCapability, InitializeParams, InitializeResult, InitializedParams,
     Location, MarkupContent, MarkupKind, OneOf, PrepareRenameResponse, ReferenceParams,
@@ -65,7 +66,11 @@ impl LanguageServer for Backend {
                 hover_provider: Some(HoverProviderCapability::Simple(true)),
                 definition_provider: Some(OneOf::Left(true)),
                 references_provider: Some(OneOf::Left(true)),
+                document_highlight_provider: Some(OneOf::Left(true)),
                 document_symbol_provider: Some(OneOf::Left(true)),
+                code_lens_provider: Some(CodeLensOptions {
+                    resolve_provider: None,
+                }),
                 rename_provider: Some(OneOf::Right(tower_lsp::lsp_types::RenameOptions {
                     prepare_provider: Some(true),
                     work_done_progress_options:
@@ -286,6 +291,102 @@ impl LanguageServer for Backend {
         }
     }
 
+    async fn document_highlight(
+        &self,
+        params: DocumentHighlightParams,
+    ) -> jsonrpc::Result<Option<Vec<DocumentHighlight>>> {
+        let uri = &params.text_document_position_params.text_document.uri;
+        let pos = params.text_document_position_params.position;
+
+        let Some(state) = self.documents.get(uri) else {
+            return Ok(None);
+        };
+
+        let Some(offset) = position::byte_offset(state.source(), pos) else {
+            return Ok(None);
+        };
+
+        let source = state.source();
+        let word = word_at_offset(source, offset);
+
+        if word.is_empty() || !state.labels().contains_key(word) {
+            return Ok(None);
+        }
+
+        let highlights: Vec<DocumentHighlight> = find_label_references(source, word, true)
+            .filter_map(|span| {
+                let range = position::range(source, span.clone())?;
+                // Check if this occurrence is a definition (followed by ':')
+                let after = &source[span.end..];
+                let trimmed = after.trim_start_matches([' ', '\t']);
+                let kind = if trimmed.starts_with(':') {
+                    DocumentHighlightKind::WRITE
+                } else {
+                    DocumentHighlightKind::READ
+                };
+                Some(DocumentHighlight {
+                    range,
+                    kind: Some(kind),
+                })
+            })
+            .collect();
+
+        if highlights.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(highlights))
+        }
+    }
+
+    async fn code_lens(
+        &self,
+        params: tower_lsp::lsp_types::CodeLensParams,
+    ) -> jsonrpc::Result<Option<Vec<CodeLens>>> {
+        let uri = &params.text_document.uri;
+
+        let Some(state) = self.documents.get(uri) else {
+            return Ok(None);
+        };
+
+        let source = state.source();
+        let mut lenses = Vec::new();
+
+        for name in state.labels().keys() {
+            // Find the label definition
+            let Some(def_span) = find_label_definition(source, name) else {
+                continue;
+            };
+            let Some(range) = position::range(source, def_span) else {
+                continue;
+            };
+
+            // Count references (excluding the definition itself)
+            let ref_count = find_label_references(source, name, false).count();
+
+            let title = match ref_count {
+                0 => "0 references".to_string(),
+                1 => "1 reference".to_string(),
+                n => format!("{n} references"),
+            };
+
+            lenses.push(CodeLens {
+                range,
+                command: Some(Command {
+                    title,
+                    command: String::new(),
+                    arguments: None,
+                }),
+                data: None,
+            });
+        }
+
+        if lenses.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(lenses))
+        }
+    }
+
     async fn prepare_rename(
         &self,
         params: tower_lsp::lsp_types::TextDocumentPositionParams,
@@ -437,4 +538,33 @@ fn word_at_offset(source: &str, offset: usize) -> &str {
     }
 
     &source[start..end]
+}
+
+/// Find the byte range of a label definition (the identifier before `:`).
+fn find_label_definition(source: &str, label: &str) -> Option<std::ops::Range<usize>> {
+    let label_len = label.len();
+    let bytes = source.as_bytes();
+    let mut start = 0;
+
+    while let Some(rel) = source[start..].find(label) {
+        let abs = start + rel;
+        let end = abs + label_len;
+        start = end;
+
+        // Word boundaries
+        if abs > 0 && (bytes[abs - 1].is_ascii_alphanumeric() || bytes[abs - 1] == b'_') {
+            continue;
+        }
+        if end < bytes.len() && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'_') {
+            continue;
+        }
+
+        // Must be followed by optional whitespace then ':'
+        let after = &source[end..];
+        let trimmed = after.trim_start_matches([' ', '\t']);
+        if trimmed.starts_with(':') {
+            return Some(abs..end);
+        }
+    }
+    None
 }
