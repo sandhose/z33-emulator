@@ -122,48 +122,59 @@ fn register_completions(prefix_typed: bool) -> Vec<CompletionItem> {
 }
 
 fn instruction_completions() -> Vec<CompletionItem> {
-    let instructions = [
-        ("add", "Add a value to a register"),
-        ("and", "Bitwise AND with a register"),
-        ("call", "Push PC and jump to address"),
-        ("cmp", "Compare a value with a register"),
-        ("div", "Divide a register by a value"),
-        ("fas", "Fetch-and-set (atomic)"),
-        ("in", "Read from I/O controller"),
-        ("jmp", "Unconditional jump"),
-        ("jeq", "Jump if equal (zero flag set)"),
-        ("jne", "Jump if not equal"),
-        ("jle", "Jump if less or equal"),
-        ("jlt", "Jump if strictly less"),
-        ("jge", "Jump if greater or equal"),
-        ("jgt", "Jump if strictly greater"),
-        ("ld", "Load a value into a register"),
-        ("mul", "Multiply a register by a value"),
-        ("neg", "Negate a register"),
-        ("nop", "No operation"),
-        ("not", "Bitwise NOT of a register"),
-        ("or", "Bitwise OR with a register"),
-        ("out", "Write to I/O controller"),
-        ("pop", "Pop value from stack"),
-        ("push", "Push value onto stack"),
-        ("reset", "Reset the computer"),
-        ("rti", "Return from interrupt"),
-        ("rtn", "Return from call"),
-        ("shl", "Shift left"),
-        ("shr", "Shift right"),
-        ("st", "Store register to memory"),
-        ("sub", "Subtract a value from a register"),
-        ("swap", "Swap a value and a register"),
-        ("trap", "Trigger trap exception"),
-        ("xor", "Bitwise XOR with a register"),
+    // (mnemonic, description, signature, snippet)
+    let instructions: &[(&str, &str, &str, &str)] = &[
+        ("add", "Add a value to a register", "src, %dst", "add ${1:src}, ${2:%dst}"),
+        ("and", "Bitwise AND with a register", "src, %dst", "and ${1:src}, ${2:%dst}"),
+        ("call", "Push PC and jump to address", "addr", "call ${1:addr}"),
+        ("cmp", "Compare a value with a register", "src, %dst", "cmp ${1:src}, ${2:%dst}"),
+        ("div", "Divide a register by a value", "src, %dst", "div ${1:src}, ${2:%dst}"),
+        ("fas", "Fetch-and-set (atomic)", "[addr], %dst", "fas ${1:[addr]}, ${2:%dst}"),
+        ("in", "Read from I/O controller", "[port], %dst", "in ${1:[port]}, ${2:%dst}"),
+        ("jmp", "Unconditional jump", "addr", "jmp ${1:addr}"),
+        ("jeq", "Jump if equal (zero flag set)", "addr", "jeq ${1:addr}"),
+        ("jne", "Jump if not equal", "addr", "jne ${1:addr}"),
+        ("jle", "Jump if less or equal", "addr", "jle ${1:addr}"),
+        ("jlt", "Jump if strictly less", "addr", "jlt ${1:addr}"),
+        ("jge", "Jump if greater or equal", "addr", "jge ${1:addr}"),
+        ("jgt", "Jump if strictly greater", "addr", "jgt ${1:addr}"),
+        ("ld", "Load a value into a register", "src, %dst", "ld ${1:src}, ${2:%dst}"),
+        ("mul", "Multiply a register by a value", "src, %dst", "mul ${1:src}, ${2:%dst}"),
+        ("neg", "Negate a register", "%reg", "neg ${1:%reg}"),
+        ("nop", "No operation", "", "nop"),
+        ("not", "Bitwise NOT of a register", "%reg", "not ${1:%reg}"),
+        ("or", "Bitwise OR with a register", "src, %dst", "or ${1:src}, ${2:%dst}"),
+        ("out", "Write to I/O controller", "src, [port]", "out ${1:src}, ${2:[port]}"),
+        ("pop", "Pop value from stack", "%reg", "pop ${1:%reg}"),
+        ("push", "Push value onto stack", "src", "push ${1:src}"),
+        ("reset", "Reset the computer", "", "reset"),
+        ("rti", "Return from interrupt", "", "rti"),
+        ("rtn", "Return from call", "", "rtn"),
+        ("shl", "Shift left", "src, %dst", "shl ${1:src}, ${2:%dst}"),
+        ("shr", "Shift right", "src, %dst", "shr ${1:src}, ${2:%dst}"),
+        ("st", "Store register to memory", "%src, [addr]", "st ${1:%src}, ${2:[addr]}"),
+        ("sub", "Subtract a value from a register", "src, %dst", "sub ${1:src}, ${2:%dst}"),
+        ("swap", "Swap a value and a register", "src, %dst", "swap ${1:src}, ${2:%dst}"),
+        ("trap", "Trigger trap exception", "", "trap"),
+        ("xor", "Bitwise XOR with a register", "src, %dst", "xor ${1:src}, ${2:%dst}"),
     ];
 
     instructions
-        .into_iter()
-        .map(|(name, detail)| CompletionItem {
-            label: name.to_string(),
+        .iter()
+        .map(|(name, detail, signature, snippet)| CompletionItem {
+            label: (*name).to_string(),
             kind: Some(CompletionItemKind::KEYWORD),
-            detail: Some(detail.to_string()),
+            detail: Some((*detail).to_string()),
+            label_details: if signature.is_empty() {
+                None
+            } else {
+                Some(CompletionItemLabelDetails {
+                    detail: Some(format!(" {signature}")),
+                    ..Default::default()
+                })
+            },
+            insert_text: Some((*snippet).to_string()),
+            insert_text_format: Some(InsertTextFormat::SNIPPET),
             ..Default::default()
         })
         .collect()
