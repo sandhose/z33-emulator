@@ -1,3 +1,5 @@
+use std::sync::LazyLock;
+
 use tower_lsp::lsp_types::{
     CompletionItem, CompletionItemKind, CompletionItemLabelDetails, InsertTextFormat,
 };
@@ -5,6 +7,15 @@ use tower_lsp::lsp_types::{
 use super::document::DocumentState;
 use crate::parser::shared::is_identifier_char;
 use crate::parser::value::InstructionKind;
+
+/// Cached static completion lists — built once, cloned on use.
+static INSTRUCTIONS: LazyLock<Vec<CompletionItem>> = LazyLock::new(build_instruction_completions);
+static DIRECTIVES: LazyLock<Vec<CompletionItem>> = LazyLock::new(build_directive_completions);
+static REGISTERS_FULL: LazyLock<Vec<CompletionItem>> =
+    LazyLock::new(|| build_register_completions(false));
+static REGISTERS_PREFIX: LazyLock<Vec<CompletionItem>> =
+    LazyLock::new(|| build_register_completions(true));
+static BRACKET: LazyLock<CompletionItem> = LazyLock::new(build_bracket_snippet);
 
 /// What types of arguments an instruction expects at a given position.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -93,7 +104,7 @@ fn expected_arg_type(kind: InstructionKind, arg_index: usize) -> Option<ArgType>
 
 /// If `prefix_typed` is true, the `%` has already been typed by the user, so
 /// `insert_text` omits it to avoid doubling.
-fn register_completions(prefix_typed: bool) -> Vec<CompletionItem> {
+fn build_register_completions(prefix_typed: bool) -> Vec<CompletionItem> {
     [
         ("a", "%a"),
         ("b", "%b"),
@@ -121,7 +132,7 @@ fn register_completions(prefix_typed: bool) -> Vec<CompletionItem> {
     .collect()
 }
 
-fn instruction_completions() -> Vec<CompletionItem> {
+fn build_instruction_completions() -> Vec<CompletionItem> {
     // (mnemonic, description, signature)
     // No snippets — signature help and argument completions guide the user.
     let instructions: &[(&str, &str, &str)] = &[
@@ -179,7 +190,7 @@ fn instruction_completions() -> Vec<CompletionItem> {
         .collect()
 }
 
-fn directive_completions() -> Vec<CompletionItem> {
+fn build_directive_completions() -> Vec<CompletionItem> {
     let directives = [
         (".addr", "Set current address"),
         (".space", "Reserve memory cells"),
@@ -219,29 +230,29 @@ fn completions_for_arg_type(arg_type: ArgType, state: &DocumentState) -> Vec<Com
     let mut items = Vec::new();
     match arg_type {
         ArgType::Reg => {
-            items.extend(register_completions(false));
+            items.extend(REGISTERS_FULL.iter().cloned());
         }
         ArgType::ImmReg => {
-            items.extend(register_completions(false));
+            items.extend(REGISTERS_FULL.iter().cloned());
             items.extend(label_completions(state));
         }
         ArgType::ImmRegDirIndIdx => {
-            items.extend(register_completions(false));
+            items.extend(REGISTERS_FULL.iter().cloned());
             items.extend(label_completions(state));
-            items.push(bracket_snippet());
+            items.push(BRACKET.clone());
         }
         ArgType::DirIndIdx => {
-            items.push(bracket_snippet());
+            items.push(BRACKET.clone());
         }
         ArgType::RegDirIndIdx => {
-            items.extend(register_completions(false));
-            items.push(bracket_snippet());
+            items.extend(REGISTERS_FULL.iter().cloned());
+            items.push(BRACKET.clone());
         }
     }
     items
 }
 
-fn bracket_snippet() -> CompletionItem {
+fn build_bracket_snippet() -> CompletionItem {
     CompletionItem {
         label: "[...]".to_string(),
         kind: Some(CompletionItemKind::SNIPPET),
@@ -424,23 +435,22 @@ pub fn completions(state: &DocumentState, byte_offset: usize) -> Vec<CompletionI
 
     match context {
         CursorContext::Mnemonic => {
-            let mut items = instruction_completions();
-            items.extend(directive_completions());
+            let mut items = INSTRUCTIONS.clone();
+            items.extend(DIRECTIVES.iter().cloned());
             items
         }
-        CursorContext::Register => register_completions(true),
+        CursorContext::Register => REGISTERS_PREFIX.clone(),
         CursorContext::Argument { kind, arg_index } => {
             if let Some(arg_type) = expected_arg_type(kind, arg_index) {
                 completions_for_arg_type(arg_type, state)
             } else {
-                // Unknown arg index (too many args) or zero-arg instruction
                 Vec::new()
             }
         }
         CursorContext::UnknownArgument => {
-            let mut items = register_completions(false);
+            let mut items = REGISTERS_FULL.clone();
             items.extend(label_completions(state));
-            items.push(bracket_snippet());
+            items.push(BRACKET.clone());
             items
         }
     }
