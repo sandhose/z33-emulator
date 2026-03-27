@@ -91,16 +91,34 @@ fn expected_arg_type(kind: InstructionKind, arg_index: usize) -> Option<ArgType>
     }
 }
 
-fn register_completions() -> Vec<CompletionItem> {
-    ["%a", "%b", "%pc", "%sp", "%sr"]
-        .into_iter()
-        .map(|name| CompletionItem {
-            label: name.to_string(),
-            kind: Some(CompletionItemKind::VARIABLE),
-            detail: Some("register".to_string()),
-            ..Default::default()
-        })
-        .collect()
+/// If `prefix_typed` is true, the `%` has already been typed by the user, so
+/// `insert_text` omits it to avoid doubling.
+fn register_completions(prefix_typed: bool) -> Vec<CompletionItem> {
+    [
+        ("a", "%a"),
+        ("b", "%b"),
+        ("pc", "%pc"),
+        ("sp", "%sp"),
+        ("sr", "%sr"),
+    ]
+    .into_iter()
+    .map(|(short, full)| CompletionItem {
+        label: full.to_string(),
+        kind: Some(CompletionItemKind::VARIABLE),
+        detail: Some("register".to_string()),
+        insert_text: if prefix_typed {
+            Some(short.to_string())
+        } else {
+            None
+        },
+        filter_text: if prefix_typed {
+            Some(short.to_string())
+        } else {
+            None
+        },
+        ..Default::default()
+    })
+    .collect()
 }
 
 fn instruction_completions() -> Vec<CompletionItem> {
@@ -191,14 +209,14 @@ fn completions_for_arg_type(arg_type: ArgType, state: &DocumentState) -> Vec<Com
     let mut items = Vec::new();
     match arg_type {
         ArgType::Reg => {
-            items.extend(register_completions());
+            items.extend(register_completions(false));
         }
         ArgType::ImmReg => {
-            items.extend(register_completions());
+            items.extend(register_completions(false));
             items.extend(label_completions(state));
         }
         ArgType::ImmRegDirIndIdx => {
-            items.extend(register_completions());
+            items.extend(register_completions(false));
             items.extend(label_completions(state));
             items.push(bracket_snippet());
         }
@@ -206,7 +224,7 @@ fn completions_for_arg_type(arg_type: ArgType, state: &DocumentState) -> Vec<Com
             items.push(bracket_snippet());
         }
         ArgType::RegDirIndIdx => {
-            items.extend(register_completions());
+            items.extend(register_completions(false));
             items.push(bracket_snippet());
         }
     }
@@ -400,7 +418,7 @@ pub fn completions(state: &DocumentState, byte_offset: usize) -> Vec<CompletionI
             items.extend(directive_completions());
             items
         }
-        CursorContext::Register => register_completions(),
+        CursorContext::Register => register_completions(true),
         CursorContext::Argument { kind, arg_index } => {
             if let Some(arg_type) = expected_arg_type(kind, arg_index) {
                 completions_for_arg_type(arg_type, state)
@@ -410,7 +428,7 @@ pub fn completions(state: &DocumentState, byte_offset: usize) -> Vec<CompletionI
             }
         }
         CursorContext::UnknownArgument => {
-            let mut items = register_completions();
+            let mut items = register_completions(false);
             items.extend(label_completions(state));
             items.push(bracket_snippet());
             items
