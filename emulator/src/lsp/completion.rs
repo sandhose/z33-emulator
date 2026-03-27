@@ -121,143 +121,48 @@ fn register_completions(prefix_typed: bool) -> Vec<CompletionItem> {
     .collect()
 }
 
-#[allow(clippy::too_many_lines)]
 fn instruction_completions() -> Vec<CompletionItem> {
-    // (mnemonic, description, signature, snippet)
-    let instructions: &[(&str, &str, &str, &str)] = &[
-        (
-            "add",
-            "Add a value to a register",
-            "src, %dst",
-            "add ${1:src}, ${2:%dst}$0",
-        ),
-        (
-            "and",
-            "Bitwise AND with a register",
-            "src, %dst",
-            "and ${1:src}, ${2:%dst}$0",
-        ),
-        (
-            "call",
-            "Push PC and jump to address",
-            "addr",
-            "call ${1:addr}$0",
-        ),
-        (
-            "cmp",
-            "Compare a value with a register",
-            "src, %dst",
-            "cmp ${1:src}, ${2:%dst}$0",
-        ),
-        (
-            "div",
-            "Divide a register by a value",
-            "src, %dst",
-            "div ${1:src}, ${2:%dst}$0",
-        ),
-        (
-            "fas",
-            "Fetch-and-set (atomic)",
-            "[addr], %dst",
-            "fas ${1:[addr]}, ${2:%dst}$0",
-        ),
-        (
-            "in",
-            "Read from I/O controller",
-            "[port], %dst",
-            "in ${1:[port]}, ${2:%dst}$0",
-        ),
-        ("jmp", "Unconditional jump", "addr", "jmp ${1:addr}$0"),
-        (
-            "jeq",
-            "Jump if equal (zero flag set)",
-            "addr",
-            "jeq ${1:addr}$0",
-        ),
-        ("jne", "Jump if not equal", "addr", "jne ${1:addr}$0"),
-        ("jle", "Jump if less or equal", "addr", "jle ${1:addr}$0"),
-        ("jlt", "Jump if strictly less", "addr", "jlt ${1:addr}$0"),
-        ("jge", "Jump if greater or equal", "addr", "jge ${1:addr}$0"),
-        ("jgt", "Jump if strictly greater", "addr", "jgt ${1:addr}$0"),
-        (
-            "ld",
-            "Load a value into a register",
-            "src, %dst",
-            "ld ${1:src}, ${2:%dst}$0",
-        ),
-        (
-            "mul",
-            "Multiply a register by a value",
-            "src, %dst",
-            "mul ${1:src}, ${2:%dst}$0",
-        ),
-        ("neg", "Negate a register", "%reg", "neg ${1:%reg}$0"),
-        ("nop", "No operation", "", "nop"),
-        (
-            "not",
-            "Bitwise NOT of a register",
-            "%reg",
-            "not ${1:%reg}$0",
-        ),
-        (
-            "or",
-            "Bitwise OR with a register",
-            "src, %dst",
-            "or ${1:src}, ${2:%dst}$0",
-        ),
-        (
-            "out",
-            "Write to I/O controller",
-            "src, [port]",
-            "out ${1:src}, ${2:[port]}$0",
-        ),
-        ("pop", "Pop value from stack", "%reg", "pop ${1:%reg}$0"),
-        ("push", "Push value onto stack", "src", "push ${1:src}$0"),
-        ("reset", "Reset the computer", "", "reset"),
-        ("rti", "Return from interrupt", "", "rti"),
-        ("rtn", "Return from call", "", "rtn"),
-        (
-            "shl",
-            "Shift left",
-            "src, %dst",
-            "shl ${1:src}, ${2:%dst}$0",
-        ),
-        (
-            "shr",
-            "Shift right",
-            "src, %dst",
-            "shr ${1:src}, ${2:%dst}$0",
-        ),
-        (
-            "st",
-            "Store register to memory",
-            "%src, [addr]",
-            "st ${1:%src}, ${2:[addr]}$0",
-        ),
-        (
-            "sub",
-            "Subtract a value from a register",
-            "src, %dst",
-            "sub ${1:src}, ${2:%dst}$0",
-        ),
-        (
-            "swap",
-            "Swap a value and a register",
-            "src, %dst",
-            "swap ${1:src}, ${2:%dst}$0",
-        ),
-        ("trap", "Trigger trap exception", "", "trap"),
-        (
-            "xor",
-            "Bitwise XOR with a register",
-            "src, %dst",
-            "xor ${1:src}, ${2:%dst}$0",
-        ),
+    // (mnemonic, description, signature)
+    // No snippets — signature help and argument completions guide the user.
+    let instructions: &[(&str, &str, &str)] = &[
+        ("add", "Add a value to a register", "src, %dst"),
+        ("and", "Bitwise AND with a register", "src, %dst"),
+        ("call", "Push PC and jump to address", "addr"),
+        ("cmp", "Compare a value with a register", "src, %dst"),
+        ("div", "Divide a register by a value", "src, %dst"),
+        ("fas", "Fetch-and-set (atomic)", "[addr], %dst"),
+        ("in", "Read from I/O controller", "[port], %dst"),
+        ("jmp", "Unconditional jump", "addr"),
+        ("jeq", "Jump if equal (zero flag set)", "addr"),
+        ("jne", "Jump if not equal", "addr"),
+        ("jle", "Jump if less or equal", "addr"),
+        ("jlt", "Jump if strictly less", "addr"),
+        ("jge", "Jump if greater or equal", "addr"),
+        ("jgt", "Jump if strictly greater", "addr"),
+        ("ld", "Load a value into a register", "src, %dst"),
+        ("mul", "Multiply a register by a value", "src, %dst"),
+        ("neg", "Negate a register", "%reg"),
+        ("nop", "No operation", ""),
+        ("not", "Bitwise NOT of a register", "%reg"),
+        ("or", "Bitwise OR with a register", "src, %dst"),
+        ("out", "Write to I/O controller", "src, [port]"),
+        ("pop", "Pop value from stack", "%reg"),
+        ("push", "Push value onto stack", "src"),
+        ("reset", "Reset the computer", ""),
+        ("rti", "Return from interrupt", ""),
+        ("rtn", "Return from call", ""),
+        ("shl", "Shift left", "src, %dst"),
+        ("shr", "Shift right", "src, %dst"),
+        ("st", "Store register to memory", "%src, [addr]"),
+        ("sub", "Subtract a value from a register", "src, %dst"),
+        ("swap", "Swap a value and a register", "src, %dst"),
+        ("trap", "Trigger trap exception", ""),
+        ("xor", "Bitwise XOR with a register", "src, %dst"),
     ];
 
     instructions
         .iter()
-        .map(|(name, detail, signature, snippet)| CompletionItem {
+        .map(|(name, detail, signature)| CompletionItem {
             label: (*name).to_string(),
             kind: Some(CompletionItemKind::KEYWORD),
             detail: Some((*detail).to_string()),
@@ -269,8 +174,6 @@ fn instruction_completions() -> Vec<CompletionItem> {
                     ..Default::default()
                 })
             },
-            insert_text: Some((*snippet).to_string()),
-            insert_text_format: Some(InsertTextFormat::SNIPPET),
             ..Default::default()
         })
         .collect()
