@@ -1,5 +1,4 @@
 use clap::Parser;
-use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use z33_emulator::lsp::tower_lsp::{LspService, Server};
 use z33_emulator::lsp::Backend;
 
@@ -15,8 +14,8 @@ impl LspOpt {
             .build()?;
 
         rt.block_on(async {
-            let stdin = tokio::io::stdin().compat();
-            let stdout = tokio::io::stdout().compat_write();
+            let stdin = tokio::io::stdin();
+            let stdout = tokio::io::stdout();
 
             let (service, socket) = LspService::new(Backend::new);
             Server::new(stdin, stdout, socket).serve(service).await;
