@@ -3,7 +3,8 @@ use tower_lsp::lsp_types::{
     CompletionOptions, CompletionParams, CompletionResponse, DidChangeTextDocumentParams,
     DidCloseTextDocumentParams, DidOpenTextDocumentParams, GotoDefinitionParams,
     GotoDefinitionResponse, InitializeParams, InitializeResult, InitializedParams, Location, OneOf,
-    ServerCapabilities, ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind, Url,
+    ReferenceParams, ServerCapabilities, ServerInfo, TextDocumentSyncCapability,
+    TextDocumentSyncKind, Url,
 };
 use tower_lsp::{jsonrpc, Client, LanguageServer};
 
@@ -51,6 +52,7 @@ impl LanguageServer for Backend {
                     ..Default::default()
                 }),
                 definition_provider: Some(OneOf::Left(true)),
+                references_provider: Some(OneOf::Left(true)),
                 ..Default::default()
             },
             server_info: Some(ServerInfo {
@@ -168,9 +170,84 @@ impl LanguageServer for Backend {
 
         Ok(None)
     }
+    async fn references(&self, params: ReferenceParams) -> jsonrpc::Result<Option<Vec<Location>>> {
+        let uri = &params.text_document_position.text_document.uri;
+        let pos = params.text_document_position.position;
+
+        let Some(state) = self.documents.get(uri) else {
+            return Ok(None);
+        };
+
+        let Some(offset) = position::byte_offset(state.source(), pos) else {
+            return Ok(None);
+        };
+
+        let source = state.source();
+        let word = word_at_offset(source, offset);
+
+        if word.is_empty() || !state.labels().contains_key(word) {
+            return Ok(None);
+        }
+
+        let locations = find_label_references(source, word, params.context.include_declaration)
+            .filter_map(|span| {
+                position::range(source, span).map(|range| Location {
+                    uri: uri.clone(),
+                    range,
+                })
+            })
+            .collect::<Vec<_>>();
+
+        if locations.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(locations))
+        }
+    }
 }
 
-/// Extract the identifier word at the given byte offset.
+/// Find all occurrences of `label` in `source`, yielding byte ranges.
+///
+/// If `include_declaration` is false, occurrences that are label definitions
+/// (identifier followed by `:`) are excluded.
+fn find_label_references<'a>(
+    source: &'a str,
+    label: &'a str,
+    include_declaration: bool,
+) -> impl Iterator<Item = std::ops::Range<usize>> + 'a {
+    let label_len = label.len();
+    let bytes = source.as_bytes();
+
+    let mut start = 0;
+    std::iter::from_fn(move || {
+        while let Some(rel) = source[start..].find(label) {
+            let abs = start + rel;
+            start = abs + label_len;
+
+            // Check word boundaries
+            if abs > 0 && (bytes[abs - 1].is_ascii_alphanumeric() || bytes[abs - 1] == b'_') {
+                continue;
+            }
+            if start < bytes.len() && (bytes[start].is_ascii_alphanumeric() || bytes[start] == b'_')
+            {
+                continue;
+            }
+
+            // Check if this is a declaration (followed by optional whitespace
+            // then ':')
+            if !include_declaration {
+                let after = &source[start..];
+                let trimmed = after.trim_start_matches([' ', '\t']);
+                if trimmed.starts_with(':') {
+                    continue;
+                }
+            }
+
+            return Some(abs..start);
+        }
+        None
+    })
+}
 fn word_at_offset(source: &str, offset: usize) -> &str {
     if offset > source.len() {
         return "";
