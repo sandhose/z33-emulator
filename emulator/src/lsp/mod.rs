@@ -10,6 +10,9 @@ mod diagnostics;
 mod document;
 mod hover;
 mod position;
+mod semantic_tokens;
+mod signature;
+mod symbols;
 
 pub use tower_lsp;
 

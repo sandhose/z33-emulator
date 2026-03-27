@@ -1,16 +1,21 @@
+use std::collections::HashMap;
+
 use dashmap::DashMap;
 use tower_lsp::lsp_types::{
     CompletionOptions, CompletionParams, CompletionResponse, DidChangeTextDocumentParams,
-    DidCloseTextDocumentParams, DidOpenTextDocumentParams, GotoDefinitionParams,
-    GotoDefinitionResponse, Hover, HoverContents, HoverParams, HoverProviderCapability,
-    InitializeParams, InitializeResult, InitializedParams, Location, MarkupContent, MarkupKind,
-    OneOf, ReferenceParams, ServerCapabilities, ServerInfo, TextDocumentSyncCapability,
-    TextDocumentSyncKind, Url,
+    DidCloseTextDocumentParams, DidOpenTextDocumentParams, DocumentSymbolParams,
+    DocumentSymbolResponse, GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverContents,
+    HoverParams, HoverProviderCapability, InitializeParams, InitializeResult, InitializedParams,
+    Location, MarkupContent, MarkupKind, OneOf, PrepareRenameResponse, ReferenceParams,
+    RenameParams, SemanticTokensFullOptions, SemanticTokensOptions, SemanticTokensParams,
+    SemanticTokensResult, SemanticTokensServerCapabilities, ServerCapabilities, ServerInfo,
+    SignatureHelpOptions, SignatureHelpParams, TextDocumentSyncCapability, TextDocumentSyncKind,
+    TextEdit, Url, WorkspaceEdit,
 };
 use tower_lsp::{jsonrpc, Client, LanguageServer};
 
 use super::document::DocumentState;
-use super::{completion, diagnostics, hover, position};
+use super::{completion, diagnostics, hover, position, semantic_tokens, signature, symbols};
 
 /// LSP backend for Z33 assembly.
 ///
@@ -52,9 +57,30 @@ impl LanguageServer for Backend {
                     trigger_characters: Some(vec!["%".to_string(), ".".to_string()]),
                     ..Default::default()
                 }),
+                signature_help_provider: Some(SignatureHelpOptions {
+                    trigger_characters: Some(vec![" ".to_string(), ",".to_string()]),
+                    retrigger_characters: Some(vec![",".to_string()]),
+                    ..Default::default()
+                }),
                 hover_provider: Some(HoverProviderCapability::Simple(true)),
                 definition_provider: Some(OneOf::Left(true)),
                 references_provider: Some(OneOf::Left(true)),
+                document_symbol_provider: Some(OneOf::Left(true)),
+                rename_provider: Some(OneOf::Right(tower_lsp::lsp_types::RenameOptions {
+                    prepare_provider: Some(true),
+                    work_done_progress_options:
+                        tower_lsp::lsp_types::WorkDoneProgressOptions::default(),
+                })),
+                semantic_tokens_provider: Some(
+                    SemanticTokensServerCapabilities::SemanticTokensOptions(
+                        SemanticTokensOptions {
+                            legend: semantic_tokens::legend(),
+                            full: Some(SemanticTokensFullOptions::Bool(true)),
+                            range: None,
+                            ..Default::default()
+                        },
+                    ),
+                ),
                 ..Default::default()
             },
             server_info: Some(ServerInfo {
@@ -78,7 +104,6 @@ impl LanguageServer for Backend {
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
-        // We use Full sync, so there's exactly one change with the full text.
         if let Some(change) = params.content_changes.into_iter().next() {
             self.on_change(
                 params.text_document.uri,
@@ -91,7 +116,6 @@ impl LanguageServer for Backend {
 
     async fn did_close(&self, params: DidCloseTextDocumentParams) {
         self.documents.remove(&params.text_document.uri);
-        // Clear diagnostics
         self.client
             .publish_diagnostics(params.text_document.uri, vec![], None)
             .await;
@@ -118,6 +142,24 @@ impl LanguageServer for Backend {
         } else {
             Ok(Some(CompletionResponse::Array(items)))
         }
+    }
+
+    async fn signature_help(
+        &self,
+        params: SignatureHelpParams,
+    ) -> jsonrpc::Result<Option<tower_lsp::lsp_types::SignatureHelp>> {
+        let uri = &params.text_document_position_params.text_document.uri;
+        let pos = params.text_document_position_params.position;
+
+        let Some(state) = self.documents.get(uri) else {
+            return Ok(None);
+        };
+
+        let Some(offset) = position::byte_offset(state.source(), pos) else {
+            return Ok(None);
+        };
+
+        Ok(signature::signature_help(&state, offset))
     }
 
     async fn hover(&self, params: HoverParams) -> jsonrpc::Result<Option<Hover>> {
@@ -162,26 +204,17 @@ impl LanguageServer for Backend {
             return Ok(None);
         };
 
-        // Find the word at the cursor position
         let source = state.source();
         let word = word_at_offset(source, offset);
 
-        if word.is_empty() {
+        if word.is_empty() || !state.labels().contains_key(word) {
             return Ok(None);
         }
 
-        // Check if it's a label
-        if !state.labels().contains_key(word) {
-            return Ok(None);
-        }
-
-        // Find the label definition in the AST
         if let Some(program) = state.program() {
             for line in &program.lines {
                 for symbol in &line.inner.symbols {
                     if symbol.inner == word {
-                        // Symbol location is relative to line start (in
-                        // preprocessed source). Resolve to original.
                         let abs_start = line.location.start + symbol.location.start;
                         let abs_end = line.location.start + symbol.location.end;
                         let original_span = state.resolve_span(abs_start..abs_end);
@@ -199,6 +232,7 @@ impl LanguageServer for Backend {
 
         Ok(None)
     }
+
     async fn references(&self, params: ReferenceParams) -> jsonrpc::Result<Option<Vec<Location>>> {
         let uri = &params.text_document_position.text_document.uri;
         let pos = params.text_document_position.position;
@@ -232,6 +266,112 @@ impl LanguageServer for Backend {
         } else {
             Ok(Some(locations))
         }
+    }
+
+    async fn document_symbol(
+        &self,
+        params: DocumentSymbolParams,
+    ) -> jsonrpc::Result<Option<DocumentSymbolResponse>> {
+        let uri = &params.text_document.uri;
+
+        let Some(state) = self.documents.get(uri) else {
+            return Ok(None);
+        };
+
+        let syms = symbols::document_symbols(&state);
+        if syms.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(DocumentSymbolResponse::Nested(syms)))
+        }
+    }
+
+    async fn prepare_rename(
+        &self,
+        params: tower_lsp::lsp_types::TextDocumentPositionParams,
+    ) -> jsonrpc::Result<Option<PrepareRenameResponse>> {
+        let uri = &params.text_document.uri;
+        let pos = params.position;
+
+        let Some(state) = self.documents.get(uri) else {
+            return Ok(None);
+        };
+
+        let Some(offset) = position::byte_offset(state.source(), pos) else {
+            return Ok(None);
+        };
+
+        let source = state.source();
+        let word = word_at_offset(source, offset);
+
+        if word.is_empty() || !state.labels().contains_key(word) {
+            return Ok(None);
+        }
+
+        // Return the range of the word under cursor
+        let word_start = word.as_ptr() as usize - source.as_ptr() as usize;
+        let word_end = word_start + word.len();
+        let range = position::range(source, word_start..word_end);
+
+        Ok(range.map(PrepareRenameResponse::Range))
+    }
+
+    async fn rename(&self, params: RenameParams) -> jsonrpc::Result<Option<WorkspaceEdit>> {
+        let uri = &params.text_document_position.text_document.uri;
+        let pos = params.text_document_position.position;
+
+        let Some(state) = self.documents.get(uri) else {
+            return Ok(None);
+        };
+
+        let Some(offset) = position::byte_offset(state.source(), pos) else {
+            return Ok(None);
+        };
+
+        let source = state.source();
+        let word = word_at_offset(source, offset);
+
+        if word.is_empty() || !state.labels().contains_key(word) {
+            return Ok(None);
+        }
+
+        let new_name = &params.new_name;
+
+        // Find all occurrences (including declarations) and create edits
+        let edits: Vec<TextEdit> = find_label_references(source, word, true)
+            .filter_map(|span| {
+                position::range(source, span).map(|range| TextEdit {
+                    range,
+                    new_text: new_name.clone(),
+                })
+            })
+            .collect();
+
+        if edits.is_empty() {
+            return Ok(None);
+        }
+
+        let mut changes = HashMap::new();
+        changes.insert(uri.clone(), edits);
+
+        Ok(Some(WorkspaceEdit {
+            changes: Some(changes),
+            ..Default::default()
+        }))
+    }
+
+    async fn semantic_tokens_full(
+        &self,
+        params: SemanticTokensParams,
+    ) -> jsonrpc::Result<Option<SemanticTokensResult>> {
+        let uri = &params.text_document.uri;
+
+        let Some(state) = self.documents.get(uri) else {
+            return Ok(None);
+        };
+
+        let tokens = semantic_tokens::semantic_tokens(&state);
+        Ok(Some(SemanticTokensResult::Tokens(tokens)))
     }
 }
 
@@ -277,6 +417,8 @@ fn find_label_references<'a>(
         None
     })
 }
+
+/// Extract the identifier word at the given byte offset.
 fn word_at_offset(source: &str, offset: usize) -> &str {
     if offset > source.len() {
         return "";
@@ -284,13 +426,11 @@ fn word_at_offset(source: &str, offset: usize) -> &str {
 
     let bytes = source.as_bytes();
 
-    // Walk backwards to find start of identifier
     let mut start = offset;
     while start > 0 && (bytes[start - 1].is_ascii_alphanumeric() || bytes[start - 1] == b'_') {
         start -= 1;
     }
 
-    // Walk forwards to find end of identifier
     let mut end = offset;
     while end < bytes.len() && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'_') {
         end += 1;
