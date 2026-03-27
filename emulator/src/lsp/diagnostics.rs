@@ -3,7 +3,7 @@ use tower_lsp::lsp_types;
 use super::document::DocumentState;
 use super::position;
 use crate::compiler::layout::MemoryLayoutError;
-use crate::compiler::memory::MemoryFillError;
+use crate::compiler::memory::{InstructionCompilationError, MemoryFillError};
 use crate::diagnostic::preprocessor_error_to_diagnostics;
 use crate::parser::shared::{DiagnosticSeverity, ParseDiagnostic};
 
@@ -93,22 +93,78 @@ fn convert_layout_error(
 fn convert_fill_error(
     state: &DocumentState,
     error: &MemoryFillError,
-) -> Option<lsp_types::Diagnostic> {
+    out: &mut Vec<lsp_types::Diagnostic>,
+) {
     let severity = lsp_types::DiagnosticSeverity::ERROR;
     match error {
         MemoryFillError::Evaluation {
             location,
             source: err,
-        } => make_resolved_diagnostic(state, location.clone(), err.to_string(), severity),
+        } => {
+            if let Some(d) =
+                make_resolved_diagnostic(state, location.clone(), err.to_string(), severity)
+            {
+                out.push(d);
+            }
+        }
         MemoryFillError::Compute {
             location,
             source: err,
-        } => make_resolved_diagnostic(state, location.clone(), err.to_string(), severity),
+        } => {
+            if let Some(d) =
+                make_resolved_diagnostic(state, location.clone(), err.to_string(), severity)
+            {
+                out.push(d);
+            }
+        }
         MemoryFillError::InstructionCompilation {
             instruction_span,
+            argument_spans,
             source: err,
-            ..
-        } => make_resolved_diagnostic(state, instruction_span.clone(), err.to_string(), severity),
+        } => match err {
+            InstructionCompilationError::InvalidArgumentCount {
+                instruction,
+                expected,
+                got,
+            } => {
+                if let Some(d) = make_resolved_diagnostic(
+                    state,
+                    instruction_span.clone(),
+                    format!("'{instruction}' takes {expected} argument(s), got {got}"),
+                    severity,
+                ) {
+                    out.push(d);
+                }
+            }
+            InstructionCompilationError::InvalidArgumentType {
+                instruction,
+                argument_index,
+                source: conversion_error,
+            } => {
+                // Primary diagnostic on the argument with the detailed type
+                // error
+                if let Some(arg_span) = argument_spans.get(*argument_index) {
+                    if let Some(d) = make_resolved_diagnostic(
+                        state,
+                        arg_span.clone(),
+                        conversion_error.to_string(),
+                        severity,
+                    ) {
+                        out.push(d);
+                    }
+                }
+
+                // Secondary diagnostic on the instruction name for context
+                if let Some(d) = make_resolved_diagnostic(
+                    state,
+                    instruction_span.clone(),
+                    format!("invalid argument for '{instruction}'"),
+                    lsp_types::DiagnosticSeverity::HINT,
+                ) {
+                    out.push(d);
+                }
+            }
+        },
     }
 }
 
@@ -161,9 +217,7 @@ pub fn diagnostics(state: &DocumentState) -> Vec<lsp_types::Diagnostic> {
 
     // Fill errors (spans in preprocessed source)
     for error in state.fill_errors() {
-        if let Some(d) = convert_fill_error(state, error) {
-            result.push(d);
-        }
+        convert_fill_error(state, error, &mut result);
     }
 
     result
