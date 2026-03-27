@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use dashmap::DashMap;
 use tower_lsp::lsp_types::{
@@ -18,13 +19,22 @@ use tower_lsp::{jsonrpc, Client, LanguageServer};
 use super::document::DocumentState;
 use super::{completion, diagnostics, hover, position, semantic_tokens, signature, symbols};
 
+/// Per-document state: the current source text (always up-to-date) and the
+/// latest completed analysis (may lag one or two keystrokes behind).
+struct Document {
+    /// Always-current source text, updated synchronously on every didChange.
+    source: String,
+    /// Latest completed analysis. Updated asynchronously after each change.
+    /// May be `None` briefly before the first analysis completes.
+    analysis: Option<Arc<DocumentState>>,
+    /// Version counter — used to discard stale analysis results.
+    version: i32,
+}
+
 /// LSP backend for Z33 assembly.
-///
-/// Holds a reference to the LSP client (for pushing diagnostics) and a
-/// concurrent map of open documents.
 pub struct Backend {
     client: Client,
-    documents: DashMap<Url, DocumentState>,
+    documents: Arc<DashMap<Url, Document>>,
 }
 
 impl Backend {
@@ -32,17 +42,63 @@ impl Backend {
     pub fn new(client: Client) -> Self {
         Self {
             client,
-            documents: DashMap::new(),
+            documents: Arc::new(DashMap::new()),
         }
     }
 
-    async fn on_change(&self, uri: Url, text: String, version: i32) {
-        let state = DocumentState::new(text);
-        let diags = diagnostics::diagnostics(&state);
-        self.documents.insert(uri.clone(), state);
-        self.client
-            .publish_diagnostics(uri, diags, Some(version))
-            .await;
+    fn on_change(&self, uri: Url, text: String, version: i32) {
+        // Update the source immediately so interactive features use the
+        // latest text.
+        self.documents.insert(
+            uri.clone(),
+            Document {
+                source: text.clone(),
+                // Carry over the previous analysis if any — it's stale but
+                // better than nothing for completions during the brief window
+                // before the new analysis completes.
+                analysis: self.documents.get(&uri).and_then(|d| d.analysis.clone()),
+                version,
+            },
+        );
+
+        // Run analysis in the background so we don't block the request loop.
+        let client = self.client.clone();
+        let documents = self.documents.clone();
+        tokio::task::spawn_blocking(move || {
+            let state = Arc::new(DocumentState::new(text));
+            let diags = diagnostics::diagnostics(&state);
+
+            // Only update if this version is still current (a newer change
+            // may have arrived while we were analyzing).
+            let mut should_publish = false;
+            if let Some(mut doc) = documents.get_mut(&uri) {
+                if doc.version <= version {
+                    doc.analysis = Some(Arc::clone(&state));
+                    should_publish = true;
+                }
+            }
+
+            if should_publish {
+                // publish_diagnostics is async but we're on a blocking thread.
+                // Use a oneshot channel + tokio::spawn to bridge.
+                let uri_clone = uri;
+                tokio::runtime::Handle::current().spawn(async move {
+                    client
+                        .publish_diagnostics(uri_clone, diags, Some(version))
+                        .await;
+                });
+            }
+        });
+    }
+
+    /// Get a snapshot of the current source text for a document.
+    fn get_source(&self, uri: &Url) -> Option<String> {
+        self.documents.get(uri).map(|d| d.source.clone())
+    }
+
+    /// Get the latest analysis for a document (may be slightly stale).
+    fn get_analysis(&self, uri: &Url) -> Option<Arc<DocumentState>> {
+        self.documents.get(uri).and_then(|d| d.analysis.clone())
     }
 }
 
@@ -105,7 +161,7 @@ impl LanguageServer for Backend {
 
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
         let doc = params.text_document;
-        self.on_change(doc.uri, doc.text, doc.version).await;
+        self.on_change(doc.uri, doc.text, doc.version);
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
@@ -114,8 +170,7 @@ impl LanguageServer for Backend {
                 params.text_document.uri,
                 change.text,
                 params.text_document.version,
-            )
-            .await;
+            );
         }
     }
 
@@ -126,6 +181,8 @@ impl LanguageServer for Backend {
             .await;
     }
 
+    // -- Interactive features use current source + stale analysis --
+
     async fn completion(
         &self,
         params: CompletionParams,
@@ -133,15 +190,16 @@ impl LanguageServer for Backend {
         let uri = &params.text_document_position.text_document.uri;
         let pos = params.text_document_position.position;
 
-        let Some(state) = self.documents.get(uri) else {
+        let Some(source) = self.get_source(uri) else {
+            return Ok(None);
+        };
+        let analysis = self.get_analysis(uri);
+
+        let Some(offset) = position::byte_offset(&source, pos) else {
             return Ok(None);
         };
 
-        let Some(offset) = position::byte_offset(state.source(), pos) else {
-            return Ok(None);
-        };
-
-        let items = completion::completions(&state, offset);
+        let items = completion::completions(analysis.as_deref(), &source, offset);
         if items.is_empty() {
             Ok(None)
         } else {
@@ -156,34 +214,35 @@ impl LanguageServer for Backend {
         let uri = &params.text_document_position_params.text_document.uri;
         let pos = params.text_document_position_params.position;
 
-        let Some(state) = self.documents.get(uri) else {
+        let Some(source) = self.get_source(uri) else {
             return Ok(None);
         };
 
-        let Some(offset) = position::byte_offset(state.source(), pos) else {
+        let Some(offset) = position::byte_offset(&source, pos) else {
             return Ok(None);
         };
 
-        Ok(signature::signature_help(&state, offset))
+        Ok(signature::signature_help(&source, offset))
     }
 
     async fn hover(&self, params: HoverParams) -> jsonrpc::Result<Option<Hover>> {
         let uri = &params.text_document_position_params.text_document.uri;
         let pos = params.text_document_position_params.position;
 
-        let Some(state) = self.documents.get(uri) else {
+        let Some(source) = self.get_source(uri) else {
+            return Ok(None);
+        };
+        let analysis = self.get_analysis(uri);
+
+        let Some(offset) = position::byte_offset(&source, pos) else {
             return Ok(None);
         };
 
-        let Some(offset) = position::byte_offset(state.source(), pos) else {
+        let Some(result) = hover::hover(analysis.as_deref(), &source, offset) else {
             return Ok(None);
         };
 
-        let Some(result) = hover::hover(&state, offset) else {
-            return Ok(None);
-        };
-
-        let range = position::range(state.source(), result.span);
+        let range = position::range(&source, result.span);
 
         Ok(Some(Hover {
             contents: HoverContents::Markup(MarkupContent {
@@ -201,29 +260,30 @@ impl LanguageServer for Backend {
         let uri = &params.text_document_position_params.text_document.uri;
         let pos = params.text_document_position_params.position;
 
-        let Some(state) = self.documents.get(uri) else {
+        let Some(source) = self.get_source(uri) else {
+            return Ok(None);
+        };
+        let Some(analysis) = self.get_analysis(uri) else {
             return Ok(None);
         };
 
-        let Some(offset) = position::byte_offset(state.source(), pos) else {
+        let Some(offset) = position::byte_offset(&source, pos) else {
             return Ok(None);
         };
 
-        let source = state.source();
-        let word = word_at_offset(source, offset);
-
-        if word.is_empty() || !state.labels().contains_key(word) {
+        let word = word_at_offset(&source, offset);
+        if word.is_empty() || !analysis.labels().contains_key(word) {
             return Ok(None);
         }
 
-        if let Some(program) = state.program() {
+        if let Some(program) = analysis.program() {
             for line in &program.lines {
                 for symbol in &line.inner.symbols {
                     if symbol.inner == word {
                         let abs_start = line.location.start + symbol.location.start;
                         let abs_end = line.location.start + symbol.location.end;
-                        let original_span = state.resolve_span(abs_start..abs_end);
-                        if let Some(range) = original_span.and_then(|s| position::range(source, s))
+                        let original_span = analysis.resolve_span(abs_start..abs_end);
+                        if let Some(range) = original_span.and_then(|s| position::range(&source, s))
                         {
                             return Ok(Some(GotoDefinitionResponse::Scalar(Location {
                                 uri: uri.clone(),
@@ -242,24 +302,26 @@ impl LanguageServer for Backend {
         let uri = &params.text_document_position.text_document.uri;
         let pos = params.text_document_position.position;
 
-        let Some(state) = self.documents.get(uri) else {
+        let Some(source) = self.get_source(uri) else {
+            return Ok(None);
+        };
+        let analysis = self.get_analysis(uri);
+
+        let Some(offset) = position::byte_offset(&source, pos) else {
             return Ok(None);
         };
 
-        let Some(offset) = position::byte_offset(state.source(), pos) else {
-            return Ok(None);
-        };
-
-        let source = state.source();
-        let word = word_at_offset(source, offset);
-
-        if word.is_empty() || !state.labels().contains_key(word) {
+        let word = word_at_offset(&source, offset);
+        let has_label = analysis
+            .as_ref()
+            .is_some_and(|a| a.labels().contains_key(word));
+        if word.is_empty() || !has_label {
             return Ok(None);
         }
 
-        let locations = find_label_references(source, word, params.context.include_declaration)
+        let locations = find_label_references(&source, word, params.context.include_declaration)
             .filter_map(|span| {
-                position::range(source, span).map(|range| Location {
+                position::range(&source, span).map(|range| Location {
                     uri: uri.clone(),
                     range,
                 })
@@ -279,11 +341,11 @@ impl LanguageServer for Backend {
     ) -> jsonrpc::Result<Option<DocumentSymbolResponse>> {
         let uri = &params.text_document.uri;
 
-        let Some(state) = self.documents.get(uri) else {
+        let Some(analysis) = self.get_analysis(uri) else {
             return Ok(None);
         };
 
-        let syms = symbols::document_symbols(&state);
+        let syms = symbols::document_symbols(&analysis);
         if syms.is_empty() {
             Ok(None)
         } else {
@@ -298,25 +360,26 @@ impl LanguageServer for Backend {
         let uri = &params.text_document_position_params.text_document.uri;
         let pos = params.text_document_position_params.position;
 
-        let Some(state) = self.documents.get(uri) else {
+        let Some(source) = self.get_source(uri) else {
+            return Ok(None);
+        };
+        let analysis = self.get_analysis(uri);
+
+        let Some(offset) = position::byte_offset(&source, pos) else {
             return Ok(None);
         };
 
-        let Some(offset) = position::byte_offset(state.source(), pos) else {
-            return Ok(None);
-        };
-
-        let source = state.source();
-        let word = word_at_offset(source, offset);
-
-        if word.is_empty() || !state.labels().contains_key(word) {
+        let word = word_at_offset(&source, offset);
+        let has_label = analysis
+            .as_ref()
+            .is_some_and(|a| a.labels().contains_key(word));
+        if word.is_empty() || !has_label {
             return Ok(None);
         }
 
-        let highlights: Vec<DocumentHighlight> = find_label_references(source, word, true)
+        let highlights: Vec<DocumentHighlight> = find_label_references(&source, word, true)
             .filter_map(|span| {
-                let range = position::range(source, span.clone())?;
-                // Check if this occurrence is a definition (followed by ':')
+                let range = position::range(&source, span.clone())?;
                 let after = &source[span.end..];
                 let trimmed = after.trim_start_matches([' ', '\t']);
                 let kind = if trimmed.starts_with(':') {
@@ -344,24 +407,24 @@ impl LanguageServer for Backend {
     ) -> jsonrpc::Result<Option<Vec<CodeLens>>> {
         let uri = &params.text_document.uri;
 
-        let Some(state) = self.documents.get(uri) else {
+        let Some(source) = self.get_source(uri) else {
+            return Ok(None);
+        };
+        let Some(analysis) = self.get_analysis(uri) else {
             return Ok(None);
         };
 
-        let source = state.source();
         let mut lenses = Vec::new();
 
-        for name in state.labels().keys() {
-            // Find the label definition
-            let Some(def_span) = find_label_definition(source, name) else {
+        for name in analysis.labels().keys() {
+            let Some(def_span) = find_label_definition(&source, name) else {
                 continue;
             };
-            let Some(range) = position::range(source, def_span) else {
+            let Some(range) = position::range(&source, def_span) else {
                 continue;
             };
 
-            // Count references (excluding the definition itself)
-            let ref_count = find_label_references(source, name, false).count();
+            let ref_count = find_label_references(&source, name, false).count();
 
             let title = match ref_count {
                 0 => "0 references".to_string(),
@@ -394,25 +457,25 @@ impl LanguageServer for Backend {
         let uri = &params.text_document.uri;
         let pos = params.position;
 
-        let Some(state) = self.documents.get(uri) else {
+        let Some(source) = self.get_source(uri) else {
+            return Ok(None);
+        };
+        let Some(analysis) = self.get_analysis(uri) else {
             return Ok(None);
         };
 
-        let Some(offset) = position::byte_offset(state.source(), pos) else {
+        let Some(offset) = position::byte_offset(&source, pos) else {
             return Ok(None);
         };
 
-        let source = state.source();
-        let word = word_at_offset(source, offset);
-
-        if word.is_empty() || !state.labels().contains_key(word) {
+        let word = word_at_offset(&source, offset);
+        if word.is_empty() || !analysis.labels().contains_key(word) {
             return Ok(None);
         }
 
-        // Return the range of the word under cursor
         let word_start = word.as_ptr() as usize - source.as_ptr() as usize;
         let word_end = word_start + word.len();
-        let range = position::range(source, word_start..word_end);
+        let range = position::range(&source, word_start..word_end);
 
         Ok(range.map(PrepareRenameResponse::Range))
     }
@@ -421,27 +484,26 @@ impl LanguageServer for Backend {
         let uri = &params.text_document_position.text_document.uri;
         let pos = params.text_document_position.position;
 
-        let Some(state) = self.documents.get(uri) else {
+        let Some(source) = self.get_source(uri) else {
+            return Ok(None);
+        };
+        let Some(analysis) = self.get_analysis(uri) else {
             return Ok(None);
         };
 
-        let Some(offset) = position::byte_offset(state.source(), pos) else {
+        let Some(offset) = position::byte_offset(&source, pos) else {
             return Ok(None);
         };
 
-        let source = state.source();
-        let word = word_at_offset(source, offset);
-
-        if word.is_empty() || !state.labels().contains_key(word) {
+        let word = word_at_offset(&source, offset);
+        if word.is_empty() || !analysis.labels().contains_key(word) {
             return Ok(None);
         }
 
         let new_name = &params.new_name;
-
-        // Find all occurrences (including declarations) and create edits
-        let edits: Vec<TextEdit> = find_label_references(source, word, true)
+        let edits: Vec<TextEdit> = find_label_references(&source, word, true)
             .filter_map(|span| {
-                position::range(source, span).map(|range| TextEdit {
+                position::range(&source, span).map(|range| TextEdit {
                     range,
                     new_text: new_name.clone(),
                 })
@@ -467,19 +529,17 @@ impl LanguageServer for Backend {
     ) -> jsonrpc::Result<Option<SemanticTokensResult>> {
         let uri = &params.text_document.uri;
 
-        let Some(state) = self.documents.get(uri) else {
+        let Some(source) = self.get_source(uri) else {
             return Ok(None);
         };
+        let analysis = self.get_analysis(uri);
 
-        let tokens = semantic_tokens::semantic_tokens(&state);
+        let tokens = semantic_tokens::semantic_tokens(analysis.as_deref(), &source);
         Ok(Some(SemanticTokensResult::Tokens(tokens)))
     }
 }
 
 /// Find all occurrences of `label` in `source`, yielding byte ranges.
-///
-/// If `include_declaration` is false, occurrences that are label definitions
-/// (identifier followed by `:`) are excluded.
 fn find_label_references<'a>(
     source: &'a str,
     label: &'a str,
@@ -494,7 +554,6 @@ fn find_label_references<'a>(
             let abs = start + rel;
             start = abs + label_len;
 
-            // Check word boundaries
             if abs > 0 && (bytes[abs - 1].is_ascii_alphanumeric() || bytes[abs - 1] == b'_') {
                 continue;
             }
@@ -503,8 +562,6 @@ fn find_label_references<'a>(
                 continue;
             }
 
-            // Check if this is a declaration (followed by optional whitespace
-            // then ':')
             if !include_declaration {
                 let after = &source[start..];
                 let trimmed = after.trim_start_matches([' ', '\t']);
@@ -519,47 +576,36 @@ fn find_label_references<'a>(
     })
 }
 
-/// Extract the identifier word at the given byte offset.
 fn word_at_offset(source: &str, offset: usize) -> &str {
     if offset > source.len() {
         return "";
     }
-
     let bytes = source.as_bytes();
-
     let mut start = offset;
     while start > 0 && (bytes[start - 1].is_ascii_alphanumeric() || bytes[start - 1] == b'_') {
         start -= 1;
     }
-
     let mut end = offset;
     while end < bytes.len() && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'_') {
         end += 1;
     }
-
     &source[start..end]
 }
 
-/// Find the byte range of a label definition (the identifier before `:`).
 fn find_label_definition(source: &str, label: &str) -> Option<std::ops::Range<usize>> {
     let label_len = label.len();
     let bytes = source.as_bytes();
     let mut start = 0;
-
     while let Some(rel) = source[start..].find(label) {
         let abs = start + rel;
         let end = abs + label_len;
         start = end;
-
-        // Word boundaries
         if abs > 0 && (bytes[abs - 1].is_ascii_alphanumeric() || bytes[abs - 1] == b'_') {
             continue;
         }
         if end < bytes.len() && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'_') {
             continue;
         }
-
-        // Must be followed by optional whitespace then ':'
         let after = &source[end..];
         let trimmed = after.trim_start_matches([' ', '\t']);
         if trimmed.starts_with(':') {

@@ -2,13 +2,11 @@ use tower_lsp::lsp_types::{
     ParameterInformation, ParameterLabel, SignatureHelp, SignatureInformation,
 };
 
-use super::document::DocumentState;
 use crate::parser::shared::is_identifier_char;
 use crate::parser::value::InstructionKind;
 
 /// Compute signature help at the given byte offset in the original source.
-pub fn signature_help(state: &DocumentState, byte_offset: usize) -> Option<SignatureHelp> {
-    let source = state.source();
+pub fn signature_help(source: &str, byte_offset: usize) -> Option<SignatureHelp> {
     if byte_offset > source.len() {
         return None;
     }

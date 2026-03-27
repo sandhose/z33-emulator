@@ -10,25 +10,29 @@ pub struct HoverResult {
 }
 
 /// Look up hover documentation at the given byte offset in the original source.
-pub fn hover(state: &DocumentState, byte_offset: usize) -> Option<HoverResult> {
-    let source = state.source();
+///
+/// `analysis` may be `None` — label hover won't work in that case.
+pub fn hover(
+    analysis: Option<&DocumentState>,
+    source: &str,
+    byte_offset: usize,
+) -> Option<HoverResult> {
     if byte_offset > source.len() {
         return None;
     }
 
-    // Check if we're on a register (%a, %b, etc.)
     if let Some(result) = try_register_hover(source, byte_offset) {
         return Some(result);
     }
 
-    // Check if we're on an instruction or directive mnemonic
     if let Some(result) = try_mnemonic_hover(source, byte_offset) {
         return Some(result);
     }
 
-    // Check if we're on a label
-    if let Some(result) = try_label_hover(state, source, byte_offset) {
-        return Some(result);
+    if let Some(state) = analysis {
+        if let Some(result) = try_label_hover(state, source, byte_offset) {
+            return Some(result);
+        }
     }
 
     None

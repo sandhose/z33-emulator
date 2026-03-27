@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::sync::LazyLock;
 
 use tower_lsp::lsp_types::{
@@ -213,9 +214,8 @@ fn build_directive_completions() -> Vec<CompletionItem> {
         .collect()
 }
 
-fn label_completions(state: &DocumentState) -> Vec<CompletionItem> {
-    state
-        .labels()
+fn label_completions(labels: &BTreeMap<String, crate::constants::Address>) -> Vec<CompletionItem> {
+    labels
         .iter()
         .map(|(name, addr)| CompletionItem {
             label: name.clone(),
@@ -226,7 +226,10 @@ fn label_completions(state: &DocumentState) -> Vec<CompletionItem> {
         .collect()
 }
 
-fn completions_for_arg_type(arg_type: ArgType, state: &DocumentState) -> Vec<CompletionItem> {
+fn completions_for_arg_type(
+    arg_type: ArgType,
+    labels: &BTreeMap<String, crate::constants::Address>,
+) -> Vec<CompletionItem> {
     let mut items = Vec::new();
     match arg_type {
         ArgType::Reg => {
@@ -234,11 +237,11 @@ fn completions_for_arg_type(arg_type: ArgType, state: &DocumentState) -> Vec<Com
         }
         ArgType::ImmReg => {
             items.extend(REGISTERS_FULL.iter().cloned());
-            items.extend(label_completions(state));
+            items.extend(label_completions(labels));
         }
         ArgType::ImmRegDirIndIdx => {
             items.extend(REGISTERS_FULL.iter().cloned());
-            items.extend(label_completions(state));
+            items.extend(label_completions(labels));
             items.push(BRACKET.clone());
         }
         ArgType::DirIndIdx => {
@@ -394,8 +397,7 @@ fn detect_context_from_text(line_text: &str, pos_in_line: usize) -> CursorContex
 /// Fully text-based — doesn't use AST spans (which are in the preprocessed
 /// source and may not match the original). Finds the current line, strips
 /// comments, and delegates to `detect_context_from_text`.
-fn detect_context(state: &DocumentState, byte_offset: usize) -> Option<CursorContext> {
-    let source = state.source();
+fn detect_context(source: &str, byte_offset: usize) -> Option<CursorContext> {
     if byte_offset > source.len() {
         return None;
     }
@@ -428,10 +430,20 @@ fn detect_context(state: &DocumentState, byte_offset: usize) -> Option<CursorCon
 }
 
 /// Compute completion items for the given cursor position.
-pub fn completions(state: &DocumentState, byte_offset: usize) -> Vec<CompletionItem> {
-    let Some(context) = detect_context(state, byte_offset) else {
+///
+/// `analysis` may be `None` or slightly stale — label completions use it
+/// but text-based context detection uses the current `source`.
+pub fn completions(
+    analysis: Option<&DocumentState>,
+    source: &str,
+    byte_offset: usize,
+) -> Vec<CompletionItem> {
+    let Some(context) = detect_context(source, byte_offset) else {
         return Vec::new();
     };
+
+    let empty_labels = BTreeMap::new();
+    let labels = analysis.map_or(&empty_labels, DocumentState::labels);
 
     match context {
         CursorContext::Mnemonic => {
@@ -442,14 +454,14 @@ pub fn completions(state: &DocumentState, byte_offset: usize) -> Vec<CompletionI
         CursorContext::Register => REGISTERS_PREFIX.clone(),
         CursorContext::Argument { kind, arg_index } => {
             if let Some(arg_type) = expected_arg_type(kind, arg_index) {
-                completions_for_arg_type(arg_type, state)
+                completions_for_arg_type(arg_type, labels)
             } else {
                 Vec::new()
             }
         }
         CursorContext::UnknownArgument => {
             let mut items = REGISTERS_FULL.clone();
-            items.extend(label_completions(state));
+            items.extend(label_completions(labels));
             items.push(BRACKET.clone());
             items
         }

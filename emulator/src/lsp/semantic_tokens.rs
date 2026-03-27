@@ -40,9 +40,9 @@ const TK_COMMENT: u32 = 7;
 /// This is text-based (operates on the original source) so it works even when
 /// the preprocessor or parser fails.
 #[allow(clippy::too_many_lines)]
-pub fn semantic_tokens(state: &DocumentState) -> SemanticTokens {
-    let source = state.source();
-    let labels = state.labels();
+pub fn semantic_tokens(analysis: Option<&DocumentState>, source: &str) -> SemanticTokens {
+    let empty_labels = std::collections::BTreeMap::new();
+    let labels = analysis.map_or(&empty_labels, DocumentState::labels);
     let mut raw_tokens: Vec<(usize, usize, u32)> = Vec::new(); // (start, len, type)
 
     for line_text in source.split('\n') {
