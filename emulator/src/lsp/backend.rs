@@ -59,8 +59,8 @@ impl LanguageServer for Backend {
                     ..Default::default()
                 }),
                 signature_help_provider: Some(SignatureHelpOptions {
-                    trigger_characters: Some(vec![" ".to_string(), ",".to_string()]),
-                    retrigger_characters: Some(vec![",".to_string()]),
+                    trigger_characters: Some(vec![",".to_string()]),
+                    retrigger_characters: None,
                     ..Default::default()
                 }),
                 hover_provider: Some(HoverProviderCapability::Simple(true)),
