@@ -4,31 +4,61 @@ use super::document::DocumentState;
 use super::position;
 
 /// Produce document symbols (outline) for the file — one entry per label.
+///
+/// Each label's range spans from its definition to the line before the next
+/// label (or end of file), so the outline reflects the logical structure.
 pub fn document_symbols(state: &DocumentState) -> Vec<DocumentSymbol> {
     let source = state.source();
 
-    state
+    // Collect all label definitions with their byte positions, sorted by
+    // position in the file.
+    let mut label_defs: Vec<(&str, u32, std::ops::Range<usize>)> = state
         .labels()
         .iter()
         .filter_map(|(name, addr)| {
-            // Find the label definition in the original source (text-based)
             let span = find_label_definition(source, name)?;
-            let range = position::range(source, span.clone())?;
+            Some((name.as_str(), *addr, span))
+        })
+        .collect();
 
-            // The line containing the label (from label start to end of line)
-            let line_start = span.start;
-            let line_end = source[span.end..]
-                .find('\n')
-                .map_or(source.len(), |i| span.end + i);
-            let full_range = position::range(source, line_start..line_end)?;
+    label_defs.sort_by_key(|(_, _, span)| span.start);
+
+    label_defs
+        .iter()
+        .enumerate()
+        .filter_map(|(i, (name, addr, def_span))| {
+            let selection_range = position::range(source, def_span.clone())?;
+
+            // Range extends from this label to the start of the next label's
+            // line, or to end of file.
+            let body_end = if let Some((_, _, next_span)) = label_defs.get(i + 1) {
+                // Back up to the end of the previous line
+                let next_line_start = source[..next_span.start]
+                    .rfind('\n')
+                    .map_or(next_span.start, |nl| nl + 1);
+                if next_line_start > def_span.start {
+                    next_line_start
+                } else {
+                    next_span.start
+                }
+            } else {
+                source.len()
+            };
+
+            // Trim trailing blank lines
+            let body = &source[def_span.start..body_end];
+            let trimmed_len = body.trim_end().len();
+            let body_end = def_span.start + trimmed_len;
+
+            let range = position::range(source, def_span.start..body_end)?;
 
             #[allow(deprecated)] // `deprecated` field is required but deprecated
             Some(DocumentSymbol {
-                name: name.clone(),
+                name: (*name).to_string(),
                 detail: Some(format!("address {addr}")),
                 kind: SymbolKind::FUNCTION,
-                range: full_range,
-                selection_range: range,
+                range,
+                selection_range,
                 children: None,
                 tags: None,
                 deprecated: None,
