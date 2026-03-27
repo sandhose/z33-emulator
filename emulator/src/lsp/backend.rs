@@ -2,14 +2,15 @@ use dashmap::DashMap;
 use tower_lsp::lsp_types::{
     CompletionOptions, CompletionParams, CompletionResponse, DidChangeTextDocumentParams,
     DidCloseTextDocumentParams, DidOpenTextDocumentParams, GotoDefinitionParams,
-    GotoDefinitionResponse, InitializeParams, InitializeResult, InitializedParams, Location, OneOf,
-    ReferenceParams, ServerCapabilities, ServerInfo, TextDocumentSyncCapability,
+    GotoDefinitionResponse, Hover, HoverContents, HoverParams, HoverProviderCapability,
+    InitializeParams, InitializeResult, InitializedParams, Location, MarkupContent, MarkupKind,
+    OneOf, ReferenceParams, ServerCapabilities, ServerInfo, TextDocumentSyncCapability,
     TextDocumentSyncKind, Url,
 };
 use tower_lsp::{jsonrpc, Client, LanguageServer};
 
 use super::document::DocumentState;
-use super::{completion, diagnostics, position};
+use super::{completion, diagnostics, hover, position};
 
 /// LSP backend for Z33 assembly.
 ///
@@ -51,6 +52,7 @@ impl LanguageServer for Backend {
                     trigger_characters: Some(vec!["%".to_string(), ".".to_string()]),
                     ..Default::default()
                 }),
+                hover_provider: Some(HoverProviderCapability::Simple(true)),
                 definition_provider: Some(OneOf::Left(true)),
                 references_provider: Some(OneOf::Left(true)),
                 ..Default::default()
@@ -116,6 +118,33 @@ impl LanguageServer for Backend {
         } else {
             Ok(Some(CompletionResponse::Array(items)))
         }
+    }
+
+    async fn hover(&self, params: HoverParams) -> jsonrpc::Result<Option<Hover>> {
+        let uri = &params.text_document_position_params.text_document.uri;
+        let pos = params.text_document_position_params.position;
+
+        let Some(state) = self.documents.get(uri) else {
+            return Ok(None);
+        };
+
+        let Some(offset) = position::byte_offset(state.source(), pos) else {
+            return Ok(None);
+        };
+
+        let Some(result) = hover::hover(&state, offset) else {
+            return Ok(None);
+        };
+
+        let range = position::range(state.source(), result.span);
+
+        Ok(Some(Hover {
+            contents: HoverContents::Markup(MarkupContent {
+                kind: MarkupKind::Markdown,
+                value: result.contents,
+            }),
+            range,
+        }))
     }
 
     async fn goto_definition(

@@ -121,6 +121,7 @@ fn register_completions(prefix_typed: bool) -> Vec<CompletionItem> {
     .collect()
 }
 
+#[allow(clippy::too_many_lines)]
 fn instruction_completions() -> Vec<CompletionItem> {
     // (mnemonic, description, signature, snippet)
     let instructions: &[(&str, &str, &str, &str)] = &[

@@ -8,6 +8,7 @@ mod backend;
 mod completion;
 mod diagnostics;
 mod document;
+mod hover;
 mod position;
 
 pub use tower_lsp;
