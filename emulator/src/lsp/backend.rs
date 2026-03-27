@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 use dashmap::DashMap;
 use tower_lsp::lsp_types::{
@@ -19,15 +20,16 @@ use tower_lsp::{jsonrpc, Client, LanguageServer};
 use super::document::DocumentState;
 use super::{completion, diagnostics, hover, position, semantic_tokens, signature, symbols};
 
-/// Per-document state: the current source text (always up-to-date) and the
-/// latest completed analysis (may lag one or two keystrokes behind).
+/// How long to wait after the last keystroke before running analysis.
+const DEBOUNCE_MS: u64 = 150;
+
+/// Per-document state.
 struct Document {
     /// Always-current source text, updated synchronously on every didChange.
     source: String,
-    /// Latest completed analysis. Updated asynchronously after each change.
-    /// May be `None` briefly before the first analysis completes.
+    /// Latest completed analysis. Updated asynchronously.
     analysis: Option<Arc<DocumentState>>,
-    /// Version counter — used to discard stale analysis results.
+    /// Version counter for debouncing.
     version: i32,
 }
 
@@ -47,31 +49,45 @@ impl Backend {
     }
 
     fn on_change(&self, uri: Url, text: String, version: i32) {
-        // Update the source immediately so interactive features use the
-        // latest text.
+        // Update source immediately.
         self.documents.insert(
             uri.clone(),
             Document {
                 source: text.clone(),
-                // Carry over the previous analysis if any — it's stale but
-                // better than nothing for completions during the brief window
-                // before the new analysis completes.
                 analysis: self.documents.get(&uri).and_then(|d| d.analysis.clone()),
                 version,
             },
         );
 
-        // Run analysis in the background so we don't block the request loop.
+        // Debounced analysis: wait, then check if this is still the latest
+        // version before doing the expensive work.
         let client = self.client.clone();
         let documents = self.documents.clone();
-        tokio::task::spawn_blocking(move || {
-            let state = Arc::new(DocumentState::new(text));
-            let diags = diagnostics::diagnostics(&state);
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(DEBOUNCE_MS)).await;
 
-            // Only update if this version is still current (a newer change
-            // may have arrived while we were analyzing).
+            // Check if a newer version arrived while we waited.
+            let is_current = documents.get(&uri).is_some_and(|d| d.version == version);
+            if !is_current {
+                return;
+            }
+
+            // Run the expensive analysis on a blocking thread.
+            let uri_clone = uri.clone();
+            let result = tokio::task::spawn_blocking(move || {
+                let state = Arc::new(DocumentState::new(text));
+                let diags = diagnostics::diagnostics(&state);
+                (state, diags)
+            })
+            .await;
+
+            let Ok((state, diags)) = result else {
+                return;
+            };
+
+            // Only publish if still current.
             let mut should_publish = false;
-            if let Some(mut doc) = documents.get_mut(&uri) {
+            if let Some(mut doc) = documents.get_mut(&uri_clone) {
                 if doc.version <= version {
                     doc.analysis = Some(Arc::clone(&state));
                     should_publish = true;
@@ -79,24 +95,17 @@ impl Backend {
             }
 
             if should_publish {
-                // publish_diagnostics is async but we're on a blocking thread.
-                // Use a oneshot channel + tokio::spawn to bridge.
-                let uri_clone = uri;
-                tokio::runtime::Handle::current().spawn(async move {
-                    client
-                        .publish_diagnostics(uri_clone, diags, Some(version))
-                        .await;
-                });
+                client
+                    .publish_diagnostics(uri_clone, diags, Some(version))
+                    .await;
             }
         });
     }
 
-    /// Get a snapshot of the current source text for a document.
     fn get_source(&self, uri: &Url) -> Option<String> {
         self.documents.get(uri).map(|d| d.source.clone())
     }
 
-    /// Get the latest analysis for a document (may be slightly stale).
     fn get_analysis(&self, uri: &Url) -> Option<Arc<DocumentState>> {
         self.documents.get(uri).and_then(|d| d.analysis.clone())
     }
@@ -180,8 +189,6 @@ impl LanguageServer for Backend {
             .publish_diagnostics(params.text_document.uri, vec![], None)
             .await;
     }
-
-    // -- Interactive features use current source + stale analysis --
 
     async fn completion(
         &self,
@@ -539,7 +546,10 @@ impl LanguageServer for Backend {
     }
 }
 
-/// Find all occurrences of `label` in `source`, yielding byte ranges.
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
 fn find_label_references<'a>(
     source: &'a str,
     label: &'a str,
