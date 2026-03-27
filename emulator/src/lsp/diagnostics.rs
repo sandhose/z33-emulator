@@ -4,6 +4,7 @@ use super::document::DocumentState;
 use super::position;
 use crate::compiler::layout::MemoryLayoutError;
 use crate::compiler::memory::MemoryFillError;
+use crate::diagnostic::preprocessor_error_to_diagnostics;
 use crate::parser::shared::{DiagnosticSeverity, ParseDiagnostic};
 
 fn convert_severity(severity: DiagnosticSeverity) -> lsp_types::DiagnosticSeverity {
@@ -13,13 +14,14 @@ fn convert_severity(severity: DiagnosticSeverity) -> lsp_types::DiagnosticSeveri
     }
 }
 
+/// Create an LSP diagnostic from a span in the **original** source.
 fn make_diagnostic(
-    source: &str,
+    original_source: &str,
     span: std::ops::Range<usize>,
     message: String,
     severity: lsp_types::DiagnosticSeverity,
 ) -> Option<lsp_types::Diagnostic> {
-    let range = position::range(source, span)?;
+    let range = position::range(original_source, span)?;
     Some(lsp_types::Diagnostic {
         range,
         severity: Some(severity),
@@ -29,32 +31,49 @@ fn make_diagnostic(
     })
 }
 
-fn convert_parse_diagnostic(source: &str, diag: &ParseDiagnostic) -> Option<lsp_types::Diagnostic> {
-    make_diagnostic(
-        source,
+/// Create an LSP diagnostic from a span in the **preprocessed** source,
+/// resolving it back to the original via the source map.
+fn make_resolved_diagnostic(
+    state: &DocumentState,
+    span: std::ops::Range<usize>,
+    message: String,
+    severity: lsp_types::DiagnosticSeverity,
+) -> Option<lsp_types::Diagnostic> {
+    let original_span = state.resolve_span(span)?;
+    make_diagnostic(state.source(), original_span, message, severity)
+}
+
+fn convert_parse_diagnostic(
+    state: &DocumentState,
+    diag: &ParseDiagnostic,
+) -> Option<lsp_types::Diagnostic> {
+    make_resolved_diagnostic(
+        state,
         diag.span.clone(),
         diag.message.clone(),
         convert_severity(diag.severity),
     )
 }
 
-fn convert_layout_error(source: &str, error: &MemoryLayoutError) -> Option<lsp_types::Diagnostic> {
+fn convert_layout_error(
+    state: &DocumentState,
+    error: &MemoryLayoutError,
+) -> Option<lsp_types::Diagnostic> {
     let severity = lsp_types::DiagnosticSeverity::ERROR;
     match error {
-        MemoryLayoutError::DuplicateLabel { label, location } => make_diagnostic(
-            source,
+        MemoryLayoutError::DuplicateLabel { label, location } => make_resolved_diagnostic(
+            state,
             location.clone(),
             format!("duplicate label '{label}'"),
             severity,
         ),
-        MemoryLayoutError::InvalidDirectiveArgument { kind, location } => make_diagnostic(
-            source,
+        MemoryLayoutError::InvalidDirectiveArgument { kind, location } => make_resolved_diagnostic(
+            state,
             location.clone(),
             format!("invalid argument for directive '.{kind}'"),
             severity,
         ),
         MemoryLayoutError::DirectiveArgumentEvaluation { kind, source: err } => {
-            // No location available — skip
             let _ = (kind, err);
             None
         }
@@ -62,8 +81,8 @@ fn convert_layout_error(source: &str, error: &MemoryLayoutError) -> Option<lsp_t
             address,
             new_location,
             ..
-        } => make_diagnostic(
-            source,
+        } => make_resolved_diagnostic(
+            state,
             new_location.clone(),
             format!("memory overlap at address {address}"),
             severity,
@@ -71,44 +90,78 @@ fn convert_layout_error(source: &str, error: &MemoryLayoutError) -> Option<lsp_t
     }
 }
 
-fn convert_fill_error(source: &str, error: &MemoryFillError) -> Option<lsp_types::Diagnostic> {
+fn convert_fill_error(
+    state: &DocumentState,
+    error: &MemoryFillError,
+) -> Option<lsp_types::Diagnostic> {
     let severity = lsp_types::DiagnosticSeverity::ERROR;
     match error {
         MemoryFillError::Evaluation {
             location,
             source: err,
-        } => make_diagnostic(source, location.clone(), err.to_string(), severity),
+        } => make_resolved_diagnostic(state, location.clone(), err.to_string(), severity),
         MemoryFillError::Compute {
             location,
             source: err,
-        } => make_diagnostic(source, location.clone(), err.to_string(), severity),
+        } => make_resolved_diagnostic(state, location.clone(), err.to_string(), severity),
         MemoryFillError::InstructionCompilation {
             instruction_span,
             source: err,
             ..
-        } => make_diagnostic(source, instruction_span.clone(), err.to_string(), severity),
+        } => make_resolved_diagnostic(state, instruction_span.clone(), err.to_string(), severity),
     }
 }
 
 /// Produce LSP diagnostics from the full analysis state.
 pub fn diagnostics(state: &DocumentState) -> Vec<lsp_types::Diagnostic> {
-    let source = state.source();
     let mut result = Vec::new();
 
+    // Preprocessor errors (spans are already in the original source)
+    if let Some(error) = state.preprocessor_error() {
+        let codespan_diags = preprocessor_error_to_diagnostics(error);
+        for diag in &codespan_diags {
+            for label in &diag.labels {
+                if let Some(d) = make_diagnostic(
+                    state.source(),
+                    label.range.clone(),
+                    diag.message.clone(),
+                    lsp_types::DiagnosticSeverity::ERROR,
+                ) {
+                    result.push(d);
+                }
+            }
+            // If no labels, still emit the diagnostic with a zero-length range
+            if diag.labels.is_empty() {
+                if let Some(d) = make_diagnostic(
+                    state.source(),
+                    0..0,
+                    diag.message.clone(),
+                    lsp_types::DiagnosticSeverity::ERROR,
+                ) {
+                    result.push(d);
+                }
+            }
+        }
+        return result;
+    }
+
+    // Parse diagnostics (spans in preprocessed source)
     for diag in state.parse_diagnostics() {
-        if let Some(d) = convert_parse_diagnostic(source, diag) {
+        if let Some(d) = convert_parse_diagnostic(state, diag) {
             result.push(d);
         }
     }
 
+    // Layout errors (spans in preprocessed source)
     for error in state.layout_errors() {
-        if let Some(d) = convert_layout_error(source, error) {
+        if let Some(d) = convert_layout_error(state, error) {
             result.push(d);
         }
     }
 
+    // Fill errors (spans in preprocessed source)
     for error in state.fill_errors() {
-        if let Some(d) = convert_fill_error(source, error) {
+        if let Some(d) = convert_fill_error(state, error) {
             result.push(d);
         }
     }

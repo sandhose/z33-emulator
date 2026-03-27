@@ -145,17 +145,22 @@ impl LanguageServer for Backend {
         }
 
         // Find the label definition in the AST
-        for line in &state.program().lines {
-            for symbol in &line.inner.symbols {
-                if symbol.inner == word {
-                    // Symbol location is relative to line start
-                    let abs_start = line.location.start + symbol.location.start;
-                    let abs_end = line.location.start + symbol.location.end;
-                    if let Some(range) = position::range(source, abs_start..abs_end) {
-                        return Ok(Some(GotoDefinitionResponse::Scalar(Location {
-                            uri: uri.clone(),
-                            range,
-                        })));
+        if let Some(program) = state.program() {
+            for line in &program.lines {
+                for symbol in &line.inner.symbols {
+                    if symbol.inner == word {
+                        // Symbol location is relative to line start (in
+                        // preprocessed source). Resolve to original.
+                        let abs_start = line.location.start + symbol.location.start;
+                        let abs_end = line.location.start + symbol.location.end;
+                        let original_span = state.resolve_span(abs_start..abs_end);
+                        if let Some(range) = original_span.and_then(|s| position::range(source, s))
+                        {
+                            return Ok(Some(GotoDefinitionResponse::Scalar(Location {
+                                uri: uri.clone(),
+                                range,
+                            })));
+                        }
                     }
                 }
             }

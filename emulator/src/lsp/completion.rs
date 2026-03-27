@@ -3,7 +3,6 @@ use tower_lsp::lsp_types::{
 };
 
 use super::document::DocumentState;
-use crate::parser::line::LineContent;
 use crate::parser::shared::is_identifier_char;
 use crate::parser::value::InstructionKind;
 
@@ -245,8 +244,41 @@ enum CursorContext {
 /// Text-based fallback for context detection when the parser produced an error
 /// line (e.g. incomplete instruction like `add 1, `).
 fn detect_context_from_text(line_text: &str, pos_in_line: usize) -> CursorContext {
-    let before_cursor = &line_text[..pos_in_line];
-    let trimmed = before_cursor.trim_start();
+    // Skip past any label definitions at the start of the line
+    let mut p = 0;
+    let bytes = line_text.as_bytes();
+    loop {
+        // Skip whitespace
+        while p < bytes.len() && (bytes[p] == b' ' || bytes[p] == b'\t') {
+            p += 1;
+        }
+        // Try to match identifier + ':'
+        let ident_start = p;
+        if p < bytes.len() && (bytes[p].is_ascii_alphabetic() || bytes[p] == b'_') {
+            p += 1;
+            while p < bytes.len() && is_identifier_char(bytes[p] as char) {
+                p += 1;
+            }
+            while p < bytes.len() && (bytes[p] == b' ' || bytes[p] == b'\t') {
+                p += 1;
+            }
+            if p < bytes.len() && bytes[p] == b':' {
+                p += 1;
+                continue; // Found a label, skip it and look for more
+            }
+            p = ident_start; // Not a label — this identifier is the mnemonic
+        }
+        break;
+    }
+
+    // If cursor is before or at the content start, offer mnemonics
+    if pos_in_line <= p {
+        return CursorContext::Mnemonic;
+    }
+
+    // Work with the text after labels
+    let content_text = &line_text[p..pos_in_line];
+    let trimmed = content_text.trim_start();
 
     // Try to find an instruction mnemonic at the start
     let mnemonic_end = trimmed
@@ -255,6 +287,16 @@ fn detect_context_from_text(line_text: &str, pos_in_line: usize) -> CursorContex
     let mnemonic_text = &trimmed[..mnemonic_end];
 
     if mnemonic_text.is_empty() {
+        // Check if it starts with '.' (directive)
+        if let Some(after_dot) = trimmed.strip_prefix('.') {
+            // If there's content after the directive name, we're in its argument
+            let directive_end = after_dot
+                .find(|c: char| !c.is_ascii_alphabetic())
+                .unwrap_or(after_dot.len());
+            if directive_end < after_dot.len() {
+                return CursorContext::UnknownArgument;
+            }
+        }
         return CursorContext::Mnemonic;
     }
 
@@ -308,130 +350,42 @@ fn detect_context_from_text(line_text: &str, pos_in_line: usize) -> CursorContex
     CursorContext::Argument { kind, arg_index }
 }
 
+/// Detect the cursor context using the original source text.
+///
+/// Fully text-based — doesn't use AST spans (which are in the preprocessed
+/// source and may not match the original). Finds the current line, strips
+/// comments, and delegates to `detect_context_from_text`.
 fn detect_context(state: &DocumentState, byte_offset: usize) -> Option<CursorContext> {
     let source = state.source();
-    let program = state.program();
-
-    // Find which line the cursor is on
-    let line = program
-        .lines
-        .iter()
-        .find(|l| byte_offset >= l.location.start && byte_offset <= l.location.end)?;
-
-    let line_start = line.location.start;
-    let line_text = &source[line_start..line.location.end.min(source.len())];
-    let pos_in_line = byte_offset - line_start;
-
-    // Check if cursor is right after a '%'
-    if pos_in_line > 0 && line_text.as_bytes().get(pos_in_line - 1) == Some(&b'%') {
-        return Some(CursorContext::Register);
+    if byte_offset > source.len() {
+        return None;
     }
 
-    // Also check if we're in the middle of typing a register name (e.g. "%p|")
-    {
+    // Find the current line in the original source
+    let line_start = source[..byte_offset].rfind('\n').map_or(0, |i| i + 1);
+    let line_end = source[byte_offset..]
+        .find('\n')
+        .map_or(source.len(), |i| byte_offset + i);
+    let line_text = &source[line_start..line_end];
+    let pos_in_line = byte_offset - line_start;
+
+    // Strip comments (everything after '#' outside strings)
+    let effective_len = line_text.find('#').unwrap_or(line_text.len());
+    let line_text = &line_text[..effective_len];
+    let pos_in_line = pos_in_line.min(effective_len);
+
+    // Check if cursor is after a '%' (register completion)
+    if pos_in_line > 0 {
         let before = &line_text[..pos_in_line];
-        // Walk back to find if there's a '%' with only alpha chars between
         if let Some(pct_pos) = before.rfind('%') {
             let after_pct = &before[pct_pos + 1..];
-            if after_pct.chars().all(|c| c.is_ascii_alphabetic()) {
+            if after_pct.is_empty() || after_pct.chars().all(|c| c.is_ascii_alphabetic()) {
                 return Some(CursorContext::Register);
             }
         }
     }
 
-    // Determine where content starts in the line (after labels)
-    let content_start = line.inner.content.as_ref().map_or_else(
-        || {
-            // No content parsed — figure out where content would start
-            // Skip past label definitions
-            let mut p = 0;
-            let bytes = line_text.as_bytes();
-            loop {
-                // Skip whitespace
-                while p < bytes.len() && (bytes[p] == b' ' || bytes[p] == b'\t') {
-                    p += 1;
-                }
-                // Try to match identifier + ':'
-                if p < bytes.len() && (bytes[p].is_ascii_alphabetic() || bytes[p] == b'_') {
-                    p += 1;
-                    while p < bytes.len() && is_identifier_char(bytes[p] as char) {
-                        p += 1;
-                    }
-                    // Skip whitespace between identifier and ':'
-                    let after_ident = p;
-                    while p < bytes.len() && (bytes[p] == b' ' || bytes[p] == b'\t') {
-                        p += 1;
-                    }
-                    if p < bytes.len() && bytes[p] == b':' {
-                        p += 1;
-                        continue;
-                    }
-                    p = after_ident;
-                }
-                // Skip remaining whitespace
-                while p < bytes.len() && (bytes[p] == b' ' || bytes[p] == b'\t') {
-                    p += 1;
-                }
-                break;
-            }
-            p
-        },
-        |content| content.location.start,
-    );
-
-    // If cursor is at or before the content start → mnemonic position
-    if pos_in_line <= content_start {
-        return Some(CursorContext::Mnemonic);
-    }
-
-    // If we have parsed content, determine if we're in the mnemonic or args
-    if let Some(content) = &line.inner.content {
-        match &content.inner {
-            LineContent::Instruction { kind, arguments } => {
-                let content_abs_start = line_start + content.location.start;
-                let kind_end_abs = content_abs_start + kind.location.end;
-
-                // If cursor is within the instruction mnemonic
-                if byte_offset <= kind_end_abs {
-                    return Some(CursorContext::Mnemonic);
-                }
-
-                if kind.inner == InstructionKind::Error {
-                    return Some(CursorContext::Mnemonic);
-                }
-
-                // We're in the argument area. Determine which argument index
-                // by counting commas in the text between mnemonic end and
-                // cursor.
-                let after_kind = kind_end_abs;
-                let text_between = &source[after_kind..byte_offset.min(source.len())];
-                let comma_count = text_between.chars().filter(|&c| c == ',').count();
-
-                // Also check: if we have parsed arguments, use their count
-                let arg_index = if arguments.is_empty() {
-                    comma_count
-                } else {
-                    comma_count.min(arguments.len())
-                };
-
-                return Some(CursorContext::Argument {
-                    kind: kind.inner,
-                    arg_index,
-                });
-            }
-            LineContent::Directive { .. } => {
-                // In a directive argument — offer labels
-                return Some(CursorContext::UnknownArgument);
-            }
-            LineContent::Error => {
-                // Parser failed — fall through to text-based analysis
-                return Some(detect_context_from_text(line_text, pos_in_line));
-            }
-        }
-    }
-
-    // Cursor is past labels in an empty line → mnemonic
-    Some(CursorContext::Mnemonic)
+    Some(detect_context_from_text(line_text, pos_in_line))
 }
 
 /// Compute completion items for the given cursor position.
