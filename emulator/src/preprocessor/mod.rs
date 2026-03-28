@@ -25,8 +25,10 @@ use crate::parser::expression::{EmptyContext as EmptyExpressionContext, Evaluati
 use crate::parser::location::{Locatable, Located};
 use crate::parser::preprocessor::{parse, Node};
 
+mod annotations;
 mod fs;
 
+pub use self::annotations::SourceAnnotations;
 pub use self::fs::{Filesystem, InMemoryFilesystem, NativeFilesystem};
 
 struct ProcessedFile {
@@ -149,6 +151,9 @@ pub struct PreprocessResult {
     /// A [`FileId`] for the virtual preprocessed output, registered in the
     /// workspace's [`FileDatabase`].
     pub preprocessed_file_id: FileId,
+    /// Structured metadata about preprocessor constructs, keyed by original
+    /// source byte offsets.
+    pub annotations: SourceAnnotations,
 }
 
 /// A [`Workspace`] holds parsed files loaded from a filesystem
@@ -272,6 +277,7 @@ impl Workspace {
             source_map,
             source: string,
             preprocessed_file_id,
+            annotations: SourceAnnotations::default(),
         })
     }
 
