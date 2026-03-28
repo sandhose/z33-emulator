@@ -1,10 +1,17 @@
+//! Semantic token generation for Z33 assembly.
+//!
+//! Uses the parsed AST for precise tokenization of assembly constructs,
+//! and annotations for preprocessor directives.
+
 use tower_lsp::lsp_types::{
     SemanticToken, SemanticTokenType, SemanticTokens, SemanticTokensLegend,
 };
 
 use super::document::DocumentState;
 use super::position;
-use crate::parser::shared::is_identifier_char;
+use crate::parser::expression::Node as ExpressionNode;
+use crate::parser::line::LineContent;
+use crate::parser::value::{DirectiveArgument, InstructionArgument, InstructionKind};
 
 /// The token types we use, in the order they appear in the legend.
 pub const TOKEN_TYPES: &[SemanticTokenType] = &[
@@ -12,7 +19,7 @@ pub const TOKEN_TYPES: &[SemanticTokenType] = &[
     SemanticTokenType::MACRO,     // 1: directives (.word, .space, etc.)
     SemanticTokenType::VARIABLE,  // 2: registers (%a, %b, etc.)
     SemanticTokenType::FUNCTION,  // 3: label definitions (foo:)
-    SemanticTokenType::PARAMETER, // 4: label references
+    SemanticTokenType::PARAMETER, // 4: label references / macro references
     SemanticTokenType::NUMBER,    // 5: numeric literals
     SemanticTokenType::STRING,    // 6: string literals
     SemanticTokenType::COMMENT,   // 7: comments
@@ -35,108 +42,114 @@ const TK_NUMBER: u32 = 5;
 const TK_STRING: u32 = 6;
 const TK_COMMENT: u32 = 7;
 
-/// Produce semantic tokens for the document.
-///
-/// This is text-based (operates on the original source) so it works even when
-/// the preprocessor or parser fails.
+/// A raw token before delta-encoding: `(start_byte, length, token_type)`.
+type RawToken = (usize, usize, u32);
+
+/// Produce semantic tokens for the document using AST data.
 #[allow(clippy::too_many_lines)]
 pub fn semantic_tokens(analysis: Option<&DocumentState>, source: &str) -> SemanticTokens {
-    let empty_labels = std::collections::BTreeMap::new();
-    let labels = analysis.map_or(&empty_labels, DocumentState::labels);
-    let mut raw_tokens: Vec<(usize, usize, u32)> = Vec::new(); // (start, len, type)
+    let mut raw_tokens: Vec<RawToken> = Vec::new();
 
-    for line_text in source.split('\n') {
-        let line_start = line_text.as_ptr() as usize - source.as_ptr() as usize;
-
-        // Find comment
-        if let Some(comment_offset) = find_comment(line_text) {
-            let abs = line_start + comment_offset;
-            let len = line_text.len() - comment_offset;
-            if len > 0 {
-                raw_tokens.push((abs, len, TK_COMMENT));
-            }
-        }
-
-        let effective = line_text.find('#').map_or(line_text, |i| &line_text[..i]);
-
-        let mut pos = 0;
-        let bytes = effective.as_bytes();
-
-        // Parse label definitions
-        loop {
-            while pos < bytes.len() && (bytes[pos] == b' ' || bytes[pos] == b'\t') {
-                pos += 1;
-            }
-            let ident_start = pos;
-            if pos < bytes.len() && (bytes[pos].is_ascii_alphabetic() || bytes[pos] == b'_') {
-                pos += 1;
-                while pos < bytes.len() && is_identifier_char(bytes[pos] as char) {
-                    pos += 1;
+    if let Some(state) = analysis {
+        // AST-based tokens for assembly constructs
+        if let Some(program) = state.program() {
+            for line in &program.lines {
+                // Label definitions
+                for sym in &line.inner.symbols {
+                    if let Some(span) = state.resolve_span(sym.location.clone()) {
+                        raw_tokens.push((span.start, span.end - span.start, TK_FUNCTION));
+                    }
                 }
-                let ident_end = pos;
-                while pos < bytes.len() && (bytes[pos] == b' ' || bytes[pos] == b'\t') {
-                    pos += 1;
+
+                // Instruction or directive content
+                if let Some(content) = &line.inner.content {
+                    match &content.inner {
+                        LineContent::Instruction { kind, arguments } => {
+                            if kind.inner != InstructionKind::Error {
+                                if let Some(span) = state.resolve_span(kind.location.clone()) {
+                                    raw_tokens.push((
+                                        span.start,
+                                        span.end - span.start,
+                                        TK_KEYWORD,
+                                    ));
+                                }
+                            }
+
+                            for arg in arguments {
+                                tokenize_argument(
+                                    &arg.inner,
+                                    &arg.location,
+                                    state,
+                                    &mut raw_tokens,
+                                );
+                            }
+                        }
+                        LineContent::Directive { kind, argument } => {
+                            if let Some(span) = state.resolve_span(kind.location.clone()) {
+                                // Include the '.' prefix in the token
+                                let dot_start = if span.start > 0 { span.start - 1 } else { 0 };
+                                raw_tokens.push((dot_start, span.end - dot_start, TK_MACRO));
+                            }
+
+                            tokenize_directive_argument(
+                                &argument.inner,
+                                &argument.location,
+                                state,
+                                &mut raw_tokens,
+                            );
+                        }
+                        LineContent::Error => {}
+                    }
                 }
-                if pos < bytes.len() && bytes[pos] == b':' {
-                    // Label definition
-                    raw_tokens.push((
-                        line_start + ident_start,
-                        ident_end - ident_start,
-                        TK_FUNCTION,
-                    ));
-                    pos += 1;
-                    continue;
+
+                // Inline // comment
+                if let Some(comment) = &line.inner.comment {
+                    if let Some(span) = state.resolve_span(comment.location.clone()) {
+                        // Include the "//" prefix (2 bytes before the comment text)
+                        let prefix_start = span.start.saturating_sub(2);
+                        raw_tokens.push((prefix_start, span.end - prefix_start, TK_COMMENT));
+                    }
                 }
-                pos = ident_start; // backtrack
             }
-            break;
         }
 
-        // Skip whitespace to content
-        while pos < bytes.len() && (bytes[pos] == b' ' || bytes[pos] == b'\t') {
-            pos += 1;
-        }
-
-        if pos >= bytes.len() {
-            continue;
-        }
-
-        // Directive
-        if bytes[pos] == b'.' {
-            let dir_start = pos;
-            pos += 1;
-            while pos < bytes.len() && bytes[pos].is_ascii_alphabetic() {
-                pos += 1;
+        // Preprocessor directive lines from annotations
+        if let Some(ann) = state.annotations() {
+            for def in &ann.definitions {
+                raw_tokens.push((def.span.start, def.span.end - def.span.start, TK_MACRO));
             }
-            raw_tokens.push((line_start + dir_start, pos - dir_start, TK_MACRO));
-
-            // Tokenize the directive argument
-            tokenize_value_area(effective, pos, line_start, labels, &mut raw_tokens);
-            continue;
-        }
-
-        // Instruction mnemonic
-        if bytes[pos].is_ascii_alphabetic() || bytes[pos] == b'_' {
-            let mnemonic_start = pos;
-            pos += 1;
-            while pos < bytes.len() && (bytes[pos].is_ascii_alphabetic() || bytes[pos] == b'_') {
-                pos += 1;
-            }
-            let mnemonic = &effective[mnemonic_start..pos];
-            if is_instruction(mnemonic) {
+            for undef in &ann.undefinitions {
                 raw_tokens.push((
-                    line_start + mnemonic_start,
-                    pos - mnemonic_start,
-                    TK_KEYWORD,
+                    undef.span.start,
+                    undef.span.end - undef.span.start,
+                    TK_MACRO,
                 ));
             }
-
-            // Tokenize the argument area
-            tokenize_value_area(effective, pos, line_start, labels, &mut raw_tokens);
+            for inc in &ann.inclusions {
+                raw_tokens.push((inc.span.start, inc.span.end - inc.span.start, TK_MACRO));
+            }
+            for block in &ann.conditional_blocks {
+                for branch in &block.branches {
+                    raw_tokens.push((
+                        branch.directive_span.start,
+                        branch.directive_span.end - branch.directive_span.start,
+                        TK_MACRO,
+                    ));
+                }
+                if let Some(fallback) = &block.fallback {
+                    if !fallback.directive_span.is_empty() {
+                        raw_tokens.push((
+                            fallback.directive_span.start,
+                            fallback.directive_span.end - fallback.directive_span.start,
+                            TK_MACRO,
+                        ));
+                    }
+                }
+            }
         }
     }
 
-    // Sort by position
+    // Sort by position and deduplicate overlapping tokens
     raw_tokens.sort_by_key(|t| t.0);
 
     // Convert to delta-encoded SemanticToken
@@ -144,8 +157,11 @@ pub fn semantic_tokens(analysis: Option<&DocumentState>, source: &str) -> Semant
     let mut prev_line = 0u32;
     let mut prev_start = 0u32;
 
-    for (start, len, token_type) in raw_tokens {
-        let Some(pos) = position::position(source, start) else {
+    for (start, len, token_type) in &raw_tokens {
+        if *len == 0 {
+            continue;
+        }
+        let Some(pos) = position::position(source, *start) else {
             continue;
         };
 
@@ -160,8 +176,8 @@ pub fn semantic_tokens(analysis: Option<&DocumentState>, source: &str) -> Semant
             delta_line,
             delta_start,
             #[allow(clippy::cast_possible_truncation)]
-            length: len as u32,
-            token_type,
+            length: *len as u32,
+            token_type: *token_type,
             token_modifiers_bitset: 0,
         });
 
@@ -175,152 +191,113 @@ pub fn semantic_tokens(analysis: Option<&DocumentState>, source: &str) -> Semant
     }
 }
 
-/// Tokenize registers, numbers, strings, and label references in the argument
-/// area of an instruction or directive.
-fn tokenize_value_area(
-    line: &str,
-    start_pos: usize,
-    line_start: usize,
-    labels: &std::collections::BTreeMap<String, crate::constants::Address>,
-    tokens: &mut Vec<(usize, usize, u32)>,
+/// Emit tokens for an instruction argument using AST data.
+fn tokenize_argument(
+    arg: &InstructionArgument,
+    arg_span: &std::ops::Range<usize>,
+    state: &DocumentState,
+    out: &mut Vec<RawToken>,
 ) {
-    let bytes = line.as_bytes();
-    let mut pos = start_pos;
+    match arg {
+        InstructionArgument::Register(_) => {
+            if let Some(span) = state.resolve_span(arg_span.clone()) {
+                out.push((span.start, span.end - span.start, TK_VARIABLE));
+            }
+        }
+        InstructionArgument::Value(node) => {
+            tokenize_expression_top(node, arg_span, state, out);
+        }
+        InstructionArgument::Direct(located_node) => {
+            tokenize_expression(&located_node.inner, &located_node.location, state, out);
+        }
+        InstructionArgument::Indirect(located_reg) => {
+            if let Some(span) = state.resolve_span(located_reg.location.clone()) {
+                out.push((span.start, span.end - span.start, TK_VARIABLE));
+            }
+        }
+        InstructionArgument::Indexed { register, value } => {
+            if let Some(span) = state.resolve_span(register.location.clone()) {
+                out.push((span.start, span.end - span.start, TK_VARIABLE));
+            }
+            tokenize_expression(&value.inner, &value.location, state, out);
+        }
+        InstructionArgument::Error => {}
+    }
+}
 
-    while pos < bytes.len() {
-        match bytes[pos] {
-            b' ' | b'\t' | b',' | b'[' | b']' | b'+' | b'-' | b'*' | b'/' | b'(' | b')' | b'~'
-            | b'&' | b'|' | b'^' => {
-                pos += 1;
-            }
-            b'%' => {
-                let reg_start = pos;
-                pos += 1;
-                while pos < bytes.len() && bytes[pos].is_ascii_alphabetic() {
-                    pos += 1;
-                }
-                tokens.push((line_start + reg_start, pos - reg_start, TK_VARIABLE));
-            }
-            b'"' => {
-                let str_start = pos;
-                pos += 1;
-                while pos < bytes.len() && bytes[pos] != b'"' {
-                    if bytes[pos] == b'\\' {
-                        pos += 1; // skip escaped char
-                    }
-                    pos += 1;
-                }
-                if pos < bytes.len() {
-                    pos += 1; // closing quote
-                }
-                tokens.push((line_start + str_start, pos - str_start, TK_STRING));
-            }
-            b'0'..=b'9' => {
-                let num_start = pos;
-                // Handle 0x, 0o, 0b prefixes
-                if bytes[pos] == b'0' && pos + 1 < bytes.len() {
-                    match bytes[pos + 1] {
-                        b'x' | b'X' => {
-                            pos += 2;
-                            while pos < bytes.len() && bytes[pos].is_ascii_hexdigit() {
-                                pos += 1;
-                            }
-                        }
-                        b'o' | b'O' => {
-                            pos += 2;
-                            while pos < bytes.len() && (b'0'..=b'7').contains(&bytes[pos]) {
-                                pos += 1;
-                            }
-                        }
-                        b'b' | b'B' => {
-                            pos += 2;
-                            while pos < bytes.len() && (bytes[pos] == b'0' || bytes[pos] == b'1') {
-                                pos += 1;
-                            }
-                        }
-                        _ => {
-                            while pos < bytes.len() && bytes[pos].is_ascii_digit() {
-                                pos += 1;
-                            }
-                        }
-                    }
-                } else {
-                    while pos < bytes.len() && bytes[pos].is_ascii_digit() {
-                        pos += 1;
-                    }
-                }
-                tokens.push((line_start + num_start, pos - num_start, TK_NUMBER));
-            }
-            c if c.is_ascii_alphabetic() || c == b'_' => {
-                let ident_start = pos;
-                pos += 1;
-                while pos < bytes.len() && is_identifier_char(bytes[pos] as char) {
-                    pos += 1;
-                }
-                let ident = &line[ident_start..pos];
-                if labels.contains_key(ident) {
-                    tokens.push((line_start + ident_start, pos - ident_start, TK_PARAMETER));
-                }
-            }
-            _ => {
-                pos += 1;
+/// Emit tokens for a directive argument.
+fn tokenize_directive_argument(
+    arg: &DirectiveArgument,
+    arg_span: &std::ops::Range<usize>,
+    state: &DocumentState,
+    out: &mut Vec<RawToken>,
+) {
+    match arg {
+        DirectiveArgument::Expression(node) => {
+            tokenize_expression_top(node, arg_span, state, out);
+        }
+        DirectiveArgument::StringLiteral(_) => {
+            if let Some(span) = state.resolve_span(arg_span.clone()) {
+                out.push((span.start, span.end - span.start, TK_STRING));
             }
         }
     }
 }
 
-fn find_comment(line: &str) -> Option<usize> {
-    // Find '#' that's not inside a string
-    let mut in_string = false;
-    for (i, b) in line.bytes().enumerate() {
-        match b {
-            b'"' if !in_string => in_string = true,
-            b'"' if in_string => in_string = false,
-            b'\\' if in_string => {
-                // skip next char (handled by iteration)
+/// Emit tokens for a top-level expression (no own Located wrapper).
+fn tokenize_expression_top(
+    node: &ExpressionNode,
+    fallback_span: &std::ops::Range<usize>,
+    state: &DocumentState,
+    out: &mut Vec<RawToken>,
+) {
+    match node {
+        ExpressionNode::Literal(_) => {
+            if let Some(span) = state.resolve_span(fallback_span.clone()) {
+                out.push((span.start, span.end - span.start, TK_NUMBER));
             }
-            b'#' if !in_string => return Some(i),
-            _ => {}
         }
+        ExpressionNode::Variable(_) => {
+            if let Some(span) = state.resolve_span(fallback_span.clone()) {
+                out.push((span.start, span.end - span.start, TK_PARAMETER));
+            }
+        }
+        _ => tokenize_expression(node, fallback_span, state, out),
     }
-    None
 }
 
-fn is_instruction(word: &str) -> bool {
-    matches!(
-        word.to_ascii_lowercase().as_str(),
-        "add"
-            | "and"
-            | "call"
-            | "cmp"
-            | "div"
-            | "fas"
-            | "in"
-            | "jmp"
-            | "jeq"
-            | "jne"
-            | "jle"
-            | "jlt"
-            | "jge"
-            | "jgt"
-            | "ld"
-            | "mul"
-            | "neg"
-            | "nop"
-            | "not"
-            | "or"
-            | "out"
-            | "pop"
-            | "push"
-            | "reset"
-            | "rti"
-            | "rtn"
-            | "shl"
-            | "shr"
-            | "st"
-            | "sub"
-            | "swap"
-            | "trap"
-            | "xor"
-    )
+/// Recursively emit tokens for expression nodes.
+fn tokenize_expression(
+    node: &ExpressionNode,
+    span: &std::ops::Range<usize>,
+    state: &DocumentState,
+    out: &mut Vec<RawToken>,
+) {
+    match node {
+        ExpressionNode::Literal(_) => {
+            if let Some(s) = state.resolve_span(span.clone()) {
+                out.push((s.start, s.end - s.start, TK_NUMBER));
+            }
+        }
+        ExpressionNode::Variable(_) => {
+            if let Some(s) = state.resolve_span(span.clone()) {
+                out.push((s.start, s.end - s.start, TK_PARAMETER));
+            }
+        }
+        ExpressionNode::BinaryOr(a, b)
+        | ExpressionNode::BinaryAnd(a, b)
+        | ExpressionNode::LeftShift(a, b)
+        | ExpressionNode::RightShift(a, b)
+        | ExpressionNode::Sum(a, b)
+        | ExpressionNode::Substract(a, b)
+        | ExpressionNode::Multiply(a, b)
+        | ExpressionNode::Divide(a, b) => {
+            tokenize_expression(&a.inner, &a.location, state, out);
+            tokenize_expression(&b.inner, &b.location, state, out);
+        }
+        ExpressionNode::Invert(a) | ExpressionNode::BinaryNot(a) => {
+            tokenize_expression(&a.inner, &a.location, state, out);
+        }
+        ExpressionNode::Error => {}
+    }
 }
