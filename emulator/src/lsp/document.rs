@@ -145,3 +145,230 @@ impl DocumentState {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parser::line::LineContent;
+
+    /// Helper: given a source and a byte range, return the substring.
+    fn slice<'a>(source: &'a str, range: &std::ops::Range<usize>) -> &'a str {
+        &source[range.start..range.end]
+    }
+
+    // -----------------------------------------------------------------------
+    // Basic span resolution
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn label_spans_resolve_to_original() {
+        let src = "main:\n    reset\n";
+        let state = DocumentState::new(src.to_string());
+        let program = state.program().unwrap();
+
+        let line = &program.lines[0];
+        assert_eq!(line.inner.symbols.len(), 1);
+
+        let sym = &line.inner.symbols[0];
+        assert_eq!(sym.inner, "main");
+
+        let resolved = state.resolve_span(sym.location.clone()).unwrap();
+        assert_eq!(slice(src, &resolved), "main");
+    }
+
+    #[test]
+    fn instruction_kind_span_resolves() {
+        let src = "    add %a, %b\n";
+        let state = DocumentState::new(src.to_string());
+        let program = state.program().unwrap();
+        let content = program.lines[0].inner.content.as_ref().unwrap();
+
+        match &content.inner {
+            LineContent::Instruction { kind, .. } => {
+                let resolved = state.resolve_span(kind.location.clone()).unwrap();
+                assert_eq!(slice(src, &resolved), "add");
+            }
+            other => panic!("expected instruction, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn argument_spans_resolve() {
+        let src = "    ld 42, %a\n";
+        let state = DocumentState::new(src.to_string());
+        let program = state.program().unwrap();
+        let content = program.lines[0].inner.content.as_ref().unwrap();
+
+        match &content.inner {
+            LineContent::Instruction { arguments, .. } => {
+                assert_eq!(arguments.len(), 2);
+                let arg0 = state.resolve_span(arguments[0].location.clone()).unwrap();
+                let arg1 = state.resolve_span(arguments[1].location.clone()).unwrap();
+                assert_eq!(slice(src, &arg0), "42");
+                assert_eq!(slice(src, &arg1), "%a");
+            }
+            other => panic!("expected instruction, got {other:?}"),
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Comments
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn inline_comment_preserved() {
+        let src = "    reset // halt the cpu\n";
+        let state = DocumentState::new(src.to_string());
+        let program = state.program().unwrap();
+        let line = &program.lines[0].inner;
+
+        assert!(line.content.is_some());
+        let comment = line.comment.as_ref().expect("comment should be present");
+        assert_eq!(comment.inner, "halt the cpu");
+    }
+
+    #[test]
+    fn comment_only_line() {
+        let src = "// just a comment\n    reset\n";
+        let state = DocumentState::new(src.to_string());
+        let program = state.program().unwrap();
+
+        // First line should have no content but a comment
+        let line0 = &program.lines[0].inner;
+        assert!(line0.content.is_none());
+        assert!(line0.comment.is_some());
+        assert_eq!(line0.comment.as_ref().unwrap().inner, "just a comment");
+
+        // Second line should have content
+        let line1 = &program.lines[1].inner;
+        assert!(line1.content.is_some());
+    }
+
+    // -----------------------------------------------------------------------
+    // Spans with comments (offsets shift)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn label_after_comment_line_resolves() {
+        //                    0         1         2         3
+        //                    0123456789012345678901234567890123456789
+        let src = "    ld 1, %a // load\nloop:\n    jne loop\n";
+        let state = DocumentState::new(src.to_string());
+        let program = state.program().unwrap();
+
+        // "loop" label is on line 1 (after the comment line)
+        let line1 = &program.lines[1];
+        assert_eq!(line1.inner.symbols.len(), 1);
+        let sym = &line1.inner.symbols[0];
+        assert_eq!(sym.inner, "loop");
+
+        let resolved = state.resolve_span(sym.location.clone()).unwrap();
+        assert_eq!(slice(src, &resolved), "loop");
+        assert_eq!(resolved, 21..25);
+    }
+
+    #[test]
+    fn goto_definition_target_after_comments() {
+        let src = "main:\n    ld 1, %a // comment\nloop:\n    sub 1, %a\n    jne loop\n";
+        let state = DocumentState::new(src.to_string());
+        let program = state.program().unwrap();
+
+        // Find the "loop" label definition
+        for line in &program.lines {
+            for sym in &line.inner.symbols {
+                if sym.inner == "loop" {
+                    let resolved = state.resolve_span(sym.location.clone()).unwrap();
+                    assert_eq!(slice(src, &resolved), "loop");
+                    // "loop" starts at byte 29 in the original source
+                    assert_eq!(resolved.start, src.find("loop:").unwrap());
+                    return;
+                }
+            }
+        }
+        panic!("label 'loop' not found");
+    }
+
+    // -----------------------------------------------------------------------
+    // Preprocessor directives
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn define_doesnt_break_spans() {
+        let src = "#define N 5\nmain:\n    ld N, %a\n";
+        let state = DocumentState::new(src.to_string());
+
+        // Should have no errors
+        assert!(state.preprocessor_error().is_none());
+        assert!(state.parse_diagnostics().is_empty());
+
+        // Label "main" should resolve correctly
+        let program = state.program().unwrap();
+        let line = program
+            .lines
+            .iter()
+            .find(|l| l.inner.symbols.iter().any(|s| s.inner == "main"))
+            .unwrap();
+        let sym = &line.inner.symbols[0];
+        let resolved = state.resolve_span(sym.location.clone()).unwrap();
+        assert_eq!(slice(src, &resolved), "main");
+    }
+
+    #[test]
+    fn define_annotation_recorded() {
+        let src = "#define FOO 42\nmain:\n    reset\n";
+        let state = DocumentState::new(src.to_string());
+        let annotations = state.annotations().unwrap();
+
+        assert_eq!(annotations.definitions.len(), 1);
+        assert_eq!(annotations.definitions[0].key, "FOO");
+        assert_eq!(annotations.definitions[0].value.as_deref(), Some("42"));
+    }
+
+    #[test]
+    fn labels_available_with_errors() {
+        let src = "main:\n    $$invalid$$\nloop:\n    reset\n";
+        let state = DocumentState::new(src.to_string());
+
+        // Should have parse errors but still have labels
+        assert!(!state.parse_diagnostics().is_empty());
+        assert!(state.labels().contains_key("main"));
+        assert!(state.labels().contains_key("loop"));
+    }
+
+    // -----------------------------------------------------------------------
+    // Diagnostic spans
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn diagnostic_spans_point_to_original_source() {
+        let src = "    xyz\n";
+        let state = DocumentState::new(src.to_string());
+
+        assert!(!state.parse_diagnostics().is_empty());
+        let diag = &state.parse_diagnostics()[0];
+
+        // The diagnostic span should point to "xyz" in the original source
+        let resolved = state.resolve_span(diag.span.clone()).unwrap();
+        assert_eq!(slice(src, &resolved), "xyz");
+    }
+
+    #[test]
+    fn diagnostic_after_comment_resolves() {
+        let src = "    reset // ok\n    xyz\n";
+        let state = DocumentState::new(src.to_string());
+
+        assert!(!state.parse_diagnostics().is_empty());
+        let diag = &state.parse_diagnostics()[0];
+        let resolved = state.resolve_span(diag.span.clone()).unwrap();
+        assert_eq!(slice(src, &resolved), "xyz");
+    }
+
+    #[test]
+    fn undefined_label_error_span() {
+        let src = "    jmp nowhere\n";
+        let state = DocumentState::new(src.to_string());
+
+        // Should produce a fill error for undefined label
+        assert!(!state.fill_errors().is_empty());
+    }
+}
