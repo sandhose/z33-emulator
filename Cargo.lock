@@ -2166,7 +2166,6 @@ dependencies = [
  "pretty_assertions",
  "serde_json",
  "thiserror",
- "tokio",
  "tower-lsp",
  "tracing",
  "tracing-subscriber",

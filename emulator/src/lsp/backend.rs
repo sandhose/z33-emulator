@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Duration;
 
 use dashmap::DashMap;
 use tower_lsp::lsp_types::{
@@ -19,9 +18,6 @@ use tower_lsp::{jsonrpc, Client, LanguageServer};
 
 use super::document::DocumentState;
 use super::{completion, diagnostics, hover, position, semantic_tokens, signature, symbols};
-
-/// How long to wait after the last keystroke before running analysis.
-const DEBOUNCE_MS: u64 = 150;
 
 /// Per-document state.
 struct Document {
@@ -48,58 +44,22 @@ impl Backend {
         }
     }
 
-    fn on_change(&self, uri: Url, text: String, version: i32) {
-        // Update source immediately.
+    async fn on_change(&self, uri: Url, text: String, version: i32) {
+        let state = Arc::new(DocumentState::new(text.clone()));
+        let diags = diagnostics::diagnostics(&state);
+
         self.documents.insert(
             uri.clone(),
             Document {
-                source: text.clone(),
-                analysis: self.documents.get(&uri).and_then(|d| d.analysis.clone()),
+                source: text,
+                analysis: Some(state),
                 version,
             },
         );
 
-        // Debounced analysis: wait, then check if this is still the latest
-        // version before doing the expensive work.
-        let client = self.client.clone();
-        let documents = self.documents.clone();
-        tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(DEBOUNCE_MS)).await;
-
-            // Check if a newer version arrived while we waited.
-            let is_current = documents.get(&uri).is_some_and(|d| d.version == version);
-            if !is_current {
-                return;
-            }
-
-            // Run the expensive analysis on a blocking thread.
-            let uri_clone = uri.clone();
-            let result = tokio::task::spawn_blocking(move || {
-                let state = Arc::new(DocumentState::new(text));
-                let diags = diagnostics::diagnostics(&state);
-                (state, diags)
-            })
+        self.client
+            .publish_diagnostics(uri, diags, Some(version))
             .await;
-
-            let Ok((state, diags)) = result else {
-                return;
-            };
-
-            // Only publish if still current.
-            let mut should_publish = false;
-            if let Some(mut doc) = documents.get_mut(&uri_clone) {
-                if doc.version <= version {
-                    doc.analysis = Some(Arc::clone(&state));
-                    should_publish = true;
-                }
-            }
-
-            if should_publish {
-                client
-                    .publish_diagnostics(uri_clone, diags, Some(version))
-                    .await;
-            }
-        });
     }
 
     fn get_source(&self, uri: &Url) -> Option<String> {
@@ -170,7 +130,7 @@ impl LanguageServer for Backend {
 
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
         let doc = params.text_document;
-        self.on_change(doc.uri, doc.text, doc.version);
+        self.on_change(doc.uri, doc.text, doc.version).await;
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
@@ -179,7 +139,8 @@ impl LanguageServer for Backend {
                 params.text_document.uri,
                 change.text,
                 params.text_document.version,
-            );
+            )
+            .await;
         }
     }
 
