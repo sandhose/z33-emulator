@@ -3,15 +3,12 @@ use tower_lsp::lsp_types::{DocumentSymbol, SymbolKind};
 use super::document::DocumentState;
 use super::position;
 
-/// Produce document symbols (outline) for the file — one entry per label.
-///
-/// Each label's range spans from its definition to the line before the next
-/// label (or end of file), so the outline reflects the logical structure.
+/// Produce document symbols (outline) for the file — labels and macros.
 pub fn document_symbols(state: &DocumentState) -> Vec<DocumentSymbol> {
     let source = state.source();
+    let mut symbols = Vec::new();
 
-    // Collect all label definitions with their byte positions, sorted by
-    // position in the file.
+    // Labels
     let mut label_defs: Vec<(&str, u32, std::ops::Range<usize>)> = state
         .labels()
         .iter()
@@ -23,48 +20,70 @@ pub fn document_symbols(state: &DocumentState) -> Vec<DocumentSymbol> {
 
     label_defs.sort_by_key(|(_, _, span)| span.start);
 
-    label_defs
-        .iter()
-        .enumerate()
-        .filter_map(|(i, (name, addr, def_span))| {
-            let selection_range = position::range(source, def_span.clone())?;
+    for (i, (name, addr, def_span)) in label_defs.iter().enumerate() {
+        let Some(selection_range) = position::range(source, def_span.clone()) else {
+            continue;
+        };
 
-            // Range extends from this label to the start of the next label's
-            // line, or to end of file.
-            let body_end = if let Some((_, _, next_span)) = label_defs.get(i + 1) {
-                // Back up to the end of the previous line
-                let next_line_start = source[..next_span.start]
-                    .rfind('\n')
-                    .map_or(next_span.start, |nl| nl + 1);
-                if next_line_start > def_span.start {
-                    next_line_start
-                } else {
-                    next_span.start
-                }
+        let body_end = if let Some((_, _, next_span)) = label_defs.get(i + 1) {
+            let next_line_start = source[..next_span.start]
+                .rfind('\n')
+                .map_or(next_span.start, |nl| nl + 1);
+            if next_line_start > def_span.start {
+                next_line_start
             } else {
-                source.len()
+                next_span.start
+            }
+        } else {
+            source.len()
+        };
+
+        let body = &source[def_span.start..body_end];
+        let trimmed_len = body.trim_end().len();
+        let body_end = def_span.start + trimmed_len;
+
+        let Some(range) = position::range(source, def_span.start..body_end) else {
+            continue;
+        };
+
+        #[allow(deprecated)]
+        symbols.push(DocumentSymbol {
+            name: (*name).to_string(),
+            detail: Some(format!("address {addr}")),
+            kind: SymbolKind::FUNCTION,
+            range,
+            selection_range,
+            children: None,
+            tags: None,
+            deprecated: None,
+        });
+    }
+
+    // Macros (#define)
+    if let Some(annotations) = state.annotations() {
+        for def in &annotations.definitions {
+            let Some(range) = position::range(source, def.span.clone()) else {
+                continue;
             };
 
-            // Trim trailing blank lines
-            let body = &source[def_span.start..body_end];
-            let trimmed_len = body.trim_end().len();
-            let body_end = def_span.start + trimmed_len;
-
-            let range = position::range(source, def_span.start..body_end)?;
-
-            #[allow(deprecated)] // `deprecated` field is required but deprecated
-            Some(DocumentSymbol {
-                name: (*name).to_string(),
-                detail: Some(format!("address {addr}")),
-                kind: SymbolKind::FUNCTION,
+            #[allow(deprecated)]
+            symbols.push(DocumentSymbol {
+                name: def.key.clone(),
+                detail: def.value.as_ref().map(|v| format!("= {v}")),
+                kind: SymbolKind::CONSTANT,
                 range,
-                selection_range,
+                selection_range: range,
                 children: None,
                 tags: None,
                 deprecated: None,
-            })
-        })
-        .collect()
+            });
+        }
+    }
+
+    // Sort by position in file
+    symbols.sort_by_key(|s| (s.range.start.line, s.range.start.character));
+
+    symbols
 }
 
 /// Find the byte range of a label definition in the source (the identifier

@@ -284,21 +284,41 @@ impl LanguageServer for Backend {
         };
 
         let word = word_at_offset(&source, offset);
-        let has_label = analysis
-            .as_ref()
-            .is_some_and(|a| a.labels().contains_key(word));
-        if word.is_empty() || !has_label {
+        if word.is_empty() {
             return Ok(None);
         }
 
-        let locations = find_label_references(&source, word, params.context.include_declaration)
+        let is_label = analysis
+            .as_ref()
+            .is_some_and(|a| a.labels().contains_key(word));
+        let is_macro = analysis
+            .as_ref()
+            .and_then(|a| a.annotations())
+            .is_some_and(|ann| ann.definitions.iter().any(|d| d.key == word));
+
+        if !is_label && !is_macro {
+            return Ok(None);
+        }
+
+        let include_decl = params.context.include_declaration;
+        let iter: Box<dyn Iterator<Item = std::ops::Range<usize>> + '_> = if is_label {
+            Box::new(find_label_references(&source, word, include_decl))
+        } else if include_decl {
+            find_word_occurrences(&source, word)
+        } else {
+            Box::new(find_word_occurrences(&source, word).filter(|span| {
+                let before = &source[..span.start];
+                !before.ends_with("define ") && !before.ends_with("define\t")
+            }))
+        };
+        let locations: Vec<Location> = iter
             .filter_map(|span| {
                 position::range(&source, span).map(|range| Location {
                     uri: uri.clone(),
                     range,
                 })
             })
-            .collect::<Vec<_>>();
+            .collect();
 
         if locations.is_empty() {
             Ok(None)
@@ -342,19 +362,33 @@ impl LanguageServer for Backend {
         };
 
         let word = word_at_offset(&source, offset);
-        let has_label = analysis
-            .as_ref()
-            .is_some_and(|a| a.labels().contains_key(word));
-        if word.is_empty() || !has_label {
+        if word.is_empty() {
             return Ok(None);
         }
 
-        let highlights: Vec<DocumentHighlight> = find_label_references(&source, word, true)
+        // Check if this is a known label or macro
+        let is_label = analysis
+            .as_ref()
+            .is_some_and(|a| a.labels().contains_key(word));
+        let is_macro = analysis
+            .as_ref()
+            .and_then(|a| a.annotations())
+            .is_some_and(|ann| ann.definitions.iter().any(|d| d.key == word));
+
+        if !is_label && !is_macro {
+            return Ok(None);
+        }
+
+        let highlights: Vec<DocumentHighlight> = find_word_occurrences(&source, word)
             .filter_map(|span| {
                 let range = position::range(&source, span.clone())?;
                 let after = &source[span.end..];
                 let trimmed = after.trim_start_matches([' ', '\t']);
-                let kind = if trimmed.starts_with(':') {
+                let before = &source[..span.start];
+                // Label definitions (foo:) and #define lines are WRITE
+                let is_label_def = trimmed.starts_with(':');
+                let is_macro_def = before.ends_with("define ") || before.ends_with("define\t");
+                let kind = if is_label_def || is_macro_def {
                     DocumentHighlightKind::WRITE
                 } else {
                     DocumentHighlightKind::READ
@@ -549,6 +583,34 @@ fn find_label_references<'a>(
         }
         None
     })
+}
+
+/// Find all whole-word occurrences of `word` in `source`.
+fn find_word_occurrences<'a>(
+    source: &'a str,
+    word: &'a str,
+) -> Box<dyn Iterator<Item = std::ops::Range<usize>> + 'a> {
+    let word_len = word.len();
+    let bytes = source.as_bytes();
+
+    let mut start = 0;
+    Box::new(std::iter::from_fn(move || {
+        while let Some(rel) = source[start..].find(word) {
+            let abs = start + rel;
+            start = abs + word_len;
+
+            if abs > 0 && (bytes[abs - 1].is_ascii_alphanumeric() || bytes[abs - 1] == b'_') {
+                continue;
+            }
+            if start < bytes.len() && (bytes[start].is_ascii_alphanumeric() || bytes[start] == b'_')
+            {
+                continue;
+            }
+
+            return Some(abs..start);
+        }
+        None
+    }))
 }
 
 fn word_at_offset(source: &str, offset: usize) -> &str {
