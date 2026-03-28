@@ -10,7 +10,9 @@ use crate::parser::assembly::ParseResult;
 use crate::parser::line::Program;
 use crate::parser::shared::ParseDiagnostic;
 use crate::parser::{self};
-use crate::preprocessor::{InMemoryFilesystem, PreprocessorError, ReferencingSourceMap, Workspace};
+use crate::preprocessor::{
+    InMemoryFilesystem, PreprocessorError, ReferencingSourceMap, SourceAnnotations, Workspace,
+};
 
 /// The virtual filename used for single-file LSP documents.
 const VIRTUAL_FILENAME: &str = "main.S";
@@ -33,6 +35,8 @@ pub struct DocumentState {
     preprocessor_error: Option<PreprocessorError>,
     /// Parse result (only available if preprocessing succeeded).
     parse_result: Option<ParseResult>,
+    /// Preprocessor annotations (definitions, inclusions, conditionals).
+    annotations: Option<SourceAnnotations>,
     layout: Layout,
     layout_errors: Vec<MemoryLayoutError>,
     fill_errors: Vec<MemoryFillError>,
@@ -61,6 +65,7 @@ impl DocumentState {
                     original_file_id,
                     preprocessor_error: None,
                     parse_result: Some(parse_result),
+                    annotations: Some(result.annotations),
                     layout,
                     layout_errors,
                     fill_errors,
@@ -74,6 +79,7 @@ impl DocumentState {
                     original_file_id,
                     preprocessor_error: Some(error),
                     parse_result: None,
+                    annotations: None,
                     layout: Layout::default(),
                     layout_errors: Vec::new(),
                     fill_errors: Vec::new(),
@@ -116,6 +122,11 @@ impl DocumentState {
     #[must_use]
     pub fn preprocessor_error(&self) -> Option<&PreprocessorError> {
         self.preprocessor_error.as_ref()
+    }
+
+    #[must_use]
+    pub fn annotations(&self) -> Option<&SourceAnnotations> {
+        self.annotations.as_ref()
     }
 
     /// Map a byte range in the preprocessed source back to a byte range in
