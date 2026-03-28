@@ -220,5 +220,41 @@ pub fn diagnostics(state: &DocumentState) -> Vec<lsp_types::Diagnostic> {
         convert_fill_error(state, error, &mut result);
     }
 
+    // Inactive preprocessor regions
+    if let Some(annotations) = state.annotations() {
+        for block in &annotations.conditional_blocks {
+            for branch in &block.branches {
+                if !branch.active {
+                    if let Some(d) = make_diagnostic(
+                        state.source(),
+                        branch.body_span.clone(),
+                        "inactive preprocessor block".to_string(),
+                        lsp_types::DiagnosticSeverity::HINT,
+                    ) {
+                        result.push(lsp_types::Diagnostic {
+                            tags: Some(vec![lsp_types::DiagnosticTag::UNNECESSARY]),
+                            ..d
+                        });
+                    }
+                }
+            }
+            if let Some(fallback) = &block.fallback {
+                if !fallback.active {
+                    if let Some(d) = make_diagnostic(
+                        state.source(),
+                        fallback.body_span.clone(),
+                        "inactive preprocessor block".to_string(),
+                        lsp_types::DiagnosticSeverity::HINT,
+                    ) {
+                        result.push(lsp_types::Diagnostic {
+                            tags: Some(vec![lsp_types::DiagnosticTag::UNNECESSARY]),
+                            ..d
+                        });
+                    }
+                }
+            }
+        }
+    }
+
     result
 }
