@@ -328,6 +328,11 @@ pub fn parse(input: &str) -> ParseResult {
     let mut diagnostics = Vec::new();
     let mut lines = Vec::new();
 
+    // Build the parser once and reuse it for every line. This avoids
+    // reconstructing the combinator tree (including the .boxed() heap
+    // allocation) on every line.
+    let content_parser = line_remainder().then_ignore(end());
+
     // Split on newlines, keeping track of byte offsets.
     // We parse each line individually so that an error in one line doesn't
     // prevent parsing of subsequent lines.
@@ -341,9 +346,6 @@ pub fn parse(input: &str) -> ParseResult {
         // errors when an unknown instruction looks like it could be a label)
         let (symbols, content_offset) = extract_labels(raw_line);
         let content_str = &raw_line[content_offset..];
-
-        // Step 2: parse the remainder (instruction/directive) with chumsky
-        let content_parser = line_remainder().then_ignore(end());
         let result = content_parser.parse(content_str);
 
         let parsed_line = if let Some(content) = result.output().cloned().flatten() {
