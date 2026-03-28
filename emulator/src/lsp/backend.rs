@@ -17,6 +17,7 @@ use tower_lsp::lsp_types::{
 use tower_lsp::{jsonrpc, Client, LanguageServer};
 
 use super::document::DocumentState;
+use super::references::OccurrenceKind;
 use super::{completion, diagnostics, hover, position, semantic_tokens, signature, symbols};
 
 /// Per-document state.
@@ -229,41 +230,20 @@ impl LanguageServer for Backend {
             return Ok(None);
         };
 
-        let word = word_at_offset(&source, offset);
-        if word.is_empty() {
+        let Some(occ) = analysis.occurrence_at(offset) else {
             return Ok(None);
-        }
+        };
 
-        // Try label definition
-        if analysis.labels().contains_key(word) {
-            if let Some(program) = analysis.program() {
-                for line in &program.lines {
-                    for symbol in &line.inner.symbols {
-                        if symbol.inner == word {
-                            let original_span = analysis.resolve_span(symbol.location.clone());
-                            if let Some(range) =
-                                original_span.and_then(|s| position::range(&source, s))
-                            {
-                                return Ok(Some(GotoDefinitionResponse::Scalar(Location {
-                                    uri: uri.clone(),
-                                    range,
-                                })));
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        let def = analysis
+            .occurrences_of(&occ.name)
+            .find(|o| o.kind == OccurrenceKind::Definition);
 
-        // Try macro definition (#define)
-        if let Some(annotations) = analysis.annotations() {
-            if let Some(def) = annotations.definitions.iter().rev().find(|d| d.key == word) {
-                if let Some(range) = position::range(&source, def.span.clone()) {
-                    return Ok(Some(GotoDefinitionResponse::Scalar(Location {
-                        uri: uri.clone(),
-                        range,
-                    })));
-                }
+        if let Some(def) = def {
+            if let Some(range) = position::range(&source, def.span.clone()) {
+                return Ok(Some(GotoDefinitionResponse::Scalar(Location {
+                    uri: uri.clone(),
+                    range,
+                })));
             }
         }
 
@@ -277,41 +257,24 @@ impl LanguageServer for Backend {
         let Some(source) = self.get_source(uri) else {
             return Ok(None);
         };
-        let analysis = self.get_analysis(uri);
+        let Some(analysis) = self.get_analysis(uri) else {
+            return Ok(None);
+        };
 
         let Some(offset) = position::byte_offset(&source, pos) else {
             return Ok(None);
         };
 
-        let word = word_at_offset(&source, offset);
-        if word.is_empty() {
+        let Some(occ) = analysis.occurrence_at(offset) else {
             return Ok(None);
-        }
-
-        if !is_known_symbol(analysis.as_ref(), word) {
-            return Ok(None);
-        }
+        };
 
         let include_decl = params.context.include_declaration;
-        let locations: Vec<Location> = find_word_occurrences(&source, word)
-            .filter(|span| {
-                if include_decl {
-                    return true;
-                }
-                // Exclude label definitions (foo:) and macro definitions (#define FOO)
-                let after = &source[span.end..];
-                let trimmed = after.trim_start_matches([' ', '\t']);
-                if trimmed.starts_with(':') {
-                    return false;
-                }
-                let before = &source[..span.start];
-                if before.ends_with("define ") || before.ends_with("define\t") {
-                    return false;
-                }
-                true
-            })
-            .filter_map(|span| {
-                position::range(&source, span).map(|range| Location {
+        let locations: Vec<Location> = analysis
+            .occurrences_of(&occ.name)
+            .filter(|o| include_decl || o.kind != OccurrenceKind::Definition)
+            .filter_map(|o| {
+                position::range(&source, o.span.clone()).map(|range| Location {
                     uri: uri.clone(),
                     range,
                 })
@@ -359,26 +322,19 @@ impl LanguageServer for Backend {
             return Ok(None);
         };
 
-        let word = word_at_offset(&source, offset);
-        if word.is_empty() {
+        let Some(analysis) = analysis else {
             return Ok(None);
-        }
+        };
 
-        // Check if this is a known label or macro
-        if !is_known_symbol(analysis.as_ref(), word) {
+        let Some(occ) = analysis.occurrence_at(offset) else {
             return Ok(None);
-        }
+        };
 
-        let highlights: Vec<DocumentHighlight> = find_word_occurrences(&source, word)
-            .filter_map(|span| {
-                let range = position::range(&source, span.clone())?;
-                let after = &source[span.end..];
-                let trimmed = after.trim_start_matches([' ', '\t']);
-                let before = &source[..span.start];
-                // Label definitions (foo:) and #define lines are WRITE
-                let is_label_def = trimmed.starts_with(':');
-                let is_macro_def = before.ends_with("define ") || before.ends_with("define\t");
-                let kind = if is_label_def || is_macro_def {
+        let highlights: Vec<DocumentHighlight> = analysis
+            .occurrences_of(&occ.name)
+            .filter_map(|o| {
+                let range = position::range(&source, o.span.clone())?;
+                let kind = if o.kind == OccurrenceKind::Definition {
                     DocumentHighlightKind::WRITE
                 } else {
                     DocumentHighlightKind::READ
@@ -413,14 +369,20 @@ impl LanguageServer for Backend {
         let mut lenses = Vec::new();
 
         for (name, addr) in analysis.labels() {
-            let Some(def_span) = find_label_definition(&source, name) else {
+            let Some(def) = analysis
+                .occurrences_of(name)
+                .find(|o| o.kind == OccurrenceKind::Definition)
+            else {
                 continue;
             };
-            let Some(range) = position::range(&source, def_span) else {
+            let Some(range) = position::range(&source, def.span.clone()) else {
                 continue;
             };
 
-            let ref_count = find_label_references(&source, name, false).count();
+            let ref_count = analysis
+                .occurrences_of(name)
+                .filter(|o| o.kind != OccurrenceKind::Definition)
+                .count();
 
             let refs = match ref_count {
                 0 => "0 references".to_string(),
@@ -465,15 +427,11 @@ impl LanguageServer for Backend {
             return Ok(None);
         };
 
-        let word = word_at_offset(&source, offset);
-        if word.is_empty() || !analysis.labels().contains_key(word) {
+        let Some(occ) = analysis.occurrence_at(offset) else {
             return Ok(None);
-        }
+        };
 
-        let word_start = word.as_ptr() as usize - source.as_ptr() as usize;
-        let word_end = word_start + word.len();
-        let range = position::range(&source, word_start..word_end);
-
+        let range = position::range(&source, occ.span.clone());
         Ok(range.map(PrepareRenameResponse::Range))
     }
 
@@ -492,15 +450,15 @@ impl LanguageServer for Backend {
             return Ok(None);
         };
 
-        let word = word_at_offset(&source, offset);
-        if word.is_empty() || !analysis.labels().contains_key(word) {
+        let Some(occ) = analysis.occurrence_at(offset) else {
             return Ok(None);
-        }
+        };
 
         let new_name = &params.new_name;
-        let edits: Vec<TextEdit> = find_label_references(&source, word, true)
-            .filter_map(|span| {
-                position::range(&source, span).map(|range| TextEdit {
+        let edits: Vec<TextEdit> = analysis
+            .occurrences_of(&occ.name)
+            .filter_map(|o| {
+                position::range(&source, o.span.clone()).map(|range| TextEdit {
                     range,
                     new_text: new_name.clone(),
                 })
@@ -534,93 +492,4 @@ impl LanguageServer for Backend {
         let tokens = semantic_tokens::semantic_tokens(analysis.as_deref(), &source);
         Ok(Some(SemanticTokensResult::Tokens(tokens)))
     }
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/// Check whether `word` is a known label or macro in the analysis.
-fn is_known_symbol(analysis: Option<&Arc<DocumentState>>, word: &str) -> bool {
-    let Some(a) = analysis.as_ref() else {
-        return false;
-    };
-    if a.labels().contains_key(word) {
-        return true;
-    }
-    a.annotations()
-        .is_some_and(|ann| ann.definitions.iter().any(|d| d.key == word))
-}
-
-/// Find all whole-word occurrences of `word` in `source`, yielding byte
-/// ranges. Checks word boundaries to avoid matching substrings.
-fn find_word_occurrences<'a>(
-    source: &'a str,
-    word: &'a str,
-) -> impl Iterator<Item = std::ops::Range<usize>> + 'a {
-    let word_len = word.len();
-    let bytes = source.as_bytes();
-
-    let mut start = 0;
-    std::iter::from_fn(move || {
-        while let Some(rel) = source[start..].find(word) {
-            let abs = start + rel;
-            start = abs + word_len;
-
-            if abs > 0 && (bytes[abs - 1].is_ascii_alphanumeric() || bytes[abs - 1] == b'_') {
-                continue;
-            }
-            if start < bytes.len() && (bytes[start].is_ascii_alphanumeric() || bytes[start] == b'_')
-            {
-                continue;
-            }
-
-            return Some(abs..start);
-        }
-        None
-    })
-}
-
-/// Find occurrences of a label, optionally excluding its definition
-/// (identifier followed by `:`).
-fn find_label_references<'a>(
-    source: &'a str,
-    label: &'a str,
-    include_declaration: bool,
-) -> impl Iterator<Item = std::ops::Range<usize>> + 'a {
-    find_word_occurrences(source, label).filter(move |span| {
-        if include_declaration {
-            return true;
-        }
-        let after = &source[span.end..];
-        let trimmed = after.trim_start_matches([' ', '\t']);
-        !trimmed.starts_with(':')
-    })
-}
-
-/// Extract the identifier word at the given byte offset, walking backwards
-/// and forwards to find word boundaries.
-fn word_at_offset(source: &str, offset: usize) -> &str {
-    if offset > source.len() {
-        return "";
-    }
-    let bytes = source.as_bytes();
-    let mut start = offset;
-    while start > 0 && (bytes[start - 1].is_ascii_alphanumeric() || bytes[start - 1] == b'_') {
-        start -= 1;
-    }
-    let mut end = offset;
-    while end < bytes.len() && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'_') {
-        end += 1;
-    }
-    &source[start..end]
-}
-
-/// Find the byte range of a label definition (identifier followed by `:`).
-fn find_label_definition(source: &str, label: &str) -> Option<std::ops::Range<usize>> {
-    find_word_occurrences(source, label).find(|span| {
-        let after = &source[span.end..];
-        let trimmed = after.trim_start_matches([' ', '\t']);
-        trimmed.starts_with(':')
-    })
 }

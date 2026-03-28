@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use camino::Utf8PathBuf;
 
+use super::references::{self, OccurrenceKind, SymbolOccurrence};
 use crate::compiler::layout::{self, Layout, MemoryLayoutError};
 use crate::compiler::memory::{self, MemoryFillError};
 use crate::constants::Address;
@@ -40,6 +41,9 @@ pub struct DocumentState {
     layout: Layout,
     layout_errors: Vec<MemoryLayoutError>,
     fill_errors: Vec<MemoryFillError>,
+    /// All symbol occurrences (definitions + references) with spans resolved
+    /// to original source coordinates.
+    occurrences: Vec<SymbolOccurrence>,
 }
 
 impl DocumentState {
@@ -59,6 +63,42 @@ impl DocumentState {
                     layout::layout_memory(&parse_result.program.inner.lines);
                 let (_, fill_errors) = memory::fill_memory(&layout);
 
+                // Collect all symbol occurrences and resolve spans to
+                // original source coordinates.
+                let raw_occurrences = references::collect_occurrences(
+                    Some(&parse_result.program.inner),
+                    Some(&result.annotations),
+                );
+
+                let occurrences = raw_occurrences
+                    .into_iter()
+                    .filter_map(|mut occ| {
+                        // Annotation spans (macro defs) are already in original
+                        // coordinates. AST spans need resolve_span.
+                        if occ.kind == OccurrenceKind::Definition
+                            && result
+                                .annotations
+                                .definitions
+                                .iter()
+                                .any(|d| d.key == occ.name && d.span == occ.span)
+                        {
+                            // Already in original coordinates
+                            Some(occ)
+                        } else if let Some((file_id, range)) =
+                            diagnostic::resolve_to_original(&source_map, occ.span.clone())
+                        {
+                            if file_id == original_file_id {
+                                occ.span = range;
+                                Some(occ)
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+
                 Self {
                     original_source: source,
                     source_map: Some(source_map),
@@ -69,6 +109,7 @@ impl DocumentState {
                     layout,
                     layout_errors,
                     fill_errors,
+                    occurrences,
                 }
             }
             Err(error) => {
@@ -83,6 +124,7 @@ impl DocumentState {
                     layout: Layout::default(),
                     layout_errors: Vec::new(),
                     fill_errors: Vec::new(),
+                    occurrences: Vec::new(),
                 }
             }
         }
@@ -127,6 +169,30 @@ impl DocumentState {
     #[must_use]
     pub fn annotations(&self) -> Option<&SourceAnnotations> {
         self.annotations.as_ref()
+    }
+
+    /// All symbol occurrences (definitions + references), with spans in the
+    /// original source.
+    #[must_use]
+    pub fn occurrences(&self) -> &[SymbolOccurrence] {
+        &self.occurrences
+    }
+
+    /// Find the symbol occurrence at the given byte offset in the original
+    /// source, if any.
+    #[must_use]
+    pub fn occurrence_at(&self, offset: usize) -> Option<&SymbolOccurrence> {
+        self.occurrences
+            .iter()
+            .find(|occ| occ.span.contains(&offset))
+    }
+
+    /// Find all occurrences of the symbol with the given name.
+    pub fn occurrences_of<'a>(
+        &'a self,
+        name: &'a str,
+    ) -> impl Iterator<Item = &'a SymbolOccurrence> {
+        self.occurrences.iter().filter(move |occ| occ.name == name)
     }
 
     /// Map a byte range in the preprocessed source back to a byte range in

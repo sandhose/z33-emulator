@@ -2,19 +2,22 @@ use tower_lsp::lsp_types::{DocumentSymbol, SymbolKind};
 
 use super::document::DocumentState;
 use super::position;
+use super::references::OccurrenceKind;
 
 /// Produce document symbols (outline) for the file — labels and macros.
 pub fn document_symbols(state: &DocumentState) -> Vec<DocumentSymbol> {
     let source = state.source();
     let mut symbols = Vec::new();
 
-    // Labels
+    // Labels — use occurrence map for definition spans
     let mut label_defs: Vec<(&str, u32, std::ops::Range<usize>)> = state
         .labels()
         .iter()
         .filter_map(|(name, addr)| {
-            let span = find_label_definition(source, name)?;
-            Some((name.as_str(), *addr, span))
+            let def = state
+                .occurrences_of(name)
+                .find(|o| o.kind == OccurrenceKind::Definition)?;
+            Some((name.as_str(), *addr, def.span.clone()))
         })
         .collect();
 
@@ -80,39 +83,7 @@ pub fn document_symbols(state: &DocumentState) -> Vec<DocumentSymbol> {
         }
     }
 
-    // Sort by position in file
     symbols.sort_by_key(|s| (s.range.start.line, s.range.start.character));
 
     symbols
-}
-
-/// Find the byte range of a label definition in the source (the identifier
-/// before `:`).
-fn find_label_definition(source: &str, label: &str) -> Option<std::ops::Range<usize>> {
-    let bytes = source.as_bytes();
-    let label_len = label.len();
-    let mut start = 0;
-
-    while let Some(rel) = source[start..].find(label) {
-        let abs = start + rel;
-        let end = abs + label_len;
-        start = end;
-
-        // Check word boundaries
-        if abs > 0 && (bytes[abs - 1].is_ascii_alphanumeric() || bytes[abs - 1] == b'_') {
-            continue;
-        }
-        if end < bytes.len() && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'_') {
-            continue;
-        }
-
-        // Must be followed by optional whitespace then ':'
-        let after = &source[end..];
-        let trimmed = after.trim_start_matches([' ', '\t']);
-        if trimmed.starts_with(':') {
-            return Some(abs..end);
-        }
-    }
-
-    None
 }

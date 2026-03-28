@@ -10,6 +10,7 @@ mod diagnostics;
 mod document;
 mod hover;
 mod position;
+mod references;
 mod semantic_tokens;
 mod signature;
 mod symbols;
