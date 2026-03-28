@@ -58,6 +58,6 @@ tower-lsp = "0.20"
 z33-emulator = { path = "emulator" }
 
 [profile.release]
-lto = true
+lto = "thin"
 panic = "abort"
-debug = true
+debug = "limited"
