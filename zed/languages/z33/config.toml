@@ -1,0 +1,4 @@
+name = "Z33 Assembly"
+path_suffixes = ["s", "S"]
+line_comments = ["// "]
+tab_size = 4

@@ -1,0 +1,15 @@
+[package]
+name = "z33-zed"
+version = "0.0.1"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[lints]
+workspace = true
+
+[dependencies]
+zed_extension_api = "0.7.0"

@@ -1,0 +1,11 @@
+id = "z33"
+name = "Z33 Assembly"
+version = "0.0.1"
+schema_version = 1
+authors = ["Quentin Gliech <gliech@unistra.fr>"]
+description = "Z33 (Zorglub-33) assembly language support"
+repository = "https://github.com/sandhose/z33-emulator"
+
+[language_servers.z33-lsp]
+name = "Z33 LSP"
+languages = ["Z33 Assembly"]

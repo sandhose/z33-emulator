@@ -1,0 +1,34 @@
+[
+  {
+    "token_type": "keyword",
+    "style": ["keyword"]
+  },
+  {
+    "token_type": "macro",
+    "style": ["attribute"]
+  },
+  {
+    "token_type": "variable",
+    "style": ["variable.special"]
+  },
+  {
+    "token_type": "function",
+    "style": ["function.definition"]
+  },
+  {
+    "token_type": "parameter",
+    "style": ["label"]
+  },
+  {
+    "token_type": "number",
+    "style": ["number"]
+  },
+  {
+    "token_type": "string",
+    "style": ["string"]
+  },
+  {
+    "token_type": "comment",
+    "style": ["comment"]
+  }
+]
