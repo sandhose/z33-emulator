@@ -1,8 +1,7 @@
 //! Chumsky-based assembly parser with error recovery.
 //!
-//! This module replaces the nom-based assembly parser with one that can recover
-//! from syntax errors, producing partial ASTs alongside accumulated
-//! diagnostics.
+//! Parses the entire program in a single pass. All spans are absolute byte
+//! offsets in the input — no relative-to-content or relative-to-line spans.
 
 use chumsky::prelude::*;
 use smallvec::SmallVec;
@@ -15,7 +14,7 @@ use super::shared::{
 };
 use super::value::{DirectiveArgument, DirectiveKind, InstructionArgument, InstructionKind};
 use crate::parser::expression::Node as ExpressionNode;
-use crate::parser::shared::rich_to_diagnostic;
+use crate::parser::shared::{is_identifier_char, is_start_identifier_char, rich_to_diagnostic};
 
 /// Result of parsing: always produces a program, plus accumulated diagnostics.
 pub struct ParseResult {
@@ -96,10 +95,6 @@ fn instruction_argument<'a>() -> impl Parser<'a, &'a str, InstructionArgument, E
 fn instruction_kind<'a>() -> impl Parser<'a, &'a str, InstructionKind, Extra<'a>> + Clone {
     use InstructionKind as K;
 
-    // Parse an identifier-like token and match against known mnemonics.
-    // Uses validate() so that error spans cover the full identifier. Unknown
-    // instructions produce InstructionKind::Error (not a dummy like Nop),
-    // which the compiler skips during layout.
     any()
         .filter(|c: &char| c.is_ascii_alphabetic() || *c == '_')
         .repeated()
@@ -172,57 +167,27 @@ fn directive_argument<'a>() -> impl Parser<'a, &'a str, DirectiveArgument, Extra
 }
 
 // ---------------------------------------------------------------------------
-// Lines
+// Labels
 // ---------------------------------------------------------------------------
 
-/// Extract label definitions from the beginning of a line, returning
-/// `(labels, remaining_content_offset)`.
+/// Parse a label definition: `identifier [whitespace] ':'`.
 ///
-/// This is done imperatively (not with chumsky) to avoid the symbol parser's
-/// backtracking producing misleading errors when an unknown instruction looks
-/// like it could be a label.
-fn extract_labels(line: &str) -> (SmallVec<[Located<String>; 1]>, usize) {
-    let mut labels = SmallVec::new();
-    let mut pos = 0;
-    let bytes = line.as_bytes();
-
-    loop {
-        // Skip whitespace
-        while pos < bytes.len() && (bytes[pos] == b' ' || bytes[pos] == b'\t') {
-            pos += 1;
-        }
-
-        // Try to match: identifier [whitespace] ':'
-        let ident_start = pos;
-        if pos < bytes.len() && super::shared::is_start_identifier_char(bytes[pos] as char) {
-            pos += 1;
-            while pos < bytes.len() && super::shared::is_identifier_char(bytes[pos] as char) {
-                pos += 1;
-            }
-            let ident_end = pos;
-
-            // Skip whitespace between identifier and ':'
-            while pos < bytes.len() && (bytes[pos] == b' ' || bytes[pos] == b'\t') {
-                pos += 1;
-            }
-
-            if pos < bytes.len() && bytes[pos] == b':' {
-                // Found a label!
-                let ident = &line[ident_start..ident_end];
-                labels.push(ident.to_string().with_location(ident_start..ident_end));
-                pos += 1; // skip the ':'
-                continue;
-            }
-
-            // Not a label — backtrack to ident_start
-            pos = ident_start;
-        }
-
-        break;
-    }
-
-    (labels, pos)
+/// The identifier is committed to the label branch only when `:` is seen,
+/// avoiding ambiguity with instruction mnemonics.
+fn label<'a>() -> impl Parser<'a, &'a str, Located<String>, Extra<'a>> + Clone {
+    any()
+        .filter(|c: &char| is_start_identifier_char(*c))
+        .then(any().filter(|c: &char| is_identifier_char(*c)).repeated())
+        .to_slice()
+        .map(str::to_string)
+        .map_with(|s, e| s.with_location(span_to_range(e.span())))
+        .then_ignore(hspace())
+        .then_ignore(just(':'))
 }
+
+// ---------------------------------------------------------------------------
+// Lines
+// ---------------------------------------------------------------------------
 
 fn line_content<'a>() -> impl Parser<'a, &'a str, Located<LineContent>, Extra<'a>> + Clone {
     // Directive: .kind argument (starts with '.')
@@ -252,10 +217,7 @@ fn line_content<'a>() -> impl Parser<'a, &'a str, Located<LineContent>, Extra<'a
         )
         .map(|(kind, arguments)| LineContent::Instruction { kind, arguments });
 
-    // Dispatch based on first character to avoid error merging between
-    // directive and instruction branches. Directives always start with '.',
-    // everything else is an instruction. This preserves precise error spans
-    // from try_map (e.g. "unknown instruction 'xyz'" spanning all of 'xyz').
+    // Dispatch: directives start with '.', everything else is an instruction.
     let instruction = instruction.boxed();
     just('.')
         .rewind()
@@ -264,54 +226,67 @@ fn line_content<'a>() -> impl Parser<'a, &'a str, Located<LineContent>, Extra<'a
         .map_with(|content, e| content.with_location(span_to_range(e.span())))
 }
 
-/// Parse a line's content (after labels have been stripped).
-fn line_remainder<'a>() -> impl Parser<'a, &'a str, Option<Located<LineContent>>, Extra<'a>> + Clone
-{
-    hspace()
-        .ignore_then(line_content().or_not())
-        .then_ignore(hspace())
-}
-
-/// Adjust all `Located` spans inside a `LineContent` so they are relative to
-/// the content start instead of the line start.
-///
-/// Chumsky produces all spans relative to the input it received (the full
-/// line string). The compiler expects inner spans (kind, arguments, and all
-/// nested `Located` fields) to be relative to the content start, because it
-/// computes absolute positions as `inner_span + content_absolute_start`.
-/// Subtract `base` from a `Located`'s span, making it relative to
-/// content start instead of line start.
-fn adjust_span<T>(loc: &mut Located<T>, base: usize) {
-    loc.location.start = loc.location.start.saturating_sub(base);
-    loc.location.end = loc.location.end.saturating_sub(base);
-}
-
-fn make_content_relative(content: &mut Located<LineContent>) {
-    let base = content.location.start;
-    match &mut content.inner {
-        LineContent::Instruction { kind, arguments } => {
-            adjust_span(kind, base);
-            for arg in arguments {
-                adjust_span(arg, base);
-                match &mut arg.inner {
-                    InstructionArgument::Direct(node) => adjust_span(node, base),
-                    InstructionArgument::Indirect(reg) => adjust_span(reg, base),
-                    InstructionArgument::Indexed { register, value } => {
-                        adjust_span(register, base);
-                        adjust_span(value, base);
+/// Shift all spans in a parsed `Line` by `offset` to convert from
+/// line-relative to absolute byte offsets.
+fn shift_line_spans(line: &mut Line, offset: usize) {
+    for symbol in &mut line.symbols {
+        symbol.location.start += offset;
+        symbol.location.end += offset;
+    }
+    if let Some(content) = &mut line.content {
+        content.location.start += offset;
+        content.location.end += offset;
+        match &mut content.inner {
+            LineContent::Instruction { kind, arguments } => {
+                kind.location.start += offset;
+                kind.location.end += offset;
+                for arg in arguments {
+                    arg.location.start += offset;
+                    arg.location.end += offset;
+                    match &mut arg.inner {
+                        InstructionArgument::Direct(node) => {
+                            node.location.start += offset;
+                            node.location.end += offset;
+                        }
+                        InstructionArgument::Indirect(reg) => {
+                            reg.location.start += offset;
+                            reg.location.end += offset;
+                        }
+                        InstructionArgument::Indexed { register, value } => {
+                            register.location.start += offset;
+                            register.location.end += offset;
+                            value.location.start += offset;
+                            value.location.end += offset;
+                        }
+                        InstructionArgument::Value(_)
+                        | InstructionArgument::Register(_)
+                        | InstructionArgument::Error => {}
                     }
-                    InstructionArgument::Value(_)
-                    | InstructionArgument::Register(_)
-                    | InstructionArgument::Error => {}
                 }
             }
+            LineContent::Directive { kind, argument } => {
+                kind.location.start += offset;
+                kind.location.end += offset;
+                argument.location.start += offset;
+                argument.location.end += offset;
+            }
+            LineContent::Error => {}
         }
-        LineContent::Directive { kind, argument } => {
-            adjust_span(kind, base);
-            adjust_span(argument, base);
-        }
-        LineContent::Error => {}
     }
+}
+
+/// Parse a single line: optional labels, then optional content, then
+/// optional horizontal whitespace.
+fn line<'a>() -> impl Parser<'a, &'a str, Line, Extra<'a>> + Clone {
+    label()
+        .then_ignore(hspace())
+        .repeated()
+        .collect::<Vec<_>>()
+        .map(SmallVec::from_vec)
+        .then_ignore(hspace())
+        .then(line_content().or_not())
+        .then_ignore(hspace())
+        .map(|(symbols, content)| Line { symbols, content })
 }
 
 // ---------------------------------------------------------------------------
@@ -320,88 +295,55 @@ fn make_content_relative(content: &mut Located<LineContent>) {
 
 /// Parse a Z33 assembly program with error recovery.
 ///
-/// Always returns a `ParseResult` containing a (possibly partial) program AST
-/// and a list of diagnostics. If `diagnostics` is empty, the program parsed
-/// without errors.
+/// All spans in the returned AST are **absolute byte offsets** in the input.
+/// This includes line locations, symbol locations, content locations, and all
+/// nested spans (kind, arguments, expressions).
 #[must_use]
 pub fn parse(input: &str) -> ParseResult {
-    let mut diagnostics = Vec::new();
+    // Parse line-by-line. Each line is parsed independently for reliable
+    // error recovery. The line parser handles labels, instructions, and
+    // directives. Chumsky spans are relative to each line's input, so we
+    // shift all spans to absolute byte offsets in the full input.
+    let line_parser = line().then_ignore(end());
     let mut lines = Vec::new();
-
-    // Build the parser once and reuse it for every line. This avoids
-    // reconstructing the combinator tree (including the .boxed() heap
-    // allocation) on every line.
-    let content_parser = line_remainder().then_ignore(end());
-
-    // Split on newlines, keeping track of byte offsets.
-    // We parse each line individually so that an error in one line doesn't
-    // prevent parsing of subsequent lines.
+    let mut diagnostics = Vec::new();
     let mut offset = 0;
+
     for raw_line in input.split('\n') {
         let line_len = raw_line.len();
-        // Strip trailing \r for \r\n line endings
         let raw_line = raw_line.strip_suffix('\r').unwrap_or(raw_line);
 
-        // Step 1: extract labels imperatively (avoids chumsky backtracking
-        // errors when an unknown instruction looks like it could be a label)
-        let (symbols, content_offset) = extract_labels(raw_line);
-        let content_str = &raw_line[content_offset..];
-        let result = content_parser.parse(content_str);
+        let result = line_parser.parse(raw_line);
 
-        let parsed_line = if let Some(content) = result.output().cloned().flatten() {
-            let mut content = content;
-            // Content spans are relative to content_str; make inner spans
-            // content-relative (for the compiler's span model)
-            make_content_relative(&mut content);
-            // Then shift content.location to be line-relative
-            content.location.start += content_offset;
-            content.location.end += content_offset;
-
-            let mut l = Line {
-                symbols,
-                content: Some(content),
-            }
-            .with_location(0..raw_line.len());
-            l.location.start += offset;
-            l.location.end += offset;
-            l
-        } else if result.output().is_some() {
-            // Parsed OK but no content (empty line or whitespace-only after labels)
-            let mut l = Line {
-                symbols,
-                content: None,
-            }
-            .with_location(0..raw_line.len());
-            l.location.start += offset;
-            l.location.end += offset;
-            l
+        let parsed_line = if let Some(mut l) = result.output().cloned() {
+            // Shift all spans from line-relative to absolute
+            shift_line_spans(&mut l, offset);
+            l.with_location(offset..offset + raw_line.len())
         } else {
-            // Total parse failure for this line — create an error line
             Line {
-                symbols,
-                content: if content_str.trim().is_empty() {
+                symbols: SmallVec::new(),
+                content: if raw_line.trim().is_empty() {
                     None
                 } else {
-                    Some(LineContent::Error.with_location(content_offset..raw_line.len()))
+                    Some(LineContent::Error.with_location(offset..offset + raw_line.len()))
                 },
             }
             .with_location(offset..offset + raw_line.len())
         };
 
-        // Collect diagnostics, adjusting spans from content-relative to absolute
         for error in result.errors() {
             let mut diag = rich_to_diagnostic(error);
-            diag.span.start += offset + content_offset;
-            diag.span.end += offset + content_offset;
+            diag.span.start += offset;
+            diag.span.end += offset;
             for label in &mut diag.labels {
-                label.0.start += offset + content_offset;
-                label.0.end += offset + content_offset;
+                label.0.start += offset;
+                label.0.end += offset;
             }
             diagnostics.push(diag);
         }
 
         lines.push(parsed_line);
-        offset += line_len + 1; // +1 for the \n
+        offset += line_len + 1;
     }
 
     let program = Program { lines }.with_location(0..input.len());
@@ -570,13 +512,10 @@ mod tests {
             Some(Located {
                 inner: LineContent::Directive { argument, .. },
                 ..
-            }) => {
-                // Should be Sum(5, Multiply(2, 3))
-                match &argument.inner {
-                    DirectiveArgument::Expression(ExpressionNode::Sum(..)) => {}
-                    other => panic!("expected Sum expression, got {other:?}"),
-                }
-            }
+            }) => match &argument.inner {
+                DirectiveArgument::Expression(ExpressionNode::Sum(..)) => {}
+                other => panic!("expected Sum expression, got {other:?}"),
+            },
             other => panic!("expected directive, got {other:?}"),
         }
     }
@@ -597,57 +536,29 @@ mod tests {
 
     #[test]
     fn parse_memory_access_modes() {
-        // Direct
-        let result = parse("ld %a, [42]");
-        assert!(
-            result.diagnostics.is_empty(),
-            "diagnostics: {:?}",
-            result
-                .diagnostics
-                .iter()
-                .map(|d| &d.message)
-                .collect::<Vec<_>>()
-        );
-
-        // Indirect
-        let result = parse("ld %a, [%b]");
-        assert!(
-            result.diagnostics.is_empty(),
-            "diagnostics: {:?}",
-            result
-                .diagnostics
-                .iter()
-                .map(|d| &d.message)
-                .collect::<Vec<_>>()
-        );
-
-        // Indexed
-        let result = parse("ld %a, [%b+2]");
-        assert!(
-            result.diagnostics.is_empty(),
-            "diagnostics: {:?}",
-            result
-                .diagnostics
-                .iter()
-                .map(|d| &d.message)
-                .collect::<Vec<_>>()
-        );
+        for input in ["ld %a, [42]", "ld %a, [%b]", "ld %a, [%b+2]"] {
+            let result = parse(input);
+            assert!(
+                result.diagnostics.is_empty(),
+                "{input}: {:?}",
+                result
+                    .diagnostics
+                    .iter()
+                    .map(|d| &d.message)
+                    .collect::<Vec<_>>()
+            );
+        }
     }
 
     #[test]
     fn parse_error_recovery() {
-        // Invalid line in the middle should be recovered
         let result = parse("main:\n    $$invalid$$\n    reset");
-        // Should have diagnostics for the invalid line
         assert!(!result.diagnostics.is_empty());
-        // But should still parse 3 lines (the invalid one becomes an error)
         assert_eq!(result.program.inner.lines.len(), 3);
     }
 
     #[test]
     fn parse_trailing_whitespace() {
-        // Comments are stripped by the preprocessor before reaching the
-        // assembly parser, so the parser only sees trailing whitespace.
         let result = parse("    add %a, %b    ");
         assert!(
             result.diagnostics.is_empty(),
@@ -685,11 +596,7 @@ mod tests {
         }
     }
 
-    /// Verify that the span model matches what the compiler expects:
-    ///   - line.location: absolute in the full input
-    ///   - symbol.location: relative to line start
-    ///   - content.location: relative to line start
-    ///   - kind/argument spans: relative to content start
+    /// All spans are now absolute byte offsets in the full input.
     #[test]
     fn span_model_multiline() {
         //            0         1         2
@@ -714,31 +621,26 @@ mod tests {
         assert_eq!(first.location, 0..5); // absolute
         assert_eq!(first.inner.symbols.len(), 1);
         assert_eq!(first.inner.symbols[0].inner, "main");
-        assert_eq!(first.inner.symbols[0].location, 0..4); // relative to line start
+        assert_eq!(first.inner.symbols[0].location, 0..4); // absolute
 
         // Line 1: "    add %a, %b"
-        // Line starts at byte 6 in the input (after "main:\n")
         let second = &lines[1];
         assert_eq!(second.location, 6..20); // absolute
 
         let content = second.inner.content.as_ref().unwrap();
-        // content.location: relative to line start
-        // "    add %a, %b" — content starts at byte 4 (after spaces)
-        assert_eq!(content.location, 4..14);
+        // "    add %a, %b" starts at byte 6, content starts at "add" = byte 10
+        assert_eq!(content.location, 10..20); // absolute
 
         match &content.inner {
             LineContent::Instruction { kind, arguments } => {
-                // kind.location: relative to content start
-                // "add" is at the start of content
-                assert_eq!(kind.location, 0..3);
+                // "add" at bytes 10..13
+                assert_eq!(kind.location, 10..13);
                 assert_eq!(kind.inner, InstructionKind::Add);
 
-                // argument locations: relative to content start
-                // Content is "add %a, %b"
-                //             0123456789
+                // "%a" at bytes 14..16, "%b" at bytes 18..20
                 assert_eq!(arguments.len(), 2);
-                assert_eq!(arguments[0].location, 4..6); // "%a"
-                assert_eq!(arguments[1].location, 8..10); // "%b"
+                assert_eq!(arguments[0].location, 14..16);
+                assert_eq!(arguments[1].location, 18..20);
             }
             other => panic!("expected instruction, got {other:?}"),
         }
@@ -764,19 +666,15 @@ mod tests {
         assert_eq!(line.location, 0..13); // absolute
 
         assert_eq!(line.inner.symbols[0].inner, "foo");
-        assert_eq!(line.inner.symbols[0].location, 0..3); // relative to line
+        assert_eq!(line.inner.symbols[0].location, 0..3); // absolute
 
         let content = line.inner.content.as_ref().unwrap();
         // ".word 42" starts at byte 5
-        assert_eq!(content.location, 5..13); // relative to line
+        assert_eq!(content.location, 5..13); // absolute
 
         match &content.inner {
             LineContent::Directive { kind, argument } => {
-                // Relative to content start (".word 42")
-                // The directive_kind parser skips the '.', so:
-                // ".word" -> kind location covers "word" part
                 assert_eq!(kind.inner, DirectiveKind::Word);
-                // "42" is at position 6 in ".word 42"
                 assert_eq!(
                     argument.inner,
                     DirectiveArgument::Expression(ExpressionNode::Literal(42))

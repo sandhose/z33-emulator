@@ -15,18 +15,6 @@ where
     }
 }
 
-impl<T> Located<T> {
-    pub(crate) fn offset(self, offset: usize) -> Self {
-        Located {
-            inner: self.inner,
-            location: Range {
-                start: offset + self.location.start,
-                end: offset + self.location.end,
-            },
-        }
-    }
-}
-
 pub trait Locatable: Sized {
     fn with_location(self, location: Range<usize>) -> Located<Self> {
         Located {

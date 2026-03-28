@@ -160,10 +160,8 @@ pub(crate) fn layout_memory(program: &[Located<Line>]) -> (Layout, Vec<MemoryLay
     let mut position = PROGRAM_START;
 
     for line in program {
-        let line_offset = line.location.start;
         let line = &line.inner;
         for key in line.symbols.clone() {
-            let key = key.offset(line_offset);
             trace!(key = %key.inner, position, "Inserting label");
             if let Err(e) = layout.insert_label(key, position) {
                 errors.push(e);
@@ -171,21 +169,16 @@ pub(crate) fn layout_memory(program: &[Located<Line>]) -> (Layout, Vec<MemoryLay
         }
 
         if let Some(ref content) = line.content {
-            let content_offset = line_offset + content.location.start;
             match &content.inner {
                 // r[impl asm.directive.word]
                 LineContent::Directive {
                     kind: Located { inner: Word, .. },
                     ..
                 } => {
-                    let abs_location = Range {
-                        start: content.location.start + line_offset,
-                        end: content.location.end + line_offset,
-                    };
                     if let Err(e) = layout.insert_placement(
                         position,
-                        Placement::Line(content.clone().offset(line_offset)),
-                        abs_location,
+                        Placement::Line(content.clone()),
+                        content.location.clone(),
                     ) {
                         errors.push(e);
                     }
@@ -199,14 +192,10 @@ pub(crate) fn layout_memory(program: &[Located<Line>]) -> (Layout, Vec<MemoryLay
                         // Skip — the diagnostic was already emitted by the
                         // parser
                     } else {
-                        let abs_location = Range {
-                            start: content.location.start + line_offset,
-                            end: content.location.end + line_offset,
-                        };
                         if let Err(e) = layout.insert_placement(
                             position,
-                            Placement::Line(content.clone().offset(line_offset)),
-                            abs_location,
+                            Placement::Line(content.clone()),
+                            content.location.clone(),
                         ) {
                             errors.push(e);
                         }
@@ -226,15 +215,11 @@ pub(crate) fn layout_memory(program: &[Located<Line>]) -> (Layout, Vec<MemoryLay
                 } => match e.evaluate(&EmptyExpressionContext) {
                     Ok(size) => {
                         trace!(size, position, "Reserving space");
-                        let abs_location = Range {
-                            start: content.location.start + line_offset,
-                            end: content.location.end + line_offset,
-                        };
                         for _ in 0..size {
                             if let Err(e) = layout.insert_placement(
                                 position,
                                 Placement::Reserved,
-                                abs_location.clone(),
+                                content.location.clone(),
                             ) {
                                 errors.push(e);
                             }
@@ -280,22 +265,19 @@ pub(crate) fn layout_memory(program: &[Located<Line>]) -> (Layout, Vec<MemoryLay
                         },
                 } => {
                     trace!(position, string = string.as_str(), "Inserting string");
-                    let abs_location = Range {
-                        start: content.location.start + line_offset,
-                        end: content.location.end + line_offset,
-                    };
                     for c in string.chars() {
                         if let Err(e) = layout.insert_placement(
                             position,
                             Placement::Char(c),
-                            abs_location.clone(),
+                            content.location.clone(),
                         ) {
                             errors.push(e);
                         }
                         position += 1;
                     }
 
-                    if let Err(e) = layout.insert_placement(position, Placement::Nul, abs_location)
+                    if let Err(e) =
+                        layout.insert_placement(position, Placement::Nul, content.location.clone())
                     {
                         errors.push(e);
                     }
@@ -305,10 +287,7 @@ pub(crate) fn layout_memory(program: &[Located<Line>]) -> (Layout, Vec<MemoryLay
                 LineContent::Directive { kind, .. } => {
                     errors.push(MemoryLayoutError::InvalidDirectiveArgument {
                         kind: kind.inner,
-                        location: Range {
-                            start: kind.location.start + content_offset,
-                            end: kind.location.end + content_offset,
-                        },
+                        location: kind.location.clone(),
                     });
                 }
 
