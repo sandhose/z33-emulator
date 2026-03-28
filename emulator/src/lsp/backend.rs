@@ -238,9 +238,8 @@ impl LanguageServer for Backend {
             for line in &program.lines {
                 for symbol in &line.inner.symbols {
                     if symbol.inner == word {
-                        let abs_start = line.location.start + symbol.location.start;
-                        let abs_end = line.location.start + symbol.location.end;
-                        let original_span = analysis.resolve_span(abs_start..abs_end);
+                        // All spans are absolute since the parser rewrite
+                        let original_span = analysis.resolve_span(symbol.location.clone());
                         if let Some(range) = original_span.and_then(|s| position::range(&source, s))
                         {
                             return Ok(Some(GotoDefinitionResponse::Scalar(Location {
