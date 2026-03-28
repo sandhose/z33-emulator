@@ -212,20 +212,15 @@ fn endif_parser<'a>() -> impl Parser<'a, &'a str, (), Extra<'a>> + Clone {
         .ignored()
 }
 
-/// Parse a raw (non-directive) line, stripping `//` comments.
+/// Parse a raw (non-directive) line. Inline `//` comments are preserved —
+/// the assembly parser handles them and stores them in `Line.comment`.
 fn parse_raw_line(line: &str) -> Option<Node> {
     if line.starts_with('#') {
         return None;
     }
 
-    let content = if let Some(i) = line.find("//") {
-        &line[..i]
-    } else {
-        line
-    };
-
     Some(Node::Raw {
-        content: content.to_string(),
+        content: line.to_string(),
     })
 }
 

@@ -273,10 +273,22 @@ fn shift_line_spans(line: &mut Line, offset: usize) {
             LineContent::Error => {}
         }
     }
+    if let Some(comment) = &mut line.comment {
+        comment.location.start += offset;
+        comment.location.end += offset;
+    }
+}
+
+/// Parse an inline `// ...` comment, returning the comment text (trimmed).
+fn inline_comment<'a>() -> impl Parser<'a, &'a str, Located<String>, Extra<'a>> + Clone {
+    just("//")
+        .ignore_then(any().repeated().to_slice())
+        .map(|s: &str| s.trim().to_string())
+        .map_with(|s, e| s.with_location(span_to_range(e.span())))
 }
 
 /// Parse a single line: optional labels, then optional content, then
-/// optional horizontal whitespace.
+/// optional inline comment.
 fn line<'a>() -> impl Parser<'a, &'a str, Line, Extra<'a>> + Clone {
     label()
         .then_ignore(hspace())
@@ -286,7 +298,12 @@ fn line<'a>() -> impl Parser<'a, &'a str, Line, Extra<'a>> + Clone {
         .then_ignore(hspace())
         .then(line_content().or_not())
         .then_ignore(hspace())
-        .map(|(symbols, content)| Line { symbols, content })
+        .then(inline_comment().or_not())
+        .map(|((symbols, content), comment)| Line {
+            symbols,
+            content,
+            comment,
+        })
 }
 
 // ---------------------------------------------------------------------------
@@ -327,6 +344,7 @@ pub fn parse(input: &str) -> ParseResult {
                 } else {
                     Some(LineContent::Error.with_location(offset..offset + raw_line.len()))
                 },
+                comment: None,
             }
             .with_location(offset..offset + raw_line.len())
         };
