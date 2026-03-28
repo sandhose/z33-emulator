@@ -30,6 +30,10 @@ pub fn hover(
     }
 
     if let Some(state) = analysis {
+        if let Some(result) = try_macro_hover(state, source, byte_offset) {
+            return Some(result);
+        }
+
         if let Some(result) = try_label_hover(state, source, byte_offset) {
             return Some(result);
         }
@@ -108,6 +112,40 @@ fn try_mnemonic_hover(source: &str, offset: usize) -> Option<HoverResult> {
     let doc = instruction_doc(&word.to_ascii_lowercase())?;
     Some(HoverResult {
         contents: doc.to_string(),
+        span: start..end,
+    })
+}
+
+fn try_macro_hover(state: &DocumentState, source: &str, offset: usize) -> Option<HoverResult> {
+    let bytes = source.as_bytes();
+
+    let mut start = offset;
+    while start > 0 && is_identifier_char(bytes[start - 1] as char) {
+        start -= 1;
+    }
+    let mut end = offset;
+    while end < bytes.len() && is_identifier_char(bytes[end] as char) {
+        end += 1;
+    }
+
+    if start == end {
+        return None;
+    }
+
+    let word = &source[start..end];
+    let annotations = state.annotations()?;
+
+    // Find the last #define for this name (later defines override earlier ones)
+    let def = annotations
+        .definitions
+        .iter()
+        .rev()
+        .find(|d| d.key == word)?;
+
+    let value_display = def.value.as_deref().unwrap_or("(defined without value)");
+
+    Some(HoverResult {
+        contents: format!("**{word}** — macro\n\n`#define {word} {value_display}`"),
         span: start..end,
     })
 }

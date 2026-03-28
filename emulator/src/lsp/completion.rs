@@ -226,9 +226,40 @@ fn label_completions(labels: &BTreeMap<String, crate::constants::Address>) -> Ve
         .collect()
 }
 
+fn macro_completions(analysis: Option<&DocumentState>) -> Vec<CompletionItem> {
+    let Some(state) = analysis else {
+        return Vec::new();
+    };
+    let Some(annotations) = state.annotations() else {
+        return Vec::new();
+    };
+
+    // Deduplicate: later #defines override earlier ones, show only the last value
+    let mut seen = std::collections::HashSet::new();
+    annotations
+        .definitions
+        .iter()
+        .rev()
+        .filter(|d| seen.insert(&d.key))
+        .map(|d| {
+            let detail = d
+                .value
+                .as_ref()
+                .map_or_else(|| "macro".to_string(), |v| format!("macro ({v})"));
+            CompletionItem {
+                label: d.key.clone(),
+                kind: Some(CompletionItemKind::CONSTANT),
+                detail: Some(detail),
+                ..Default::default()
+            }
+        })
+        .collect()
+}
+
 fn completions_for_arg_type(
     arg_type: ArgType,
     labels: &BTreeMap<String, crate::constants::Address>,
+    analysis: Option<&DocumentState>,
 ) -> Vec<CompletionItem> {
     let mut items = Vec::new();
     match arg_type {
@@ -238,10 +269,12 @@ fn completions_for_arg_type(
         ArgType::ImmReg => {
             items.extend(REGISTERS_FULL.iter().cloned());
             items.extend(label_completions(labels));
+            items.extend(macro_completions(analysis));
         }
         ArgType::ImmRegDirIndIdx => {
             items.extend(REGISTERS_FULL.iter().cloned());
             items.extend(label_completions(labels));
+            items.extend(macro_completions(analysis));
             items.push(BRACKET.clone());
         }
         ArgType::DirIndIdx => {
@@ -454,7 +487,7 @@ pub fn completions(
         CursorContext::Register => REGISTERS_PREFIX.clone(),
         CursorContext::Argument { kind, arg_index } => {
             if let Some(arg_type) = expected_arg_type(kind, arg_index) {
-                completions_for_arg_type(arg_type, labels)
+                completions_for_arg_type(arg_type, labels, analysis)
             } else {
                 Vec::new()
             }
@@ -462,6 +495,7 @@ pub fn completions(
         CursorContext::UnknownArgument => {
             let mut items = REGISTERS_FULL.clone();
             items.extend(label_completions(labels));
+            items.extend(macro_completions(analysis));
             items.push(BRACKET.clone());
             items
         }

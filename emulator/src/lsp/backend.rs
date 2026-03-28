@@ -230,24 +230,39 @@ impl LanguageServer for Backend {
         };
 
         let word = word_at_offset(&source, offset);
-        if word.is_empty() || !analysis.labels().contains_key(word) {
+        if word.is_empty() {
             return Ok(None);
         }
 
-        if let Some(program) = analysis.program() {
-            for line in &program.lines {
-                for symbol in &line.inner.symbols {
-                    if symbol.inner == word {
-                        // All spans are absolute since the parser rewrite
-                        let original_span = analysis.resolve_span(symbol.location.clone());
-                        if let Some(range) = original_span.and_then(|s| position::range(&source, s))
-                        {
-                            return Ok(Some(GotoDefinitionResponse::Scalar(Location {
-                                uri: uri.clone(),
-                                range,
-                            })));
+        // Try label definition
+        if analysis.labels().contains_key(word) {
+            if let Some(program) = analysis.program() {
+                for line in &program.lines {
+                    for symbol in &line.inner.symbols {
+                        if symbol.inner == word {
+                            let original_span = analysis.resolve_span(symbol.location.clone());
+                            if let Some(range) =
+                                original_span.and_then(|s| position::range(&source, s))
+                            {
+                                return Ok(Some(GotoDefinitionResponse::Scalar(Location {
+                                    uri: uri.clone(),
+                                    range,
+                                })));
+                            }
                         }
                     }
+                }
+            }
+        }
+
+        // Try macro definition (#define)
+        if let Some(annotations) = analysis.annotations() {
+            if let Some(def) = annotations.definitions.iter().rev().find(|d| d.key == word) {
+                if let Some(range) = position::range(&source, def.span.clone()) {
+                    return Ok(Some(GotoDefinitionResponse::Scalar(Location {
+                        uri: uri.clone(),
+                        range,
+                    })));
                 }
             }
         }
