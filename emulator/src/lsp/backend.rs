@@ -422,7 +422,7 @@ impl LanguageServer for Backend {
 
         let mut lenses = Vec::new();
 
-        for name in analysis.labels().keys() {
+        for (name, addr) in analysis.labels() {
             let Some(def_span) = find_label_definition(&source, name) else {
                 continue;
             };
@@ -432,11 +432,12 @@ impl LanguageServer for Backend {
 
             let ref_count = find_label_references(&source, name, false).count();
 
-            let title = match ref_count {
+            let refs = match ref_count {
                 0 => "0 references".to_string(),
                 1 => "1 reference".to_string(),
                 n => format!("{n} references"),
             };
+            let title = format!("address {addr} | {refs}");
 
             lenses.push(CodeLens {
                 range,
