@@ -193,22 +193,26 @@ fn build_instruction_completions() -> Vec<CompletionItem> {
 
 fn build_directive_completions() -> Vec<CompletionItem> {
     let directives = [
-        (".addr", "Set current address"),
-        (".space", "Reserve memory cells"),
-        (".string", "Store a string literal"),
-        (".word", "Store a word value"),
+        ("addr", ".addr", "Set current address"),
+        ("space", ".space", "Reserve memory cells"),
+        ("string", ".string", "Store a string literal"),
+        ("word", ".word", "Store a word value"),
     ];
 
     directives
         .into_iter()
-        .map(|(name, detail)| CompletionItem {
-            label: name.to_string(),
+        .map(|(short, full, detail)| CompletionItem {
+            label: full.to_string(),
             kind: Some(CompletionItemKind::KEYWORD),
             detail: Some("directive".to_string()),
             label_details: Some(CompletionItemLabelDetails {
                 description: Some(detail.to_string()),
                 ..Default::default()
             }),
+            // '.' is a trigger character and may already be typed, so
+            // insert/filter without the dot to avoid doubling.
+            insert_text: Some(short.to_string()),
+            filter_text: Some(short.to_string()),
             ..Default::default()
         })
         .collect()
