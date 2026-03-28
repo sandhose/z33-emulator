@@ -5,6 +5,7 @@
 //! diagnostics.
 
 use chumsky::prelude::*;
+use smallvec::SmallVec;
 
 use super::line::{Line, LineContent, Program};
 use super::location::{Locatable, Located};
@@ -180,8 +181,8 @@ fn directive_argument<'a>() -> impl Parser<'a, &'a str, DirectiveArgument, Extra
 /// This is done imperatively (not with chumsky) to avoid the symbol parser's
 /// backtracking producing misleading errors when an unknown instruction looks
 /// like it could be a label.
-fn extract_labels(line: &str) -> (Vec<Located<String>>, usize) {
-    let mut labels = Vec::new();
+fn extract_labels(line: &str) -> (SmallVec<[Located<String>; 1]>, usize) {
+    let mut labels = SmallVec::new();
     let mut pos = 0;
     let bytes = line.as_bytes();
 

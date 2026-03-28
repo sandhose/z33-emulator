@@ -10,6 +10,8 @@
 //! some neat tricks, especially calculating the offset of a property from the
 //! input string.
 
+use smallvec::SmallVec;
+
 #[cfg(test)]
 use super::location::Locatable;
 use super::location::Located;
@@ -92,7 +94,7 @@ impl std::fmt::Display for LineContent {
 /// Note that the `Default::default()` implementation represents an empty line.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub(crate) struct Line {
-    pub symbols: Vec<Located<String>>,
+    pub symbols: SmallVec<[Located<String>; 1]>,
     pub content: Option<Located<LineContent>>,
 }
 

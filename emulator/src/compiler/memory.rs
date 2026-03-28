@@ -1,6 +1,7 @@
 use std::convert::TryFrom;
 use std::ops::Range;
 
+use smallvec::SmallVec;
 use thiserror::Error;
 use tracing::{debug, span, trace, Level};
 
@@ -32,7 +33,7 @@ pub enum MemoryFillError {
         /// Span of the instruction mnemonic
         instruction_span: Range<usize>,
         /// Spans of each argument (indexed same as the instruction arguments)
-        argument_spans: Vec<Range<usize>>,
+        argument_spans: SmallVec<[Range<usize>; 2]>,
         source: InstructionCompilationError,
     },
 }
@@ -386,8 +387,8 @@ fn compile_placement(labels: &Labels, placement: &Placement) -> Result<Cell, Mem
 
             // Evaluate each argument, collecting (value, absolute_span) pairs.
             // If evaluation fails, we bail immediately with the argument span.
-            let mut arg_values = Vec::with_capacity(arguments.len());
-            let mut arg_spans = Vec::with_capacity(arguments.len());
+            let mut arg_values = SmallVec::<[_; 2]>::with_capacity(arguments.len());
+            let mut arg_spans = SmallVec::<[_; 2]>::with_capacity(arguments.len());
             for (index, argument) in arguments.iter().enumerate() {
                 trace!("argument {} evaluation: {}", index, argument);
                 let value =

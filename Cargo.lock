@@ -2165,6 +2165,7 @@ dependencies = [
  "parse-display",
  "pretty_assertions",
  "serde_json",
+ "smallvec",
  "thiserror",
  "tower-lsp",
  "tracing",
