@@ -288,30 +288,28 @@ impl LanguageServer for Backend {
             return Ok(None);
         }
 
-        let is_label = analysis
-            .as_ref()
-            .is_some_and(|a| a.labels().contains_key(word));
-        let is_macro = analysis
-            .as_ref()
-            .and_then(|a| a.annotations())
-            .is_some_and(|ann| ann.definitions.iter().any(|d| d.key == word));
-
-        if !is_label && !is_macro {
+        if !is_known_symbol(analysis.as_ref(), word) {
             return Ok(None);
         }
 
         let include_decl = params.context.include_declaration;
-        let iter: Box<dyn Iterator<Item = std::ops::Range<usize>> + '_> = if is_label {
-            Box::new(find_label_references(&source, word, include_decl))
-        } else if include_decl {
-            find_word_occurrences(&source, word)
-        } else {
-            Box::new(find_word_occurrences(&source, word).filter(|span| {
+        let locations: Vec<Location> = find_word_occurrences(&source, word)
+            .filter(|span| {
+                if include_decl {
+                    return true;
+                }
+                // Exclude label definitions (foo:) and macro definitions (#define FOO)
+                let after = &source[span.end..];
+                let trimmed = after.trim_start_matches([' ', '\t']);
+                if trimmed.starts_with(':') {
+                    return false;
+                }
                 let before = &source[..span.start];
-                !before.ends_with("define ") && !before.ends_with("define\t")
-            }))
-        };
-        let locations: Vec<Location> = iter
+                if before.ends_with("define ") || before.ends_with("define\t") {
+                    return false;
+                }
+                true
+            })
             .filter_map(|span| {
                 position::range(&source, span).map(|range| Location {
                     uri: uri.clone(),
@@ -367,15 +365,7 @@ impl LanguageServer for Backend {
         }
 
         // Check if this is a known label or macro
-        let is_label = analysis
-            .as_ref()
-            .is_some_and(|a| a.labels().contains_key(word));
-        let is_macro = analysis
-            .as_ref()
-            .and_then(|a| a.annotations())
-            .is_some_and(|ann| ann.definitions.iter().any(|d| d.key == word));
-
-        if !is_label && !is_macro {
+        if !is_known_symbol(analysis.as_ref(), word) {
             return Ok(None);
         }
 
@@ -550,52 +540,29 @@ impl LanguageServer for Backend {
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn find_label_references<'a>(
-    source: &'a str,
-    label: &'a str,
-    include_declaration: bool,
-) -> impl Iterator<Item = std::ops::Range<usize>> + 'a {
-    let label_len = label.len();
-    let bytes = source.as_bytes();
-
-    let mut start = 0;
-    std::iter::from_fn(move || {
-        while let Some(rel) = source[start..].find(label) {
-            let abs = start + rel;
-            start = abs + label_len;
-
-            if abs > 0 && (bytes[abs - 1].is_ascii_alphanumeric() || bytes[abs - 1] == b'_') {
-                continue;
-            }
-            if start < bytes.len() && (bytes[start].is_ascii_alphanumeric() || bytes[start] == b'_')
-            {
-                continue;
-            }
-
-            if !include_declaration {
-                let after = &source[start..];
-                let trimmed = after.trim_start_matches([' ', '\t']);
-                if trimmed.starts_with(':') {
-                    continue;
-                }
-            }
-
-            return Some(abs..start);
-        }
-        None
-    })
+/// Check whether `word` is a known label or macro in the analysis.
+fn is_known_symbol(analysis: Option<&Arc<DocumentState>>, word: &str) -> bool {
+    let Some(a) = analysis.as_ref() else {
+        return false;
+    };
+    if a.labels().contains_key(word) {
+        return true;
+    }
+    a.annotations()
+        .is_some_and(|ann| ann.definitions.iter().any(|d| d.key == word))
 }
 
-/// Find all whole-word occurrences of `word` in `source`.
+/// Find all whole-word occurrences of `word` in `source`, yielding byte
+/// ranges. Checks word boundaries to avoid matching substrings.
 fn find_word_occurrences<'a>(
     source: &'a str,
     word: &'a str,
-) -> Box<dyn Iterator<Item = std::ops::Range<usize>> + 'a> {
+) -> impl Iterator<Item = std::ops::Range<usize>> + 'a {
     let word_len = word.len();
     let bytes = source.as_bytes();
 
     let mut start = 0;
-    Box::new(std::iter::from_fn(move || {
+    std::iter::from_fn(move || {
         while let Some(rel) = source[start..].find(word) {
             let abs = start + rel;
             start = abs + word_len;
@@ -611,9 +578,28 @@ fn find_word_occurrences<'a>(
             return Some(abs..start);
         }
         None
-    }))
+    })
 }
 
+/// Find occurrences of a label, optionally excluding its definition
+/// (identifier followed by `:`).
+fn find_label_references<'a>(
+    source: &'a str,
+    label: &'a str,
+    include_declaration: bool,
+) -> impl Iterator<Item = std::ops::Range<usize>> + 'a {
+    find_word_occurrences(source, label).filter(move |span| {
+        if include_declaration {
+            return true;
+        }
+        let after = &source[span.end..];
+        let trimmed = after.trim_start_matches([' ', '\t']);
+        !trimmed.starts_with(':')
+    })
+}
+
+/// Extract the identifier word at the given byte offset, walking backwards
+/// and forwards to find word boundaries.
 fn word_at_offset(source: &str, offset: usize) -> &str {
     if offset > source.len() {
         return "";
@@ -630,25 +616,11 @@ fn word_at_offset(source: &str, offset: usize) -> &str {
     &source[start..end]
 }
 
+/// Find the byte range of a label definition (identifier followed by `:`).
 fn find_label_definition(source: &str, label: &str) -> Option<std::ops::Range<usize>> {
-    let label_len = label.len();
-    let bytes = source.as_bytes();
-    let mut start = 0;
-    while let Some(rel) = source[start..].find(label) {
-        let abs = start + rel;
-        let end = abs + label_len;
-        start = end;
-        if abs > 0 && (bytes[abs - 1].is_ascii_alphanumeric() || bytes[abs - 1] == b'_') {
-            continue;
-        }
-        if end < bytes.len() && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'_') {
-            continue;
-        }
-        let after = &source[end..];
+    find_word_occurrences(source, label).find(|span| {
+        let after = &source[span.end..];
         let trimmed = after.trim_start_matches([' ', '\t']);
-        if trimmed.starts_with(':') {
-            return Some(abs..end);
-        }
-    }
-    None
+        trimmed.starts_with(':')
+    })
 }
