@@ -25,15 +25,19 @@ pub fn hover(
         return Some(result);
     }
 
+    // Macros before mnemonics — a `#define TRAP 4` should show the macro
+    // value, not the instruction documentation.
+    if let Some(state) = analysis {
+        if let Some(result) = try_macro_hover(state, source, byte_offset) {
+            return Some(result);
+        }
+    }
+
     if let Some(result) = try_mnemonic_hover(source, byte_offset) {
         return Some(result);
     }
 
     if let Some(state) = analysis {
-        if let Some(result) = try_macro_hover(state, source, byte_offset) {
-            return Some(result);
-        }
-
         if let Some(result) = try_label_hover(state, source, byte_offset) {
             return Some(result);
         }
