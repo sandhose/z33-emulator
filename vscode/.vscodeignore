@@ -1,0 +1,6 @@
+src/**
+node_modules/**
+tsconfig.json
+tsconfig.tsbuildinfo
+.oxfmtrc.json
+.oxlintrc.json
