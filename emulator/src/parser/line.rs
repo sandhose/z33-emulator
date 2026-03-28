@@ -10,6 +10,8 @@
 //! some neat tricks, especially calculating the offset of a property from the
 //! input string.
 
+use smallvec::SmallVec;
+
 #[cfg(test)]
 use super::location::Locatable;
 use super::location::Located;
@@ -92,8 +94,10 @@ impl std::fmt::Display for LineContent {
 /// Note that the `Default::default()` implementation represents an empty line.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub(crate) struct Line {
-    pub symbols: Vec<Located<String>>,
+    pub symbols: SmallVec<[Located<String>; 1]>,
     pub content: Option<Located<LineContent>>,
+    /// Trailing inline comment (`// ...`), if any.
+    pub comment: Option<Located<String>>,
 }
 
 impl AstNode for Line {
@@ -112,6 +116,12 @@ impl AstNode for Line {
 
         children.extend(self.content.iter().map(Located::to_node));
 
+        children.extend(
+            self.comment
+                .iter()
+                .map(|c| Node::new(NodeKind::Comment, c.location.clone()).content(c.inner.clone())),
+        );
+
         children
     }
 }
@@ -129,6 +139,14 @@ impl std::fmt::Display for Line {
                 write!(f, "    ")?;
             }
             write!(f, "{}", c.inner)?;
+            had_something = true;
+        }
+
+        if let Some(ref comment) = self.comment {
+            if had_something {
+                write!(f, " ")?;
+            }
+            write!(f, "// {}", comment.inner)?;
         }
 
         Ok(())

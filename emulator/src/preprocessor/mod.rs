@@ -25,8 +25,10 @@ use crate::parser::expression::{EmptyContext as EmptyExpressionContext, Evaluati
 use crate::parser::location::{Locatable, Located};
 use crate::parser::preprocessor::{parse, Node};
 
+mod annotations;
 mod fs;
 
+pub use self::annotations::SourceAnnotations;
 pub use self::fs::{Filesystem, InMemoryFilesystem, NativeFilesystem};
 
 struct ProcessedFile {
@@ -149,6 +151,9 @@ pub struct PreprocessResult {
     /// A [`FileId`] for the virtual preprocessed output, registered in the
     /// workspace's [`FileDatabase`].
     pub preprocessed_file_id: FileId,
+    /// Structured metadata about preprocessor constructs, keyed by original
+    /// source byte offsets.
+    pub annotations: SourceAnnotations,
 }
 
 /// A [`Workspace`] holds parsed files loaded from a filesystem
@@ -252,8 +257,9 @@ impl Workspace {
     /// file, etc.
     pub fn preprocess(&mut self) -> Result<PreprocessResult, PreprocessorError> {
         let mut ctx = Context::default();
+        let mut annotations = SourceAnnotations::default();
         let entrypoint = self.entrypoint.clone();
-        let chunks = self.preprocess_path(&entrypoint, &mut ctx)?;
+        let chunks = self.preprocess_path(&entrypoint, &mut ctx, &mut annotations)?;
         let (string, source_map, _) = chunks.into_iter().fold(
             (String::new(), SourceMap::default(), 0),
             |(mut string, mut source_map, offset), (stack, content)| {
@@ -272,6 +278,7 @@ impl Workspace {
             source_map,
             source: string,
             preprocessed_file_id,
+            annotations,
         })
     }
 
@@ -279,6 +286,7 @@ impl Workspace {
         &self,
         path: &Utf8Path,
         ctx: &mut Context,
+        annotations: &mut SourceAnnotations,
     ) -> Result<Vec<(Span, String)>, PreprocessorError> {
         let Some(file) = self.files.get(path) else {
             // The file is not loaded, this shouldn't happen
@@ -305,10 +313,18 @@ impl Workspace {
             })?;
 
         let mut buf = Vec::new();
-        self.process_chunks(&mut buf, &content.chunks, &content.references, ctx, &stack)?;
+        self.process_chunks(
+            &mut buf,
+            &content.chunks,
+            &content.references,
+            ctx,
+            &stack,
+            annotations,
+        )?;
         Ok(buf)
     }
 
+    #[allow(clippy::too_many_lines)]
     fn process_chunks(
         &self,
         buf: &mut Vec<(Span, String)>,
@@ -316,13 +332,13 @@ impl Workspace {
         references: &HashMap<Utf8PathBuf, Utf8PathBuf>,
         ctx: &mut Context,
         stack: &Span,
+        annotations: &mut SourceAnnotations,
     ) -> Result<(), PreprocessorError> {
-        'outer: for chunk in chunks {
+        for chunk in chunks {
             let (stack, chunk) = stack.push(chunk);
 
             match chunk {
                 Node::Raw { ref content } => {
-                    // Replace the definitions in the content
                     let replaced = ctx.replace(content);
                     buf.extend(replaced.into_iter().map(|l| {
                         let (stack, content) = stack.push(&l);
@@ -342,7 +358,6 @@ impl Workspace {
                 Node::Error { ref message } => {
                     let (stack, message) = stack.push(message);
 
-                    // Return the user-defined error
                     return Err(PreprocessorError::UserError {
                         file_id: stack.file_id,
                         span: stack.range.clone(),
@@ -352,9 +367,15 @@ impl Workspace {
 
                 // r[impl asm.preprocessor.undefine]
                 Node::Undefine { ref key } => {
-                    let (_stack, key) = stack.push(key);
+                    let (_key_stack, key) = stack.push(key);
 
-                    // Remove a definition
+                    annotations
+                        .undefinitions
+                        .push(annotations::UndefinitionAnnotation {
+                            span: stack.range.clone(),
+                            key: key.clone(),
+                        });
+
                     ctx.undefine(key);
                 }
 
@@ -363,45 +384,60 @@ impl Workspace {
                     ref key,
                     ref content,
                 } => {
-                    // Add a definition
-                    let (_stack, key) = stack.push(key);
+                    let (_key_stack, key) = stack.push(key);
+                    let value_str = content.as_ref().map(|i| i.inner.clone());
+
+                    annotations
+                        .definitions
+                        .push(annotations::DefinitionAnnotation {
+                            span: stack.range.clone(),
+                            key: key.clone(),
+                            value: value_str,
+                        });
+
                     let content = content.as_ref().map(|i| &i.inner);
-                    // First replace existing definitions in the content
                     let content =
                         content.map(|c| ctx.replace(c).into_iter().map(|l| l.inner).collect());
-                    // Then add the definition
                     ctx.define(key.clone(), content);
                 }
 
                 // r[impl asm.preprocessor.include]
                 Node::Inclusion { path: ref include } => {
-                    // Include a file
-                    let (stack, include) = stack.push(include);
-                    let path = Utf8Path::new(include);
+                    let (inc_stack, include) = stack.push(include);
 
-                    // Resolve the path
+                    annotations
+                        .inclusions
+                        .push(annotations::InclusionAnnotation {
+                            span: stack.range.clone(),
+                            path: include.clone(),
+                        });
+
+                    let path = Utf8Path::new(include);
                     let Some(resolved) = references.get(path) else {
-                        // The file references wasn't resolved, this shouldn't
-                        // happen
                         unreachable!("Referenced file wasn't resolved")
                     };
 
-                    // Then process it
-                    let content = self.preprocess_path(resolved, ctx).map_err(|inner| {
-                        PreprocessorError::InInclude {
-                            file_id: stack.file_id,
-                            span: stack.range.clone(),
-                            inner: Box::new(inner),
-                        }
-                    })?;
+                    let content =
+                        self.preprocess_path(resolved, ctx, annotations)
+                            .map_err(|inner| PreprocessorError::InInclude {
+                                file_id: inc_stack.file_id,
+                                span: inc_stack.range.clone(),
+                                inner: Box::new(inner),
+                            })?;
 
                     buf.extend(content);
                 }
 
                 // r[impl asm.preprocessor.conditional]
                 Node::Condition { branches, fallback } => {
+                    let mut branch_annotations = Vec::new();
+                    let mut active_found = false;
+
                     for branch in branches {
                         let (condition_stack, condition) = stack.push(&branch.condition);
+                        let (body_stack, _) = stack.push(&branch.body);
+                        let condition_text = condition.clone();
+
                         let condition: String = ctx
                             .replace_for_if_expression(condition)
                             .into_iter()
@@ -425,17 +461,59 @@ impl Workspace {
                             }
                         })?;
 
-                        if result {
-                            let (stack, body) = stack.push(&branch.body);
-                            self.process_chunks(buf, body, references, ctx, &stack)?;
-                            continue 'outer;
+                        let active = result && !active_found;
+                        branch_annotations.push(annotations::BranchAnnotation {
+                            directive_span: condition_stack.range.clone(),
+                            condition: condition_text,
+                            body_span: body_stack.range.clone(),
+                            active,
+                        });
+
+                        if active {
+                            active_found = true;
+                            let (body_stack, body) = stack.push(&branch.body);
+                            self.process_chunks(
+                                buf,
+                                body,
+                                references,
+                                ctx,
+                                &body_stack,
+                                annotations,
+                            )?;
                         }
                     }
 
-                    if let Some(ref body) = fallback {
-                        let (stack, body) = stack.push(body);
-                        self.process_chunks(buf, body, references, ctx, &stack)?;
-                    }
+                    let fallback_annotation = if let Some(ref body) = fallback {
+                        let (body_stack, body_content) = stack.push(body);
+                        let active = !active_found;
+
+                        if active {
+                            self.process_chunks(
+                                buf,
+                                body_content,
+                                references,
+                                ctx,
+                                &body_stack,
+                                annotations,
+                            )?;
+                        }
+
+                        Some(annotations::FallbackAnnotation {
+                            directive_span: body_stack.range.start..body_stack.range.start,
+                            body_span: body_stack.range.clone(),
+                            active,
+                        })
+                    } else {
+                        None
+                    };
+
+                    annotations
+                        .conditional_blocks
+                        .push(annotations::ConditionalBlockAnnotation {
+                            span: stack.range.clone(),
+                            branches: branch_annotations,
+                            fallback: fallback_annotation,
+                        });
                 }
             }
         }

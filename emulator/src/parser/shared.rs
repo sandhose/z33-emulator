@@ -4,6 +4,7 @@
 use std::ops::Range;
 
 use chumsky::prelude::*;
+use smallvec::SmallVec;
 
 use super::expression::{Node as ExpressionNode, Value as ExpressionValue};
 use super::location::Locatable;
@@ -31,7 +32,7 @@ pub struct ParseDiagnostic {
     pub span: Range<usize>,
     pub message: String,
     pub severity: DiagnosticSeverity,
-    pub labels: Vec<(Range<usize>, String)>,
+    pub labels: SmallVec<[(Range<usize>, String); 1]>,
 }
 
 /// Severity of a parse diagnostic.
@@ -71,7 +72,7 @@ pub(crate) fn rich_to_diagnostic(error: &Rich<'_, char, Span>) -> ParseDiagnosti
         span,
         message,
         severity: DiagnosticSeverity::Error,
-        labels: Vec::new(),
+        labels: SmallVec::new(),
     }
 }
 

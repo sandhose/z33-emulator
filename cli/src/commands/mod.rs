@@ -2,6 +2,7 @@ use clap::Parser;
 
 mod completion;
 mod dump;
+mod lsp;
 mod preprocess;
 mod print;
 mod run;
@@ -22,6 +23,9 @@ pub enum Subcommand {
 
     /// Generate shell completion
     Completion(self::completion::CompletionOpt),
+
+    /// Start the Language Server (LSP)
+    Lsp(self::lsp::LspOpt),
 }
 
 impl Subcommand {
@@ -33,6 +37,7 @@ impl Subcommand {
             Self::Print(opt) => opt.exec()?,
             Self::Dump(opt) => opt.exec()?,
             Self::Completion(opt) => opt.exec(),
+            Self::Lsp(opt) => opt.exec()?,
         }
 
         Ok(())

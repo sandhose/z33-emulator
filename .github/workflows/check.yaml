@@ -92,9 +92,6 @@ jobs:
   lint:
     name: "oxlint + oxfmt check"
     runs-on: ubuntu-24.04
-    defaults:
-      run:
-        working-directory: web
     steps:
       - name: Checkout sources
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -104,14 +101,14 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
         with:
-          package_json_file: web/package.json
+          package_json_file: package.json
 
       - name: Install Node
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
           node-version: "24"
           cache: "pnpm"
-          cache-dependency-path: web/pnpm-lock.yaml
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Install Rust toolchain
         run: |
@@ -126,13 +123,13 @@ jobs:
         run: pnpm i
 
       - name: Build the app
-        run: pnpm run build
+        run: pnpm -r run build
 
       - name: Run lint and format check
-        run: pnpm run check
+        run: pnpm -r run check
 
       - name: Check for unused exports
-        run: pnpm knip
+        run: pnpm -r --filter './web' knip
 
   e2e:
     name: "Playwright E2E tests"
@@ -149,14 +146,14 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
         with:
-          package_json_file: web/package.json
+          package_json_file: package.json
 
       - name: Install Node
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
           node-version: "24"
           cache: "pnpm"
-          cache-dependency-path: web/pnpm-lock.yaml
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Install Rust toolchain
         run: |

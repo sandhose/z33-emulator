@@ -71,9 +71,21 @@ fn main() {
     // Then, setup the tracing formatter for logging and instrumentation
     let registry = tracing_subscriber::Registry::default().with(opt.filter_layer());
 
+    // LSP uses stdout for JSON-RPC, so all logging must go to stderr.
+    let use_stderr = matches!(opt.command, Subcommand::Lsp(_));
+
     if opt.json {
-        let json_layer = tracing_subscriber::fmt::layer().json();
+        let json_layer = tracing_subscriber::fmt::layer()
+            .json()
+            .with_writer(std::io::stderr);
         registry.with(json_layer).init();
+    } else if use_stderr {
+        let fmt_layer = tracing_subscriber::fmt::layer()
+            .without_time()
+            .with_ansi(opt.should_use_colors())
+            .with_target(false)
+            .with_writer(std::io::stderr);
+        registry.with(fmt_layer).init();
     } else {
         let fmt_layer = tracing_subscriber::fmt::layer()
             .without_time()

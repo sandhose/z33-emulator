@@ -21,7 +21,15 @@ allow = ["Apache-2.0", "BSL-1.0", "MIT", "ISC", "Unicode-3.0", "Zlib"]
 
 [bans]
 multiple-versions = "deny"
-skip = []
+skip = [
+    # tower-lsp pulls in bitflags 1.x, workspace uses 2.x
+    { name = "bitflags", version = "1" },
+    # tower-lsp uses dashmap 5.x, workspace uses 6.x
+    { name = "dashmap", version = "5" },
+    # Multiple transitive deps pull different hashbrown versions
+    { name = "hashbrown", version = "0.14" },
+    { name = "hashbrown", version = "0.15" },
+]
 skip-tree = [
     { name = "windows-sys", version = "0.59.0" },
     { name = "windows-sys", version = "0.60.2" },

@@ -1,2 +1,6 @@
-/target
+target
 .vim
+node_modules
+vscode/out
+*.vsix
+zed/extension.wasm

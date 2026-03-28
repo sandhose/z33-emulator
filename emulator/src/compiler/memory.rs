@@ -1,6 +1,7 @@
 use std::convert::TryFrom;
 use std::ops::Range;
 
+use smallvec::SmallVec;
 use thiserror::Error;
 use tracing::{debug, span, trace, Level};
 
@@ -32,7 +33,7 @@ pub enum MemoryFillError {
         /// Span of the instruction mnemonic
         instruction_span: Range<usize>,
         /// Spans of each argument (indexed same as the instruction arguments)
-        argument_spans: Vec<Range<usize>>,
+        argument_spans: SmallVec<[Range<usize>; 2]>,
         source: InstructionCompilationError,
     },
 }
@@ -106,7 +107,6 @@ fn convert_arg<T: TryFrom<ImmRegDirIndIdx, Error = ArgConversionError>>(
     })
 }
 
-#[tracing::instrument]
 #[expect(clippy::too_many_lines)]
 fn compile_instruction(
     kind: InstructionKind,
@@ -331,6 +331,7 @@ fn compile_placement(labels: &Labels, placement: &Placement) -> Result<Cell, Mem
         P::Char(c) => Ok(Cell::Word(u32::from(*c).into())),
 
         // A .word directive (don't mind the weird destructuring)
+        // All spans are absolute — no offset adjustment needed.
         P::Line(Located {
             inner:
                 LineContent::Directive {
@@ -345,7 +346,7 @@ fn compile_placement(labels: &Labels, placement: &Placement) -> Result<Cell, Mem
                             location,
                         },
                 },
-            location: line_location,
+            ..
         }) => {
             debug!(%expression, "Evaluating directive");
             let value =
@@ -353,15 +354,11 @@ fn compile_placement(labels: &Labels, placement: &Placement) -> Result<Cell, Mem
                     .evaluate(labels)
                     .map_err(|source| MemoryFillError::Evaluation {
                         source,
-                        location: Range {
-                            start: location.start + line_location.start,
-                            end: location.end + line_location.start,
-                        },
+                        location: location.clone(),
                     })?;
             Ok(Cell::Word(value))
         }
 
-        // We should not have any other directives other than "word" at this point
         P::Line(Located {
             inner: LineContent::Directive { .. },
             ..
@@ -369,7 +366,6 @@ fn compile_placement(labels: &Labels, placement: &Placement) -> Result<Cell, Mem
             unreachable!();
         }
 
-        // Error recovery placeholders should never reach memory fill
         P::Line(Located {
             inner: LineContent::Error,
             ..
@@ -379,15 +375,13 @@ fn compile_placement(labels: &Labels, placement: &Placement) -> Result<Cell, Mem
 
         P::Line(Located {
             inner: LineContent::Instruction { kind, arguments },
-            location: line_location,
+            ..
         }) => {
             let span = span!(Level::TRACE, "line", %kind);
             let _guard = span.enter();
 
-            // Evaluate each argument, collecting (value, absolute_span) pairs.
-            // If evaluation fails, we bail immediately with the argument span.
-            let mut arg_values = Vec::with_capacity(arguments.len());
-            let mut arg_spans = Vec::with_capacity(arguments.len());
+            let mut arg_values = SmallVec::<[_; 2]>::with_capacity(arguments.len());
+            let mut arg_spans = SmallVec::<[_; 2]>::with_capacity(arguments.len());
             for (index, argument) in arguments.iter().enumerate() {
                 trace!("argument {} evaluation: {}", index, argument);
                 let value =
@@ -395,23 +389,14 @@ fn compile_placement(labels: &Labels, placement: &Placement) -> Result<Cell, Mem
                         .inner
                         .evaluate(labels)
                         .map_err(|source| MemoryFillError::Compute {
-                            location: Range {
-                                start: argument.location.start + line_location.start,
-                                end: argument.location.end + line_location.start,
-                            },
+                            location: argument.location.clone(),
                             source,
                         })?;
                 arg_values.push(value);
-                arg_spans.push(Range {
-                    start: argument.location.start + line_location.start,
-                    end: argument.location.end + line_location.start,
-                });
+                arg_spans.push(argument.location.clone());
             }
 
-            let instruction_span = Range {
-                start: kind.location.start + line_location.start,
-                end: kind.location.end + line_location.start,
-            };
+            let instruction_span = kind.location.clone();
 
             let instruction = compile_instruction(kind.inner, &arg_values).map_err(|source| {
                 MemoryFillError::InstructionCompilation {

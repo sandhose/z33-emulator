@@ -1,0 +1,85 @@
+{
+  "name": "z33-assembly",
+  "displayName": "Z33 Assembly",
+  "description": "Z33 (Zorglub-33) assembly language support",
+  "version": "0.0.1",
+  "publisher": "sandhose",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sandhose/z33-emulator"
+  },
+  "engines": {
+    "vscode": "^1.100.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onLanguage:z33-assembly"
+  ],
+  "main": "./out/main.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "z33-assembly",
+        "aliases": [
+          "Z33 Assembly",
+          "z33"
+        ],
+        "extensions": [
+          ".s",
+          ".S"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "z33-assembly",
+        "scopeName": "source.z33",
+        "path": "./syntaxes/z33.tmLanguage.json"
+      }
+    ],
+    "configuration": {
+      "title": "Z33 Assembly",
+      "properties": {
+        "z33-assembly.lsp.path": {
+          "type": "string",
+          "default": "z33-cli",
+          "description": "Path to the z33-cli binary"
+        },
+        "z33-assembly.trace.server": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "Trace communication between VS Code and the Z33 language server"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "pnpm run bundle",
+    "bundle": "esbuild src/extension.ts --bundle --outfile=out/main.js --external:vscode --format=cjs --platform=node --minify",
+    "check": "tsc --noEmit && oxlint src/ && oxfmt --check src/",
+    "lint": "oxlint src/",
+    "fmt": "oxfmt src/",
+    "package": "pnpm vsce package --no-dependencies",
+    "publish": "pnpm vsce publish --no-dependencies"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.100.0",
+    "@vscode/vsce": "^3.0.0",
+    "esbuild": "^0.25.0",
+    "typescript": "6.0.1-rc",
+    "oxfmt": "^0.41.0",
+    "oxlint": "^1.56.0"
+  }
+}

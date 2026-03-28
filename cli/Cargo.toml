@@ -27,4 +27,5 @@ shell-words.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+tokio.workspace = true
 z33-emulator.workspace = true
