@@ -107,7 +107,6 @@ fn convert_arg<T: TryFrom<ImmRegDirIndIdx, Error = ArgConversionError>>(
     })
 }
 
-#[tracing::instrument]
 #[expect(clippy::too_many_lines)]
 fn compile_instruction(
     kind: InstructionKind,
