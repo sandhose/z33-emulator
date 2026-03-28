@@ -92,9 +92,6 @@ jobs:
   lint:
     name: "oxlint + oxfmt check"
     runs-on: ubuntu-24.04
-    defaults:
-      run:
-        working-directory: web
     steps:
       - name: Checkout sources
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -123,16 +120,16 @@ jobs:
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
       - name: Install dependencies
-        run: pnpm i
+        run: pnpm -r i
 
       - name: Build the app
-        run: pnpm run build
+        run: pnpm -r run build
 
       - name: Run lint and format check
-        run: pnpm run check
+        run: pnpm -r run check
 
       - name: Check for unused exports
-        run: pnpm knip
+        run: pnpm -r --filter './web' knip
 
   e2e:
     name: "Playwright E2E tests"
