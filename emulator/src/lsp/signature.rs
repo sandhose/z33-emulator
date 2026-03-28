@@ -33,6 +33,23 @@ pub fn signature_help(source: &str, byte_offset: usize) -> Option<SignatureHelp>
     let content = &line_text[content_start..pos_in_line];
     let trimmed = content.trim_start();
 
+    // Check for directive (starts with '.')
+    if let Some(after_dot) = trimmed.strip_prefix('.') {
+        let name_end = after_dot
+            .find(|c: char| !c.is_ascii_alphabetic())
+            .unwrap_or(after_dot.len());
+        let name = &after_dot[..name_end];
+        let sig = directive_signature(name)?;
+        let after_name = &after_dot[name_end..];
+        if after_name.is_empty() || after_name.trim().is_empty() {
+            if !after_name.is_empty() {
+                return Some(make_signature_help(&sig, 0));
+            }
+            return None;
+        }
+        return Some(make_signature_help(&sig, 0));
+    }
+
     // Find the instruction mnemonic
     let mnemonic_end = trimmed
         .find(|c: char| !c.is_ascii_alphabetic() && c != '_')
@@ -45,8 +62,6 @@ pub fn signature_help(source: &str, byte_offset: usize) -> Option<SignatureHelp>
     // Determine active parameter by counting commas
     let after_mnemonic = &trimmed[mnemonic_end..];
     if after_mnemonic.is_empty() || after_mnemonic.trim().is_empty() {
-        // Cursor is still on or right after the mnemonic, before any args
-        // Only show if there's a space (indicating arg area)
         if !after_mnemonic.is_empty() {
             return Some(make_signature_help(&sig, 0));
         }
@@ -159,6 +174,32 @@ fn parse_instruction_kind(mnemonic: &str) -> Option<InstructionKind> {
         "swap" => Some(K::Swap),
         "trap" => Some(K::Trap),
         "xor" => Some(K::Xor),
+        _ => None,
+    }
+}
+
+fn directive_signature(name: &str) -> Option<InstructionSignature> {
+    match name.to_ascii_lowercase().as_str() {
+        "word" => Some(InstructionSignature {
+            label: ".word expr",
+            doc: "Store a word (64-bit integer) value at the current address",
+            params: &[("expr", "Expression evaluating to a word value")],
+        }),
+        "space" => Some(InstructionSignature {
+            label: ".space n",
+            doc: "Reserve n memory cells (initialized to empty)",
+            params: &[("n", "Number of cells to reserve")],
+        }),
+        "string" => Some(InstructionSignature {
+            label: ".string \"text\"",
+            doc: "Store a null-terminated string (each character = one cell)",
+            params: &[("\"text\"", "String literal with escape sequences")],
+        }),
+        "addr" => Some(InstructionSignature {
+            label: ".addr n",
+            doc: "Set the current assembly address to n",
+            params: &[("n", "Target address for subsequent instructions")],
+        }),
         _ => None,
     }
 }
