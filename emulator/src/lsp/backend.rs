@@ -23,10 +23,8 @@ use super::{completion, diagnostics, hover, position, semantic_tokens, signature
 struct Document {
     /// Always-current source text, updated synchronously on every didChange.
     source: String,
-    /// Latest completed analysis. Updated asynchronously.
+    /// Latest completed analysis.
     analysis: Option<Arc<DocumentState>>,
-    /// Version counter for debouncing.
-    version: i32,
 }
 
 /// LSP backend for Z33 assembly.
@@ -44,7 +42,7 @@ impl Backend {
         }
     }
 
-    async fn on_change(&self, uri: Url, text: String, version: i32) {
+    async fn on_change(&self, uri: Url, text: String) {
         let state = Arc::new(DocumentState::new(text.clone()));
         let diags = diagnostics::diagnostics(&state);
 
@@ -53,13 +51,10 @@ impl Backend {
             Document {
                 source: text,
                 analysis: Some(state),
-                version,
             },
         );
 
-        self.client
-            .publish_diagnostics(uri, diags, Some(version))
-            .await;
+        self.client.publish_diagnostics(uri, diags, None).await;
     }
 
     fn get_source(&self, uri: &Url) -> Option<String> {
@@ -130,17 +125,12 @@ impl LanguageServer for Backend {
 
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
         let doc = params.text_document;
-        self.on_change(doc.uri, doc.text, doc.version).await;
+        self.on_change(doc.uri, doc.text).await;
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
         if let Some(change) = params.content_changes.into_iter().next() {
-            self.on_change(
-                params.text_document.uri,
-                change.text,
-                params.text_document.version,
-            )
-            .await;
+            self.on_change(params.text_document.uri, change.text).await;
         }
     }
 

@@ -707,18 +707,18 @@ mod tests {
         assert_eq!(lines.len(), 2);
 
         // Line 0: "main:"
-        let line0 = &lines[0];
-        assert_eq!(line0.location, 0..5); // absolute
-        assert_eq!(line0.inner.symbols.len(), 1);
-        assert_eq!(line0.inner.symbols[0].inner, "main");
-        assert_eq!(line0.inner.symbols[0].location, 0..4); // relative to line start
+        let first = &lines[0];
+        assert_eq!(first.location, 0..5); // absolute
+        assert_eq!(first.inner.symbols.len(), 1);
+        assert_eq!(first.inner.symbols[0].inner, "main");
+        assert_eq!(first.inner.symbols[0].location, 0..4); // relative to line start
 
         // Line 1: "    add %a, %b"
         // Line starts at byte 6 in the input (after "main:\n")
-        let line1 = &lines[1];
-        assert_eq!(line1.location, 6..20); // absolute
+        let second = &lines[1];
+        assert_eq!(second.location, 6..20); // absolute
 
-        let content = line1.inner.content.as_ref().unwrap();
+        let content = second.inner.content.as_ref().unwrap();
         // content.location: relative to line start
         // "    add %a, %b" — content starts at byte 4 (after spaces)
         assert_eq!(content.location, 4..14);

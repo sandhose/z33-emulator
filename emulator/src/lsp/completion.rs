@@ -474,16 +474,16 @@ mod tests {
 
     #[test]
     fn mnemonic_at_start() {
-        let state = DocumentState::new("    ".to_string());
-        let items = completions(&state, 4);
+        let src = "    ";
+        let items = completions(None, src, 4);
         assert!(items.iter().any(|i| i.label == "add"));
         assert!(items.iter().any(|i| i.label == ".word"));
     }
 
     #[test]
     fn register_after_percent() {
-        let state = DocumentState::new("    add %".to_string());
-        let items = completions(&state, 9); // right after %
+        let src = "    add %";
+        let items = completions(None, src, 9); // right after %
         assert!(items.iter().any(|i| i.label == "%a"));
         assert!(items.iter().any(|i| i.label == "%sp"));
         assert!(!items.iter().any(|i| i.label == "add"));
@@ -491,9 +491,9 @@ mod tests {
 
     #[test]
     fn second_arg_must_be_register() {
-        let state = DocumentState::new("    add 1, ".to_string());
-        let items = completions(&state, 11); // after ", "
-                                             // Second arg of ADD is Reg — should only offer registers
+        let src = "    add 1, ";
+        let items = completions(None, src, 11); // after ", "
+                                                // Second arg of ADD is Reg — should only offer registers
         assert!(items.iter().any(|i| i.label == "%a"));
         assert!(!items.iter().any(|i| i.label == "[...]"));
     }
@@ -501,17 +501,17 @@ mod tests {
     #[test]
     fn label_completion_in_arg() {
         let src = "foo:\n    jmp ";
-        let state = DocumentState::new(src.to_string());
-        let items = completions(&state, src.len()); // after "jmp "
-                                                    // JMP arg 0 is ImmRegDirIndIdx — should offer labels
+        let analysis = DocumentState::new(src.to_string());
+        let items = completions(Some(&analysis), src, src.len()); // after "jmp "
+                                                                  // JMP arg 0 is ImmRegDirIndIdx — should offer labels
         assert!(items.iter().any(|i| i.label == "foo"));
         assert!(items.iter().any(|i| i.label == "%a"));
     }
 
     #[test]
     fn mnemonic_after_label() {
-        let state = DocumentState::new("main: ".to_string());
-        let items = completions(&state, 6); // after "main: "
+        let src = "main: ";
+        let items = completions(None, src, 6); // after "main: "
         assert!(items.iter().any(|i| i.label == "add"));
     }
 }
