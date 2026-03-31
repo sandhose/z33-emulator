@@ -29,7 +29,7 @@
     "knip": "^6.0.1",
     "oxfmt": "^0.41.0",
     "oxlint": "^1.56.0",
-    "oxlint-tsgolint": "^0.17.1",
+    "oxlint-tsgolint": "^0.17.2",
     "tailwindcss": "^4.2.2",
     "typescript": "6.0.1-rc",
     "vite": "^8.0.1"
