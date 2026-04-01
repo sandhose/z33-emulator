@@ -5,7 +5,7 @@ import { stripLeadingSlash } from "./file-paths";
 // oxlint-disable-next-line typescript/no-redundant-type-constituents -- Monaco is not `any`, false positive
 let monacoRef: Monaco | null = null;
 
-export type MonacoSyncCallbacks = {
+type MonacoSyncCallbacks = {
   /** Called when Monaco model content changes (debounced). */
   onEdit: (name: string, content: string) => void;
   /** Returns the current file map (name → content). */
