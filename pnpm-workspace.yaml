@@ -5,12 +5,11 @@ packages:
   - vscode
 
 ignoredBuiltDependencies:
-  - '@vscode/vsce-sign'
   - esbuild
-  - keytar
   - msw
+
 onlyBuiltDependencies:
-  - '@vscode/vsce-sign'
+  - "@vscode/vsce-sign"
   - keytar
 
 strictDepBuilds: true
@@ -20,6 +19,5 @@ strictPeerDependencies: true
 trustPolicy: no-downgrade
 
 trustPolicyExclude:
-  - semver@5.7.2
-  - semver@6.3.1
+  - semver
   - reselect@5.1.1
