@@ -13,7 +13,7 @@ updates:
     cooldown:
       default-days: 7
   - package-ecosystem: "npm"
-    directory: "/web"
+    directory: "/"
     schedule:
       interval: "daily"
     cooldown:
