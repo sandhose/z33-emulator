@@ -38,7 +38,7 @@ insta = "1.46.3"
 js-sys = "0.3.91"
 parse-display = "0.10.0"
 pretty_assertions = "1.4.1"
-rustyline = "17.0.2"
+rustyline = "18.0.0"
 rustyline-derive = "0.11.1"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1"
