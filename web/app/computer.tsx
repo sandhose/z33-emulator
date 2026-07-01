@@ -9,7 +9,7 @@ import {
   useImperativeHandle,
   useRef,
 } from "react";
-import type { Cell } from "z33-web-bindings";
+import type { Cell } from "./lib/wasm";
 import { Badge } from "./components/ui/badge";
 import {
   ADDRESS_WIDTH,

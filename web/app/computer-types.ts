@@ -1,4 +1,4 @@
-import type { Cell, Cycles, Registers, SourceMap } from "z33-web-bindings";
+import type { Cell, Cycles, Registers, SourceMap } from "./lib/wasm";
 import type { DisplayFormat } from "./stores/display-store";
 import { assertNever } from "./lib/utils";
 

@@ -1,4 +1,4 @@
-import type { Computer, SourceMap } from "z33-web-bindings";
+import type { Computer, SourceMap } from "../lib/wasm";
 import { create } from "zustand";
 import type { ComputerInterface, Labels } from "../computer-types";
 
