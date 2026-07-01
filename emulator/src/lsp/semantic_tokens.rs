@@ -113,22 +113,25 @@ pub fn semantic_tokens(analysis: Option<&DocumentState>, source: &str) -> Semant
             }
         }
 
-        // Preprocessor directive lines from annotations
+        // Preprocessor directive lines from annotations. Annotations cover the
+        // whole include tree, so only keep those in the root document (spans
+        // are byte offsets into the file identified by `file_id`).
         if let Some(ann) = state.annotations() {
-            for def in &ann.definitions {
+            let root = state.root_file_id();
+            for def in ann.definitions.iter().filter(|d| d.file_id == root) {
                 raw_tokens.push((def.span.start, def.span.end - def.span.start, TK_MACRO));
             }
-            for undef in &ann.undefinitions {
+            for undef in ann.undefinitions.iter().filter(|u| u.file_id == root) {
                 raw_tokens.push((
                     undef.span.start,
                     undef.span.end - undef.span.start,
                     TK_MACRO,
                 ));
             }
-            for inc in &ann.inclusions {
+            for inc in ann.inclusions.iter().filter(|i| i.file_id == root) {
                 raw_tokens.push((inc.span.start, inc.span.end - inc.span.start, TK_MACRO));
             }
-            for block in &ann.conditional_blocks {
+            for block in ann.conditional_blocks.iter().filter(|b| b.file_id == root) {
                 for branch in &block.branches {
                     raw_tokens.push((
                         branch.directive_span.start,

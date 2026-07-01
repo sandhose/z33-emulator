@@ -2,10 +2,13 @@ use tower_lsp::lsp_types;
 
 use super::document::DocumentState;
 use super::position;
+use crate::diagnostic::{preprocessor_error_to_diagnostics, FileId};
 use crate::compiler::layout::MemoryLayoutError;
 use crate::compiler::memory::{InstructionCompilationError, MemoryFillError};
-use crate::diagnostic::preprocessor_error_to_diagnostics;
 use crate::parser::shared::{DiagnosticSeverity, ParseDiagnostic};
+
+/// A diagnostic together with the file it belongs to.
+pub type FileDiagnostic = (FileId, lsp_types::Diagnostic);
 
 fn convert_severity(severity: DiagnosticSeverity) -> lsp_types::DiagnosticSeverity {
     match severity {
@@ -14,39 +17,44 @@ fn convert_severity(severity: DiagnosticSeverity) -> lsp_types::DiagnosticSeveri
     }
 }
 
-/// Create an LSP diagnostic from a span in the **original** source.
+/// Create an LSP diagnostic from a span in a specific **original** file.
 fn make_diagnostic(
-    original_source: &str,
+    state: &DocumentState,
+    file_id: FileId,
     span: std::ops::Range<usize>,
     message: String,
     severity: lsp_types::DiagnosticSeverity,
-) -> Option<lsp_types::Diagnostic> {
-    let range = position::range(original_source, span)?;
-    Some(lsp_types::Diagnostic {
-        range,
-        severity: Some(severity),
-        source: Some("z33".to_string()),
-        message,
-        ..Default::default()
-    })
+) -> Option<FileDiagnostic> {
+    let source = state.file_source(file_id)?;
+    let range = position::range(source, span)?;
+    Some((
+        file_id,
+        lsp_types::Diagnostic {
+            range,
+            severity: Some(severity),
+            source: Some("z33".to_string()),
+            message,
+            ..Default::default()
+        },
+    ))
 }
 
 /// Create an LSP diagnostic from a span in the **preprocessed** source,
-/// resolving it back to the original via the source map.
+/// resolving it back to the owning original file via the source map.
 fn make_resolved_diagnostic(
     state: &DocumentState,
     span: std::ops::Range<usize>,
     message: String,
     severity: lsp_types::DiagnosticSeverity,
-) -> Option<lsp_types::Diagnostic> {
-    let original_span = state.resolve_span(span)?;
-    make_diagnostic(state.source(), original_span, message, severity)
+) -> Option<FileDiagnostic> {
+    let (file_id, original_span) = state.resolve_span_file(span)?;
+    make_diagnostic(state, file_id, original_span, message, severity)
 }
 
 fn convert_parse_diagnostic(
     state: &DocumentState,
     diag: &ParseDiagnostic,
-) -> Option<lsp_types::Diagnostic> {
+) -> Option<FileDiagnostic> {
     make_resolved_diagnostic(
         state,
         diag.span.clone(),
@@ -58,7 +66,7 @@ fn convert_parse_diagnostic(
 fn convert_layout_error(
     state: &DocumentState,
     error: &MemoryLayoutError,
-) -> Option<lsp_types::Diagnostic> {
+) -> Option<FileDiagnostic> {
     let severity = lsp_types::DiagnosticSeverity::ERROR;
     match error {
         MemoryLayoutError::DuplicateLabel { label, location } => make_resolved_diagnostic(
@@ -93,7 +101,7 @@ fn convert_layout_error(
 fn convert_fill_error(
     state: &DocumentState,
     error: &MemoryFillError,
-    out: &mut Vec<lsp_types::Diagnostic>,
+    out: &mut Vec<FileDiagnostic>,
 ) {
     let severity = lsp_types::DiagnosticSeverity::ERROR;
     match error {
@@ -168,17 +176,26 @@ fn convert_fill_error(
     }
 }
 
-/// Produce LSP diagnostics from the full analysis state.
-pub fn diagnostics(state: &DocumentState) -> Vec<lsp_types::Diagnostic> {
+/// Produce LSP diagnostics from the full analysis state, each tagged with the
+/// [`FileId`] of the file it belongs to.
+///
+/// Diagnostics originating inside `#include`d files are attributed to those
+/// files, so the caller can publish them to the correct URI.
+#[must_use]
+pub fn diagnostics_by_file(state: &DocumentState) -> Vec<FileDiagnostic> {
     let mut result = Vec::new();
 
-    // Preprocessor errors (spans are already in the original source)
+    // Preprocessor errors. The codespan labels already carry original spans and
+    // the file id they belong to.
     if let Some(error) = state.preprocessor_error() {
         let codespan_diags = preprocessor_error_to_diagnostics(error);
         for diag in &codespan_diags {
+            let mut had_label = false;
             for label in &diag.labels {
+                had_label = true;
                 if let Some(d) = make_diagnostic(
-                    state.source(),
+                    state,
+                    label.file_id,
                     label.range.clone(),
                     diag.message.clone(),
                     lsp_types::DiagnosticSeverity::ERROR,
@@ -186,10 +203,11 @@ pub fn diagnostics(state: &DocumentState) -> Vec<lsp_types::Diagnostic> {
                     result.push(d);
                 }
             }
-            // If no labels, still emit the diagnostic with a zero-length range
-            if diag.labels.is_empty() {
+            // If no labels, still emit the diagnostic on the root file.
+            if !had_label {
                 if let Some(d) = make_diagnostic(
-                    state.source(),
+                    state,
+                    state.root_file_id(),
                     0..0,
                     diag.message.clone(),
                     lsp_types::DiagnosticSeverity::ERROR,
@@ -220,41 +238,44 @@ pub fn diagnostics(state: &DocumentState) -> Vec<lsp_types::Diagnostic> {
         convert_fill_error(state, error, &mut result);
     }
 
-    // Inactive preprocessor regions
+    // Inactive preprocessor regions (annotation spans, per file)
     if let Some(annotations) = state.annotations() {
         for block in &annotations.conditional_blocks {
             for branch in &block.branches {
                 if !branch.active {
-                    if let Some(d) = make_diagnostic(
-                        state.source(),
-                        branch.body_span.clone(),
-                        "inactive preprocessor block".to_string(),
-                        lsp_types::DiagnosticSeverity::HINT,
-                    ) {
-                        result.push(lsp_types::Diagnostic {
-                            tags: Some(vec![lsp_types::DiagnosticTag::UNNECESSARY]),
-                            ..d
-                        });
-                    }
+                    push_inactive(state, block.file_id, branch.body_span.clone(), &mut result);
                 }
             }
             if let Some(fallback) = &block.fallback {
                 if !fallback.active {
-                    if let Some(d) = make_diagnostic(
-                        state.source(),
-                        fallback.body_span.clone(),
-                        "inactive preprocessor block".to_string(),
-                        lsp_types::DiagnosticSeverity::HINT,
-                    ) {
-                        result.push(lsp_types::Diagnostic {
-                            tags: Some(vec![lsp_types::DiagnosticTag::UNNECESSARY]),
-                            ..d
-                        });
-                    }
+                    push_inactive(state, block.file_id, fallback.body_span.clone(), &mut result);
                 }
             }
         }
     }
 
     result
+}
+
+fn push_inactive(
+    state: &DocumentState,
+    file_id: FileId,
+    span: std::ops::Range<usize>,
+    out: &mut Vec<FileDiagnostic>,
+) {
+    if let Some((file_id, d)) = make_diagnostic(
+        state,
+        file_id,
+        span,
+        "inactive preprocessor block".to_string(),
+        lsp_types::DiagnosticSeverity::HINT,
+    ) {
+        out.push((
+            file_id,
+            lsp_types::Diagnostic {
+                tags: Some(vec![lsp_types::DiagnosticTag::UNNECESSARY]),
+                ..d
+            },
+        ));
+    }
 }
