@@ -1972,6 +1972,7 @@ dependencies = [
  "codespan-reporting",
  "rustyline",
  "rustyline-derive",
+ "serde_json",
  "shell-words",
  "thiserror",
  "tokio",
