@@ -81,10 +81,7 @@ impl DocumentState {
     #[must_use]
     pub fn analyze<FS: Filesystem>(fs: &FS, root_path: &Utf8Path) -> Self {
         let mut workspace = Workspace::new(fs, root_path);
-        let original_source = workspace
-            .file_db()
-            .source(ROOT_FILE_ID)
-            .to_string();
+        let original_source = workspace.file_db().source(ROOT_FILE_ID).to_string();
 
         match workspace.preprocess() {
             Ok(result) => {
@@ -508,5 +505,59 @@ mod tests {
 
         // Should produce a fill error for undefined label
         assert!(!state.fill_errors().is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // Multi-file analysis
+    // -----------------------------------------------------------------------
+
+    use crate::preprocessor::InMemoryFilesystem;
+
+    fn fs(files: &[(&str, &str)]) -> InMemoryFilesystem {
+        InMemoryFilesystem::new(
+            files
+                .iter()
+                .map(|(p, c)| (Utf8PathBuf::from(*p), (*c).to_string()))
+                .collect::<std::collections::HashMap<_, _>>(),
+        )
+    }
+
+    #[test]
+    fn include_resolves_across_files() {
+        let fs = fs(&[
+            ("main.s", "#include \"util.s\"\n    jmp target\n"),
+            ("util.s", "target:\n    reset\n"),
+        ]);
+        let state = DocumentState::analyze(&fs, Utf8Path::new("main.s"));
+
+        // No preprocessor error: the include resolved.
+        assert!(state.preprocessor_error().is_none());
+
+        // The label `target` is known and its definition lives in util.s.
+        assert!(state.labels().contains_key("target"));
+        let def = state
+            .occurrences_of("target")
+            .find(|o| o.kind == references::OccurrenceKind::Definition)
+            .expect("definition of target");
+        let def_path = state.file_path(def.file_id).unwrap();
+        assert_eq!(def_path, Utf8Path::new("util.s"));
+        assert_eq!(
+            slice(state.file_source(def.file_id).unwrap(), &def.span),
+            "target"
+        );
+
+        // The reference `jmp target` lives in the root document.
+        let reference = state
+            .occurrences_of("target")
+            .find(|o| o.kind == references::OccurrenceKind::Reference)
+            .expect("reference to target");
+        assert_eq!(reference.file_id, state.root_file_id());
+    }
+
+    #[test]
+    fn missing_include_is_a_preprocessor_error() {
+        let fs = fs(&[("main.s", "#include \"nope.s\"\n    reset\n")]);
+        let state = DocumentState::analyze(&fs, Utf8Path::new("main.s"));
+        assert!(state.preprocessor_error().is_some());
     }
 }

@@ -28,10 +28,9 @@ use tower_lsp::lsp_types::{
     Diagnostic, DocumentHighlight, DocumentHighlightKind, Location, TextEdit, Url, WorkspaceEdit,
 };
 
-use super::diagnostics;
 use super::document::DocumentState;
-use super::position;
 use super::references::{OccurrenceKind, SymbolOccurrence};
+use super::{diagnostics, position};
 use crate::diagnostic::FileId;
 use crate::preprocessor::Filesystem;
 
@@ -86,7 +85,8 @@ pub(crate) struct WorkspaceManager {
     base_files: HashMap<Utf8PathBuf, String>,
     /// Currently open documents, keyed by URI.
     documents: HashMap<Url, Document>,
-    /// URIs we last published *non-empty* diagnostics for, so we can clear them.
+    /// URIs we last published *non-empty* diagnostics for, so we can clear
+    /// them.
     published: HashSet<Url>,
 }
 
@@ -207,12 +207,7 @@ impl WorkspaceManager {
 
     /// Rename the symbol under the cursor everywhere, producing edits that may
     /// span multiple files.
-    pub(crate) fn rename(
-        &self,
-        uri: &Url,
-        offset: usize,
-        new_name: &str,
-    ) -> Option<WorkspaceEdit> {
+    pub(crate) fn rename(&self, uri: &Url, offset: usize, new_name: &str) -> Option<WorkspaceEdit> {
         let doc = self.documents.get(uri)?;
         let analysis = doc.analysis.as_ref()?;
         let occ = analysis.occurrence_at(offset)?;
@@ -459,5 +454,177 @@ fn severity_code(severity: tower_lsp::lsp_types::DiagnosticSeverity) -> i32 {
         S::INFORMATION => 3,
         S::HINT => 4,
         _ => 0,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use pretty_assertions::assert_eq;
+
+    use super::*;
+
+    const ROOT: &str = "file:///ws/";
+
+    fn uri(rel: &str) -> Url {
+        Url::parse(&format!("file:///ws/{rel}")).unwrap()
+    }
+
+    fn manager() -> WorkspaceManager {
+        let mut m = WorkspaceManager::new();
+        m.set_root(Some(Url::parse(ROOT).unwrap()));
+        m
+    }
+
+    fn base(files: &[(&str, &str)]) -> HashMap<Utf8PathBuf, String> {
+        files
+            .iter()
+            .map(|(p, c)| (Utf8PathBuf::from(*p), (*c).to_string()))
+            .collect()
+    }
+
+    /// Byte offset of the first occurrence of `needle` in `haystack`.
+    fn offset_of(haystack: &str, needle: &str) -> usize {
+        haystack.find(needle).expect("needle present")
+    }
+
+    #[test]
+    fn include_resolves_against_base_files() {
+        let mut m = manager();
+        let main = uri("main.s");
+        m.upsert(
+            main.clone(),
+            "#include \"util.s\"\n    jmp target\n".to_string(),
+        );
+
+        // Without the included file, preprocessing fails.
+        assert!(m.analysis(&main).unwrap().preprocessor_error().is_some());
+
+        // Pushing the base file makes the include resolve.
+        m.set_base_files(base(&[("util.s", "target:\n    reset\n")]));
+        let analysis = m.analysis(&main).unwrap();
+        assert!(analysis.preprocessor_error().is_none());
+        assert!(analysis.labels().contains_key("target"));
+    }
+
+    #[test]
+    fn open_document_overrides_base_file() {
+        let mut m = manager();
+        // Base util.s defines `base_label`.
+        m.set_base_files(base(&[("util.s", "base_label:\n    .word 1\n")]));
+
+        let main = uri("main.s");
+        m.upsert(
+            main.clone(),
+            "#include \"util.s\"\n    jmp open_label\n".to_string(),
+        );
+
+        // Opening util.s with different content must shadow the base file.
+        let util = uri("util.s");
+        m.upsert(util.clone(), "open_label:\n    .word 2\n".to_string());
+
+        let analysis = m.analysis(&main).unwrap();
+        assert!(analysis.labels().contains_key("open_label"));
+        assert!(!analysis.labels().contains_key("base_label"));
+    }
+
+    #[test]
+    fn cross_file_goto_definition() {
+        let mut m = manager();
+        let main = uri("main.s");
+        let util = uri("util.s");
+        let main_src = "#include \"util.s\"\n    jmp target\n";
+        m.upsert(util.clone(), "target:\n    reset\n".to_string());
+        m.upsert(main.clone(), main_src.to_string());
+
+        let offset = offset_of(main_src, "target");
+        let location = m.goto_definition(&main, offset).expect("definition");
+        assert_eq!(location.uri, util);
+        // Points at `target:` in util.s (line 0).
+        assert_eq!(location.range.start.line, 0);
+        assert_eq!(location.range.start.character, 0);
+    }
+
+    #[test]
+    fn cross_file_rename_spans_multiple_files() {
+        let mut m = manager();
+        let main = uri("main.s");
+        let util = uri("util.s");
+        let main_src = "#include \"util.s\"\n    jmp target\n";
+        m.upsert(util.clone(), "target:\n    reset\n".to_string());
+        m.upsert(main.clone(), main_src.to_string());
+
+        let offset = offset_of(main_src, "target");
+        let edit = m.rename(&main, offset, "renamed").expect("rename edit");
+        let changes = edit.changes.expect("changes");
+
+        // Both the definition (util.s) and the reference (main.s) are edited.
+        assert!(changes.contains_key(&util), "util.s should be edited");
+        assert!(changes.contains_key(&main), "main.s should be edited");
+        assert_eq!(changes[&util].len(), 1);
+        assert_eq!(changes[&util][0].new_text, "renamed");
+        assert_eq!(changes[&main].len(), 1);
+    }
+
+    #[test]
+    fn diagnostics_attributed_to_included_file() {
+        let mut m = manager();
+        let main = uri("main.s");
+        let util = uri("util.s");
+        // The included file contains a parse error; only main is open.
+        m.set_base_files(base(&[("util.s", "    $$bad$$\n")]));
+        let batches = m.upsert(main.clone(), "#include \"util.s\"\n    reset\n".to_string());
+
+        let util_diags = batches
+            .iter()
+            .find(|(u, _)| *u == util)
+            .map(|(_, d)| d)
+            .expect("diagnostics published for util.s");
+        assert!(
+            !util_diags.is_empty(),
+            "the included file should carry the error"
+        );
+
+        // The root document itself has no diagnostics of its own.
+        let main_diags = batches
+            .iter()
+            .find(|(u, _)| *u == main)
+            .map(|(_, d)| d)
+            .expect("entry for main.s");
+        assert!(main_diags.is_empty(), "root should be clean");
+    }
+
+    #[test]
+    fn stale_diagnostics_are_cleared() {
+        let mut m = manager();
+        let main = uri("main.s");
+        // First: an error.
+        let batches = m.upsert(main.clone(), "    $$bad$$\n".to_string());
+        assert!(batches.iter().any(|(u, d)| *u == main && !d.is_empty()));
+
+        // Then: fix it. The URI must be published again, now empty.
+        let batches = m.upsert(main.clone(), "    reset\n".to_string());
+        let main_entry = batches
+            .iter()
+            .find(|(u, _)| *u == main)
+            .expect("main published");
+        assert!(main_entry.1.is_empty(), "diagnostics should be cleared");
+    }
+
+    #[test]
+    fn workspace_files_update_replaces_base_map() {
+        let mut m = manager();
+        let main = uri("main.s");
+        m.upsert(
+            main.clone(),
+            "#include \"util.s\"\n    jmp target\n".to_string(),
+        );
+
+        // First base map provides util.s.
+        m.set_base_files(base(&[("util.s", "target:\n    reset\n")]));
+        assert!(m.analysis(&main).unwrap().preprocessor_error().is_none());
+
+        // Replacing it with an empty map removes util.s again.
+        m.set_base_files(HashMap::new());
+        assert!(m.analysis(&main).unwrap().preprocessor_error().is_some());
     }
 }

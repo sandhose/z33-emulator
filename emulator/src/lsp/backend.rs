@@ -8,9 +8,8 @@ use tower_lsp::lsp_types::{
     DocumentHighlight, DocumentHighlightParams, DocumentSymbolParams, DocumentSymbolResponse,
     GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverContents, HoverParams,
     HoverProviderCapability, InitializeParams, InitializeResult, InitializedParams, Location,
-    MarkupContent, MarkupKind,
-    OneOf, PrepareRenameResponse, ReferenceParams, RenameParams, SemanticTokensFullOptions,
-    SemanticTokensOptions, SemanticTokensParams, SemanticTokensResult,
+    MarkupContent, MarkupKind, OneOf, PrepareRenameResponse, ReferenceParams, RenameParams,
+    SemanticTokensFullOptions, SemanticTokensOptions, SemanticTokensParams, SemanticTokensResult,
     SemanticTokensServerCapabilities, ServerCapabilities, ServerInfo, SignatureHelpOptions,
     SignatureHelpParams, TextDocumentSyncCapability, TextDocumentSyncKind, Url, WorkspaceEdit,
 };
@@ -61,7 +60,9 @@ impl Backend {
     /// Publish a batch of per-URI diagnostics.
     async fn publish(&self, batches: Vec<(Url, Vec<Diagnostic>)>) {
         for (uri, diagnostics) in batches {
-            self.client.publish_diagnostics(uri, diagnostics, None).await;
+            self.client
+                .publish_diagnostics(uri, diagnostics, None)
+                .await;
         }
     }
 
@@ -75,18 +76,24 @@ impl Backend {
     ///
     /// Params: `{ "files": { "<relative path>": "<content>", ... } }`.
     pub async fn workspace_files(&self, params: serde_json::Value) {
-        let mut files: HashMap<Utf8PathBuf, String> = HashMap::new();
-        if let Some(map) = params.get("files").and_then(serde_json::Value::as_object) {
-            for (path, content) in map {
-                if let Some(content) = content.as_str() {
-                    files.insert(Utf8PathBuf::from(path), content.to_string());
-                }
-            }
-        }
-
+        let files = parse_workspace_files(&params);
         let batches = self.lock().set_base_files(files);
         self.publish(batches).await;
     }
+}
+
+/// Parse the params of the `z33/workspaceFiles` notification into a relative
+/// path -> content map. Unknown or malformed entries are silently ignored.
+fn parse_workspace_files(params: &serde_json::Value) -> HashMap<Utf8PathBuf, String> {
+    let mut files = HashMap::new();
+    if let Some(map) = params.get("files").and_then(serde_json::Value::as_object) {
+        for (path, content) in map {
+            if let Some(content) = content.as_str() {
+                files.insert(Utf8PathBuf::from(path), content.to_string());
+            }
+        }
+    }
+    files
 }
 
 #[tower_lsp::async_trait]
@@ -445,5 +452,45 @@ impl LanguageServer for Backend {
 
         let tokens = semantic_tokens::semantic_tokens(analysis.as_deref(), &source);
         Ok(Some(SemanticTokensResult::Tokens(tokens)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use camino::Utf8PathBuf;
+    use serde_json::json;
+
+    use super::parse_workspace_files;
+
+    #[test]
+    fn parses_workspace_files_params() {
+        let params = json!({
+            "files": {
+                "main.s": "reset\n",
+                "lib/util.s": "target:\n",
+            }
+        });
+        let files = parse_workspace_files(&params);
+        assert_eq!(files.len(), 2);
+        assert_eq!(
+            files.get(&Utf8PathBuf::from("main.s")).map(String::as_str),
+            Some("reset\n")
+        );
+        assert_eq!(
+            files
+                .get(&Utf8PathBuf::from("lib/util.s"))
+                .map(String::as_str),
+            Some("target:\n")
+        );
+    }
+
+    #[test]
+    fn ignores_malformed_workspace_files_params() {
+        assert!(parse_workspace_files(&json!({})).is_empty());
+        assert!(parse_workspace_files(&json!({ "files": 42 })).is_empty());
+        // Non-string values are skipped.
+        let files = parse_workspace_files(&json!({ "files": { "a.s": 1, "b.s": "ok" } }));
+        assert_eq!(files.len(), 1);
+        assert!(files.contains_key(&Utf8PathBuf::from("b.s")));
     }
 }

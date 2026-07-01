@@ -2,9 +2,9 @@ use tower_lsp::lsp_types;
 
 use super::document::DocumentState;
 use super::position;
-use crate::diagnostic::{preprocessor_error_to_diagnostics, FileId};
 use crate::compiler::layout::MemoryLayoutError;
 use crate::compiler::memory::{InstructionCompilationError, MemoryFillError};
+use crate::diagnostic::{preprocessor_error_to_diagnostics, FileId};
 use crate::parser::shared::{DiagnosticSeverity, ParseDiagnostic};
 
 /// A diagnostic together with the file it belongs to.
@@ -248,7 +248,12 @@ pub fn diagnostics_by_file(state: &DocumentState) -> Vec<FileDiagnostic> {
             }
             if let Some(fallback) = &block.fallback {
                 if !fallback.active {
-                    push_inactive(state, block.file_id, fallback.body_span.clone(), &mut result);
+                    push_inactive(
+                        state,
+                        block.file_id,
+                        fallback.body_span.clone(),
+                        &mut result,
+                    );
                 }
             }
         }
