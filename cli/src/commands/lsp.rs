@@ -1,6 +1,6 @@
 use clap::Parser;
 use z33_emulator::lsp::tower_lsp::{LspService, Server};
-use z33_emulator::lsp::Backend;
+use z33_emulator::lsp::{Backend, WORKSPACE_FILES_METHOD};
 
 /// Start the Z33 Language Server (LSP)
 #[derive(Parser, Debug)]
@@ -17,7 +17,9 @@ impl LspOpt {
             let stdin = tokio::io::stdin();
             let stdout = tokio::io::stdout();
 
-            let (service, socket) = LspService::new(Backend::new);
+            let (service, socket) = LspService::build(Backend::new)
+                .custom_method(WORKSPACE_FILES_METHOD, Backend::workspace_files)
+                .finish();
             Server::new(stdin, stdout, socket).serve(service).await;
         });
 

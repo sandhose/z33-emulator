@@ -14,8 +14,9 @@ mod references;
 mod semantic_tokens;
 mod signature;
 mod symbols;
+mod workspace;
 
 pub use tower_lsp;
 
-pub use self::backend::Backend;
+pub use self::backend::{Backend, WORKSPACE_FILES_METHOD};
 pub use self::document::DocumentState;

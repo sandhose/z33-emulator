@@ -1,37 +1,52 @@
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::Mutex;
 
-use dashmap::DashMap;
+use camino::Utf8PathBuf;
 use tower_lsp::lsp_types::{
     CodeLens, CodeLensOptions, Command, CompletionOptions, CompletionParams, CompletionResponse,
-    DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
-    DocumentHighlight, DocumentHighlightKind, DocumentHighlightParams, DocumentSymbolParams,
-    DocumentSymbolResponse, GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverContents,
-    HoverParams, HoverProviderCapability, InitializeParams, InitializeResult, InitializedParams,
-    Location, MarkupContent, MarkupKind, OneOf, PrepareRenameResponse, ReferenceParams,
-    RenameParams, SemanticTokensFullOptions, SemanticTokensOptions, SemanticTokensParams,
-    SemanticTokensResult, SemanticTokensServerCapabilities, ServerCapabilities, ServerInfo,
-    SignatureHelpOptions, SignatureHelpParams, TextDocumentSyncCapability, TextDocumentSyncKind,
-    TextEdit, Url, WorkspaceEdit,
+    Diagnostic, DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
+    DocumentHighlight, DocumentHighlightParams, DocumentSymbolParams, DocumentSymbolResponse,
+    GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverContents, HoverParams,
+    HoverProviderCapability, InitializeParams, InitializeResult, InitializedParams, Location,
+    MarkupContent, MarkupKind,
+    OneOf, PrepareRenameResponse, ReferenceParams, RenameParams, SemanticTokensFullOptions,
+    SemanticTokensOptions, SemanticTokensParams, SemanticTokensResult,
+    SemanticTokensServerCapabilities, ServerCapabilities, ServerInfo, SignatureHelpOptions,
+    SignatureHelpParams, TextDocumentSyncCapability, TextDocumentSyncKind, Url, WorkspaceEdit,
 };
 use tower_lsp::{jsonrpc, Client, LanguageServer};
 
-use super::document::DocumentState;
 use super::references::OccurrenceKind;
-use super::{completion, diagnostics, hover, position, semantic_tokens, signature, symbols};
+use super::workspace::WorkspaceManager;
+use super::{completion, hover, position, semantic_tokens, signature, symbols};
 
-/// Per-document state.
-struct Document {
-    /// Always-current source text, updated synchronously on every didChange.
-    source: String,
-    /// Latest completed analysis.
-    analysis: Option<Arc<DocumentState>>,
-}
+/// The custom notification the host uses to push in-memory workspace files.
+pub const WORKSPACE_FILES_METHOD: &str = "z33/workspaceFiles";
 
 /// LSP backend for Z33 assembly.
+///
+/// # Multi-file model
+///
+/// The backend resolves `#include` directives against a workspace overlay: open
+/// documents take precedence over a base file map, which in turn falls back to
+/// disk (native mode only). The base source can come from two places, selected
+/// at runtime with no cargo features:
+///
+/// - **Native**: when the client sends a `file://` `rootUri` (or workspace
+///   folder) in `initialize`, unopened files are read from disk relative to
+///   that root.
+/// - **Host-pushed**: the client may send a custom `z33/workspaceFiles`
+///   notification whose params are `{ "files": { "relative/path.s": "content",
+///   ... } }`. This replaces the in-memory base file map and triggers
+///   re-analysis. The web IDE and the VS Code web extension use this because
+///   they have no disk access.
+///
+/// Every open document is analyzed as its own preprocessing root, under its
+/// real (workspace-relative) path, so cross-file features — go-to-definition,
+/// references, rename, and diagnostics — resolve across files.
 pub struct Backend {
     client: Client,
-    documents: Arc<DashMap<Url, Document>>,
+    manager: Mutex<WorkspaceManager>,
 }
 
 impl Backend {
@@ -39,37 +54,55 @@ impl Backend {
     pub fn new(client: Client) -> Self {
         Self {
             client,
-            documents: Arc::new(DashMap::new()),
+            manager: Mutex::new(WorkspaceManager::new()),
         }
     }
 
-    async fn on_change(&self, uri: Url, text: String) {
-        let state = Arc::new(DocumentState::new(text.clone()));
-        let diags = diagnostics::diagnostics(&state);
-
-        self.documents.insert(
-            uri.clone(),
-            Document {
-                source: text,
-                analysis: Some(state),
-            },
-        );
-
-        self.client.publish_diagnostics(uri, diags, None).await;
+    /// Publish a batch of per-URI diagnostics.
+    async fn publish(&self, batches: Vec<(Url, Vec<Diagnostic>)>) {
+        for (uri, diagnostics) in batches {
+            self.client.publish_diagnostics(uri, diagnostics, None).await;
+        }
     }
 
-    fn get_source(&self, uri: &Url) -> Option<String> {
-        self.documents.get(uri).map(|d| d.source.clone())
+    fn lock(&self) -> std::sync::MutexGuard<'_, WorkspaceManager> {
+        self.manager
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
-    fn get_analysis(&self, uri: &Url) -> Option<Arc<DocumentState>> {
-        self.documents.get(uri).and_then(|d| d.analysis.clone())
+    /// Custom `z33/workspaceFiles` notification handler.
+    ///
+    /// Params: `{ "files": { "<relative path>": "<content>", ... } }`.
+    pub async fn workspace_files(&self, params: serde_json::Value) {
+        let mut files: HashMap<Utf8PathBuf, String> = HashMap::new();
+        if let Some(map) = params.get("files").and_then(serde_json::Value::as_object) {
+            for (path, content) in map {
+                if let Some(content) = content.as_str() {
+                    files.insert(Utf8PathBuf::from(path), content.to_string());
+                }
+            }
+        }
+
+        let batches = self.lock().set_base_files(files);
+        self.publish(batches).await;
     }
 }
 
 #[tower_lsp::async_trait]
 impl LanguageServer for Backend {
-    async fn initialize(&self, _params: InitializeParams) -> jsonrpc::Result<InitializeResult> {
+    async fn initialize(&self, params: InitializeParams) -> jsonrpc::Result<InitializeResult> {
+        // Prefer the (deprecated but widely sent) root_uri, then the first
+        // workspace folder.
+        #[allow(deprecated)]
+        let root_uri = params.root_uri.or_else(|| {
+            params
+                .workspace_folders
+                .and_then(|folders| folders.into_iter().next())
+                .map(|folder| folder.uri)
+        });
+        self.lock().set_root(root_uri);
+
         Ok(InitializeResult {
             capabilities: ServerCapabilities {
                 text_document_sync: Some(TextDocumentSyncCapability::Kind(
@@ -126,20 +159,20 @@ impl LanguageServer for Backend {
 
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
         let doc = params.text_document;
-        self.on_change(doc.uri, doc.text).await;
+        let batches = self.lock().upsert(doc.uri, doc.text);
+        self.publish(batches).await;
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
         if let Some(change) = params.content_changes.into_iter().next() {
-            self.on_change(params.text_document.uri, change.text).await;
+            let batches = self.lock().upsert(params.text_document.uri, change.text);
+            self.publish(batches).await;
         }
     }
 
     async fn did_close(&self, params: DidCloseTextDocumentParams) {
-        self.documents.remove(&params.text_document.uri);
-        self.client
-            .publish_diagnostics(params.text_document.uri, vec![], None)
-            .await;
+        let batches = self.lock().close(&params.text_document.uri);
+        self.publish(batches).await;
     }
 
     async fn completion(
@@ -149,10 +182,13 @@ impl LanguageServer for Backend {
         let uri = &params.text_document_position.text_document.uri;
         let pos = params.text_document_position.position;
 
-        let Some(source) = self.get_source(uri) else {
-            return Ok(None);
+        let (source, analysis) = {
+            let manager = self.lock();
+            let Some(source) = manager.source(uri) else {
+                return Ok(None);
+            };
+            (source, manager.analysis(uri))
         };
-        let analysis = self.get_analysis(uri);
 
         let Some(offset) = position::byte_offset(&source, pos) else {
             return Ok(None);
@@ -173,7 +209,7 @@ impl LanguageServer for Backend {
         let uri = &params.text_document_position_params.text_document.uri;
         let pos = params.text_document_position_params.position;
 
-        let Some(source) = self.get_source(uri) else {
+        let Some(source) = self.lock().source(uri) else {
             return Ok(None);
         };
 
@@ -188,10 +224,13 @@ impl LanguageServer for Backend {
         let uri = &params.text_document_position_params.text_document.uri;
         let pos = params.text_document_position_params.position;
 
-        let Some(source) = self.get_source(uri) else {
-            return Ok(None);
+        let (source, analysis) = {
+            let manager = self.lock();
+            let Some(source) = manager.source(uri) else {
+                return Ok(None);
+            };
+            (source, manager.analysis(uri))
         };
-        let analysis = self.get_analysis(uri);
 
         let Some(offset) = position::byte_offset(&source, pos) else {
             return Ok(None);
@@ -219,73 +258,32 @@ impl LanguageServer for Backend {
         let uri = &params.text_document_position_params.text_document.uri;
         let pos = params.text_document_position_params.position;
 
-        let Some(source) = self.get_source(uri) else {
+        let manager = self.lock();
+        let Some(source) = manager.source(uri) else {
             return Ok(None);
         };
-        let Some(analysis) = self.get_analysis(uri) else {
-            return Ok(None);
-        };
-
         let Some(offset) = position::byte_offset(&source, pos) else {
             return Ok(None);
         };
 
-        let Some(occ) = analysis.occurrence_at(offset) else {
-            return Ok(None);
-        };
-
-        let def = analysis
-            .occurrences_of(&occ.name)
-            .find(|o| o.kind == OccurrenceKind::Definition);
-
-        if let Some(def) = def {
-            if let Some(range) = position::range(&source, def.span.clone()) {
-                return Ok(Some(GotoDefinitionResponse::Scalar(Location {
-                    uri: uri.clone(),
-                    range,
-                })));
-            }
-        }
-
-        Ok(None)
+        Ok(manager
+            .goto_definition(uri, offset)
+            .map(GotoDefinitionResponse::Scalar))
     }
 
     async fn references(&self, params: ReferenceParams) -> jsonrpc::Result<Option<Vec<Location>>> {
         let uri = &params.text_document_position.text_document.uri;
         let pos = params.text_document_position.position;
 
-        let Some(source) = self.get_source(uri) else {
+        let manager = self.lock();
+        let Some(source) = manager.source(uri) else {
             return Ok(None);
         };
-        let Some(analysis) = self.get_analysis(uri) else {
-            return Ok(None);
-        };
-
         let Some(offset) = position::byte_offset(&source, pos) else {
             return Ok(None);
         };
 
-        let Some(occ) = analysis.occurrence_at(offset) else {
-            return Ok(None);
-        };
-
-        let include_decl = params.context.include_declaration;
-        let locations: Vec<Location> = analysis
-            .occurrences_of(&occ.name)
-            .filter(|o| include_decl || o.kind != OccurrenceKind::Definition)
-            .filter_map(|o| {
-                position::range(&source, o.span.clone()).map(|range| Location {
-                    uri: uri.clone(),
-                    range,
-                })
-            })
-            .collect();
-
-        if locations.is_empty() {
-            Ok(None)
-        } else {
-            Ok(Some(locations))
-        }
+        Ok(manager.references(uri, offset, params.context.include_declaration))
     }
 
     async fn document_symbol(
@@ -294,7 +292,7 @@ impl LanguageServer for Backend {
     ) -> jsonrpc::Result<Option<DocumentSymbolResponse>> {
         let uri = &params.text_document.uri;
 
-        let Some(analysis) = self.get_analysis(uri) else {
+        let Some(analysis) = self.lock().analysis(uri) else {
             return Ok(None);
         };
 
@@ -313,44 +311,15 @@ impl LanguageServer for Backend {
         let uri = &params.text_document_position_params.text_document.uri;
         let pos = params.text_document_position_params.position;
 
-        let Some(source) = self.get_source(uri) else {
+        let manager = self.lock();
+        let Some(source) = manager.source(uri) else {
             return Ok(None);
         };
-        let analysis = self.get_analysis(uri);
-
         let Some(offset) = position::byte_offset(&source, pos) else {
             return Ok(None);
         };
 
-        let Some(analysis) = analysis else {
-            return Ok(None);
-        };
-
-        let Some(occ) = analysis.occurrence_at(offset) else {
-            return Ok(None);
-        };
-
-        let highlights: Vec<DocumentHighlight> = analysis
-            .occurrences_of(&occ.name)
-            .filter_map(|o| {
-                let range = position::range(&source, o.span.clone())?;
-                let kind = if o.kind == OccurrenceKind::Definition {
-                    DocumentHighlightKind::WRITE
-                } else {
-                    DocumentHighlightKind::READ
-                };
-                Some(DocumentHighlight {
-                    range,
-                    kind: Some(kind),
-                })
-            })
-            .collect();
-
-        if highlights.is_empty() {
-            Ok(None)
-        } else {
-            Ok(Some(highlights))
-        }
+        Ok(manager.document_highlight(uri, offset))
     }
 
     async fn code_lens(
@@ -359,19 +328,25 @@ impl LanguageServer for Backend {
     ) -> jsonrpc::Result<Option<Vec<CodeLens>>> {
         let uri = &params.text_document.uri;
 
-        let Some(source) = self.get_source(uri) else {
-            return Ok(None);
-        };
-        let Some(analysis) = self.get_analysis(uri) else {
-            return Ok(None);
+        let (source, analysis) = {
+            let manager = self.lock();
+            let Some(source) = manager.source(uri) else {
+                return Ok(None);
+            };
+            let Some(analysis) = manager.analysis(uri) else {
+                return Ok(None);
+            };
+            (source, analysis)
         };
 
+        let root = analysis.root_file_id();
         let mut lenses = Vec::new();
 
         for (name, addr) in analysis.labels() {
+            // Only place a lens on labels defined in this document.
             let Some(def) = analysis
                 .occurrences_of(name)
-                .find(|o| o.kind == OccurrenceKind::Definition)
+                .find(|o| o.kind == OccurrenceKind::Definition && o.file_id == root)
             else {
                 continue;
             };
@@ -416,11 +391,15 @@ impl LanguageServer for Backend {
         let uri = &params.text_document.uri;
         let pos = params.position;
 
-        let Some(source) = self.get_source(uri) else {
-            return Ok(None);
-        };
-        let Some(analysis) = self.get_analysis(uri) else {
-            return Ok(None);
+        let (source, analysis) = {
+            let manager = self.lock();
+            let Some(source) = manager.source(uri) else {
+                return Ok(None);
+            };
+            let Some(analysis) = manager.analysis(uri) else {
+                return Ok(None);
+            };
+            (source, analysis)
         };
 
         let Some(offset) = position::byte_offset(&source, pos) else {
@@ -439,43 +418,15 @@ impl LanguageServer for Backend {
         let uri = &params.text_document_position.text_document.uri;
         let pos = params.text_document_position.position;
 
-        let Some(source) = self.get_source(uri) else {
+        let manager = self.lock();
+        let Some(source) = manager.source(uri) else {
             return Ok(None);
         };
-        let Some(analysis) = self.get_analysis(uri) else {
-            return Ok(None);
-        };
-
         let Some(offset) = position::byte_offset(&source, pos) else {
             return Ok(None);
         };
 
-        let Some(occ) = analysis.occurrence_at(offset) else {
-            return Ok(None);
-        };
-
-        let new_name = &params.new_name;
-        let edits: Vec<TextEdit> = analysis
-            .occurrences_of(&occ.name)
-            .filter_map(|o| {
-                position::range(&source, o.span.clone()).map(|range| TextEdit {
-                    range,
-                    new_text: new_name.clone(),
-                })
-            })
-            .collect();
-
-        if edits.is_empty() {
-            return Ok(None);
-        }
-
-        let mut changes = HashMap::new();
-        changes.insert(uri.clone(), edits);
-
-        Ok(Some(WorkspaceEdit {
-            changes: Some(changes),
-            ..Default::default()
-        }))
+        Ok(manager.rename(uri, offset, &params.new_name))
     }
 
     async fn semantic_tokens_full(
@@ -484,10 +435,13 @@ impl LanguageServer for Backend {
     ) -> jsonrpc::Result<Option<SemanticTokensResult>> {
         let uri = &params.text_document.uri;
 
-        let Some(source) = self.get_source(uri) else {
-            return Ok(None);
+        let (source, analysis) = {
+            let manager = self.lock();
+            let Some(source) = manager.source(uri) else {
+                return Ok(None);
+            };
+            (source, manager.analysis(uri))
         };
-        let analysis = self.get_analysis(uri);
 
         let tokens = semantic_tokens::semantic_tokens(analysis.as_deref(), &source);
         Ok(Some(SemanticTokensResult::Tokens(tokens)))
