@@ -1,0 +1,107 @@
+==================
+direct memory access
+==================
+    ld [42], %a
+---
+
+(source_file
+  (instruction
+    mnemonic: (mnemonic)
+    (direct
+      (number))
+    (register)))
+
+==================
+direct with label
+==================
+    ld [EXCEPTION], %a
+---
+
+(source_file
+  (instruction
+    mnemonic: (mnemonic)
+    (direct
+      (identifier))
+    (register)))
+
+==================
+indirect register
+==================
+    ld [%sp], %a
+---
+
+(source_file
+  (instruction
+    mnemonic: (mnemonic)
+    (indirect
+      (register))
+    (register)))
+
+==================
+indexed plus
+==================
+    ld [%sp+1], %a
+---
+
+(source_file
+  (instruction
+    mnemonic: (mnemonic)
+    (indexed
+      (register)
+      (number))
+    (register)))
+
+==================
+indexed minus
+==================
+    ld [%sp-2], %a
+---
+
+(source_file
+  (instruction
+    mnemonic: (mnemonic)
+    (indexed
+      (register)
+      (number))
+    (register)))
+
+==================
+indexed with expression
+==================
+    ld [%sp + 2 * 3], %a
+---
+
+(source_file
+  (instruction
+    mnemonic: (mnemonic)
+    (indexed
+      (register)
+      (binary_expression
+        left: (number)
+        right: (number)))
+    (register)))
+
+==================
+all registers
+==================
+    ld %a, %b
+    ld %pc, %sp
+    ld %sr, %a
+---
+
+(source_file
+  (instruction
+    mnemonic: (mnemonic)
+    (register)
+    (register))
+  (newline)
+  (instruction
+    mnemonic: (mnemonic)
+    (register)
+    (register))
+  (newline)
+  (instruction
+    mnemonic: (mnemonic)
+    (register)
+    (register)))
+

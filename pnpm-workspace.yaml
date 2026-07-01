@@ -3,6 +3,7 @@
 packages:
   - web
   - vscode
+  - tree-sitter-z33
 
 ignoredBuiltDependencies:
   - esbuild
@@ -11,6 +12,7 @@ ignoredBuiltDependencies:
 onlyBuiltDependencies:
   - "@vscode/vsce-sign"
   - keytar
+  - tree-sitter-cli
 
 strictDepBuilds: true
 

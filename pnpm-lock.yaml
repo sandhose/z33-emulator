@@ -8,6 +8,12 @@ importers:
 
   .: {}
 
+  tree-sitter-z33:
+    devDependencies:
+      tree-sitter-cli:
+        specifier: ^0.26.0
+        version: 0.26.10
+
   vscode:
     dependencies:
       vscode-languageclient:
@@ -3475,6 +3481,11 @@ packages:
     resolution: {integrity: sha512-o5sSPKEkg/DIQNmH43V0/uerLrpzVedkUh8tGNvaeXpfpuwjKenlSox/2O/BTlZUtEe+JG7s5YhEz608PlAHRA==}
     engines: {node: '>=0.6'}
 
+  tree-sitter-cli@0.26.10:
+    resolution: {integrity: sha512-RTse32x5YWOrEtH7wos8ODt3yyB7SKgmGN70jC7R+WcnDA64vrpYU98+LnwrwdXMlxgr0LGQdezZz85DN8Wv0w==}
+    engines: {node: '>=12.0.0'}
+    hasBin: true
+
   ts-morph@26.0.0:
     resolution: {integrity: sha512-ztMO++owQnz8c/gIENcM9XfCEzgoGphTv+nKpYNM1bgsdOVC/jRZuEBf6N+mLLDNg68Kl+GgUZfOySaRiG1/Ug==}
 
@@ -6930,6 +6941,8 @@ snapshots:
       is-number: 7.0.0
 
   toidentifier@1.0.1: {}
+
+  tree-sitter-cli@0.26.10: {}
 
   ts-morph@26.0.0:
     dependencies:

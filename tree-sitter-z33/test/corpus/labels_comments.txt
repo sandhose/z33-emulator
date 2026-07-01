@@ -1,0 +1,85 @@
+==================
+label definition
+==================
+main:
+---
+
+(source_file
+  (label
+    name: (identifier)))
+
+==================
+multiple labels one line
+==================
+foo: bar: reset
+---
+
+(source_file
+  (label
+    name: (identifier))
+  (label
+    name: (identifier))
+  (instruction
+    mnemonic: (mnemonic)))
+
+==================
+label then instruction
+==================
+main: push 5
+---
+
+(source_file
+  (label
+    name: (identifier))
+  (instruction
+    mnemonic: (mnemonic)
+    (number)))
+
+==================
+line comment only
+==================
+// just a comment
+---
+
+(source_file
+  (comment))
+
+==================
+trailing comment
+==================
+    reset // done
+---
+
+(source_file
+  (instruction
+    mnemonic: (mnemonic))
+  (comment))
+
+==================
+blank lines
+==================
+main:
+
+
+    reset
+---
+
+(source_file
+  (label
+    name: (identifier))
+  (newline)
+  (newline)
+  (newline)
+  (instruction
+    mnemonic: (mnemonic)))
+
+==================
+no trailing newline
+==================
+    reset
+---
+
+(source_file
+  (instruction
+    mnemonic: (mnemonic)))
+
