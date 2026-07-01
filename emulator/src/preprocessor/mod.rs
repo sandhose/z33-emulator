@@ -191,6 +191,18 @@ impl Workspace {
         self.file_db
     }
 
+    /// Iterate over the ([`FileId`], path) pairs of every source file that was
+    /// successfully loaded into this workspace.
+    ///
+    /// The virtual `<preprocessed>` output is *not* included (it is only added
+    /// to the [`FileDatabase`] during [`preprocess`](Self::preprocess)). Paths
+    /// are relative to the filesystem root.
+    pub fn file_ids(&self) -> impl Iterator<Item = (FileId, &Utf8Path)> + '_ {
+        self.files
+            .iter()
+            .filter_map(|(path, res)| res.as_ref().ok().map(|f| (f.file_id, path.as_path())))
+    }
+
     fn load<FS: Filesystem>(&mut self, fs: &FS, path: &Utf8Path) -> &mut Self {
         // If we already loaded the path, return early
         if self.files.contains_key(path) {
@@ -372,6 +384,7 @@ impl Workspace {
                     annotations
                         .undefinitions
                         .push(annotations::UndefinitionAnnotation {
+                            file_id: stack.file_id,
                             span: stack.range.clone(),
                             key: key.clone(),
                         });
@@ -390,6 +403,7 @@ impl Workspace {
                     annotations
                         .definitions
                         .push(annotations::DefinitionAnnotation {
+                            file_id: stack.file_id,
                             span: stack.range.clone(),
                             key: key.clone(),
                             value: value_str,
@@ -408,6 +422,7 @@ impl Workspace {
                     annotations
                         .inclusions
                         .push(annotations::InclusionAnnotation {
+                            file_id: stack.file_id,
                             span: stack.range.clone(),
                             path: include.clone(),
                         });
@@ -510,6 +525,7 @@ impl Workspace {
                     annotations
                         .conditional_blocks
                         .push(annotations::ConditionalBlockAnnotation {
+                            file_id: stack.file_id,
                             span: stack.range.clone(),
                             branches: branch_annotations,
                             fallback: fallback_annotation,

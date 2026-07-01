@@ -7,6 +7,8 @@
 
 use std::ops::Range;
 
+use crate::diagnostic::FileId;
+
 /// All preprocessor annotations for a single file.
 #[derive(Debug, Default)]
 pub struct SourceAnnotations {
@@ -29,6 +31,8 @@ pub struct SourceAnnotations {
 /// A `#define KEY [VALUE]` directive.
 #[derive(Debug)]
 pub struct DefinitionAnnotation {
+    /// The original file this directive lives in.
+    pub file_id: FileId,
     /// Span of the entire `#define ...` line in the original source.
     pub span: Range<usize>,
     /// The macro name.
@@ -40,6 +44,8 @@ pub struct DefinitionAnnotation {
 /// A `#undef KEY` directive.
 #[derive(Debug)]
 pub struct UndefinitionAnnotation {
+    /// The original file this directive lives in.
+    pub file_id: FileId,
     /// Span of the entire `#undef ...` line.
     pub span: Range<usize>,
     /// The macro name being undefined.
@@ -49,6 +55,8 @@ pub struct UndefinitionAnnotation {
 /// A `#include "path"` directive.
 #[derive(Debug)]
 pub struct InclusionAnnotation {
+    /// The original file this directive lives in.
+    pub file_id: FileId,
     /// Span of the entire `#include ...` line.
     pub span: Range<usize>,
     /// The include path as written in the source.
@@ -58,6 +66,9 @@ pub struct InclusionAnnotation {
 /// A `#if`/`#elif`/`#else`/`#endif` block.
 #[derive(Debug)]
 pub struct ConditionalBlockAnnotation {
+    /// The original file this block lives in. All branch and fallback spans
+    /// below are byte offsets into this file's source.
+    pub file_id: FileId,
     /// Full span from the `#if` line through the `#endif` line.
     pub span: Range<usize>,
     /// The conditional branches (`#if` and any `#elif`s).
