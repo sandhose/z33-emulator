@@ -1342,6 +1342,7 @@ dependencies = [
  "pin-project-lite",
  "tower-layer",
  "tower-service",
+ "tracing",
 ]
 
 [[package]]
@@ -1396,6 +1397,7 @@ version = "0.1.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "63e71662fa4b2a2c3a26f570f037eb95bb1f85397f3cd8076caed2f026a6d100"
 dependencies = [
+ "log",
  "pin-project-lite",
  "tracing-attributes",
  "tracing-core",
@@ -1583,6 +1585,16 @@ dependencies = [
  "rustversion",
  "wasm-bindgen-macro",
  "wasm-bindgen-shared",
+]
+
+[[package]]
+name = "wasm-bindgen-futures"
+version = "0.4.76"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c62df1340f32221cb9c54d6a27b030e3dba64361d4a95bed55f9aacb44da291d"
+dependencies = [
+ "js-sys",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -1990,13 +2002,18 @@ version = "0.7.0"
 dependencies = [
  "camino",
  "console_error_panic_hook",
+ "futures",
  "js-sys",
  "serde",
  "serde-wasm-bindgen",
+ "serde_json",
+ "tower",
+ "tower-lsp",
  "tracing",
  "tracing-wasm",
  "tsify",
  "wasm-bindgen",
+ "wasm-bindgen-futures",
  "z33-emulator",
 ]
 

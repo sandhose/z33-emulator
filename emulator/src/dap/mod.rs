@@ -47,7 +47,7 @@ use std::str::FromStr;
 use camino::{Utf8Path, Utf8PathBuf};
 use serde_json::{json, Map, Value};
 
-use self::index::LineIndex;
+pub use self::index::LineIndex;
 use self::protocol::{
     Breakpoint, Capabilities, EvaluateArguments, IncomingRequest, LaunchArguments,
     ReadMemoryArguments, Scope, ScopesArguments, SetBreakpointsArguments, SetVariableArguments,

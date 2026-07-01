@@ -1,3 +1,7 @@
+mod dap_server;
+mod lsp_server;
+mod source_index;
+
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::ops::Range;
@@ -9,6 +13,7 @@ use tsify::Tsify;
 use wasm_bindgen::prelude::*;
 use z33_emulator::compile;
 use z33_emulator::constants::Address;
+use z33_emulator::dap::LineIndex;
 use z33_emulator::diagnostic::{
     diagnostics_to_json, preprocessor_error_to_diagnostics, resolve_diagnostic_spans, FileDatabase,
     FileId,
@@ -272,11 +277,18 @@ impl Program {
         let source_map =
             compose_source_maps(&debug_info.source_map, &self.source_map, &self.file_db);
 
+        let line_index = Rc::new(LineIndex::build(
+            &debug_info,
+            &self.source_map,
+            &self.file_db,
+        ));
+
         tracing::info!("Compiled");
 
         Ok(Computer {
             debug_info,
             source_map,
+            line_index,
             inner: computer,
             cycles,
             registers,
@@ -301,6 +313,7 @@ pub struct SourceMap(BTreeMap<u32, SourceLocation>);
 pub struct Computer {
     debug_info: z33_emulator::compiler::DebugInfo,
     source_map: BTreeMap<Address, SourceLocation>,
+    line_index: Rc<LineIndex>,
     inner: z33_emulator::runtime::Computer,
     cycles: Observable<Cycles>,
     registers: Observable<Registers>,
@@ -396,6 +409,14 @@ impl Computer {
     #[must_use]
     pub fn source_map(&self) -> SourceMap {
         SourceMap(self.source_map.clone())
+    }
+
+    /// A bidirectional line ↔ address index for gutter breakpoints and
+    /// program-counter resolution.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn source_index(&self) -> source_index::SourceIndex {
+        source_index::SourceIndex::new(self.line_index.clone())
     }
 
     #[must_use]
