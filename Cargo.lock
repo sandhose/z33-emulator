@@ -1994,6 +1994,7 @@ dependencies = [
  "parse-display",
  "percent-encoding",
  "pretty_assertions",
+ "serde",
  "serde_json",
  "smallvec",
  "thiserror",

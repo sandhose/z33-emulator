@@ -11,7 +11,7 @@ pub(crate) mod arguments;
 mod exception;
 mod instructions;
 mod memory;
-mod registers;
+pub mod registers;
 
 pub use self::arguments::ExtractValue;
 use self::arguments::{ExtractError, Ind, ResolveAddress};
