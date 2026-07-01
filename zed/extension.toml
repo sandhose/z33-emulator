@@ -10,6 +10,9 @@ repository = "https://github.com/sandhose/z33-emulator"
 name = "Z33 LSP"
 languages = ["Z33 Assembly"]
 
+[debug_adapters.z33]
+# Uses the default schema path: debug_adapter_schemas/z33.json
+
 # The tree-sitter grammar lives in this same repository under `tree-sitter-z33/`.
 # Zed fetches the grammar from the repository at `rev` and compiles the
 # `parser.c` found at `path`.
