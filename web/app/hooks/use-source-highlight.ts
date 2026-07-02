@@ -1,34 +1,47 @@
 import type * as monaco from "monaco-editor";
-import { useEffect, useRef, useState } from "react";
-import type { SourceMap } from "../lib/wasm";
-import type { ComputerInterface } from "../computer-types";
-import { buildByteToCharMap } from "../lib/utf8";
-import { useRegisters } from "./use-computer";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
+import type { ComputerProxy } from "../lib/computer-proxy";
+import { stripLeadingSlash } from "../lib/file-paths";
 
 type UseSourceHighlightOptions = {
-  computer: ComputerInterface;
-  sourceMap: SourceMap;
+  computer: ComputerProxy;
   editor: monaco.editor.IStandaloneCodeEditor | null;
   onSwitchFile: (filePath: string) => void;
 };
 
+/**
+ * Highlights the current instruction line, driven by the worker-resolved source
+ * location of `%pc` (carried in each snapshot). Auto-switches the active file to
+ * follow execution across `#include`d files.
+ */
 export function useSourceHighlight({
   computer,
-  sourceMap,
   editor,
   onSwitchFile,
 }: UseSourceHighlightOptions): void {
-  const registers = useRegisters(computer);
+  const location = useSyncExternalStore(
+    useCallback((cb) => computer.subscribePc(cb), [computer]),
+    () => computer.getPcLocation(),
+  );
+
+  const status = useSyncExternalStore(
+    useCallback((cb) => computer.subscribeStatus(cb), [computer]),
+    () => computer.getStatus(),
+  );
+
   const decorationsRef =
     useRef<monaco.editor.IEditorDecorationsCollection | null>(null);
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
-  const byteToCharRef = useRef<Uint32Array | null>(null);
-  const modelUriRef = useRef<string | null>(null);
+  /** Timestamp of the last auto-reveal, to throttle scrolling while running. */
+  const lastRevealRef = useRef(0);
 
-  // Re-run the highlight effect whenever the editor switches to a different model.
-  // This is needed because onSwitchFile triggers a React state update that causes
-  // @monaco-editor/react to call editor.setModel(), but the highlight effect's
-  // deps don't change — so we track the active model URI as state to force a re-run.
+  // Track the active model URI so the highlight re-applies after a file switch.
   const [currentModelUri, setCurrentModelUri] = useState<string | null>(null);
   useEffect(() => {
     if (!editor) return () => {};
@@ -41,79 +54,42 @@ export function useSourceHighlight({
     };
   }, [editor]);
 
-  // Auto-switch file only when PC changes, not when the user manually switches models.
-  // By omitting currentModelUri from deps, this effect only fires on actual PC movement.
+  // Follow execution into other files when the PC's file differs from the one
+  // currently shown.
   useEffect(() => {
-    if (!editor) return;
+    if (!editor || !location) return;
     const model = editor.getModel();
-    const location = sourceMap.get(registers.pc);
-    if (!location || !model) return;
-    if (model.uri.path !== location.file) {
+    if (!model) return;
+    if (stripLeadingSlash(model.uri.path) !== location.file) {
       onSwitchFile(location.file);
     }
-  }, [editor, sourceMap, registers.pc, onSwitchFile]);
+  }, [editor, location, onSwitchFile]);
 
   useEffect(() => {
     if (!editor) return;
 
-    // Recreate decorations collection when editor instance changes
     if (editorRef.current !== editor) {
       decorationsRef.current?.clear();
       decorationsRef.current = editor.createDecorationsCollection();
       editorRef.current = editor;
     }
-
-    // Rebuild byte-to-char map when the model (file) changes
-    const model = editor.getModel();
-    const modelUri = model?.uri.toString() ?? null;
-    if (modelUri !== modelUriRef.current) {
-      modelUriRef.current = modelUri;
-      byteToCharRef.current = model
-        ? buildByteToCharMap(model.getValue())
-        : null;
-    }
-
     const decorations = decorationsRef.current;
-    if (!decorations) return;
+    const model = editor.getModel();
+    if (!decorations || !model) return;
 
-    const location = sourceMap.get(registers.pc);
-    if (!location) {
+    if (!location || stripLeadingSlash(model.uri.path) !== location.file) {
       decorations.clear();
       return;
     }
 
-    if (!model) {
-      decorations.clear();
-      return;
-    }
-
-    // Don't apply decorations if the visible file doesn't match the PC's file
-    // (user manually switched to a different file)
-    if (model.uri.path !== location.file) {
-      decorations.clear();
-      return;
-    }
-
-    // Convert UTF-8 byte offsets from the Rust source map to character offsets
-    const byteToChar = byteToCharRef.current;
-    const charStart = byteToChar
-      ? (byteToChar[location.span[0]] ?? location.span[0])
-      : location.span[0];
-    const charEnd = byteToChar
-      ? (byteToChar[location.span[1]] ?? location.span[1])
-      : location.span[1];
-
-    const startPos = model.getPositionAt(charStart);
-    const endPos = model.getPositionAt(charEnd);
-
+    const line = location.line;
     decorations.set([
-      // Whole-line background on the start line only
       {
         range: {
-          startLineNumber: startPos.lineNumber,
+          startLineNumber: line,
           startColumn: 1,
-          endLineNumber: startPos.lineNumber,
-          endColumn: model.getLineMaxColumn(startPos.lineNumber),
+          endLineNumber: line,
+          endColumn: model.getLineMaxColumn(line),
         },
         options: {
           isWholeLine: true,
@@ -121,24 +97,18 @@ export function useSourceHighlight({
           glyphMarginClassName: "debug-line-glyph",
         },
       },
-      // Inline marker for the exact source span
-      {
-        range: {
-          startLineNumber: startPos.lineNumber,
-          startColumn: startPos.column,
-          endLineNumber: endPos.lineNumber,
-          endColumn: endPos.column,
-        },
-        options: {
-          className: "debug-span-highlight",
-        },
-      },
     ]);
 
-    editor.revealLineInCenter(startPos.lineNumber);
-  }, [editor, sourceMap, registers.pc, currentModelUri]);
+    // Revealing (scrolling) on every ~40ms snapshot during a run is a scroll
+    // storm. While running, throttle reveals to at most one per 300ms; on any
+    // stop (paused/halted/panicked) always reveal so the final line is centered.
+    const now = performance.now();
+    if (status !== "running" || now - lastRevealRef.current >= 300) {
+      editor.revealLineInCenter(line);
+      lastRevealRef.current = now;
+    }
+  }, [editor, location, currentModelUri, status]);
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       decorationsRef.current?.clear();
