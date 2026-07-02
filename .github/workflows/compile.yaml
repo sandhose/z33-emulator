@@ -202,7 +202,7 @@ jobs:
 
       - name: Prepare a release
         # preferred over gh CLI for declarative release publishing
-        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0 # zizmor: ignore[superfluous-actions]
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1 # zizmor: ignore[superfluous-actions]
         with:
           files: |
             z33-cli-x86_64-linux.tar.gz
