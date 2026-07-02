@@ -35,9 +35,9 @@ export const reportSchema: z.ZodType<Report> = baseReportSchema.extend({
 
 // Monaco MarkerSeverity enum values (stable across versions)
 const MARKER_SEVERITY: Record<Report["severity"], monaco.MarkerSeverity> = {
-  error: 8 as monaco.MarkerSeverity, // MarkerSeverity.Error
-  warning: 4 as monaco.MarkerSeverity, // MarkerSeverity.Warning
-  advice: 2 as monaco.MarkerSeverity, // MarkerSeverity.Info
+  error: 8 satisfies monaco.MarkerSeverity, // MarkerSeverity.Error
+  warning: 4 satisfies monaco.MarkerSeverity, // MarkerSeverity.Warning
+  advice: 2 satisfies monaco.MarkerSeverity, // MarkerSeverity.Info
 };
 
 const SEVERITY_CLASSES: Record<

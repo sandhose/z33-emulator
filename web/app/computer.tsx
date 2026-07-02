@@ -216,7 +216,7 @@ export const MemoryViewer = memo(
 
       useEffect(() => {
         const el = parentRef.current;
-        if (!el) return;
+        if (!el) return () => {};
         el.addEventListener("scroll", scrollDebouncer.maybeExecute, {
           passive: true,
         });

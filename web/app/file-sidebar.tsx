@@ -42,9 +42,9 @@ const InlineFileInput: React.FC<{
   return (
     <form
       className="px-2 py-1"
-      onSubmit={(e) => {
+      onSubmit={(e: React.SubmitEvent<HTMLFormElement>) => {
         e.preventDefault();
-        const data = new FormData(e.target as HTMLFormElement);
+        const data = new FormData(e.target);
         const filename = data.get("filename");
         if (typeof filename !== "string") throw new Error();
         if (filename.trim()) onSubmit(filename.trim());
@@ -81,7 +81,7 @@ export const FileSidebar: React.FC = () => {
   const uploadInputRef = useRef<HTMLInputElement>(null);
 
   const processFiles = useCallback(
-    (fileList: FileList) => {
+    (fileList: readonly File[]) => {
       for (const file of fileList) {
         void file.text().then((text) => {
           setContent(file.name, text);
@@ -295,8 +295,8 @@ export const FileSidebar: React.FC = () => {
         type="file"
         multiple
         className="sr-only"
-        onChange={(e) => {
-          if (e.target.files) processFiles(e.target.files);
+        onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+          if (e.target.files) processFiles(Array.from(e.target.files));
           e.target.value = "";
         }}
       />

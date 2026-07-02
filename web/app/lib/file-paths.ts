@@ -3,7 +3,7 @@
  * Monaco models use `/filename.s`, file-store uses `filename.s`.
  */
 export const stripLeadingSlash = (path: string): string =>
-  path.replace(/^\//, "");
+  path.replace(/^\//u, "");
 
 /**
  * Prepend a leading slash to a file-store key to get a Monaco URI path.

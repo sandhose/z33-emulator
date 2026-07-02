@@ -1,5 +1,6 @@
 import { startTransition, useCallback, useEffect, useReducer } from "react";
 import type { ComputerInterface } from "../computer-types";
+import { assertNever } from "@/lib/utils";
 
 /** Step interval in milliseconds */
 const STEP_INTERVAL_MS = 50;
@@ -33,6 +34,8 @@ function stepReducer(state: StepState, action: StepAction): StepState {
       return { status: "running", remaining: action.count };
     case "stop":
       return { status: "idle" };
+    default:
+      return assertNever(action);
   }
 }
 
@@ -53,7 +56,7 @@ export function useStepRunner(computer: ComputerInterface) {
   }, [computer]);
 
   useEffect(() => {
-    if (state.status !== "running") return;
+    if (state.status !== "running") return () => {};
     const id = setInterval(doStep, STEP_INTERVAL_MS);
     return () => {
       clearInterval(id);
