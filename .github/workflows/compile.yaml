@@ -45,7 +45,8 @@ jobs:
           rustup target add ${{ matrix.arch }}-apple-darwin
 
       - name: Setup Rust build cache
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        # save-if below restricts cache writes to the main branch
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1 # zizmor: ignore[cache-poisoning]
         with:
           shared-key: ${{ matrix.arch }}-macos
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -95,7 +96,8 @@ jobs:
           rustup target add ${{ matrix.arch }}-unknown-linux-musl
 
       - name: Setup Rust build cache
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        # save-if below restricts cache writes to the main branch
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1 # zizmor: ignore[cache-poisoning]
         with:
           shared-key: ${{ matrix.arch }}-linux
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -146,7 +148,8 @@ jobs:
           rustup target add ${{ matrix.arch }}-pc-windows-msvc
 
       - name: Setup Rust build cache
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        # save-if below restricts cache writes to the main branch
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1 # zizmor: ignore[cache-poisoning]
         with:
           shared-key: ${{ matrix.arch }}-pc-windows-msvc
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -198,7 +201,8 @@ jobs:
           mv ./artifacts/{x86_64,aarch64}-{linux,macos,windows}/* ./
 
       - name: Prepare a release
-        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
+        # preferred over gh CLI for declarative release publishing
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0 # zizmor: ignore[superfluous-actions]
         with:
           files: |
             z33-cli-x86_64-linux.tar.gz
