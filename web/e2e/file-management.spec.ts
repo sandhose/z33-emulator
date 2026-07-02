@@ -54,11 +54,7 @@ test.describe("File management", () => {
     await page.getByRole("button", { name: "Reset" }).click();
 
     // Both sample files should be back
-    await expect(
-      page.getByRole("button", { name: "fact.s" }),
-    ).toBeVisible();
-    await expect(
-      page.getByRole("button", { name: "handler.s" }),
-    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "fact.s" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "handler.s" })).toBeVisible();
   });
 });

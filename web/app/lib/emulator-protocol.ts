@@ -9,7 +9,7 @@ import type {
   Registers,
   ResolvedBreakpoint,
   SourcePosition,
-} from "z33-web-bindings";
+} from "./wasm";
 
 /** High-level execution state of the emulator session. */
 export type RunStatus = "running" | "paused" | "halted" | "panicked";

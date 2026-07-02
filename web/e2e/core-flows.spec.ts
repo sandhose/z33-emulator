@@ -12,15 +12,9 @@ import {
 test.describe("Core flows", () => {
   test("app loads with default samples", async ({ cleanPage: page }) => {
     await expect(page.locator(".monaco-editor")).toBeVisible();
-    await expect(
-      page.getByRole("navigation", { name: "Files" }),
-    ).toBeVisible();
-    await expect(
-      page.getByRole("button", { name: "fact.s" }),
-    ).toBeVisible();
-    await expect(
-      page.getByRole("button", { name: "handler.s" }),
-    ).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "Files" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "fact.s" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "handler.s" })).toBeVisible();
   });
 
   test("fact.s auto-compiles successfully", async ({ cleanPage: page }) => {
@@ -56,16 +50,13 @@ test.describe("Core flows", () => {
     await enterDebugMode(page);
 
     const debugToolbar = page.getByRole("toolbar", { name: "Debug" });
-    await expect(
-      page.getByRole("region", { name: "Registers" }),
-    ).toBeVisible();
+    await expect(page.getByRole("region", { name: "Registers" })).toBeVisible();
 
-    // Step once
+    // Step once (execution is driven by the worker, so cycles update async)
     await debugToolbar
       .getByRole("button", { name: "Step", exact: true })
       .click();
-    const cycles = await getCycleCount(page);
-    expect(cycles).toBeGreaterThan(0);
+    await expect.poll(() => getCycleCount(page)).toBeGreaterThan(0);
 
     // Exit debug mode
     await exitDebugMode(page);

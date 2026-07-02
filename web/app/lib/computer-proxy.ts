@@ -13,7 +13,7 @@ import type {
   Registers,
   ResolvedBreakpoint,
   SourcePosition,
-} from "z33-web-bindings";
+} from "./wasm";
 import type { ComputerInterface } from "../computer-types";
 import type {
   RunStatus,

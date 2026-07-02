@@ -101,6 +101,19 @@ export const MultiFileEditor: React.FC<Props> = ({
         editorRef.current = editor;
         decorationsRef.current = editor.createDecorationsCollection();
 
+        if (import.meta.env.DEV) {
+          // e2e hook: lets tests drive Monaco through its API instead of
+          // querying the rendered token-span DOM, whose slicing differs
+          // across platforms/builds.
+          (window as unknown as { __z33e2e?: unknown }).__z33e2e = {
+            showHoverAt(lineNumber: number, column: number) {
+              editor.setPosition({ lineNumber, column });
+              editor.focus();
+              editor.trigger("e2e", "editor.action.showHover", {});
+            },
+          };
+        }
+
         const glyphMargin =
           monacoInstance.editor.MouseTargetType.GUTTER_GLYPH_MARGIN;
         editor.onMouseDown((e) => {
