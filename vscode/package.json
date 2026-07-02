@@ -72,7 +72,7 @@
     "publish": "pnpm vsce publish --no-dependencies"
   },
   "dependencies": {
-    "vscode-languageclient": "^9.0.1"
+    "vscode-languageclient": "^10.0.1"
   },
   "devDependencies": {
     "@types/vscode": "^1.110.0",
