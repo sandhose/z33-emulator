@@ -5,6 +5,8 @@ import { DebugLayout } from "./debug-layout";
 import { EditToolbar } from "./edit-toolbar";
 import { FileSidebar } from "./file-sidebar";
 import { useCompilation } from "./hooks/use-compilation";
+import { stripLeadingSlash } from "./lib/file-paths";
+import { getMonacoFiles } from "./lib/monaco-sync";
 import { MultiFileEditor } from "./multi-file-editor";
 import { useAppStore } from "./stores/app-store";
 import { useFileStore } from "./stores/file-store";
@@ -27,13 +29,19 @@ const App = () => {
   const handleRun = useCallback(
     (entrypoint: string) => {
       if (compilationResult.type !== "success") return;
-      try {
-        setEntrypoint(activeFile, entrypoint);
-        startDebug(compilationResult.compileFn, entrypoint);
-      } catch (e) {
-        // check() should have caught errors before Run; this is a safety net
-        console.error("Compilation failed at run time:", e);
-      }
+      setEntrypoint(activeFile, entrypoint);
+      // Use the freshest editor contents, keyed by file-store name (no leading
+      // slash) to match the emulator worker / LSP URI conventions.
+      const files = Object.fromEntries(
+        Object.entries(getMonacoFiles()).map(([path, content]) => [
+          stripLeadingSlash(path),
+          content,
+        ]),
+      );
+      void startDebug(files, activeFile, entrypoint).catch((e: unknown) => {
+        // check() should have caught errors before Run; this is a safety net.
+        console.error("Failed to start debug session:", e);
+      });
     },
     [compilationResult, activeFile, setEntrypoint, startDebug],
   );
@@ -59,7 +67,7 @@ const App = () => {
               : undefined
           }
           labels={
-            compilationResult.type === "success" ? compilationResult.labels : []
+            compilationResult.type === "idle" ? [] : compilationResult.labels
           }
           defaultEntrypoint={entrypoints[activeFile]}
         />
