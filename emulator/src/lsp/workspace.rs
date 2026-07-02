@@ -377,7 +377,7 @@ impl WorkspaceManager {
         }
 
         if let Some(root) = &self.native_root {
-            return Url::from_file_path(root.join(rel).as_std_path()).ok();
+            return native_path_to_url(&root.join(rel));
         }
 
         if let Some(root_uri) = &self.root_uri {
@@ -393,13 +393,44 @@ impl WorkspaceManager {
     }
 }
 
+/// The set of characters percent-encoded in the path component of a `file://`
+/// URL. Mirrors the `url` crate's default path encode set so URLs built here
+/// match those produced natively.
+const PATH_ENCODE_SET: &percent_encoding::AsciiSet = &percent_encoding::CONTROLS
+    .add(b' ')
+    .add(b'"')
+    .add(b'#')
+    .add(b'<')
+    .add(b'>')
+    .add(b'?')
+    .add(b'`')
+    .add(b'{')
+    .add(b'}');
+
 /// Convert a `file://` URI to a native path, if applicable.
+///
+/// `Url::to_file_path` is unavailable on some targets (notably
+/// `wasm32-unknown-unknown`), so the path component is percent-decoded
+/// manually. This handles the common POSIX case used by the native CLI host;
+/// WASM hosts never set a native root so this only matters natively.
 fn url_to_native_path(uri: &Url) -> Option<Utf8PathBuf> {
     if uri.scheme() != "file" {
         return None;
     }
-    let path = uri.to_file_path().ok()?;
-    Utf8PathBuf::from_path_buf(path).ok()
+    let decoded = percent_encoding::percent_decode_str(uri.path())
+        .decode_utf8()
+        .ok()?;
+    Some(Utf8PathBuf::from(decoded.as_ref()))
+}
+
+/// Convert a native (absolute, POSIX) path to a `file://` URL.
+///
+/// Manual counterpart to `Url::from_file_path`, which is unavailable on some
+/// targets. Only exercised by the native CLI host (WASM hosts have no root).
+fn native_path_to_url(path: &Utf8Path) -> Option<Url> {
+    let encoded = percent_encoding::utf8_percent_encode(path.as_str(), PATH_ENCODE_SET).to_string();
+    // POSIX absolute paths begin with '/', yielding `file:///abs/path`.
+    Url::parse(&format!("file://{encoded}")).ok()
 }
 
 /// Remove duplicate diagnostics (same range / severity / message) in place.
