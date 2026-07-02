@@ -1,11 +1,6 @@
-rules:
-  cache-poisoning:
-    ignore:
-      # save-if restricts cache writes to main branch only
-      - compile.yaml:48
-      - compile.yaml:98
-      - compile.yaml:149
-  superfluous-actions:
-    ignore:
-      # softprops/action-gh-release is preferred over gh CLI for declarative release publishing
-      - compile.yaml:201
+# $schema: https://raw.githubusercontent.com/zizmorcore/zizmor/main/docs/schemas/config.schema.json
+#
+# Findings are suppressed with inline `# zizmor: ignore[rule]` comments next to
+# the relevant lines, so they survive line-number drift. This file only exists
+# to keep a stable location for future repo-wide configuration.
+rules: {}
