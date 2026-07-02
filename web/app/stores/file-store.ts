@@ -10,7 +10,7 @@ const sampleFiles = Object.fromEntries(
       import: "default",
       eager: true,
     }),
-  ).map(([path, content]) => [path.replace(/^.*[\\/]/, ""), content]),
+  ).map(([path, content]) => [path.replace(/^.*[\\/]/u, ""), content]),
 );
 
 const initial = { files: sampleFiles, activeFile: "fact.s" };
@@ -26,7 +26,7 @@ interface FileActions {
   createFile: (name: string, content?: string) => void;
   deleteFile: (name: string) => void;
   /** Called from Monaco content-change listener — updates store only, no Monaco sync needed */
-  _onMonacoEdit: (name: string, content: string) => void;
+  onMonacoEdit: (name: string, content: string) => void;
   /** Called for external operations (upload, reset) — Monaco sync follows via subscription */
   setContent: (name: string, content: string) => void;
   resetFiles: () => void;
@@ -40,15 +40,18 @@ export const useFileStore = create<FileState & FileActions>()(
       activeFile: initial.activeFile,
       entrypoints: {},
 
-      setActiveFile: (name) => set({ activeFile: name }),
+      setActiveFile: (name) => {
+        set({ activeFile: name });
+      },
 
-      createFile: (name, content = "") =>
+      createFile: (name, content = "") => {
         set((state) => ({
           files: { ...state.files, [name]: content },
           activeFile: name,
-        })),
+        }));
+      },
 
-      deleteFile: (name) =>
+      deleteFile: (name) => {
         set((state) => {
           const { [name]: _removed, ...rest } = state.files;
           const activeFile =
@@ -56,25 +59,30 @@ export const useFileStore = create<FileState & FileActions>()(
               ? (Object.keys(rest)[0] ?? "")
               : state.activeFile;
           return { files: rest, activeFile };
-        }),
+        });
+      },
 
-      _onMonacoEdit: (name, content) =>
+      onMonacoEdit: (name, content) => {
         set((state) => ({
           files: { ...state.files, [name]: content },
-        })),
+        }));
+      },
 
-      setContent: (name, content) =>
+      setContent: (name, content) => {
         set((state) => ({
           files: { ...state.files, [name]: content },
-        })),
+        }));
+      },
 
-      resetFiles: () =>
-        set({ files: initial.files, activeFile: initial.activeFile }),
+      resetFiles: () => {
+        set({ files: initial.files, activeFile: initial.activeFile });
+      },
 
-      setEntrypoint: (file, entrypoint) =>
+      setEntrypoint: (file, entrypoint) => {
         set((state) => ({
           entrypoints: { ...state.entrypoints, [file]: entrypoint },
-        })),
+        }));
+      },
     }),
     {
       name: WORKSPACE_V2_KEY,

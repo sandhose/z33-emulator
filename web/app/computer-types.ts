@@ -1,5 +1,6 @@
 import type { Cell, Cycles, Registers, SourceMap } from "z33-web-bindings";
 import type { DisplayFormat } from "./stores/display-store";
+import { assertNever } from "./lib/utils";
 
 export type Labels = Map<number, string[]>;
 
@@ -42,6 +43,8 @@ export const formatWord = (word: number, format: DisplayFormat): string => {
       return word < 0 ? `-0b${(-word).toString(2)}` : `0b${word.toString(2)}`;
     case "decimal":
       return String(word);
+    default:
+      return assertNever(format);
   }
 };
 
@@ -56,6 +59,8 @@ export const formatAddress = (
       return `0b${address.toString(2)}`;
     case "decimal":
       return String(address);
+    default:
+      return assertNever(format);
   }
 };
 

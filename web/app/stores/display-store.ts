@@ -12,7 +12,9 @@ export const useDisplayStore = create<DisplayState>()(
   persist(
     (set) => ({
       format: "decimal",
-      setFormat: (format) => set({ format }),
+      setFormat: (format) => {
+        set({ format });
+      },
     }),
     { name: "z33:display" },
   ),

@@ -27,7 +27,9 @@ type FileDropResult = {
  * drag leaves the window dragover stops and the timeout fires. This
  * avoids all the dragleave/relatedTarget edge-cases.
  */
-export function useFileDrop(onDrop: (files: FileList) => void): FileDropResult {
+export function useFileDrop(
+  onDrop: (files: readonly File[]) => void,
+): FileDropResult {
   const [isWindowDragging, setIsWindowDragging] = useState(false);
   const [isOverDropZone, setIsOverDropZone] = useState(false);
   const dropZoneRef = useRef<HTMLDivElement>(null);
@@ -95,7 +97,8 @@ export function useFileDrop(onDrop: (files: FileList) => void): FileDropResult {
         e.stopPropagation();
         setIsWindowDragging(false);
         setIsOverDropZone(false);
-        if (e.dataTransfer.files.length > 0) onDrop(e.dataTransfer.files);
+        if (e.dataTransfer.files.length > 0)
+          onDrop(Array.from(e.dataTransfer.files));
       },
       [onDrop],
     ),

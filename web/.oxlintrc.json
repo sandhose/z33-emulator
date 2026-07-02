@@ -36,7 +36,8 @@
     "no-unsafe-argument": "off",
     "max-lines-per-function": "off",
     "max-lines": "off",
-    "max-depth": "off"
+    "max-depth": "off",
+    "typescript/prefer-readonly-parameter-types": "off"
   },
   "ignorePatterns": ["types/**"]
 }

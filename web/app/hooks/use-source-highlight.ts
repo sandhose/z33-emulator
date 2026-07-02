@@ -31,7 +31,7 @@ export function useSourceHighlight({
   // deps don't change — so we track the active model URI as state to force a re-run.
   const [currentModelUri, setCurrentModelUri] = useState<string | null>(null);
   useEffect(() => {
-    if (!editor) return;
+    if (!editor) return () => {};
     setCurrentModelUri(editor.getModel()?.uri.toString() ?? null);
     const disposable = editor.onDidChangeModel((e) => {
       setCurrentModelUri(e.newModelUrl?.toString() ?? null);

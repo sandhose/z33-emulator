@@ -76,9 +76,9 @@ export function useCompilation(activeFile: string, monacoInstance: Monaco) {
   // Initialize Monaco sync once after Monaco loads
   useEffect(() => {
     if (!monacoInstance) return;
-    return initMonacoSync(monacoInstance, {
+    initMonacoSync(monacoInstance, {
       onEdit: (name, content) => {
-        useFileStore.getState()._onMonacoEdit(name, content);
+        useFileStore.getState().onMonacoEdit(name, content);
       },
       getFiles: () => useFileStore.getState().files,
       subscribe: (listener) =>
@@ -156,7 +156,7 @@ export function useCompilation(activeFile: string, monacoInstance: Monaco) {
 
   // Attach Monaco content-change listeners and trigger initial compile
   useEffect(() => {
-    if (!monacoInstance) return;
+    if (!monacoInstance) return () => {};
 
     compileDebouncer.maybeExecute();
 
