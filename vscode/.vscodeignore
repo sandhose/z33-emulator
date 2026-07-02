@@ -1,6 +1,15 @@
+.vscode/**
 src/**
 node_modules/**
 tsconfig.json
 tsconfig.tsbuildinfo
+build.mjs
 .oxfmtrc.json
 .oxlintrc.json
+.gitignore
+**/*.map
+**/*.ts
+# Only the wasm binary is needed at runtime; the glue is bundled into the
+# extension and worker output.
+dist/pkg/**
+!dist/pkg/z33_web_bg.wasm

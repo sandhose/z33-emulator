@@ -13,12 +13,10 @@
     "vscode": "^1.100.0"
   },
   "categories": [
-    "Programming Languages"
+    "Programming Languages",
+    "Debuggers"
   ],
-  "activationEvents": [
-    "onLanguage:z33-assembly"
-  ],
-  "main": "./out/main.js",
+  "browser": "./dist/extension.js",
   "contributes": {
     "languages": [
       {
@@ -41,14 +39,71 @@
         "path": "./syntaxes/z33.tmLanguage.json"
       }
     ],
+    "breakpoints": [
+      {
+        "language": "z33-assembly"
+      }
+    ],
+    "debuggers": [
+      {
+        "type": "z33",
+        "label": "Z33 Debug",
+        "languages": [
+          "z33-assembly"
+        ],
+        "configurationAttributes": {
+          "launch": {
+            "required": [
+              "program"
+            ],
+            "properties": {
+              "program": {
+                "type": "string",
+                "description": "Path to the Z33 assembly entry file to debug.",
+                "default": "${file}"
+              },
+              "entrypoint": {
+                "type": "string",
+                "description": "Label the program counter starts at.",
+                "default": "main"
+              },
+              "stopOnEntry": {
+                "type": "boolean",
+                "description": "Automatically stop at the entrypoint after launch.",
+                "default": true
+              }
+            }
+          }
+        },
+        "initialConfigurations": [
+          {
+            "type": "z33",
+            "request": "launch",
+            "name": "Debug Z33 program",
+            "program": "${file}",
+            "entrypoint": "main",
+            "stopOnEntry": true
+          }
+        ],
+        "configurationSnippets": [
+          {
+            "label": "Z33: Launch program",
+            "description": "Debug a Z33 assembly program",
+            "body": {
+              "type": "z33",
+              "request": "launch",
+              "name": "Debug Z33 program",
+              "program": "^\"\\${file}\"",
+              "entrypoint": "main",
+              "stopOnEntry": true
+            }
+          }
+        ]
+      }
+    ],
     "configuration": {
       "title": "Z33 Assembly",
       "properties": {
-        "z33-assembly.lsp.path": {
-          "type": "string",
-          "default": "z33-cli",
-          "description": "Path to the z33-cli binary"
-        },
         "z33-assembly.trace.server": {
           "type": "string",
           "enum": [
@@ -63,23 +118,27 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "pnpm run bundle",
-    "bundle": "esbuild src/extension.ts --bundle --outfile=out/main.js --external:vscode --format=cjs --platform=node --minify",
-    "check": "tsc --noEmit && oxlint src/ && oxfmt --check src/",
+    "vscode:prepublish": "pnpm run build",
+    "build:wasm": "wasm-pack build ../web --target web --out-dir ../vscode/dist/pkg --out-name z33_web",
+    "build:bundle": "node build.mjs --production",
+    "build": "pnpm run build:wasm && pnpm run build:bundle",
+    "watch": "node build.mjs --watch",
+    "check": "node -e \"require('fs').existsSync('dist/pkg')||process.exit(1)\" || pnpm run build:wasm && tsc --noEmit && oxlint src/ && oxfmt --check src/",
     "lint": "oxlint src/",
     "fmt": "oxfmt src/",
-    "package": "pnpm vsce package --no-dependencies",
-    "publish": "pnpm vsce publish --no-dependencies"
+    "package": "vsce package --no-dependencies"
   },
   "dependencies": {
-    "vscode-languageclient": "^10.0.1"
+    "vscode-languageclient": "^10.1.0"
   },
   "devDependencies": {
-    "@types/vscode": "^1.125.0",
+    "@types/vscode": "^1.100.0",
+    "@vscode/test-web": "^0.0.72",
     "@vscode/vsce": "^3.9.2",
     "esbuild": "^0.28.0",
     "oxfmt": "^0.57.0",
     "oxlint": "^1.72.0",
-    "typescript": "6.0.3"
+    "typescript": "6.0.3",
+    "wasm-pack": "^0.15.0"
   }
 }
