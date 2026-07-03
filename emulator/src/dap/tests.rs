@@ -494,6 +494,360 @@ fn continue_after_termination_is_rejected() {
     assert!(!h.session.is_running());
 }
 
+/// A program exercising the globals scope: code labels, a single `.word`, a
+/// multi-cell `.word` region and a larger `.space` array for paging.
+const GLOBALS_SOURCE: &str = indoc::indoc! {r"
+    main:
+        reset
+
+    value:
+        .word 42
+
+    array:
+        .word 1
+        .word 2
+        .word 3
+
+    tail:
+        .word 99
+
+    big:
+        .space 300
+
+    last:
+        .word 7
+"};
+
+/// Launch the globals program, stopped on entry.
+fn launch_globals(h: &mut Harness) {
+    h.send("initialize", json!({}));
+    h.send(
+        "launch",
+        json!({
+            "program": "/g.s",
+            "entrypoint": "main",
+            "stopOnEntry": true,
+            "files": { "/g.s": GLOBALS_SOURCE },
+        }),
+    );
+    h.send("configurationDone", json!({}));
+}
+
+/// Fetch the scopes for a frame and return the `variablesReference` of the
+/// scope with the given name.
+fn scope_ref(h: &mut Harness, frame_id: i64, name: &str) -> i64 {
+    let out = h.send("scopes", json!({ "frameId": frame_id }));
+    let resp = find_response(&out, "scopes").expect("scopes response");
+    resp["body"]["scopes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["name"] == name)
+        .unwrap_or_else(|| panic!("scope {name} present"))["variablesReference"]
+        .as_i64()
+        .unwrap()
+}
+
+/// Fetch the variables for a reference (optionally paged) as an array.
+fn variables(h: &mut Harness, reference: i64, extra: Value) -> Vec<Value> {
+    let mut args = json!({ "variablesReference": reference });
+    if let Value::Object(map) = extra {
+        for (k, v) in map {
+            args[k] = v;
+        }
+    }
+    let out = h.send("variables", args);
+    let resp = find_response(&out, "variables").expect("variables response");
+    resp["body"]["variables"].as_array().cloned().unwrap()
+}
+
+/// Find a variable by name in a list.
+fn var<'a>(vars: &'a [Value], name: &str) -> &'a Value {
+    vars.iter()
+        .find(|v| v["name"] == name)
+        .unwrap_or_else(|| panic!("variable {name} present"))
+}
+
+/// Break inside `factorielle` (line 8, `cmp 1,%a`) and stop there.
+fn stop_in_factorielle(h: &mut Harness) {
+    h.launch(true);
+    h.send(
+        "setBreakpoints",
+        json!({ "source": { "path": "/fact.s" }, "breakpoints": [{ "line": 8 }] }),
+    );
+    h.send("continue", json!({ "threadId": 1 }));
+    let events = h.drive();
+    assert_eq!(
+        find_event(&events, "stopped").expect("stopped")["body"]["reason"],
+        json!("breakpoint")
+    );
+}
+
+#[test]
+fn stack_scope_shows_pushed_arguments() {
+    let mut h = Harness::new();
+    stop_in_factorielle(&mut h);
+
+    let stack = scope_ref(&mut h, 0, "Stack");
+    let vars = variables(&mut h, stack, json!({}));
+
+    // Top of stack is the return address into main; just above it is the
+    // pushed argument (5).
+    let sp0 = var(&vars, "sp+0");
+    assert!(
+        sp0["value"].as_str().unwrap().contains("return to main"),
+        "sp+0 = {}",
+        sp0["value"]
+    );
+    assert!(sp0["memoryReference"].is_string());
+
+    let sp1 = var(&vars, "sp+1");
+    assert_eq!(sp1["value"], json!("5"));
+    assert!(sp1["memoryReference"].is_string());
+}
+
+#[test]
+fn caller_frame_has_frame_stack_scope() {
+    let mut h = Harness::new();
+    stop_in_factorielle(&mut h);
+
+    // Frame 0 is factorielle; frame 1 is its caller (main). main pushed the
+    // argument 5 for the call, exposed by the best-effort Frame stack scope.
+    let st = h.send("stackTrace", json!({ "threadId": 1 }));
+    let frames = find_response(&st, "stackTrace").unwrap()["body"]["stackFrames"]
+        .as_array()
+        .unwrap()
+        .len();
+    assert!(frames >= 2, "expected a synthesized caller frame");
+
+    let fs = scope_ref(&mut h, 1, "Frame stack");
+    let vars = variables(&mut h, fs, json!({}));
+    assert_eq!(var(&vars, "arg1 (9999)")["value"], json!("5"));
+}
+
+#[test]
+fn globals_scope_single_and_multi_cell() {
+    let mut h = Harness::new();
+    launch_globals(&mut h);
+
+    let globals = scope_ref(&mut h, 0, "Globals");
+    let vars = variables(&mut h, globals, json!({}));
+
+    // Single-cell data label.
+    let value = var(&vars, "value");
+    assert_eq!(value["value"], json!("42"));
+    assert_eq!(value["type"], json!("word"));
+    assert_eq!(value["variablesReference"], json!(0));
+    assert!(value["memoryReference"].is_string());
+
+    // Single-cell code label renders the instruction.
+    assert_eq!(var(&vars, "main")["type"], json!("instruction"));
+
+    // Multi-cell region expands and reports its length.
+    let array = var(&vars, "array");
+    assert_eq!(array["indexedVariables"], json!(3));
+    let array_ref = array["variablesReference"].as_i64().unwrap();
+    assert!(array_ref >= 1000, "multi-cell region gets a dynamic handle");
+
+    let children = variables(&mut h, array_ref, json!({}));
+    assert_eq!(children.len(), 3);
+    assert_eq!(children[0]["value"], json!("1"));
+    assert_eq!(children[1]["value"], json!("2"));
+    assert_eq!(children[2]["value"], json!("3"));
+
+    // Paging: start/count are honoured.
+    let page = variables(&mut h, array_ref, json!({ "start": 1, "count": 1 }));
+    assert_eq!(page.len(), 1);
+    assert_eq!(page[0]["value"], json!("2"));
+
+    // A large .space is paged (default page cap), not dumped whole.
+    let big = var(&vars, "big");
+    assert_eq!(big["indexedVariables"], json!(300));
+    let big_ref = big["variablesReference"].as_i64().unwrap();
+    let big_children = variables(&mut h, big_ref, json!({}));
+    assert_eq!(
+        big_children.len(),
+        256,
+        "default page size caps the response"
+    );
+}
+
+#[test]
+fn set_variable_writes_stack_and_global_cells() {
+    let mut h = Harness::new();
+    // Global cell.
+    launch_globals(&mut h);
+    let globals = scope_ref(&mut h, 0, "Globals");
+    let resp = h.send(
+        "setVariable",
+        json!({ "variablesReference": globals, "name": "value", "value": "1234" }),
+    );
+    let resp = find_response(&resp, "setVariable").expect("setVariable response");
+    assert_eq!(resp["success"], json!(true));
+    assert_eq!(resp["body"]["value"], json!("1234"));
+    // Verify via evaluate.
+    let ev = h.send("evaluate", json!({ "expression": "[value]" }));
+    assert!(find_response(&ev, "evaluate").unwrap()["body"]["result"]
+        .as_str()
+        .unwrap()
+        .starts_with("1234"));
+
+    // Stack cell.
+    let mut h = Harness::new();
+    stop_in_factorielle(&mut h);
+    let stack = scope_ref(&mut h, 0, "Stack");
+    let resp = h.send(
+        "setVariable",
+        json!({ "variablesReference": stack, "name": "sp+1", "value": "77" }),
+    );
+    assert_eq!(
+        find_response(&resp, "setVariable").unwrap()["body"]["value"],
+        json!("77")
+    );
+    let ev = h.send("evaluate", json!({ "expression": "[%sp+1]" }));
+    assert_eq!(
+        find_response(&ev, "evaluate").unwrap()["body"]["result"],
+        json!("77 (9999)")
+    );
+}
+
+#[test]
+fn evaluate_dereference_and_arithmetic() {
+    let mut h = Harness::new();
+    launch_globals(&mut h);
+
+    // `[array]` and `[array+1]` dereference memory.
+    let d0 = h.send("evaluate", json!({ "expression": "[array]" }));
+    assert_eq!(
+        find_response(&d0, "evaluate").unwrap()["body"]["result"]
+            .as_str()
+            .unwrap()
+            .split_whitespace()
+            .next()
+            .unwrap(),
+        "1"
+    );
+    let d1 = h.send("evaluate", json!({ "expression": "[array+1]" }));
+    let r1 = find_response(&d1, "evaluate").unwrap();
+    assert_eq!(
+        r1["body"]["result"]
+            .as_str()
+            .unwrap()
+            .split_whitespace()
+            .next()
+            .unwrap(),
+        "2"
+    );
+    assert!(r1["body"]["memoryReference"].is_string());
+
+    // Bare `array+2` evaluates to the address value.
+    let a = h.send("evaluate", json!({ "expression": "array+2" }));
+    let ra = find_response(&a, "evaluate").unwrap();
+    assert_eq!(ra["body"]["type"], json!("address"));
+    assert!(ra["body"]["memoryReference"].is_string());
+}
+
+#[test]
+fn evaluate_register_indexed_dereference() {
+    let mut h = Harness::new();
+    stop_in_factorielle(&mut h);
+    // `[%sp+1]` is the pushed argument, 5.
+    let ev = h.send("evaluate", json!({ "expression": "[%sp+1]" }));
+    assert_eq!(
+        find_response(&ev, "evaluate").unwrap()["body"]["result"],
+        json!("5 (9999)")
+    );
+}
+
+#[test]
+fn read_and_write_memory_roundtrip() {
+    let mut h = Harness::new();
+    launch_globals(&mut h);
+    // Resolve the address of `value` (holds 42).
+    let ev = h.send("evaluate", json!({ "expression": "value" }));
+    let mref = find_response(&ev, "evaluate").unwrap()["body"]["memoryReference"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    // Read one cell (8 bytes): little-endian 42.
+    let rd = h.send(
+        "readMemory",
+        json!({ "memoryReference": mref, "offset": 0, "count": 8 }),
+    );
+    let data = find_response(&rd, "readMemory").unwrap()["body"]["data"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    // base64 of 42u64 little-endian = "KgAAAAAAAAA=".
+    assert_eq!(data, "KgAAAAAAAAA=");
+
+    // Write 0x0100 = 256 into that cell and read it back.
+    let wr = h.send(
+        "writeMemory",
+        json!({ "memoryReference": mref, "offset": 0, "data": "AAEAAAAAAAA=" }),
+    );
+    assert_eq!(
+        find_response(&wr, "writeMemory").unwrap()["body"]["bytesWritten"],
+        json!(8)
+    );
+    let ev = h.send("evaluate", json!({ "expression": "[value]" }));
+    assert!(find_response(&ev, "evaluate").unwrap()["body"]["result"]
+        .as_str()
+        .unwrap()
+        .starts_with("256"));
+
+    // Offset conversion: reading the next cell via a byte offset of 8 sees
+    // `array`'s first word (1).
+    let rd2 = h.send(
+        "readMemory",
+        json!({ "memoryReference": mref, "offset": 8, "count": 8 }),
+    );
+    assert_eq!(
+        find_response(&rd2, "readMemory").unwrap()["body"]["data"],
+        json!("AQAAAAAAAAA=")
+    );
+}
+
+#[test]
+fn hex_format_rendering() {
+    let mut h = Harness::new();
+    launch_globals(&mut h);
+    let globals = scope_ref(&mut h, 0, "Globals");
+    let vars = variables(&mut h, globals, json!({ "format": { "hex": true } }));
+    // 42 == 0x2a.
+    assert_eq!(var(&vars, "value")["value"], json!("0x2a"));
+
+    // evaluate also honours the hex format.
+    let ev = h.send(
+        "evaluate",
+        json!({ "expression": "0x2a", "format": { "hex": true } }),
+    );
+    assert_eq!(
+        find_response(&ev, "evaluate").unwrap()["body"]["result"],
+        json!("0x2a")
+    );
+}
+
+#[test]
+fn handles_invalidated_after_resume() {
+    let mut h = Harness::new();
+    launch_globals(&mut h);
+    let globals = scope_ref(&mut h, 0, "Globals");
+    let vars = variables(&mut h, globals, json!({}));
+    let array_ref = var(&vars, "array")["variablesReference"].as_i64().unwrap();
+    // Valid while stopped.
+    assert_eq!(variables(&mut h, array_ref, json!({})).len(), 3);
+
+    // Resume; the dynamic handle is now stale and returns an empty list.
+    h.send("continue", json!({ "threadId": 1 }));
+    h.drive();
+    // Relaunch a stop so the session is inspectable again would allocate fresh
+    // handles; the OLD handle must not resolve.
+    let stale = variables(&mut h, array_ref, json!({}));
+    assert!(stale.is_empty(), "stale handle must return no variables");
+}
+
 /// Extract a register's string value from a `variables` response.
 fn register_value(messages: &[Value], name: &str) -> String {
     let resp = find_response(messages, "variables").expect("variables response");

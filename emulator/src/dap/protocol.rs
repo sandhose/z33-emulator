@@ -40,6 +40,8 @@ pub struct Capabilities {
     /// always exactly one instruction, so the granularities are
     /// indistinguishable.
     pub supports_stepping_granularity: bool,
+    pub supports_read_memory_request: bool,
+    pub supports_write_memory_request: bool,
 }
 
 impl Default for Capabilities {
@@ -51,8 +53,18 @@ impl Default for Capabilities {
             supports_restart_request: true,
             supports_terminate_request: true,
             supports_stepping_granularity: false,
+            supports_read_memory_request: true,
+            supports_write_memory_request: true,
         }
     }
+}
+
+/// A value-formatting hint carried by `variables`, `evaluate` and
+/// `setVariable`. Only the `hex` flag is honoured.
+#[derive(Debug, Clone, Copy, Default, Deserialize)]
+pub struct ValueFormat {
+    #[serde(default)]
+    pub hex: bool,
 }
 
 /// A source reference (subset).
@@ -123,16 +135,22 @@ pub struct StackFrame {
 }
 
 /// A variable scope.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Scope {
     pub name: String,
     pub variables_reference: i64,
     pub expensive: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub named_variables: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub indexed_variables: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub presentation_hint: Option<String>,
 }
 
 /// A single variable.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Variable {
     pub name: String,
@@ -140,13 +158,35 @@ pub struct Variable {
     #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
     pub kind: Option<String>,
     pub variables_reference: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub memory_reference: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub named_variables: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub indexed_variables: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub presentation_hint: Option<Value>,
 }
 
-/// Arguments carrying only a `variablesReference`.
+/// Arguments to `scopes`.
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScopesArguments {
+    #[serde(default)]
+    pub frame_id: i64,
+}
+
+/// Arguments to `variables`.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VariablesArguments {
     pub variables_reference: i64,
+    #[serde(default)]
+    pub start: Option<i64>,
+    #[serde(default)]
+    pub count: Option<i64>,
+    #[serde(default)]
+    pub format: Option<ValueFormat>,
 }
 
 /// Arguments to `setVariable`.
@@ -156,6 +196,8 @@ pub struct SetVariableArguments {
     pub variables_reference: i64,
     pub name: String,
     pub value: String,
+    #[serde(default)]
+    pub format: Option<ValueFormat>,
 }
 
 /// Arguments to `evaluate`.
@@ -165,6 +207,30 @@ pub struct EvaluateArguments {
     #[serde(default)]
     #[allow(dead_code)]
     pub context: Option<String>,
+    #[serde(default)]
+    pub format: Option<ValueFormat>,
+}
+
+/// Arguments to `readMemory`.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadMemoryArguments {
+    pub memory_reference: String,
+    #[serde(default)]
+    pub offset: i64,
+    pub count: i64,
+}
+
+/// Arguments to `writeMemory`.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WriteMemoryArguments {
+    pub memory_reference: String,
+    #[serde(default)]
+    pub offset: i64,
+    pub data: String,
+    #[serde(default)]
+    pub allow_partial: bool,
 }
 
 /// Arguments to `source`.
