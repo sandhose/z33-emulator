@@ -1,5 +1,6 @@
 use super::document::DocumentState;
 use super::instructions::{directive_meta, meta};
+use super::text::word_at;
 use crate::parser::shared::is_identifier_char;
 use crate::parser::value::{DirectiveKind, InstructionKind};
 
@@ -49,71 +50,40 @@ pub fn hover(
 fn try_register_hover(source: &str, offset: usize) -> Option<HoverResult> {
     let bytes = source.as_bytes();
 
-    // Find the start of a potential register (look for %)
-    let mut start = offset;
-    while start > 0 && bytes[start - 1].is_ascii_alphabetic() {
-        start -= 1;
-    }
-    if start == 0 || bytes[start - 1] != b'%' {
-        // Also check if cursor is right on the %
-        if offset < bytes.len() && bytes[offset] == b'%' {
-            start = offset;
-        } else {
-            return None;
-        }
-    } else {
-        start -= 1; // include the %
-    }
-
-    // Find the end
-    let mut end = offset;
-    while end < bytes.len() && bytes[end].is_ascii_alphabetic() {
-        end += 1;
-    }
-    // If we started on %, skip it for the name
-    if start < bytes.len() && bytes[start] == b'%' && end > start + 1 {
-        // ok
-    } else {
+    // A register is a non-empty alphabetic name immediately preceded by '%'.
+    // (As before, a cursor sitting exactly on the '%' does not resolve, since
+    // there is no name run bracketing the cursor.)
+    let name = word_at(source, offset, |c| c.is_ascii_alphabetic())?;
+    if name.start == 0 || bytes[name.start - 1] != b'%' {
         return None;
     }
 
-    let reg_text = &source[start..end];
-    let doc = register_doc(reg_text)?;
+    let span = (name.start - 1)..name.end; // include the '%'
+    let doc = register_doc(&source[span.clone()])?;
     Some(HoverResult {
         contents: doc.to_string(),
-        span: start..end,
+        span,
     })
 }
 
 fn try_mnemonic_hover(source: &str, offset: usize) -> Option<HoverResult> {
     let bytes = source.as_bytes();
 
-    // Find the word boundaries
-    let mut start = offset;
-    while start > 0 && (bytes[start - 1].is_ascii_alphabetic() || bytes[start - 1] == b'_') {
-        start -= 1;
-    }
-    let mut end = offset;
-    while end < bytes.len() && (bytes[end].is_ascii_alphabetic() || bytes[end] == b'_') {
-        end += 1;
-    }
-
-    if start == end {
-        return None;
-    }
+    let word = word_at(source, offset, |c| c.is_ascii_alphabetic() || c == '_')?;
+    let (start, end) = (word.start, word.end);
 
     // Check for directive (preceded by '.')
     if start > 0 && bytes[start - 1] == b'.' {
-        let word = &source[start..end];
-        let kind = word.to_ascii_lowercase().parse::<DirectiveKind>().ok()?;
+        let text = &source[start..end];
+        let kind = text.to_ascii_lowercase().parse::<DirectiveKind>().ok()?;
         return Some(HoverResult {
             contents: directive_meta(kind).hover.to_string(),
             span: (start - 1)..end, // include the dot
         });
     }
 
-    let word = &source[start..end];
-    let kind = word.to_ascii_lowercase().parse::<InstructionKind>().ok()?;
+    let text = &source[start..end];
+    let kind = text.to_ascii_lowercase().parse::<InstructionKind>().ok()?;
     if kind == InstructionKind::Error {
         return None;
     }
@@ -124,20 +94,8 @@ fn try_mnemonic_hover(source: &str, offset: usize) -> Option<HoverResult> {
 }
 
 fn try_macro_hover(state: &DocumentState, source: &str, offset: usize) -> Option<HoverResult> {
-    let bytes = source.as_bytes();
-
-    let mut start = offset;
-    while start > 0 && is_identifier_char(bytes[start - 1] as char) {
-        start -= 1;
-    }
-    let mut end = offset;
-    while end < bytes.len() && is_identifier_char(bytes[end] as char) {
-        end += 1;
-    }
-
-    if start == end {
-        return None;
-    }
+    let word = word_at(source, offset, is_identifier_char)?;
+    let (start, end) = (word.start, word.end);
 
     let word = &source[start..end];
     let annotations = state.annotations()?;
@@ -158,20 +116,8 @@ fn try_macro_hover(state: &DocumentState, source: &str, offset: usize) -> Option
 }
 
 fn try_label_hover(state: &DocumentState, source: &str, offset: usize) -> Option<HoverResult> {
-    let bytes = source.as_bytes();
-
-    let mut start = offset;
-    while start > 0 && is_identifier_char(bytes[start - 1] as char) {
-        start -= 1;
-    }
-    let mut end = offset;
-    while end < bytes.len() && is_identifier_char(bytes[end] as char) {
-        end += 1;
-    }
-
-    if start == end {
-        return None;
-    }
+    let word = word_at(source, offset, is_identifier_char)?;
+    let (start, end) = (word.start, word.end);
 
     let word = &source[start..end];
     let addr = state.labels().get(word)?;

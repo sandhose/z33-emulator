@@ -7,8 +7,7 @@ use tower_lsp::lsp_types::{
 
 use super::document::DocumentState;
 use super::instructions::{directive_meta, meta, ArgType, DIRECTIVE_KINDS, INSTRUCTION_KINDS};
-use super::text::strip_inline_comment;
-use crate::parser::shared::is_identifier_char;
+use super::text::{skip_labels, strip_inline_comment};
 use crate::parser::value::InstructionKind;
 
 /// Cached static completion lists — built once, cloned on use.
@@ -212,31 +211,7 @@ enum CursorContext {
 /// line (e.g. incomplete instruction like `add 1, `).
 fn detect_context_from_text(line_text: &str, pos_in_line: usize) -> CursorContext {
     // Skip past any label definitions at the start of the line
-    let mut p = 0;
-    let bytes = line_text.as_bytes();
-    loop {
-        // Skip whitespace
-        while p < bytes.len() && (bytes[p] == b' ' || bytes[p] == b'\t') {
-            p += 1;
-        }
-        // Try to match identifier + ':'
-        let ident_start = p;
-        if p < bytes.len() && (bytes[p].is_ascii_alphabetic() || bytes[p] == b'_') {
-            p += 1;
-            while p < bytes.len() && is_identifier_char(bytes[p] as char) {
-                p += 1;
-            }
-            while p < bytes.len() && (bytes[p] == b' ' || bytes[p] == b'\t') {
-                p += 1;
-            }
-            if p < bytes.len() && bytes[p] == b':' {
-                p += 1;
-                continue; // Found a label, skip it and look for more
-            }
-            p = ident_start; // Not a label — this identifier is the mnemonic
-        }
-        break;
-    }
+    let p = skip_labels(line_text);
 
     // If cursor is before or at the content start, offer mnemonics
     if pos_in_line <= p {
