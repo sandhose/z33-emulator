@@ -1,25 +1,246 @@
+use std::fs;
+
 use zed_extension_api::serde_json::{json, Value};
 use zed_extension_api::{
-    self as zed, DebugAdapterBinary, DebugConfig, DebugRequest, DebugScenario, DebugTaskDefinition,
-    LanguageServerId, Result, StartDebuggingRequestArguments,
+    self as zed, Architecture, DebugAdapterBinary, DebugConfig, DebugRequest, DebugScenario,
+    DebugTaskDefinition, DownloadedFileType, GithubReleaseOptions, LanguageServerId,
+    LanguageServerInstallationStatus, Os, Result, StartDebuggingRequestArguments,
     StartDebuggingRequestArgumentsRequest, Worktree,
 };
 
-struct Z33Extension;
+/// The GitHub repository whose releases carry the prebuilt `z33-cli` binaries.
+const REPO: &str = "sandhose/z33-emulator";
+
+/// Release asset and on-disk layout for the current platform.
+struct PlatformCli {
+    asset_name: String,
+    file_type: DownloadedFileType,
+    binary_name: &'static str,
+    needs_chmod: bool,
+}
+
+fn platform_cli() -> Result<PlatformCli> {
+    let (os, arch) = zed::current_platform();
+    let arch = match arch {
+        Architecture::Aarch64 => "aarch64",
+        Architecture::X8664 => "x86_64",
+        Architecture::X86 => return Err("no prebuilt z33-cli for 32-bit x86".to_string()),
+    };
+    Ok(match os {
+        Os::Mac => PlatformCli {
+            asset_name: format!("z33-cli-{arch}-macos.tar.gz"),
+            file_type: DownloadedFileType::GzipTar,
+            binary_name: "z33-cli",
+            needs_chmod: true,
+        },
+        Os::Linux => PlatformCli {
+            asset_name: format!("z33-cli-{arch}-linux.tar.gz"),
+            file_type: DownloadedFileType::GzipTar,
+            binary_name: "z33-cli",
+            needs_chmod: true,
+        },
+        Os::Windows => PlatformCli {
+            asset_name: format!("z33-cli-{arch}-windows.exe"),
+            file_type: DownloadedFileType::Uncompressed,
+            binary_name: "z33-cli.exe",
+            needs_chmod: false,
+        },
+    })
+}
+
+/// Turns a path relative to the extension's work directory into an absolute
+/// one, so it stays valid when the debug adapter is spawned with the worktree
+/// root as its working directory.
+fn absolutize(path: &str) -> String {
+    match std::env::current_dir() {
+        Ok(cwd) => cwd.join(path).to_string_lossy().into_owned(),
+        Err(_) => path.to_string(),
+    }
+}
+
+fn is_file(path: &str) -> bool {
+    fs::metadata(path).is_ok_and(|metadata| metadata.is_file())
+}
+
+/// Parses `z33-cli-vX.Y.Z` into a numerically comparable version key
+/// (lexicographic comparison would rank v0.9.0 above v0.10.0).
+fn version_key(dir: &str) -> Option<(u32, u32, u32)> {
+    let mut parts = dir.strip_prefix("z33-cli-v")?.split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next()?.parse().ok()?;
+    let patch = parts.next()?.parse().ok()?;
+    parts.next().is_none().then_some((major, minor, patch))
+}
+
+/// Newest previously downloaded copy, if any (used when GitHub is
+/// unreachable).
+fn find_downloaded_cli(binary_name: &str) -> Option<String> {
+    fs::read_dir(".")
+        .ok()?
+        .flatten()
+        .filter_map(|entry| {
+            let dir = entry.file_name().into_string().ok()?;
+            let key = version_key(&dir)?;
+            let path = format!("{dir}/{binary_name}");
+            is_file(&path).then_some((key, path))
+        })
+        .max_by_key(|(key, _)| *key)
+        .map(|(_, path)| path)
+}
+
+/// Downloads the release asset into `version_dir` and verifies the binary is
+/// actually there and executable. Any failure after this point must discard
+/// `version_dir` (the caller does), otherwise a truncated or non-executable
+/// binary would be found — and trusted — by every later lookup.
+fn install(
+    release: &zed::GithubRelease,
+    platform: &PlatformCli,
+    version_dir: &str,
+    binary_path: &str,
+) -> Result<()> {
+    let asset = release
+        .assets
+        .iter()
+        .find(|asset| asset.name == platform.asset_name)
+        .ok_or_else(|| {
+            format!(
+                "release {} has no asset named {}",
+                release.version, platform.asset_name
+            )
+        })?;
+
+    fs::create_dir_all(version_dir)
+        .map_err(|err| format!("failed to create {version_dir}: {err}"))?;
+
+    // Archives extract into the version directory; a bare executable
+    // downloads straight to its final path.
+    let download_target = match platform.file_type {
+        DownloadedFileType::Uncompressed => binary_path.to_string(),
+        _ => version_dir.to_string(),
+    };
+    zed::download_file(&asset.download_url, &download_target, platform.file_type)
+        .map_err(|err| format!("failed to download {}: {err}", platform.asset_name))?;
+
+    if !is_file(binary_path) {
+        return Err(format!(
+            "{} did not contain the expected {} binary",
+            platform.asset_name, platform.binary_name
+        ));
+    }
+    if platform.needs_chmod {
+        zed::make_file_executable(binary_path)?;
+    }
+    Ok(())
+}
+
+/// Resolves the path of a downloaded `z33-cli`, downloading the latest
+/// release if needed.
+fn download_cli(status: &dyn Fn(LanguageServerInstallationStatus)) -> Result<String> {
+    let platform = platform_cli()?;
+
+    let release = match zed::latest_github_release(
+        REPO,
+        GithubReleaseOptions {
+            require_assets: true,
+            pre_release: false,
+        },
+    ) {
+        Ok(release) => release,
+        Err(err) => {
+            // GitHub unreachable: fall back to a previous download.
+            return find_downloaded_cli(platform.binary_name).ok_or_else(|| {
+                format!("z33-cli is not on your PATH and fetching the latest release failed: {err}")
+            });
+        }
+    };
+
+    let version_dir = format!("z33-cli-{}", release.version);
+    let binary_path = format!("{}/{}", version_dir, platform.binary_name);
+
+    if !is_file(&binary_path) {
+        status(LanguageServerInstallationStatus::Downloading);
+        if let Err(err) = install(&release, &platform, &version_dir, &binary_path) {
+            // Never leave a partial download behind: it would shadow the
+            // re-download on the next call.
+            let _ = fs::remove_dir_all(&version_dir);
+            return Err(err);
+        }
+
+        // Best-effort cleanup of downloads from older releases.
+        if let Ok(entries) = fs::read_dir(".") {
+            for entry in entries.flatten() {
+                let name = entry.file_name();
+                let name = name.to_string_lossy();
+                if name.starts_with("z33-cli-") && name != version_dir {
+                    let _ = fs::remove_dir_all(entry.path());
+                }
+            }
+        }
+    }
+
+    Ok(binary_path)
+}
+
+struct Z33Extension {
+    cached_cli_path: Option<String>,
+}
+
+impl Z33Extension {
+    /// Locates `z33-cli`: a binary on the user's PATH always wins; otherwise
+    /// the latest GitHub release is downloaded into the extension's work
+    /// directory (and reused across calls).
+    fn cli_path(
+        &mut self,
+        worktree: &Worktree,
+        language_server_id: Option<&LanguageServerId>,
+    ) -> Result<String> {
+        if let Some(path) = worktree.which("z33-cli") {
+            return Ok(path);
+        }
+
+        if let Some(path) = &self.cached_cli_path {
+            if is_file(path) {
+                return Ok(path.clone());
+            }
+        }
+
+        let status = |status: LanguageServerInstallationStatus| {
+            if let Some(id) = language_server_id {
+                zed::set_language_server_installation_status(id, &status);
+            }
+        };
+
+        // Every error path must go through the Failed arm below, or Zed's
+        // server status UI stays stuck on "checking for update".
+        status(LanguageServerInstallationStatus::CheckingForUpdate);
+        match download_cli(&status) {
+            Ok(path) => {
+                status(LanguageServerInstallationStatus::None);
+                let path = absolutize(&path);
+                self.cached_cli_path = Some(path.clone());
+                Ok(path)
+            }
+            Err(err) => {
+                status(LanguageServerInstallationStatus::Failed(err.clone()));
+                Err(err)
+            }
+        }
+    }
+}
 
 impl zed::Extension for Z33Extension {
     fn new() -> Self {
-        Self
+        Self {
+            cached_cli_path: None,
+        }
     }
 
     fn language_server_command(
         &mut self,
-        _language_server_id: &LanguageServerId,
+        language_server_id: &LanguageServerId,
         worktree: &zed::Worktree,
     ) -> Result<zed::Command> {
-        let path = worktree
-            .which("z33-cli")
-            .ok_or_else(|| "z33-cli must be installed and available on your PATH".to_string())?;
+        let path = self.cli_path(worktree, Some(language_server_id))?;
 
         Ok(zed::Command {
             command: path,
@@ -32,12 +253,13 @@ impl zed::Extension for Z33Extension {
         &mut self,
         _adapter_name: String,
         config: DebugTaskDefinition,
-        _user_provided_debug_adapter_path: Option<String>,
+        user_provided_debug_adapter_path: Option<String>,
         worktree: &Worktree,
     ) -> Result<DebugAdapterBinary, String> {
-        let path = worktree.which("z33-cli").ok_or_else(|| {
-            "z33-cli must be installed and available on your PATH to use the debugger".to_string()
-        })?;
+        let path = match user_provided_debug_adapter_path {
+            Some(path) => path,
+            None => self.cli_path(worktree, None)?,
+        };
 
         Ok(DebugAdapterBinary {
             command: Some(path),
