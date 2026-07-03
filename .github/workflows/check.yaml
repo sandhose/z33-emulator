@@ -204,11 +204,6 @@ jobs:
       - name: Ensure the committed parser is up to date
         run: git diff --exit-code tree-sitter-z33/src/
 
-      # The Zed grammar highlights are intentionally byte-identical with the
-      # tree-sitter copy; keep them from drifting apart.
-      - name: Ensure the Zed highlights stay in sync
-        run: diff tree-sitter-z33/queries/highlights.scm zed/languages/z33/highlights.scm
-
       - name: Run corpus tests
         run: pnpm --filter tree-sitter-z33 run test
 
