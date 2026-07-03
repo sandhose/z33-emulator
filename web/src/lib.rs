@@ -200,30 +200,6 @@ impl Program {
         )
     }
 
-    /// Check whether the program can be assembled (layout + fill phases).
-    ///
-    /// Returns a JSON-formatted diagnostic report string on failure, or
-    /// `None` on success.
-    #[wasm_bindgen]
-    #[must_use]
-    pub fn check(&self) -> Option<String> {
-        let result = compile(
-            &self.program.inner,
-            &self.parse_diagnostics,
-            None,
-            self.preprocessed_file_id,
-        );
-        if result.diagnostics.is_empty() {
-            return None;
-        }
-        let diagnostics: Vec<_> = result
-            .diagnostics
-            .iter()
-            .map(|d| resolve_diagnostic_spans(d, &self.source_map))
-            .collect();
-        Some(diagnostics_to_json(&diagnostics, &self.file_db))
-    }
-
     /// Compile the program at the given entrypoint
     ///
     /// # Errors
