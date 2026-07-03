@@ -1,0 +1,7 @@
+---
+source: emulator/src/preprocessor/mod.rs
+expression: result.source
+---
+_FOO_ is defined
+_FOO_ is one
+_BAR_ is not defined

@@ -1,6 +1,8 @@
 .vscode/**
 src/**
 node_modules/**
+# Stale pre-WASM build output; never ship it even if a working copy has one
+out/**
 tsconfig.json
 tsconfig.tsbuildinfo
 build.mjs

@@ -544,9 +544,9 @@ impl ConditionContext for Context {
     }
 
     fn is_defined(&self, variable: &str) -> bool {
-        // XXX: this does not work. Because we replace in #if expressions with
-        // definitions first, `defined(XXXX)` become `defined()`, which will
-        // never work
+        // This works because `replace_for_if_expression` skips macro
+        // substitution inside `defined(...)`, so the variable name reaches
+        // this lookup unreplaced (covered by the `if_defined_*` tests).
         self.definitions.contains_key(variable)
     }
 }
@@ -624,7 +624,8 @@ impl Context {
                 ignore_during_defined = false;
             }
 
-            let location = str_offset(input, word)..word.len();
+            let start = str_offset(input, word);
+            let location = start..start + word.len();
             if ignore_during_defined {
                 result.push((*word).with_location(location));
             } else {
@@ -649,7 +650,8 @@ impl Context {
         input
             .split_word_bounds()
             .filter_map(|word| {
-                let location = str_offset(input, word)..word.len();
+                let start = str_offset(input, word);
+                let location = start..start + word.len();
                 let replaced = match self.definitions.get(word) {
                     Some(Some(r)) => r,
                     Some(None) => return None,
@@ -792,6 +794,54 @@ mod tests {
 
                 #if defined(BAR)
                 _BAR_ is defined
+                #endif
+            "}
+            .into(),
+        )]);
+        let mut workspace = Workspace::new(&fs, "/defined.S");
+        let result = workspace.preprocess();
+        let result = result.expect("preprocessed");
+        assert_snapshot!(result.source);
+    }
+
+    #[test]
+    fn if_defined_with_value_test() {
+        // Regression: `defined(FOO)` must not have FOO substituted away by
+        // its definition before the condition is parsed.
+        let fs = InMemoryFilesystem::new([(
+            "/defined.S".into(),
+            indoc::indoc! {r"
+                #define FOO 1
+                #if defined(FOO)
+                _FOO_ is defined
+                #endif
+                #if defined(FOO) && FOO == 1
+                _FOO_ is one
+                #endif
+                #if !defined(BAR)
+                _BAR_ is not defined
+                #endif
+            "}
+            .into(),
+        )]);
+        let mut workspace = Workspace::new(&fs, "/defined.S");
+        let result = workspace.preprocess();
+        let result = result.expect("preprocessed");
+        assert_snapshot!(result.source);
+    }
+
+    #[test]
+    fn if_defined_after_undef_test() {
+        let fs = InMemoryFilesystem::new([(
+            "/defined.S".into(),
+            indoc::indoc! {r"
+                #define FOO
+                #undefine FOO
+                #if defined(FOO)
+                should not appear
+                #endif
+                #if !defined(FOO)
+                _FOO_ was undefined
                 #endif
             "}
             .into(),

@@ -55,6 +55,9 @@ impl Harness {
         }
     }
 
+    // By-value keeps the many `send("x", json!({...}))` call sites free of
+    // `&` noise; the harness does not care about the extra move.
+    #[allow(clippy::needless_pass_by_value)]
     fn send(&mut self, command: &str, arguments: Value) -> Vec<Value> {
         self.seq += 1;
         let msg = json!({

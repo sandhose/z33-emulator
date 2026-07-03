@@ -10,9 +10,6 @@
         "s",
         "S"
       ],
-      "highlights": [
-        "queries/highlights.scm"
-      ],
       "injection-regex": "^z33$"
     }
   ],
