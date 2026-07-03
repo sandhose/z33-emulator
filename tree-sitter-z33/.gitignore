@@ -1,0 +1,15 @@
+# Dependencies
+node_modules/
+
+# Build artifacts (the generated `src/` is committed on purpose — Zed and other
+# consumers compile `src/parser.c` directly from the fetched repository).
+build/
+*.wasm
+*.o
+*.a
+*.so
+*.dylib
+
+# tree-sitter local caches
+.build/
+target/

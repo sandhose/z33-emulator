@@ -1,0 +1,42 @@
+{
+  "$schema": "https://tree-sitter.github.io/tree-sitter/assets/schemas/config.schema.json",
+  "grammars": [
+    {
+      "name": "z33",
+      "camelcase": "Z33",
+      "scope": "source.z33",
+      "path": ".",
+      "file-types": [
+        "s",
+        "S"
+      ],
+      "highlights": [
+        "queries/highlights.scm"
+      ],
+      "injection-regex": "^z33$"
+    }
+  ],
+  "metadata": {
+    "version": "0.0.1",
+    "license": "MIT",
+    "description": "Z33 (Zorglub-33) assembly grammar for tree-sitter",
+    "authors": [
+      {
+        "name": "Quentin Gliech",
+        "email": "gliech@unistra.fr"
+      }
+    ],
+    "links": {
+      "repository": "https://github.com/sandhose/z33-emulator"
+    }
+  },
+  "bindings": {
+    "c": false,
+    "go": false,
+    "node": false,
+    "python": false,
+    "rust": false,
+    "swift": false,
+    "zig": false
+  }
+}

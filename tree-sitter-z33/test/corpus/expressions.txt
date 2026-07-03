@@ -1,0 +1,189 @@
+==================
+decimal literal
+==================
+.word 42
+---
+
+(source_file
+  (directive
+    name: (directive_name)
+    argument: (number)))
+
+==================
+hex literal
+==================
+.word 0xFF
+---
+
+(source_file
+  (directive
+    name: (directive_name)
+    argument: (number)))
+
+==================
+octal literal
+==================
+.word 0o17
+---
+
+(source_file
+  (directive
+    name: (directive_name)
+    argument: (number)))
+
+==================
+binary literal
+==================
+.word 0b1010
+---
+
+(source_file
+  (directive
+    name: (directive_name)
+    argument: (number)))
+
+==================
+negative number
+==================
+.word -5
+---
+
+(source_file
+  (directive
+    name: (directive_name)
+    argument: (unary_expression
+      operand: (number))))
+
+==================
+bitwise not
+==================
+.word ~3
+---
+
+(source_file
+  (directive
+    name: (directive_name)
+    argument: (unary_expression
+      operand: (number))))
+
+==================
+arithmetic precedence
+==================
+.word 5 + 2 * 3
+---
+
+(source_file
+  (directive
+    name: (directive_name)
+    argument: (binary_expression
+      left: (number)
+      right: (binary_expression
+        left: (number)
+        right: (number)))))
+
+==================
+subtraction
+==================
+.word 10 - 4
+---
+
+(source_file
+  (directive
+    name: (directive_name)
+    argument: (binary_expression
+      left: (number)
+      right: (number))))
+
+==================
+division
+==================
+.word 20 / 5
+---
+
+(source_file
+  (directive
+    name: (directive_name)
+    argument: (binary_expression
+      left: (number)
+      right: (number))))
+
+==================
+shifts
+==================
+.word 1 << 4
+.word 256 >> 2
+---
+
+(source_file
+  (directive
+    name: (directive_name)
+    argument: (binary_expression
+      left: (number)
+      right: (number)))
+  (newline)
+  (directive
+    name: (directive_name)
+    argument: (binary_expression
+      left: (number)
+      right: (number))))
+
+==================
+bitwise and or
+==================
+.word 0xF0 & 0x0F
+.word 1 | 2
+---
+
+(source_file
+  (directive
+    name: (directive_name)
+    argument: (binary_expression
+      left: (number)
+      right: (number)))
+  (newline)
+  (directive
+    name: (directive_name)
+    argument: (binary_expression
+      left: (number)
+      right: (number))))
+
+==================
+parentheses
+==================
+.word (5 + 2) * 3
+---
+
+(source_file
+  (directive
+    name: (directive_name)
+    argument: (binary_expression
+      left: (parenthesized_expression
+        (binary_expression
+          left: (number)
+          right: (number)))
+      right: (number))))
+
+==================
+label arithmetic
+==================
+.word label + 2
+---
+
+(source_file
+  (directive
+    name: (directive_name)
+    argument: (binary_expression
+      left: (identifier)
+      right: (number))))
+
+==================
+variable reference
+==================
+.word EXCEPTION
+---
+
+(source_file
+  (directive
+    name: (directive_name)
+    argument: (identifier)))
+

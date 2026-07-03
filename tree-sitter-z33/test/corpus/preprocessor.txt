@@ -1,0 +1,208 @@
+==================
+define with value
+==================
+#define TRAP 4
+---
+
+(source_file
+  (preproc_define
+    (preproc_directive)
+    name: (identifier)
+    value: (preproc_arg)))
+
+==================
+define without value
+==================
+#define FLAG
+---
+
+(source_file
+  (preproc_define
+    (preproc_directive)
+    name: (identifier)))
+
+==================
+define multiword body
+==================
+#define GREET hello world
+---
+
+(source_file
+  (preproc_define
+    (preproc_directive)
+    name: (identifier)
+    value: (preproc_arg)))
+
+==================
+define with spaced hash
+==================
+#  define FOO bar
+---
+
+(source_file
+  (preproc_define
+    (preproc_directive)
+    name: (identifier)
+    value: (preproc_arg)))
+
+==================
+undefine
+==================
+#undefine FOO
+---
+
+(source_file
+  (preproc_undef
+    (preproc_directive)
+    name: (identifier)))
+
+==================
+include
+==================
+#include "handler.s"
+---
+
+(source_file
+  (preproc_include
+    (preproc_directive)
+    path: (string)))
+
+==================
+error directive
+==================
+#error "boom"
+---
+
+(source_file
+  (preproc_error
+    (preproc_directive)
+    message: (string)))
+
+==================
+if endif
+==================
+#if defined(FOO)
+    reset
+#endif
+---
+
+(source_file
+  (preproc_if
+    (preproc_directive)
+    condition: (preproc_arg)
+    (newline)
+    (instruction
+      mnemonic: (mnemonic))
+    (newline)
+    (preproc_directive)))
+
+==================
+if else endif
+==================
+#if FOO > 3
+    nop
+#else
+    reset
+#endif
+---
+
+(source_file
+  (preproc_if
+    (preproc_directive)
+    condition: (preproc_arg)
+    (newline)
+    (instruction
+      mnemonic: (mnemonic))
+    (newline)
+    (preproc_else
+      (preproc_directive)
+      (newline)
+      (instruction
+        mnemonic: (mnemonic))
+      (newline))
+    (preproc_directive)))
+
+==================
+if elif else endif
+==================
+#if defined(A)
+    nop
+#elif defined(B)
+    rtn
+#else
+    reset
+#endif
+---
+
+(source_file
+  (preproc_if
+    (preproc_directive)
+    condition: (preproc_arg)
+    (newline)
+    (instruction
+      mnemonic: (mnemonic))
+    (newline)
+    (preproc_elif
+      (preproc_directive)
+      condition: (preproc_arg)
+      (newline)
+      (instruction
+        mnemonic: (mnemonic))
+      (newline))
+    (preproc_else
+      (preproc_directive)
+      (newline)
+      (instruction
+        mnemonic: (mnemonic))
+      (newline))
+    (preproc_directive)))
+
+==================
+nested if
+==================
+#if defined(A)
+#if defined(B)
+    nop
+#endif
+#endif
+---
+
+(source_file
+  (preproc_if
+    (preproc_directive)
+    condition: (preproc_arg)
+    (newline)
+    (preproc_if
+      (preproc_directive)
+      condition: (preproc_arg)
+      (newline)
+      (instruction
+        mnemonic: (mnemonic))
+      (newline)
+      (preproc_directive)
+      (newline))
+    (preproc_directive)))
+
+==================
+define then use
+==================
+#define EXCEPTION 102
+handler:
+    ld [EXCEPTION], %a
+---
+
+(source_file
+  (preproc_define
+    (preproc_directive)
+    name: (identifier)
+    value: (preproc_arg))
+  (newline)
+  (label
+    name: (identifier))
+  (newline)
+  (instruction
+    mnemonic: (mnemonic)
+    (direct
+      (identifier))
+    (register)))
+

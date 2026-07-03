@@ -1,0 +1,127 @@
+==================
+sample fact.s
+==================
+main:
+    push 5
+    call factorielle
+    reset
+
+factorielle:
+    ld   [%sp+1],%a
+    cmp  1,%a
+    jge  casparticulier
+
+    // cas général
+    sub  1,%a         // a ← n-1
+    push %a
+    call factorielle  // a ← (n-1) !
+    add  1,%sp        // dépile l’argument n-1
+    push %b           // sauvegarder b
+    ld   [%sp+2],%b   // b ← n (argument original)
+    mul  %b,%a        // a ← n * (n-1)!
+    pop  %b           // restaurer b
+    rtn
+
+casparticulier:
+    ld  1, %a
+    rtn
+---
+
+(source_file
+  (label
+    name: (identifier))
+  (newline)
+  (instruction
+    mnemonic: (mnemonic)
+    (number))
+  (newline)
+  (instruction
+    mnemonic: (mnemonic)
+    (identifier))
+  (newline)
+  (instruction
+    mnemonic: (mnemonic))
+  (newline)
+  (newline)
+  (label
+    name: (identifier))
+  (newline)
+  (instruction
+    mnemonic: (mnemonic)
+    (indexed
+      (register)
+      (number))
+    (register))
+  (newline)
+  (instruction
+    mnemonic: (mnemonic)
+    (number)
+    (register))
+  (newline)
+  (instruction
+    mnemonic: (mnemonic)
+    (identifier))
+  (newline)
+  (newline)
+  (comment)
+  (newline)
+  (instruction
+    mnemonic: (mnemonic)
+    (number)
+    (register))
+  (comment)
+  (newline)
+  (instruction
+    mnemonic: (mnemonic)
+    (register))
+  (newline)
+  (instruction
+    mnemonic: (mnemonic)
+    (identifier))
+  (comment)
+  (newline)
+  (instruction
+    mnemonic: (mnemonic)
+    (number)
+    (register))
+  (comment)
+  (newline)
+  (instruction
+    mnemonic: (mnemonic)
+    (register))
+  (comment)
+  (newline)
+  (instruction
+    mnemonic: (mnemonic)
+    (indexed
+      (register)
+      (number))
+    (register))
+  (comment)
+  (newline)
+  (instruction
+    mnemonic: (mnemonic)
+    (register)
+    (register))
+  (comment)
+  (newline)
+  (instruction
+    mnemonic: (mnemonic)
+    (register))
+  (comment)
+  (newline)
+  (instruction
+    mnemonic: (mnemonic))
+  (newline)
+  (newline)
+  (label
+    name: (identifier))
+  (newline)
+  (instruction
+    mnemonic: (mnemonic)
+    (number)
+    (register))
+  (newline)
+  (instruction
+    mnemonic: (mnemonic)))
+

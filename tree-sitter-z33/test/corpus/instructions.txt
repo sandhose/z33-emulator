@@ -1,0 +1,94 @@
+==================
+zero operand instructions
+==================
+    reset
+    nop
+    rtn
+    rti
+---
+
+(source_file
+  (instruction
+    mnemonic: (mnemonic))
+  (newline)
+  (instruction
+    mnemonic: (mnemonic))
+  (newline)
+  (instruction
+    mnemonic: (mnemonic))
+  (newline)
+  (instruction
+    mnemonic: (mnemonic)))
+
+==================
+consecutive zero operand
+==================
+    trap
+    reset
+---
+
+(source_file
+  (instruction
+    mnemonic: (mnemonic))
+  (newline)
+  (instruction
+    mnemonic: (mnemonic)))
+
+==================
+register operands
+==================
+    add %a, %b
+---
+
+(source_file
+  (instruction
+    mnemonic: (mnemonic)
+    (register)
+    (register)))
+
+==================
+immediate operand
+==================
+    push 5
+---
+
+(source_file
+  (instruction
+    mnemonic: (mnemonic)
+    (number)))
+
+==================
+immediate identifier operand
+==================
+    call factorielle
+---
+
+(source_file
+  (instruction
+    mnemonic: (mnemonic)
+    (identifier)))
+
+==================
+mixed operands
+==================
+    cmp 1, %a
+---
+
+(source_file
+  (instruction
+    mnemonic: (mnemonic)
+    (number)
+    (register)))
+
+==================
+uppercase mnemonic
+==================
+    ADD %a, %b
+---
+
+(source_file
+  (instruction
+    mnemonic: (mnemonic)
+    (register)
+    (register)))
+

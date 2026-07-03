@@ -1,0 +1,5 @@
+(direct "[" @open "]" @close)
+(indirect "[" @open "]" @close)
+(indexed "[" @open "]" @close)
+(parenthesized_expression "(" @open ")" @close)
+(string "\"" @open "\"" @close)

@@ -1,0 +1,83 @@
+==================
+word directive
+==================
+.word 42
+---
+
+(source_file
+  (directive
+    name: (directive_name)
+    argument: (number)))
+
+==================
+space directive
+==================
+.space 16
+---
+
+(source_file
+  (directive
+    name: (directive_name)
+    argument: (number)))
+
+==================
+string directive
+==================
+.string "hello"
+---
+
+(source_file
+  (directive
+    name: (directive_name)
+    argument: (string)))
+
+==================
+addr directive
+==================
+.addr 200
+---
+
+(source_file
+  (directive
+    name: (directive_name)
+    argument: (number)))
+
+==================
+string with escapes
+==================
+.string "line\nnext \"quoted\" back\\slash"
+---
+
+(source_file
+  (directive
+    name: (directive_name)
+    argument: (string
+      (escape_sequence)
+      (escape_sequence)
+      (escape_sequence)
+      (escape_sequence))))
+
+==================
+labeled directive
+==================
+value: .word 0
+---
+
+(source_file
+  (label
+    name: (identifier))
+  (directive
+    name: (directive_name)
+    argument: (number)))
+
+==================
+uppercase directive
+==================
+.WORD 1
+---
+
+(source_file
+  (directive
+    name: (directive_name)
+    argument: (number)))
+
