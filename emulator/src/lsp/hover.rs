@@ -1,5 +1,8 @@
 use super::document::DocumentState;
+use super::instructions::{directive_meta, meta};
+use super::text::word_at;
 use crate::parser::shared::is_identifier_char;
+use crate::parser::value::{DirectiveKind, InstructionKind};
 
 /// Result of a hover lookup.
 pub struct HoverResult {
@@ -47,92 +50,52 @@ pub fn hover(
 fn try_register_hover(source: &str, offset: usize) -> Option<HoverResult> {
     let bytes = source.as_bytes();
 
-    // Find the start of a potential register (look for %)
-    let mut start = offset;
-    while start > 0 && bytes[start - 1].is_ascii_alphabetic() {
-        start -= 1;
-    }
-    if start == 0 || bytes[start - 1] != b'%' {
-        // Also check if cursor is right on the %
-        if offset < bytes.len() && bytes[offset] == b'%' {
-            start = offset;
-        } else {
-            return None;
-        }
-    } else {
-        start -= 1; // include the %
-    }
-
-    // Find the end
-    let mut end = offset;
-    while end < bytes.len() && bytes[end].is_ascii_alphabetic() {
-        end += 1;
-    }
-    // If we started on %, skip it for the name
-    if start < bytes.len() && bytes[start] == b'%' && end > start + 1 {
-        // ok
-    } else {
+    // A register is a non-empty alphabetic name immediately preceded by '%'.
+    // (As before, a cursor sitting exactly on the '%' does not resolve, since
+    // there is no name run bracketing the cursor.)
+    let name = word_at(source, offset, |c| c.is_ascii_alphabetic())?;
+    if name.start == 0 || bytes[name.start - 1] != b'%' {
         return None;
     }
 
-    let reg_text = &source[start..end];
-    let doc = register_doc(reg_text)?;
+    let span = (name.start - 1)..name.end; // include the '%'
+    let doc = register_doc(&source[span.clone()])?;
     Some(HoverResult {
         contents: doc.to_string(),
-        span: start..end,
+        span,
     })
 }
 
 fn try_mnemonic_hover(source: &str, offset: usize) -> Option<HoverResult> {
     let bytes = source.as_bytes();
 
-    // Find the word boundaries
-    let mut start = offset;
-    while start > 0 && (bytes[start - 1].is_ascii_alphabetic() || bytes[start - 1] == b'_') {
-        start -= 1;
-    }
-    let mut end = offset;
-    while end < bytes.len() && (bytes[end].is_ascii_alphabetic() || bytes[end] == b'_') {
-        end += 1;
-    }
-
-    if start == end {
-        return None;
-    }
+    let word = word_at(source, offset, |c| c.is_ascii_alphabetic() || c == '_')?;
+    let (start, end) = (word.start, word.end);
 
     // Check for directive (preceded by '.')
     if start > 0 && bytes[start - 1] == b'.' {
-        let word = &source[start..end];
-        let doc = directive_doc(word)?;
+        let text = &source[start..end];
+        let kind = text.to_ascii_lowercase().parse::<DirectiveKind>().ok()?;
         return Some(HoverResult {
-            contents: doc.to_string(),
+            contents: directive_meta(kind).hover.to_string(),
             span: (start - 1)..end, // include the dot
         });
     }
 
-    let word = &source[start..end];
-    let doc = instruction_doc(&word.to_ascii_lowercase())?;
+    let text = &source[start..end];
+    let kind = text.to_ascii_lowercase().parse::<InstructionKind>().ok()?;
+    if kind == InstructionKind::Error {
+        return None;
+    }
     Some(HoverResult {
-        contents: doc.to_string(),
+        contents: meta(kind).hover.to_string(),
         span: start..end,
     })
 }
 
 fn try_macro_hover(state: &DocumentState, source: &str, offset: usize) -> Option<HoverResult> {
-    let bytes = source.as_bytes();
-
-    let mut start = offset;
-    while start > 0 && is_identifier_char(bytes[start - 1] as char) {
-        start -= 1;
-    }
-    let mut end = offset;
-    while end < bytes.len() && is_identifier_char(bytes[end] as char) {
-        end += 1;
-    }
-
-    if start == end {
-        return None;
-    }
+    let word = word_at(source, offset, is_identifier_char)?;
+    let (start, end) = (word.start, word.end);
 
     let word = &source[start..end];
     let annotations = state.annotations()?;
@@ -153,20 +116,8 @@ fn try_macro_hover(state: &DocumentState, source: &str, offset: usize) -> Option
 }
 
 fn try_label_hover(state: &DocumentState, source: &str, offset: usize) -> Option<HoverResult> {
-    let bytes = source.as_bytes();
-
-    let mut start = offset;
-    while start > 0 && is_identifier_char(bytes[start - 1] as char) {
-        start -= 1;
-    }
-    let mut end = offset;
-    while end < bytes.len() && is_identifier_char(bytes[end] as char) {
-        end += 1;
-    }
-
-    if start == end {
-        return None;
-    }
+    let word = word_at(source, offset, is_identifier_char)?;
+    let (start, end) = (word.start, word.end);
 
     let word = &source[start..end];
     let addr = state.labels().get(word)?;
@@ -214,90 +165,52 @@ fn register_doc(reg: &str) -> Option<&'static str> {
     }
 }
 
-#[allow(clippy::too_many_lines)]
-fn instruction_doc(mnemonic: &str) -> Option<&'static str> {
-    match mnemonic {
-        "add" => Some("**add** src, %dst\n\n`%dst ← %dst + src`\n\nSets flags: Z, N, O"),
-        "and" => Some("**and** src, %dst\n\n`%dst ← %dst & src`\n\nSets flags: Z"),
-        "call" => Some(
-            "**call** addr\n\n`push %pc; %pc ← addr`\n\n\
-             Pushes the return address onto the stack and jumps to `addr`. \
-             Use `rtn` to return.",
-        ),
-        "cmp" => Some(
-            "**cmp** src, %dst\n\n`%dst - src` (result discarded)\n\n\
-             Sets flags: Z, N, O. Use before conditional jumps.",
-        ),
-        "div" => Some("**div** src, %dst\n\n`%dst ← %dst / src`\n\nSets flags: Z, N"),
-        "fas" => Some(
-            "**fas** [addr], %dst\n\n`%dst ← mem[addr]; mem[addr] ← 1`\n\n\
-             Fetch-and-set. Atomic operation for synchronization. \
-             Sets flags: Z, N",
-        ),
-        "in" => Some(
-            "**in** [port], %dst\n\n`%dst ← IO[port]`\n\n\
-             Read from an I/O controller. Privileged instruction (supervisor mode only).",
-        ),
-        "jmp" => Some("**jmp** addr\n\n`%pc ← addr`\n\nUnconditional jump."),
-        "jeq" => Some("**jeq** addr\n\n`if Z then %pc ← addr`\n\nJump if equal (zero flag set)."),
-        "jne" => Some("**jne** addr\n\n`if ¬Z then %pc ← addr`\n\nJump if not equal."),
-        "jle" => Some(
-            "**jle** addr\n\n`if Z∨N then %pc ← addr`\n\nJump if less or equal (signed).",
-        ),
-        "jlt" => Some("**jlt** addr\n\n`if N then %pc ← addr`\n\nJump if strictly less (signed)."),
-        "jge" => Some(
-            "**jge** addr\n\n`if ¬N then %pc ← addr`\n\nJump if greater or equal (signed).",
-        ),
-        "jgt" => Some(
-            "**jgt** addr\n\n`if ¬Z∧¬N then %pc ← addr`\n\nJump if strictly greater (signed).",
-        ),
-        "ld" => Some("**ld** src, %dst\n\n`%dst ← src`\n\nLoad a value into a register."),
-        "mul" => Some("**mul** src, %dst\n\n`%dst ← %dst × src`\n\nSets flags: Z, N, O"),
-        "neg" => Some("**neg** %reg\n\n`%reg ← −%reg`\n\nTwo's complement negation. Sets flags: Z, N"),
-        "nop" => Some("**nop**\n\nNo operation. Does nothing for one cycle."),
-        "not" => Some("**not** %reg\n\n`%reg ← ~%reg`\n\nBitwise NOT. Sets flags: Z"),
-        "or" => Some("**or** src, %dst\n\n`%dst ← %dst | src`\n\nSets flags: Z"),
-        "out" => Some(
-            "**out** src, [port]\n\n`IO[port] ← src`\n\n\
-             Write to an I/O controller. Privileged instruction (supervisor mode only).",
-        ),
-        "pop" => Some("**pop** %reg\n\n`%reg ← mem[%sp]; %sp ← %sp + 1`\n\nPop a value from the stack."),
-        "push" => Some(
-            "**push** src\n\n`%sp ← %sp − 1; mem[%sp] ← src`\n\nPush a value onto the stack.",
-        ),
-        "reset" => Some("**reset**\n\nReset the computer. All registers and memory are cleared."),
-        "rti" => Some(
-            "**rti**\n\n`%pc ← mem[100]; %sr ← mem[101]`\n\n\
-             Return from interrupt. Restores PC and SR from fixed addresses.",
-        ),
-        "rtn" => Some("**rtn**\n\n`pop %pc`\n\nReturn from a `call`. Pops the return address from the stack."),
-        "shl" => Some("**shl** src, %dst\n\n`%dst ← %dst << src`\n\nBitwise shift left. Sets flags: Z, N, C"),
-        "shr" => Some("**shr** src, %dst\n\n`%dst ← %dst >> src`\n\nBitwise shift right (arithmetic). Sets flags: Z, N, C"),
-        "st" => Some("**st** %src, [addr]\n\n`mem[addr] ← %src`\n\nStore a register value to memory."),
-        "sub" => Some("**sub** src, %dst\n\n`%dst ← %dst − src`\n\nSets flags: Z, N, O"),
-        "swap" => Some(
-            "**swap** src, %dst\n\n`src ↔ %dst`\n\n\
-             Swap the values of a memory location (or register) and a register.",
-        ),
-        "trap" => Some(
-            "**trap**\n\nTrigger a trap exception.\n\n\
-             Saves %pc to address 100 and %sr to address 101, \
-             then jumps to the interrupt handler at address 200.",
-        ),
-        "xor" => Some("**xor** src, %dst\n\n`%dst ← %dst ^ src`\n\nSets flags: Z"),
-        _ => None,
-    }
-}
+#[cfg(test)]
+mod tests {
+    use super::{hover, DocumentState};
 
-fn directive_doc(name: &str) -> Option<&'static str> {
-    match name {
-        "word" => Some("**.word** expr\n\nStore a word (64-bit integer) value at the current address."),
-        "space" => Some("**.space** n\n\nReserve `n` memory cells (initialized to empty)."),
-        "string" => Some(
-            "**.string** \"text\"\n\n\
-             Store a null-terminated string. Each character occupies one memory cell.",
-        ),
-        "addr" => Some("**.addr** n\n\nSet the current assembly address to `n`. Subsequent instructions are placed starting at this address."),
-        _ => None,
+    #[test]
+    fn register_hover() {
+        let src = "    ld %a, %b";
+        let off = src.find("%a").unwrap() + 1; // on the 'a'
+        let r = hover(None, src, off).expect("register hover");
+        assert!(
+            r.contents.contains("General-purpose register"),
+            "{}",
+            r.contents
+        );
+    }
+
+    #[test]
+    fn mnemonic_hover() {
+        let src = "    add %a, %b";
+        let off = src.find("add").unwrap(); // on the mnemonic
+        let r = hover(None, src, off).expect("mnemonic hover");
+        assert!(r.contents.starts_with("**add**"), "{}", r.contents);
+    }
+
+    #[test]
+    fn directive_hover() {
+        let src = ".word 42";
+        let r = hover(None, src, 1).expect("directive hover"); // on the 'w'
+        assert!(r.contents.contains("**.word**"), "{}", r.contents);
+    }
+
+    #[test]
+    fn label_hover() {
+        let src = "foo:\n    jmp foo";
+        let state = DocumentState::new(src.to_string());
+        let off = src.rfind("foo").unwrap(); // the jump target reference
+        let r = hover(Some(&state), src, off).expect("label hover");
+        assert!(r.contents.contains("label at address"), "{}", r.contents);
+    }
+
+    #[test]
+    fn macro_hover() {
+        let src = "#define FOO 42\n    ld FOO, %a";
+        let state = DocumentState::new(src.to_string());
+        let off = src.rfind("FOO").unwrap(); // the use in the `ld`
+        let r = hover(Some(&state), src, off).expect("macro hover");
+        assert!(r.contents.contains("macro"), "{}", r.contents);
     }
 }

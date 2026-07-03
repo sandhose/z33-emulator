@@ -9,11 +9,12 @@ mod completion;
 mod diagnostics;
 mod document;
 mod hover;
+mod instructions;
 mod position;
 mod references;
 mod semantic_tokens;
-mod signature;
 mod symbols;
+mod text;
 mod workspace;
 
 pub use tower_lsp;

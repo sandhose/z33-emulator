@@ -9,8 +9,7 @@ use smallvec::SmallVec;
 use super::line::{Line, LineContent, Program};
 use super::location::{Locatable, Located};
 use super::shared::{
-    expression, hspace, hspace1, kw, register, span_to_range, string_literal, Extra,
-    ParseDiagnostic,
+    expression, hspace, hspace1, register, span_to_range, string_literal, Extra, ParseDiagnostic,
 };
 use super::value::{DirectiveArgument, DirectiveKind, InstructionArgument, InstructionKind};
 use crate::parser::expression::Node as ExpressionNode;
@@ -101,41 +100,11 @@ fn instruction_kind<'a>() -> impl Parser<'a, &'a str, InstructionKind, Extra<'a>
         .at_least(1)
         .to_slice()
         .validate(|s: &str, e, emitter| {
-            let lower = s.to_ascii_lowercase();
-            match lower.as_str() {
-                "add" => K::Add,
-                "and" => K::And,
-                "call" => K::Call,
-                "cmp" => K::Cmp,
-                "div" => K::Div,
-                "fas" => K::Fas,
-                "in" => K::In,
-                "jmp" => K::Jmp,
-                "jeq" => K::Jeq,
-                "jne" => K::Jne,
-                "jle" => K::Jle,
-                "jlt" => K::Jlt,
-                "jge" => K::Jge,
-                "jgt" => K::Jgt,
-                "ld" => K::Ld,
-                "mul" => K::Mul,
-                "neg" => K::Neg,
-                "nop" => K::Nop,
-                "not" => K::Not,
-                "or" => K::Or,
-                "out" => K::Out,
-                "pop" => K::Pop,
-                "push" => K::Push,
-                "reset" => K::Reset,
-                "rti" => K::Rti,
-                "rtn" => K::Rtn,
-                "shl" => K::Shl,
-                "shr" => K::Shr,
-                "st" => K::St,
-                "sub" => K::Sub,
-                "swap" => K::Swap,
-                "trap" => K::Trap,
-                "xor" => K::Xor,
+            // Resolve through the derived `FromStr`. The `<error>` placeholder
+            // displays as `<error>`, so it can never be produced from an
+            // alphabetic mnemonic — an unknown mnemonic falls into the arm below.
+            match s.to_ascii_lowercase().parse::<K>() {
+                Ok(kind) if kind != K::Error => kind,
                 _ => {
                     emitter.emit(Rich::custom(e.span(), format!("unknown instruction '{s}'")));
                     K::Error
@@ -149,14 +118,21 @@ fn instruction_kind<'a>() -> impl Parser<'a, &'a str, InstructionKind, Extra<'a>
 // ---------------------------------------------------------------------------
 
 fn directive_kind<'a>() -> impl Parser<'a, &'a str, DirectiveKind, Extra<'a>> + Clone {
-    use DirectiveKind as K;
-
-    just('.').ignore_then(choice((
-        kw("string").to(K::String),
-        kw("space").to(K::Space),
-        kw("addr").to(K::Addr),
-        kw("word").to(K::Word),
-    )))
+    // Resolve the name after the `.` through the derived `FromStr`. On an
+    // unknown directive this fails, and the line dispatcher falls back to the
+    // instruction branch just as the previous keyword `choice` did.
+    just('.').ignore_then(
+        any()
+            .filter(|c: &char| c.is_ascii_alphabetic() || *c == '_')
+            .repeated()
+            .at_least(1)
+            .to_slice()
+            .try_map(|s: &str, span| {
+                s.to_ascii_lowercase()
+                    .parse::<DirectiveKind>()
+                    .map_err(|_| Rich::custom(span, format!("unknown directive '.{s}'")))
+            }),
+    )
 }
 
 fn directive_argument<'a>() -> impl Parser<'a, &'a str, DirectiveArgument, Extra<'a>> + Clone {

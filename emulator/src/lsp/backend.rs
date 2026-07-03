@@ -10,14 +10,14 @@ use tower_lsp::lsp_types::{
     HoverProviderCapability, InitializeParams, InitializeResult, InitializedParams, Location,
     MarkupContent, MarkupKind, OneOf, PrepareRenameResponse, ReferenceParams, RenameParams,
     SemanticTokensFullOptions, SemanticTokensOptions, SemanticTokensParams, SemanticTokensResult,
-    SemanticTokensServerCapabilities, ServerCapabilities, ServerInfo, SignatureHelpOptions,
-    SignatureHelpParams, TextDocumentSyncCapability, TextDocumentSyncKind, Url, WorkspaceEdit,
+    SemanticTokensServerCapabilities, ServerCapabilities, ServerInfo, TextDocumentSyncCapability,
+    TextDocumentSyncKind, Url, WorkspaceEdit,
 };
 use tower_lsp::{jsonrpc, Client, LanguageServer};
 
 use super::references::OccurrenceKind;
 use super::workspace::WorkspaceManager;
-use super::{completion, hover, position, semantic_tokens, signature, symbols};
+use super::{completion, hover, position, semantic_tokens, symbols};
 
 /// The custom notification the host uses to push in-memory workspace files.
 pub const WORKSPACE_FILES_METHOD: &str = "z33/workspaceFiles";
@@ -119,11 +119,6 @@ impl LanguageServer for Backend {
                     trigger_characters: Some(vec!["%".to_string(), ".".to_string()]),
                     ..Default::default()
                 }),
-                signature_help_provider: Some(SignatureHelpOptions {
-                    trigger_characters: Some(vec![",".to_string()]),
-                    retrigger_characters: None,
-                    ..Default::default()
-                }),
                 hover_provider: Some(HoverProviderCapability::Simple(true)),
                 definition_provider: Some(OneOf::Left(true)),
                 references_provider: Some(OneOf::Left(true)),
@@ -207,24 +202,6 @@ impl LanguageServer for Backend {
         } else {
             Ok(Some(CompletionResponse::Array(items)))
         }
-    }
-
-    async fn signature_help(
-        &self,
-        params: SignatureHelpParams,
-    ) -> jsonrpc::Result<Option<tower_lsp::lsp_types::SignatureHelp>> {
-        let uri = &params.text_document_position_params.text_document.uri;
-        let pos = params.text_document_position_params.position;
-
-        let Some(source) = self.lock().source(uri) else {
-            return Ok(None);
-        };
-
-        let Some(offset) = position::byte_offset(&source, pos) else {
-            return Ok(None);
-        };
-
-        Ok(signature::signature_help(&source, offset))
     }
 
     async fn hover(&self, params: HoverParams) -> jsonrpc::Result<Option<Hover>> {

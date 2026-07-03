@@ -20,7 +20,6 @@ import {
   toMarkerData,
   toRange,
   toSemanticTokens,
-  toSignatureHelp,
   toWorkspaceEdit,
 } from "monaco-languageserver-types";
 import type {
@@ -35,7 +34,6 @@ import type {
   Location,
   Range as LspRange,
   SemanticTokens,
-  SignatureHelp,
   WorkspaceEdit,
 } from "vscode-languageserver-protocol";
 import { useFileStore } from "../stores/file-store";
@@ -341,21 +339,6 @@ function registerProviders(
         }
         const range = toRange(result);
         return { range, text: model.getValueInRange(range) };
-      },
-    }),
-    m.languages.registerSignatureHelpProvider(LANGUAGE_ID, {
-      signatureHelpTriggerCharacters: [","],
-      async provideSignatureHelp(model, position, token) {
-        flush(model);
-        const result = await client.request<SignatureHelp | null>(
-          "textDocument/signatureHelp",
-          {
-            textDocument: { uri: uriOf(model) },
-            position: lspPosition(position),
-          },
-        );
-        if (cancelled(token) || !result) return null;
-        return { value: toSignatureHelp(result), dispose() {} };
       },
     }),
     m.languages.registerCodeLensProvider(LANGUAGE_ID, {
