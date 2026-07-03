@@ -64,40 +64,16 @@ cargo build --release
 
 ## Releasing
 
-Releasing a new version is done by running doing the following steps:
+Releases are cut from the GitHub Actions UI:
 
- - Change the crate version in the `Cargo.toml`. This can be automated using [`cargo-edit`](https://github.com/killercup/cargo-edit):
-   ```sh
-   # Edit the bump flag accordingly
-   cargo set-version --bump patch
-   # Crate version can be extracted like that
-   VERSION="v$(cargo metadata --format-version=1 | jq -r '.packages[] | select(.name == "z33-cli").version')"
-   ```
- - Commit the changes
-   ```sh
-   git commit -m "${VERSION}" ./Cargo.lock ./Cargo.toml
-   git push
-   ```
- - Create a new git tag and push it
-   ```sh
-   git tag -s "${VERSION}"
-   git push --tags
-   ```
- - Wait for the CI to create the draft GitHub release
- - Finish the release from the GitHub interface
-
-<details><summary>Full script</summary>
-
-```sh
-cargo set-version --bump patch
-VERSION="v$(cargo metadata --format-version=1 | jq -r '.packages[] | select(.name == "z33-cli").version')"
-git commit -m "${VERSION}" ./Cargo.lock ./Cargo.toml
-git push
-git tag -s "${VERSION}"
-git push --tags
-```
-
-</details>
+ 1. Run the **Release** workflow on `main` with the new version number
+    (e.g. `0.8.0`). It bumps every manifest (workspace crates, VS Code
+    extension, Zed extension, tree-sitter grammar) through
+    `scripts/set-version.sh` and opens a `Release vX.Y.Z` pull request
+    with CI running on it.
+ 2. Merge the pull request. The merge commit is tagged automatically,
+    the binaries and extensions are built, and the GitHub release is
+    published with generated notes and a `SHA256SUMS` file.
 
 # License
 

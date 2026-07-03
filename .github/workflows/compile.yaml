@@ -3,6 +3,10 @@ on:
     branches: [main]
     tags: ["v*"]
   pull_request:
+  # The Release workflow dispatches this one on release branches (to satisfy
+  # the required status checks) and on fresh tags (to build and publish),
+  # because events created with GITHUB_TOKEN don't trigger workflows.
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
@@ -263,6 +267,20 @@ jobs:
       contents: write # Required by softprops/action-gh-release to create releases
 
     steps:
+      - name: Checkout sources
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Check that the tag matches the project version
+        run: |
+          VERSION="$(grep -m1 '^version = ' Cargo.toml | cut -d'"' -f2)"
+          TAG="${GITHUB_REF#refs/tags/}"
+          if [ "$TAG" != "v$VERSION" ]; then
+            echo "::error::tag $TAG does not match the project version $VERSION"
+            exit 1
+          fi
+
       - name: Download the artifacts from the previous job
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -273,17 +291,25 @@ jobs:
           mv ./artifacts/{x86_64,aarch64}-{linux,macos,windows}/* ./
           mv ./artifacts/vscode-extension/z33-assembly.vsix ./artifacts/zed-extension/z33-zed.wasm ./
 
-      - name: Prepare a release
-        # preferred over gh CLI for declarative release publishing
-        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1 # zizmor: ignore[superfluous-actions]
-        with:
-          files: |
-            z33-cli-x86_64-linux.tar.gz
-            z33-cli-aarch64-linux.tar.gz
-            z33-cli-x86_64-macos.tar.gz
-            z33-cli-aarch64-macos.tar.gz
-            z33-cli-x86_64-windows.exe
-            z33-cli-aarch64-windows.exe
-            z33-assembly.vsix
-            z33-zed.wasm
-          draft: true
+      - name: Generate the checksums
+        run: sha256sum z33-cli-* z33-assembly.vsix z33-zed.wasm > SHA256SUMS
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          gh release create "$TAG" \
+            --verify-tag \
+            --title "$TAG" \
+            --generate-notes \
+            --latest \
+            z33-cli-x86_64-linux.tar.gz \
+            z33-cli-aarch64-linux.tar.gz \
+            z33-cli-x86_64-macos.tar.gz \
+            z33-cli-aarch64-macos.tar.gz \
+            z33-cli-x86_64-windows.exe \
+            z33-cli-aarch64-windows.exe \
+            z33-assembly.vsix \
+            z33-zed.wasm \
+            SHA256SUMS
