@@ -1,6 +1,6 @@
 [package]
 name = "z33-zed"
-version = "0.0.1"
+version.workspace = true
 edition = "2021"
 license = "MIT"
 publish = false
