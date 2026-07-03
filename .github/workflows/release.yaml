@@ -1,0 +1,178 @@
+name: Release
+
+# Two-phase release flow, designed around the main-branch ruleset (PRs
+# required, signed commits, required status checks):
+#
+#  1. `cut` (manual): bumps every manifest via scripts/set-version.sh, pushes
+#     a `release/vX.Y.Z` branch with a GitHub-signed commit (created through
+#     the GraphQL API, so it satisfies the signature requirement), opens a
+#     pull request, and dispatches the CI workflows on the branch — PRs
+#     opened by GITHUB_TOKEN don't trigger `pull_request` events, so the
+#     required checks have to be started explicitly.
+#
+#  2. `tag` (automatic): when the release PR merges, tags the merge commit
+#     and dispatches the Compile workflow on the tag, which builds all the
+#     artifacts and publishes the GitHub release.
+
+on:
+  # Always dispatch `cut` on main: the release branch is created from the ref
+  # the workflow runs on.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (MAJOR.MINOR.PATCH, no leading v)"
+        required: true
+        type: string
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  cut:
+    name: Open the release pull request
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write # create the release branch and its commit
+      pull-requests: write # open the release PR
+      actions: write # dispatch CI on the release branch
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ inputs.version }}
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Validate the requested version
+        run: |
+          if ! grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' <<<"$VERSION"; then
+            echo "::error::version must be MAJOR.MINOR.PATCH without a leading v (got '$VERSION')"
+            exit 1
+          fi
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v$VERSION" >/dev/null 2>&1; then
+            echo "::error::tag v$VERSION already exists"
+            exit 1
+          fi
+
+      - name: Bump the versions
+        run: scripts/set-version.sh "$VERSION"
+
+      - name: Create the release branch
+        # A leftover branch from a previously failed run is reset instead of
+        # failing, so the job can simply be re-run.
+        run: |
+          if ! gh api "repos/$GITHUB_REPOSITORY/git/refs" \
+            -f ref="refs/heads/release/v$VERSION" \
+            -f sha="$GITHUB_SHA" 2>/dev/null; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/heads/release/v$VERSION" \
+              -f sha="$GITHUB_SHA" -F force=true
+          fi
+
+      - name: Commit the bumps on the release branch
+        # createCommitOnBranch produces a commit signed by GitHub, which the
+        # required-signatures rule on main accepts once the PR merges.
+        # File contents go through temp files (--rawfile / --slurpfile), not
+        # command-line arguments: the base64 of the generated parser alone is
+        # close to the kernel's 128 KiB per-argument limit.
+        run: |
+          ADDITIONS="$(mktemp)"
+          CONTENTS="$(mktemp)"
+          PAYLOAD="$(mktemp)"
+          echo '[]' >"$ADDITIONS"
+          for file in \
+            Cargo.toml \
+            Cargo.lock \
+            vscode/package.json \
+            zed/extension.toml \
+            tree-sitter-z33/package.json \
+            tree-sitter-z33/tree-sitter.json \
+            tree-sitter-z33/src/parser.c; do
+            base64 -w0 "$file" >"$CONTENTS"
+            jq \
+              --arg path "$file" \
+              --rawfile contents "$CONTENTS" \
+              '. + [{path: $path, contents: $contents}]' \
+              "$ADDITIONS" >"$ADDITIONS.next"
+            mv "$ADDITIONS.next" "$ADDITIONS"
+          done
+          jq -n \
+            --arg repo "$GITHUB_REPOSITORY" \
+            --arg branch "release/v$VERSION" \
+            --arg headline "Release v$VERSION" \
+            --arg oid "$GITHUB_SHA" \
+            --slurpfile additions "$ADDITIONS" \
+            '{
+              query: "mutation ($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { commit { oid } } }",
+              variables: {input: {
+                branch: {repositoryNameWithOwner: $repo, branchName: $branch},
+                message: {headline: $headline},
+                expectedHeadOid: $oid,
+                fileChanges: {additions: $additions[0]}
+              }}
+            }' >"$PAYLOAD"
+          gh api graphql --input "$PAYLOAD"
+
+      - name: Open the release pull request
+        run: |
+          if [ -n "$(gh pr list --head "release/v$VERSION" --state open --json number --jq '.[].number')" ]; then
+            echo "release PR already open"
+            exit 0
+          fi
+          BODY="$(printf 'Bumps every manifest to %s.\n\nMerging this pull request tags the merge commit as v%s and publishes the release automatically.' "$VERSION" "$VERSION")"
+          gh pr create \
+            --base main \
+            --head "release/v$VERSION" \
+            --title "Release v$VERSION" \
+            --body "$BODY"
+
+      - name: Dispatch CI on the release branch
+        run: |
+          gh workflow run check.yaml --ref "release/v$VERSION"
+          gh workflow run compile.yaml --ref "release/v$VERSION"
+
+  tag:
+    name: Tag the merged release
+    if: |
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.merged == true &&
+      startsWith(github.event.pull_request.head.ref, 'release/v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write # create the tag, delete the release branch
+      actions: write # dispatch the build on the tag
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      HEAD_REF: ${{ github.event.pull_request.head.ref }}
+      MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+
+    steps:
+      - name: Create the tag
+        # Tolerates a tag left behind by a previously failed run (as long as
+        # it points at the same commit), so the job can simply be re-run.
+        run: |
+          TAG="${HEAD_REF#release/}"
+          if ! gh api "repos/$GH_REPO/git/refs" \
+            -f ref="refs/tags/$TAG" \
+            -f sha="$MERGE_SHA" 2>/dev/null; then
+            EXISTING="$(gh api "repos/$GH_REPO/git/ref/tags/$TAG" --jq .object.sha)"
+            if [ "$EXISTING" != "$MERGE_SHA" ]; then
+              echo "::error::tag $TAG already exists and points at $EXISTING, not $MERGE_SHA"
+              exit 1
+            fi
+          fi
+
+      - name: Dispatch the build on the tag
+        # Tags created with GITHUB_TOKEN don't trigger `push` workflows, so
+        # the Compile workflow (build + publish) is dispatched explicitly.
+        run: |
+          TAG="${HEAD_REF#release/}"
+          gh workflow run compile.yaml --ref "refs/tags/$TAG"
+
+      - name: Delete the release branch
+        run: gh api -X DELETE "repos/$GH_REPO/git/refs/heads/$HEAD_REF" || true

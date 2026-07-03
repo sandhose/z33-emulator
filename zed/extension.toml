@@ -1,6 +1,6 @@
 id = "z33"
 name = "Z33 Assembly"
-version = "0.0.1"
+version = "0.7.0"
 schema_version = 1
 authors = ["Quentin Gliech <gliech@unistra.fr>"]
 description = "Z33 (Zorglub-33) assembly language support"

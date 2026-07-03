@@ -2,6 +2,10 @@ on:
   push:
     branches: [main]
   pull_request:
+  # The Release workflow dispatches this one on release branches: PRs opened
+  # with GITHUB_TOKEN don't trigger `pull_request` events, so the required
+  # status checks have to be started explicitly.
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
