@@ -13,6 +13,7 @@ mod position;
 mod references;
 mod semantic_tokens;
 mod symbols;
+mod text;
 mod workspace;
 
 pub use tower_lsp;

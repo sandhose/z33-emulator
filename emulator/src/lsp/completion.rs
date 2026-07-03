@@ -6,6 +6,7 @@ use tower_lsp::lsp_types::{
 };
 
 use super::document::DocumentState;
+use super::text::strip_inline_comment;
 use crate::parser::shared::is_identifier_char;
 use crate::parser::value::InstructionKind;
 
@@ -447,10 +448,12 @@ fn detect_context(source: &str, byte_offset: usize) -> Option<CursorContext> {
     let line_text = &source[line_start..line_end];
     let pos_in_line = byte_offset - line_start;
 
-    // Strip comments (everything after '#' outside strings)
-    let effective_len = line_text.find('#').unwrap_or(line_text.len());
-    let line_text = &line_text[..effective_len];
-    let pos_in_line = pos_in_line.min(effective_len);
+    // Strip the trailing `// ...` line comment. If the cursor sits inside the
+    // comment, offer no completions at all.
+    let line_text = strip_inline_comment(line_text);
+    if pos_in_line > line_text.len() {
+        return None;
+    }
 
     // Check if cursor is after a '%' (register completion)
     if pos_in_line > 0 {
@@ -551,5 +554,30 @@ mod tests {
         let src = "main: ";
         let items = completions(None, src, 6); // after "main: "
         assert!(items.iter().any(|i| i.label == "add"));
+    }
+
+    #[test]
+    fn comment_comma_not_arg_separator() {
+        // `add %a` followed by a `//` comment that contains a comma. The comma
+        // lives in the comment, so it must not be counted as an argument
+        // separator — and the cursor sits inside the comment, so nothing at all
+        // should be offered.
+        let src = "    add %a // b, c";
+        let pos = src.find(", c").unwrap() + 1; // just past the comment's comma
+        let items = completions(None, src, pos);
+        assert!(
+            items.is_empty(),
+            "the comma inside a // comment must not drive argument completion"
+        );
+    }
+
+    #[test]
+    fn no_completion_inside_comment() {
+        // Text that looks like a register (`%a`) inside a comment must not
+        // trigger register completion.
+        let src = "    reset // clears %a";
+        let pos = src.find("%a").unwrap() + 1; // inside the comment, after `%`
+        let items = completions(None, src, pos);
+        assert!(items.is_empty(), "no completions inside a // comment");
     }
 }
