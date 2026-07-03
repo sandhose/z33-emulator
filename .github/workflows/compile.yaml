@@ -181,9 +181,82 @@ jobs:
           name: ${{ matrix.arch }}-windows
           path: z33-cli-${{ matrix.arch }}-windows.exe
 
+  vsix:
+    name: Package the VS Code extension
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        with:
+          package_json_file: package.json
+
+      # No build cache here: this job produces a release artifact (zizmor: cache-poisoning)
+      - name: Install Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0 # zizmor: ignore[cache-poisoning]
+        with:
+          node-version: "24"
+
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install stable
+          rustup default stable
+          rustup target add wasm32-unknown-unknown
+
+      # wasm-pack comes from the `z33-assembly` (vscode) package's devDependency
+      # — that is the one `pnpm --filter z33-assembly run build` resolves via its
+      # `build:wasm` script — so no separate install action is needed.
+      - name: Install dependencies
+        run: pnpm i
+
+      - name: Build the extension
+        run: pnpm --filter z33-assembly run build
+
+      - name: Package the extension
+        run: npx vsce package --no-dependencies --out z33-assembly.vsix
+        working-directory: vscode
+
+      - name: Upload the .vsix as artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: vscode-extension
+          path: vscode/z33-assembly.vsix
+
+  zed:
+    name: Build the Zed extension
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install stable
+          rustup default stable
+          rustup target add wasm32-wasip1
+
+      # No build cache here: this job produces a release artifact (zizmor: cache-poisoning)
+      - name: Build the extension
+        run: cargo build -p z33-zed --release --target wasm32-wasip1
+
+      - name: Stage the compiled extension
+        run: cp target/wasm32-wasip1/release/z33_zed.wasm z33-zed.wasm
+
+      - name: Upload the extension wasm as artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: zed-extension
+          path: z33-zed.wasm
+
   publish:
     name: Publish a release
-    needs: [build-linux, build-macos, build-windows]
+    needs: [build-linux, build-macos, build-windows, vsix, zed]
     runs-on: ubuntu-24.04
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
@@ -198,6 +271,7 @@ jobs:
       - name: Move the release assets
         run: |
           mv ./artifacts/{x86_64,aarch64}-{linux,macos,windows}/* ./
+          mv ./artifacts/vscode-extension/z33-assembly.vsix ./artifacts/zed-extension/z33-zed.wasm ./
 
       - name: Prepare a release
         # preferred over gh CLI for declarative release publishing
@@ -210,4 +284,6 @@ jobs:
             z33-cli-aarch64-macos.tar.gz
             z33-cli-x86_64-windows.exe
             z33-cli-aarch64-windows.exe
+            z33-assembly.vsix
+            z33-zed.wasm
           draft: true
