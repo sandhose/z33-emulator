@@ -51,7 +51,7 @@ pub use self::index::LineIndex;
 use self::protocol::{
     Breakpoint, Capabilities, EvaluateArguments, IncomingRequest, LaunchArguments,
     ReadMemoryArguments, Scope, ScopesArguments, SetBreakpointsArguments, SetVariableArguments,
-    Source, StackFrame, Variable, VariablesArguments, WriteMemoryArguments,
+    Source, SourceArguments, StackFrame, Variable, VariablesArguments, WriteMemoryArguments,
 };
 use crate::constants as C;
 use crate::constants::Address;
@@ -317,6 +317,7 @@ impl DebugSession {
             "evaluate" => self.on_evaluate(&req),
             "readMemory" => self.on_read_memory(&req),
             "writeMemory" => self.on_write_memory(&req),
+            "source" => self.on_source(&req),
             "restart" => self.on_restart(&req),
             "disconnect" => {
                 self.exit_requested = true;
@@ -845,6 +846,25 @@ impl DebugSession {
         ) {
             Ok(written) => vec![self.response(req, json!({ "bytesWritten": written }))],
             Err(msg) => vec![self.response_err(req, msg)],
+        }
+    }
+
+    fn on_source(&mut self, req: &IncomingRequest) -> Vec<Value> {
+        let args: SourceArguments = match serde_json::from_value(req.arguments.clone()) {
+            Ok(a) => a,
+            Err(e) => return vec![self.response_err(req, format!("invalid arguments: {e}"))],
+        };
+        let content = {
+            let Some(program) = self.program.as_ref() else {
+                return vec![self.response_err(req, "no program launched")];
+            };
+            args.source
+                .and_then(|s| s.path.or(s.name))
+                .and_then(|p| program.index.source_of(&p).map(str::to_owned))
+        };
+        match content {
+            Some(content) => vec![self.response(req, json!({ "content": content }))],
+            None => vec![self.response_err(req, "source not found")],
         }
     }
 
