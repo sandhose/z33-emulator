@@ -226,10 +226,3 @@ pub struct WriteMemoryArguments {
     #[serde(default)]
     pub allow_partial: bool,
 }
-
-/// Arguments to `source`.
-#[derive(Debug, Deserialize)]
-pub struct SourceArguments {
-    #[serde(default)]
-    pub source: Option<Source>,
-}

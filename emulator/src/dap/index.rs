@@ -30,7 +30,6 @@ pub(super) struct Location {
 
 struct FileInfo {
     path: String,
-    source: String,
     /// Byte offset of the start of each line (line 1 starts at
     /// `line_starts[0]`).
     line_starts: Vec<usize>,
@@ -39,7 +38,7 @@ struct FileInfo {
 }
 
 impl FileInfo {
-    fn new(path: String, source: String) -> Self {
+    fn new(path: String, source: &str) -> Self {
         let mut line_starts = vec![0usize];
         for (offset, byte) in source.bytes().enumerate() {
             if byte == b'\n' {
@@ -48,7 +47,6 @@ impl FileInfo {
         }
         Self {
             path,
-            source,
             line_starts,
             lines_with_code: BTreeMap::new(),
         }
@@ -96,7 +94,7 @@ impl LineIndex {
                 let idx = files.len();
                 files.push(FileInfo::new(
                     file_db.name(original_file_id),
-                    file_db.source(original_file_id).to_owned(),
+                    file_db.source(original_file_id),
                 ));
                 idx
             });
@@ -147,12 +145,6 @@ impl LineIndex {
     /// The stored path of a file by index.
     pub(super) fn path(&self, file_index: usize) -> &str {
         &self.files[file_index].path
-    }
-
-    /// Return the source content of a file matching `path`, if any.
-    pub(super) fn source_of(&self, path: &str) -> Option<&str> {
-        self.find_file(path)
-            .map(|idx| self.files[idx].source.as_str())
     }
 
     /// Resolve a breakpoint request (`path`, 1-based `line`) to the adjusted
