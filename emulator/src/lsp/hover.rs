@@ -164,3 +164,53 @@ fn register_doc(reg: &str) -> Option<&'static str> {
         _ => None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{hover, DocumentState};
+
+    #[test]
+    fn register_hover() {
+        let src = "    ld %a, %b";
+        let off = src.find("%a").unwrap() + 1; // on the 'a'
+        let r = hover(None, src, off).expect("register hover");
+        assert!(
+            r.contents.contains("General-purpose register"),
+            "{}",
+            r.contents
+        );
+    }
+
+    #[test]
+    fn mnemonic_hover() {
+        let src = "    add %a, %b";
+        let off = src.find("add").unwrap(); // on the mnemonic
+        let r = hover(None, src, off).expect("mnemonic hover");
+        assert!(r.contents.starts_with("**add**"), "{}", r.contents);
+    }
+
+    #[test]
+    fn directive_hover() {
+        let src = ".word 42";
+        let r = hover(None, src, 1).expect("directive hover"); // on the 'w'
+        assert!(r.contents.contains("**.word**"), "{}", r.contents);
+    }
+
+    #[test]
+    fn label_hover() {
+        let src = "foo:\n    jmp foo";
+        let state = DocumentState::new(src.to_string());
+        let off = src.rfind("foo").unwrap(); // the jump target reference
+        let r = hover(Some(&state), src, off).expect("label hover");
+        assert!(r.contents.contains("label at address"), "{}", r.contents);
+    }
+
+    #[test]
+    fn macro_hover() {
+        let src = "#define FOO 42\n    ld FOO, %a";
+        let state = DocumentState::new(src.to_string());
+        let off = src.rfind("FOO").unwrap(); // the use in the `ld`
+        let r = hover(Some(&state), src, off).expect("macro hover");
+        assert!(r.contents.contains("macro"), "{}", r.contents);
+    }
+}
