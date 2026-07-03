@@ -95,8 +95,11 @@ fn read_content_length<R: BufRead>(reader: &mut R) -> Option<usize> {
             // End of headers.
             return content_length;
         }
-        if let Some(value) = trimmed.strip_prefix("Content-Length:") {
-            content_length = value.trim().parse::<usize>().ok();
+        // DAP (like HTTP/LSP) header names are case-insensitive.
+        if let Some((name, value)) = trimmed.split_once(':') {
+            if name.trim().eq_ignore_ascii_case("Content-Length") {
+                content_length = value.trim().parse::<usize>().ok();
+            }
         }
     }
 }

@@ -167,6 +167,10 @@ struct LoadedProgram {
     computer: Computer,
     index: LineIndex,
     labels: BTreeMap<String, Address>,
+    /// Requested breakpoint source lines per path (last `setBreakpoints` wins).
+    /// Kept as the raw client request so they can be re-resolved against a
+    /// fresh [`LineIndex`] after a `restart` (addresses may shift).
+    requested_lines: HashMap<String, Vec<u32>>,
     /// Breakpoint addresses per source path (last `setBreakpoints` wins).
     bp_by_file: HashMap<String, Vec<Address>>,
     /// Union of all breakpoint addresses.
@@ -176,6 +180,25 @@ struct LoadedProgram {
 impl LoadedProgram {
     fn recompute_breakpoints(&mut self) {
         self.breakpoints = self.bp_by_file.values().flatten().copied().collect();
+    }
+
+    /// Re-resolve every previously requested source breakpoint against the
+    /// current [`LineIndex`], dropping lines that no longer map to code, and
+    /// recompute the address set. Used after a `restart`, where the layout may
+    /// have shifted but the client will not re-send `setBreakpoints`.
+    fn reresolve_breakpoints(&mut self) {
+        self.bp_by_file = self
+            .requested_lines
+            .iter()
+            .map(|(path, lines)| {
+                let addrs = lines
+                    .iter()
+                    .filter_map(|&line| self.index.resolve_breakpoint(path, line).map(|(_, a)| a))
+                    .collect();
+                (path.clone(), addrs)
+            })
+            .collect();
+        self.recompute_breakpoints();
     }
 }
 
@@ -366,6 +389,7 @@ impl DebugSession {
 
             let mut result: Vec<Breakpoint> = Vec::new();
             let mut addrs: Vec<Address> = Vec::new();
+            let requested: Vec<u32> = args.breakpoints.iter().map(|bp| bp.line).collect();
             for bp in args.breakpoints {
                 match program.index.resolve_breakpoint(&path, bp.line) {
                     Some((line, address)) => {
@@ -385,6 +409,7 @@ impl DebugSession {
                     }),
                 }
             }
+            program.requested_lines.insert(path.clone(), requested);
             program.bp_by_file.insert(path, addrs);
             program.recompute_breakpoints();
             json!({ "breakpoints": result })
@@ -436,7 +461,10 @@ impl DebugSession {
         if args.frame_id == 0 {
             // Top frame: live stack + globals.
             let program = self.program.as_ref().expect("program loaded");
-            let depth = i64::from(C::STACK_START - program.computer.registers.sp);
+            // `sp` is client-controllable (e.g. via `setVariable`); guard the
+            // subtraction so an `sp` above `STACK_START` yields an empty stack
+            // instead of underflowing.
+            let depth = i64::from(C::STACK_START.saturating_sub(program.computer.registers.sp));
             scopes.push(Scope {
                 name: "Stack".to_owned(),
                 variables_reference: STACK_REF,
@@ -785,7 +813,10 @@ impl DebugSession {
             return vec![self.response_err(req, "count must be non-negative")];
         }
         let (address, data, unreadable) =
-            read_memory(&program.computer, base, args.offset, args.count);
+            match read_memory(&program.computer, base, args.offset, args.count) {
+                Ok(t) => t,
+                Err(msg) => return vec![self.response_err(req, msg)],
+            };
         let mut body = json!({ "address": address.to_string(), "data": base64_encode(&data) });
         if unreadable > 0 {
             body["unreadableBytes"] = unreadable.into();
@@ -843,7 +874,15 @@ impl DebugSession {
             return vec![self.response_err(req, "nothing to restart")];
         };
         match load_program(&args) {
-            Ok(program) => {
+            Ok(mut program) => {
+                // Carry breakpoints across the restart: the client will not
+                // re-send `setBreakpoints` (no `initialized` is re-emitted), so
+                // re-resolve the previously requested source lines against the
+                // freshly built line index (addresses may have shifted).
+                if let Some(old) = self.program.take() {
+                    program.requested_lines = old.requested_lines;
+                    program.reresolve_breakpoints();
+                }
                 self.program = Some(program);
                 self.entered = false;
                 self.exception_pending = false;
@@ -1558,13 +1597,26 @@ fn cell_word(cell: &Cell) -> i64 {
 }
 
 /// Read `count` bytes starting `offset` bytes past `base` (a cell address).
-/// Returns `(first_cell_address, data, unreadable_trailing_bytes)`.
-fn read_memory(computer: &Computer, base: i64, offset: i64, count: i64) -> (i64, Vec<u8>, i64) {
-    let start_byte = base * CELL_BYTES + offset;
+/// Returns `(first_cell_address, data, unreadable_trailing_bytes)`, or an error
+/// if the client-supplied `base`/`offset` overflow when converted to a byte
+/// address.
+fn read_memory(
+    computer: &Computer,
+    base: i64,
+    offset: i64,
+    count: i64,
+) -> Result<(i64, Vec<u8>, i64), String> {
+    let start_byte = base
+        .checked_mul(CELL_BYTES)
+        .and_then(|b| b.checked_add(offset))
+        .ok_or_else(|| "memory address out of range".to_owned())?;
     let mut data = Vec::new();
     let mut unreadable = 0;
     for i in 0..count {
-        let p = start_byte + i;
+        let Some(p) = start_byte.checked_add(i) else {
+            unreadable = count - i;
+            break;
+        };
         let cell_index = p.div_euclid(CELL_BYTES);
         let byte_in = usize::try_from(p.rem_euclid(CELL_BYTES)).unwrap_or(0);
         if p < 0 || cell_index >= i64::from(C::MEMORY_SIZE) {
@@ -1577,7 +1629,7 @@ fn read_memory(computer: &Computer, base: i64, offset: i64, count: i64) -> (i64,
             .map_or(0, cell_word);
         data.push(word.to_le_bytes()[byte_in]);
     }
-    (start_byte.div_euclid(CELL_BYTES), data, unreadable)
+    Ok((start_byte.div_euclid(CELL_BYTES), data, unreadable))
 }
 
 /// Write `bytes` starting `offset` bytes past `base`. Writes whole 8-byte words
@@ -1590,7 +1642,10 @@ fn write_memory(
     bytes: &[u8],
     allow_partial: bool,
 ) -> Result<usize, String> {
-    let start_byte = base * CELL_BYTES + offset;
+    let start_byte = base
+        .checked_mul(CELL_BYTES)
+        .and_then(|b| b.checked_add(offset))
+        .ok_or_else(|| "memory address out of range".to_owned())?;
     let len = i64::try_from(bytes.len()).map_err(|_| "data too large".to_owned())?;
     let aligned = start_byte.rem_euclid(CELL_BYTES) == 0 && len % CELL_BYTES == 0;
     if !aligned && !allow_partial {
@@ -1598,11 +1653,26 @@ fn write_memory(
             "writeMemory must cover whole 8-byte words (set allowPartial to override)".to_owned(),
         );
     }
-    for (i, &byte) in bytes.iter().enumerate() {
-        let p = start_byte + i64::try_from(i).map_err(|_| "data too large".to_owned())?;
-        if p < 0 {
-            return Err("write below address 0".to_owned());
+
+    // Pre-validate the entire span *before* mutating anything, so a write that
+    // straddles the end of memory (or below address 0) fails atomically instead
+    // of leaving a partial write behind.
+    if start_byte < 0 {
+        return Err("write below address 0".to_owned());
+    }
+    if len > 0 {
+        let last_byte = start_byte
+            .checked_add(len - 1)
+            .ok_or_else(|| "memory address out of range".to_owned())?;
+        let last_cell = last_byte.div_euclid(CELL_BYTES);
+        if last_cell >= i64::from(C::MEMORY_SIZE) || Address::try_from(last_cell).is_err() {
+            return Err(format!("write out of range at byte {last_byte}"));
         }
+    }
+
+    for (i, &byte) in bytes.iter().enumerate() {
+        // The span was validated above, so every address here is in range.
+        let p = start_byte + i64::try_from(i).map_err(|_| "data too large".to_owned())?;
         let cell_index = p.div_euclid(CELL_BYTES);
         let byte_in = usize::try_from(p.rem_euclid(CELL_BYTES)).unwrap_or(0);
         let addr =
@@ -1825,6 +1895,7 @@ fn compile_program<FS: Filesystem>(
         computer,
         index,
         labels: built.debug_info.labels,
+        requested_lines: HashMap::new(),
         bp_by_file: HashMap::new(),
         breakpoints: HashSet::new(),
     })
