@@ -133,7 +133,7 @@
   },
   "devDependencies": {
     "@types/vscode": "^1.125.0",
-    "@vscode/test-web": "^0.0.72",
+    "@vscode/test-web": "^0.0.81",
     "@vscode/vsce": "^3.9.2",
     "esbuild": "^0.28.0",
     "oxfmt": "^0.57.0",
