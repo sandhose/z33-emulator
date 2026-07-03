@@ -4,3 +4,7 @@ node_modules
 vscode/out
 *.vsix
 zed/extension.wasm
+# Zed's dev-extension grammar-fetch cache (a full clone of this repo)
+zed/grammars/
+# Generated mdBook output
+spec/book/
