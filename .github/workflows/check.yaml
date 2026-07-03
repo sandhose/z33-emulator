@@ -30,6 +30,9 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Check that all manifests agree on one version
+        run: scripts/check-version-sync.sh
+
       - name: Setup Rust build cache
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
