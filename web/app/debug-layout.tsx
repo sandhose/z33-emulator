@@ -1,9 +1,10 @@
 import type * as monaco from "monaco-editor";
-import { useCallback, useMemo, useState } from "react";
-import type { SourceMap } from "./lib/wasm";
-import type { ComputerInterface, Following, Labels } from "./computer-types";
+import { useCallback, useState } from "react";
+import type { Following, Labels } from "./computer-types";
+import type { ComputerProxy } from "./lib/computer-proxy";
 import { RegisterPanel } from "./debug-sidebar";
 import { DebugToolbar } from "./debug-toolbar";
+import { useBreakpointSync } from "./hooks/use-breakpoints";
 import { useSourceHighlight } from "./hooks/use-source-highlight";
 import { stripLeadingSlash } from "./lib/file-paths";
 import { MemoryPanel } from "./memory-panel";
@@ -28,7 +29,7 @@ export const DebugLayout: React.FC<DebugLayoutProps> = ({ onEditorMount }) => {
     <DebugLayoutInner
       onEditorMount={onEditorMount}
       computer={mode.computer}
-      sourceMap={mode.sourceMap}
+      touchedFiles={mode.touchedFiles}
       labels={mode.labels}
       onStopDebug={stopDebug}
     />
@@ -37,8 +38,8 @@ export const DebugLayout: React.FC<DebugLayoutProps> = ({ onEditorMount }) => {
 
 type DebugLayoutInnerProps = {
   onEditorMount: (editor: monaco.editor.IStandaloneCodeEditor) => void;
-  computer: ComputerInterface;
-  sourceMap: SourceMap;
+  computer: ComputerProxy;
+  touchedFiles: string[];
   labels: Labels;
   onStopDebug: () => void;
 };
@@ -47,7 +48,7 @@ type DebugLayoutInnerProps = {
 const DebugLayoutInner: React.FC<DebugLayoutInnerProps> = ({
   onEditorMount,
   computer,
-  sourceMap,
+  touchedFiles,
   labels,
   onStopDebug,
 }) => {
@@ -76,18 +77,11 @@ const DebugLayoutInner: React.FC<DebugLayoutInnerProps> = ({
 
   useSourceHighlight({
     computer,
-    sourceMap,
     editor,
     onSwitchFile: handleSourceSwitch,
   });
 
-  const touchedFiles = useMemo(() => {
-    const names = new Set<string>();
-    for (const loc of sourceMap.values()) {
-      names.add(stripLeadingSlash(loc.file));
-    }
-    return [...names];
-  }, [sourceMap]);
+  useBreakpointSync(computer, touchedFiles);
 
   return (
     <div className="flex flex-col h-full">

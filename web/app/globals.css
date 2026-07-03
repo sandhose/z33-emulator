@@ -205,3 +205,23 @@
   border-bottom: 2px solid oklch(0.6 0.15 140);
   background: oklch(0.45 0.12 100 / 35%);
 }
+
+/* Gutter breakpoint glyphs (rendered in the glyph margin). */
+.bp-glyph,
+.bp-glyph-unverified {
+  cursor: pointer;
+  border-radius: 50%;
+  width: 12px !important;
+  height: 12px !important;
+  margin-left: 3px;
+  margin-top: 3px;
+}
+
+.bp-glyph {
+  background: oklch(0.6 0.22 25);
+}
+
+.bp-glyph-unverified {
+  background: transparent;
+  border: 1px solid oklch(0.6 0.05 25 / 70%);
+}

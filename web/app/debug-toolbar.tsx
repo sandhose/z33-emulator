@@ -14,7 +14,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "./components/ui/tooltip";
-import type { ComputerInterface } from "./computer-types";
+import type { ComputerProxy } from "./lib/computer-proxy";
 import { DocsButton } from "./docs-button";
 import { useCycles } from "./hooks/use-computer";
 import { useStepRunner } from "./hooks/use-step-runner";
@@ -52,7 +52,7 @@ export const DebugToolbar: React.FC<DebugToolbarProps> = memo(
 DebugToolbar.displayName = "DebugToolbar";
 
 const DebugToolbarInner: React.FC<{
-  computer: ComputerInterface;
+  computer: ComputerProxy;
   className?: string | undefined;
   touchedFiles: string[];
   activeFile: string;
@@ -67,7 +67,7 @@ const DebugToolbarInner: React.FC<{
   onStop,
 }) => {
   const cycles = useCycles(computer);
-  const { halt, panicked, running, stepOnce, runN, stop } =
+  const { halt, panicked, running, stepOnce, run, pause } =
     useStepRunner(computer);
 
   const disabled = halt || panicked !== null;
@@ -92,49 +92,15 @@ const DebugToolbarInner: React.FC<{
       </Button>
 
       {running ? (
-        <Button variant="ghost" size="xs" onClick={stop}>
+        <Button variant="ghost" size="xs" onClick={pause}>
           <PauseIcon data-icon="inline-start" />
           Pause
         </Button>
       ) : (
-        <>
-          <Button
-            variant="ghost"
-            size="xs"
-            onClick={() => {
-              runN(10);
-            }}
-            disabled={disabled}
-            aria-label="Run 10 steps"
-          >
-            <PlayIcon data-icon="inline-start" />
-            10
-          </Button>
-          <Button
-            variant="ghost"
-            size="xs"
-            onClick={() => {
-              runN(100);
-            }}
-            disabled={disabled}
-            aria-label="Run 100 steps"
-          >
-            <PlayIcon data-icon="inline-start" />
-            100
-          </Button>
-          <Button
-            variant="ghost"
-            size="xs"
-            onClick={() => {
-              runN(1000);
-            }}
-            disabled={disabled}
-            aria-label="Run 1000 steps"
-          >
-            <PlayIcon data-icon="inline-start" />
-            1k
-          </Button>
-        </>
+        <Button variant="ghost" size="xs" onClick={run} disabled={disabled}>
+          <PlayIcon data-icon="inline-start" />
+          Run
+        </Button>
       )}
 
       <div className="mx-2 h-4 w-px bg-border" />

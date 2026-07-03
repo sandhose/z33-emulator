@@ -1,4 +1,4 @@
-import type { Cell, Cycles, Registers, SourceMap } from "./lib/wasm";
+import type { Cell, Cycles, Registers } from "./lib/wasm";
 import type { DisplayFormat } from "./stores/display-store";
 import { assertNever } from "./lib/utils";
 
@@ -13,16 +13,18 @@ export type Following = RegisterId | `label:${string}`;
 /** Map from address to list of registers pointing there */
 export type Pointers = Map<number, RegisterId[]>;
 
-/** Interface satisfied by the WASM Computer class, and future worker proxies */
+/**
+ * Reactive read surface over the running computer, implemented by the
+ * main-thread `ComputerProxy` backed by the emulator worker. Execution controls
+ * (step / run / pause / breakpoints) live on the concrete `ComputerProxy`.
+ */
 export interface ComputerInterface {
-  step(): boolean;
   registers(): Registers;
   memory(address: number): Cell;
   cycles(): Cycles;
   subscribe_registers(cb: (r: Registers) => void): () => void;
   subscribe_memory(address: number, cb: (c: Cell) => void): () => void;
   subscribe_cycles(cb: (c: Cycles) => void): () => void;
-  readonly source_map: SourceMap;
   readonly labels: Iterable<[string, number]>;
 }
 

@@ -8,10 +8,7 @@ import type { Locator, Page } from "@playwright/test";
  */
 const THEME_INDEX = { light: 0, system: 1, dark: 2 } as const;
 
-function themeButton(
-  page: Page,
-  value: "light" | "system" | "dark",
-): Locator {
+function themeButton(page: Page, value: "light" | "system" | "dark"): Locator {
   return page
     .getByRole("toolbar", { name: "Edit" })
     .locator("[data-slot='toggle-group']")

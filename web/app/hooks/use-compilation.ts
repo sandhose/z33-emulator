@@ -1,79 +1,33 @@
 import type { Monaco } from "@monaco-editor/react";
 import { useDebouncer } from "@tanstack/react-pacer";
 import type { editor as MonacoEditor } from "monaco-editor";
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { Computer } from "../lib/wasm";
+import { useCallback, useEffect, useState } from "react";
 import { InMemoryPreprocessor } from "../lib/wasm";
 import { toMonacoPath } from "../lib/file-paths";
 import { getMonacoFiles, initMonacoSync } from "../lib/monaco-sync";
-import { reportSchema, toMonacoDiagnostics } from "../report";
 import { useFileStore } from "../stores/file-store";
 
 type CompilationResult =
   | { type: "idle" }
-  | {
-      type: "success";
-      labels: string[];
-      compileFn: (ep: string) => Computer;
-    }
-  | { type: "error"; message: string };
+  | { type: "success"; labels: string[] }
+  | { type: "error"; message: string; labels: string[] };
 
 type UICompilationStatus = "idle" | "pending" | "success" | "error";
 
 /**
- * Apply parsed diagnostics (markers + line decorations) to all Monaco models.
- * Returns the error message from the report.
+ * Compiles the active file to drive the edit-mode toolbar: the entrypoint
+ * selector (labels) and the Run button (success/error status).
+ *
+ * Diagnostics (squiggles, markers) are owned by the LSP, not this hook. The
+ * actual runnable program is (re)built in the emulator worker on Run; here we
+ * only surface whether it *can* be built and its labels.
  */
-function applyReportDiagnostics(
-  monaco: Monaco,
-  reportJson: string,
-  decorationIds: Map<string, string[]>,
-): string | null {
-  try {
-    const parsed = JSON.parse(reportJson);
-    // Support both a single report object and an array of reports
-    const reports: unknown[] = Array.isArray(parsed) ? parsed : [parsed];
-    let firstMessage: string | null = null;
-
-    for (const raw of reports) {
-      const reportObject = reportSchema.parse(raw);
-      firstMessage ??= reportObject.message;
-      for (const model of monaco.editor.getModels()) {
-        const { markers, decorations } = toMonacoDiagnostics(
-          model,
-          reportObject,
-        );
-        monaco.editor.setModelMarkers(model, "z33", [
-          ...monaco.editor.getModelMarkers({
-            resource: model.uri,
-            owner: "z33",
-          }),
-          ...markers,
-        ]);
-        if (decorations.length > 0) {
-          const existing = decorationIds.get(model.uri.toString()) ?? [];
-          const ids = model.deltaDecorations([], decorations);
-          decorationIds.set(model.uri.toString(), [...existing, ...ids]);
-        }
-      }
-    }
-
-    return firstMessage;
-  } catch (e) {
-    console.warn(e);
-    return null;
-  }
-}
-
 export function useCompilation(activeFile: string, monacoInstance: Monaco) {
   const [compilationResult, setCompilationResult] = useState<CompilationResult>(
     { type: "idle" },
   );
 
-  // Decoration IDs for line highlights (squiggly markers are tracked by Monaco itself)
-  const decorationIds = useRef(new Map<string, string[]>());
-
-  // Initialize Monaco sync once after Monaco loads
+  // Keep the Zustand file store and Monaco models in sync.
   useEffect(() => {
     if (!monacoInstance) return;
     initMonacoSync(monacoInstance, {
@@ -95,56 +49,27 @@ export function useCompilation(activeFile: string, monacoInstance: Monaco) {
       files,
       toMonacoPath(activeFile),
     );
-    const result = preprocessor.compile();
-    const { program: prog, report } = result;
+    const { program } = preprocessor.compile();
 
-    // Clear all z33 markers and line-highlight decorations from every model
-    for (const model of monacoInstance.editor.getModels()) {
-      monacoInstance.editor.setModelMarkers(model, "z33", []);
-    }
-    for (const [uriStr, ids] of decorationIds.current) {
-      monacoInstance.editor
-        .getModel(monacoInstance.Uri.parse(uriStr))
-        ?.deltaDecorations(ids, []);
-    }
-    decorationIds.current.clear();
-
-    // Apply parse error diagnostics first (if any)
-    let errorMessage: string | null = null;
-    if (report) {
-      errorMessage =
-        applyReportDiagnostics(monacoInstance, report, decorationIds.current) ??
-        "Failed to parse";
+    if (!program) {
+      setCompilationResult({
+        type: "error",
+        message: "Failed to preprocess program",
+        labels: [],
+      });
+      return;
     }
 
-    if (prog) {
-      // Run check (layout + fill) to find compilation errors too.
-      // These are shown IN ADDITION to any parse errors.
-      const checkReport = prog.check();
-      if (checkReport !== undefined) {
-        errorMessage =
-          applyReportDiagnostics(
-            monacoInstance,
-            checkReport,
-            decorationIds.current,
-          ) ??
-          errorMessage ??
-          "Compilation failed";
-      }
-
-      if (errorMessage) {
-        // There are errors, but we still have labels for the entrypoint selector
-        setCompilationResult({ type: "error", message: errorMessage });
-      } else {
-        setCompilationResult({
-          type: "success",
-          labels: prog.labels,
-          compileFn: (ep) => prog.compile(ep),
-        });
-      }
-    } else if (errorMessage) {
-      // Preprocessor error — no program at all
-      setCompilationResult({ type: "error", message: errorMessage });
+    const labels = program.labels;
+    const checkReport = program.check();
+    if (checkReport === undefined) {
+      setCompilationResult({ type: "success", labels });
+    } else {
+      setCompilationResult({
+        type: "error",
+        message: "Compilation failed",
+        labels,
+      });
     }
   }, [monacoInstance, activeFile]);
 
@@ -154,7 +79,7 @@ export function useCompilation(activeFile: string, monacoInstance: Monaco) {
     (state) => ({ isPending: state.isPending }),
   );
 
-  // Attach Monaco content-change listeners and trigger initial compile
+  // Attach Monaco content-change listeners and trigger the initial compile.
   useEffect(() => {
     if (!monacoInstance) return () => {};
 
@@ -188,7 +113,7 @@ export function useCompilation(activeFile: string, monacoInstance: Monaco) {
     };
   }, [monacoInstance, compileDebouncer]);
 
-  // Re-trigger on activeFile change (new preprocessor entrypoint)
+  // Re-trigger on activeFile change (new preprocessor entrypoint).
   useEffect(() => {
     compileDebouncer.maybeExecute();
     compileDebouncer.flush();

@@ -25,7 +25,6 @@ import {
   TooltipTrigger,
 } from "./components/ui/tooltip";
 import { useFileDrop } from "./hooks/use-file-drop";
-import { stripLeadingSlash } from "./lib/file-paths";
 import { useAppStore } from "./stores/app-store";
 import { useFileStore } from "./stores/file-store";
 
@@ -99,12 +98,8 @@ export const FileSidebar: React.FC = () => {
   const displayedFiles = useMemo(() => {
     const allFiles = Object.keys(files);
     if (mode.type !== "debug") return allFiles;
-    const touchedFiles = new Set(
-      Array.from(mode.sourceMap.values()).map((loc) =>
-        stripLeadingSlash(loc.file),
-      ),
-    );
-    return allFiles.filter((name) => touchedFiles.has(name));
+    const touched = new Set(mode.touchedFiles);
+    return allFiles.filter((name) => touched.has(name));
   }, [mode, files]);
 
   const [resetDialogOpen, setResetDialogOpen] = useState(false);

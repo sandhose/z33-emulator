@@ -26,7 +26,13 @@ use z33_emulator::runtime::{Memory, ProcessorError};
 #[wasm_bindgen(start)]
 fn start() {
     console_error_panic_hook::set_once();
-    tracing_wasm::set_as_global_default();
+    // The runtime emits an INFO span per executed instruction. Routing those to
+    // the browser console makes continuous execution unusably slow (and can
+    // crash the tab). Only surface warnings and errors.
+    let config = tracing_wasm::WASMLayerConfigBuilder::new()
+        .set_max_level(tracing::Level::WARN)
+        .build();
+    tracing_wasm::set_as_global_default_with_config(config);
 }
 
 #[wasm_bindgen]
@@ -301,6 +307,30 @@ impl Program {
 #[tsify(into_wasm_abi)]
 pub struct Cycles(usize);
 
+/// The reason a [`Computer::run_batch`] call returned.
+#[derive(Serialize, Tsify, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+#[tsify(into_wasm_abi)]
+pub enum BatchStatus {
+    /// Hit the step budget; more steps remain.
+    Running,
+    /// The program halted (executed `reset`).
+    Halted,
+    /// The program raised an unrecovered exception.
+    Panicked,
+    /// The program counter reached a breakpoint address.
+    Breakpoint,
+}
+
+/// The outcome of a [`Computer::run_batch`] call.
+#[derive(Serialize, Tsify, Clone)]
+#[tsify(into_wasm_abi)]
+pub struct BatchResult {
+    pub status: BatchStatus,
+    pub steps: u32,
+    pub error: Option<String>,
+}
+
 #[derive(Serialize, Tsify)]
 #[tsify(into_wasm_abi)]
 pub struct Labels(Vec<String>);
@@ -385,6 +415,60 @@ impl Computer {
             Err(e) => Err(format!("{e}").into()),
         };
 
+        self.sync_observers();
+
+        res
+    }
+
+    /// Run up to `max_steps` instructions in a tight loop, stopping early on
+    /// halt, exception, or when the program counter lands on one of
+    /// `breakpoints`.
+    ///
+    /// Unlike [`step`](Self::step), the reactive observers (registers, cycles,
+    /// memory) are synchronized only once, at the end of the batch — this keeps
+    /// continuous execution fast (no per-instruction memory clone). The
+    /// breakpoint check itself is cheap (a `HashSet` lookup on `%pc`).
+    ///
+    /// Returns the batch outcome (status + number of steps actually run).
+    pub fn run_batch(&mut self, max_steps: u32, breakpoints: Vec<u32>) -> BatchResult {
+        let breakpoints: std::collections::HashSet<u32> = breakpoints.into_iter().collect();
+        let mut steps: u32 = 0;
+        let mut status = BatchStatus::Running;
+        let mut error = None;
+
+        while steps < max_steps {
+            match self.inner.step() {
+                Ok(()) => {}
+                Err(ProcessorError::Reset) => {
+                    steps += 1;
+                    status = BatchStatus::Halted;
+                    break;
+                }
+                Err(e) => {
+                    steps += 1;
+                    status = BatchStatus::Panicked;
+                    error = Some(format!("{e}"));
+                    break;
+                }
+            }
+            steps += 1;
+            if breakpoints.contains(&self.inner.registers.pc) {
+                status = BatchStatus::Breakpoint;
+                break;
+            }
+        }
+
+        self.sync_observers();
+
+        BatchResult {
+            status,
+            steps,
+            error,
+        }
+    }
+
+    /// Synchronize the reactive observers with the current CPU state.
+    fn sync_observers(&mut self) {
         let registers = Registers {
             a: Cell::from_runtime_cell(&self.inner.registers.a),
             b: Cell::from_runtime_cell(&self.inner.registers.b),
@@ -395,8 +479,6 @@ impl Computer {
         self.registers.set(registers);
         self.cycles.set(Cycles(self.inner.cycles));
         self.memory.set(self.inner.memory.clone());
-
-        res
     }
 
     #[wasm_bindgen(getter)]

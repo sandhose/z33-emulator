@@ -1,7 +1,9 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-
-const WORKSPACE_V2_KEY = "z33:workspace-v2";
+import {
+  WORKSPACE_PERSIST_VERSION,
+  WORKSPACE_STORAGE_KEY,
+} from "./persist-keys";
 
 const sampleFiles = Object.fromEntries(
   Object.entries(
@@ -85,7 +87,8 @@ export const useFileStore = create<FileState & FileActions>()(
       },
     }),
     {
-      name: WORKSPACE_V2_KEY,
+      name: WORKSPACE_STORAGE_KEY,
+      version: WORKSPACE_PERSIST_VERSION,
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         files: state.files,

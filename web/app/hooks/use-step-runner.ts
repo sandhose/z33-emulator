@@ -1,95 +1,36 @@
-import { startTransition, useCallback, useEffect, useReducer } from "react";
-import type { ComputerInterface } from "../computer-types";
-import { assertNever } from "@/lib/utils";
+import { useCallback, useSyncExternalStore } from "react";
+import type { ComputerProxy } from "../lib/computer-proxy";
 
-/** Step interval in milliseconds */
-const STEP_INTERVAL_MS = 50;
-
-type StepState =
-  | { status: "idle" }
-  | { status: "running"; remaining: number }
-  | { status: "halted" }
-  | { status: "panicked"; error: string };
-
-type StepAction =
-  | { type: "step_ok" }
-  | { type: "halt" }
-  | { type: "panic"; error: string }
-  | { type: "schedule"; count: number }
-  | { type: "stop" };
-
-function stepReducer(state: StepState, action: StepAction): StepState {
-  switch (action.type) {
-    case "step_ok": {
-      if (state.status !== "running") return { status: "idle" };
-      const remaining = state.remaining - 1;
-      if (remaining <= 0) return { status: "idle" };
-      return { status: "running", remaining };
-    }
-    case "halt":
-      return { status: "halted" };
-    case "panic":
-      return { status: "panicked", error: action.error };
-    case "schedule":
-      return { status: "running", remaining: action.count };
-    case "stop":
-      return { status: "idle" };
-    default:
-      return assertNever(action);
-  }
-}
-
-export function useStepRunner(computer: ComputerInterface) {
-  const [state, dispatch] = useReducer(stepReducer, { status: "idle" });
-
-  const doStep = useCallback(() => {
-    try {
-      if (computer.step()) {
-        dispatch({ type: "halt" });
-        return;
-      }
-    } catch (error) {
-      dispatch({ type: "panic", error: String(error) });
-      return;
-    }
-    dispatch({ type: "step_ok" });
-  }, [computer]);
-
-  useEffect(() => {
-    if (state.status !== "running") return () => {};
-    const id = setInterval(doStep, STEP_INTERVAL_MS);
-    return () => {
-      clearInterval(id);
-    };
-  }, [state.status, doStep]);
-
-  const stepOnce = useCallback(() => {
-    startTransition(() => {
-      dispatch({ type: "schedule", count: 1 });
-      doStep();
-    });
-  }, [doStep]);
-
-  const runN = useCallback(
-    (n: number) => {
-      startTransition(() => {
-        dispatch({ type: "schedule", count: n });
-        doStep();
-      });
-    },
-    [doStep],
+/**
+ * Drives execution through the emulator worker. Status (idle / running /
+ * halted / panicked) is reflected from worker-pushed snapshots; there is no
+ * main-thread stepping loop.
+ */
+export function useStepRunner(computer: ComputerProxy) {
+  const status = useSyncExternalStore(
+    useCallback((cb) => computer.subscribeStatus(cb), [computer]),
+    () => computer.getStatus(),
   );
 
-  const stop = useCallback(() => {
-    dispatch({ type: "stop" });
-  }, []);
+  const stepOnce = useCallback(() => {
+    computer.step(1);
+  }, [computer]);
+
+  const run = useCallback(() => {
+    computer.run();
+  }, [computer]);
+
+  const pause = useCallback(() => {
+    computer.pause();
+  }, [computer]);
 
   return {
-    halt: state.status === "halted",
-    panicked: state.status === "panicked" ? state.error : null,
-    running: state.status === "running",
+    halt: status === "halted",
+    panicked:
+      status === "panicked" ? (computer.getError() ?? "Panicked") : null,
+    running: status === "running",
     stepOnce,
-    runN,
-    stop,
+    run,
+    pause,
   };
 }

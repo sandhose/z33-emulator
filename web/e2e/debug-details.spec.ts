@@ -1,18 +1,12 @@
-import {
-  enterDebugMode,
-  expect,
-  getCycleCount,
-  test,
-} from "./fixtures";
+import { enterDebugMode, expect, getCycleCount, test } from "./fixtures";
 
 test.describe("Debug details", () => {
-  test("run 10 steps increases cycle count", async ({ cleanPage: page }) => {
+  test("run increases cycle count", async ({ cleanPage: page }) => {
     await enterDebugMode(page);
     const toolbar = page.getByRole("toolbar", { name: "Debug" });
 
-    await toolbar.getByRole("button", { name: "Run 10 steps" }).click();
+    await toolbar.getByRole("button", { name: "Run", exact: true }).click();
 
-    // Wait for steps to execute (interval-based runner)
     await expect(async () => {
       const cycles = await getCycleCount(page);
       expect(cycles).toBeGreaterThan(0);
@@ -23,7 +17,7 @@ test.describe("Debug details", () => {
     await enterDebugMode(page);
     const toolbar = page.getByRole("toolbar", { name: "Debug" });
 
-    await toolbar.getByRole("button", { name: "Run 1000 steps" }).click();
+    await toolbar.getByRole("button", { name: "Run", exact: true }).click();
 
     await expect(toolbar.getByRole("alert")).toBeVisible({ timeout: 30_000 });
     await expect(toolbar.getByRole("alert")).toHaveText("Halted");
@@ -35,7 +29,7 @@ test.describe("Debug details", () => {
     await enterDebugMode(page);
     const toolbar = page.getByRole("toolbar", { name: "Debug" });
 
-    await toolbar.getByRole("button", { name: "Run 1000 steps" }).click();
+    await toolbar.getByRole("button", { name: "Run", exact: true }).click();
     await expect(toolbar.getByRole("alert")).toBeVisible({
       timeout: 30_000,
     });
@@ -60,7 +54,7 @@ test.describe("Debug details", () => {
     await enterDebugMode(page);
     const toolbar = page.getByRole("toolbar", { name: "Debug" });
 
-    // Step a few times to get some values
+    // Step once to get some values
     await toolbar.getByRole("button", { name: "Step", exact: true }).click();
 
     // Switch to hex — scope to the registers region to avoid duplicates

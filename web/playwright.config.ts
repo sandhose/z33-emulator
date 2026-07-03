@@ -1,5 +1,10 @@
 import { defineConfig, devices } from "@playwright/test";
 
+// Override with PW_PORT to avoid reusing an unrelated dev server (e.g. one
+// started from another checkout) — `reuseExistingServer` trusts whatever
+// answers on the port.
+const port = Number(process.env.PW_PORT ?? 5173);
+
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: true,
@@ -10,7 +15,7 @@ export default defineConfig({
   timeout: 60_000,
   expect: { timeout: 10_000 },
   use: {
-    baseURL: "http://localhost:5173",
+    baseURL: `http://localhost:${port}`,
     trace: "on-first-retry",
     screenshot: "only-on-failure",
   },
@@ -18,8 +23,8 @@ export default defineConfig({
     { name: "chromium", use: { ...devices["Desktop Chrome"] } },
   ],
   webServer: {
-    command: "pnpm start",
-    url: "http://localhost:5173",
+    command: `pnpm start --port ${port} --strictPort`,
+    url: `http://localhost:${port}`,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
   },
