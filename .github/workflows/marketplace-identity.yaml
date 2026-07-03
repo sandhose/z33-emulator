@@ -1,0 +1,42 @@
+name: Marketplace identity bootstrap
+
+# One-shot helper for marketplace publisher membership: a managed identity
+# only becomes resolvable by marketplace.visualstudio.com's "Add member"
+# dialog after it has authenticated against the Azure DevOps identity
+# service once. This workflow logs in as the publishing identity (same
+# federated credential as the `marketplace` job) and prints the Identity ID
+# GUID to paste into the publisher Members dialog. Safe to re-run; delete
+# once membership is set up.
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  identity:
+    name: Print the marketplace identity
+    runs-on: ubuntu-24.04
+    environment: marketplace
+    permissions:
+      id-token: write # OIDC token for the Azure login
+
+    steps:
+      - name: Log in to Azure
+        uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3.0.0
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Materialize the identity and print its ID
+        # 499b84ac-1321-427f-aa17-267ca6975798 is the Azure DevOps resource
+        # application ID; calling the profile API as the identity creates its
+        # profile in the marketplace identity service.
+        run: |
+          az rest \
+            --url "https://app.vssps.visualstudio.com/_apis/profile/profiles/me?api-version=7.1" \
+            --resource 499b84ac-1321-427f-aa17-267ca6975798 \
+            --query '{identityId: id, displayName: displayName}' \
+            --output yamlc
+          echo "Paste the identityId GUID above into the publisher Members dialog."
