@@ -73,8 +73,13 @@ fn argument_parser<'a>() -> impl Parser<'a, &'a str, Argument, Extra<'a>> {
     ))
 }
 
-fn parse_address(input: &str) -> Result<Argument, String> {
-    argument_parser()
+/// Run a parser to completion over `input`, joining any parse errors into a
+/// single message.
+fn run_parser<'a, T, P>(parser: P, input: &'a str) -> Result<T, String>
+where
+    P: Parser<'a, &'a str, T, Extra<'a>>,
+{
+    parser
         .then_ignore(end())
         .parse(input)
         .into_result()
@@ -84,6 +89,10 @@ fn parse_address(input: &str) -> Result<Argument, String> {
                 .collect::<Vec<_>>()
                 .join("; ")
         })
+}
+
+fn parse_address(input: &str) -> Result<Argument, String> {
+    run_parser(argument_parser(), input)
 }
 
 #[derive(Debug, Clone)]
@@ -108,14 +117,65 @@ fn assignment_target_parser<'a>() -> impl Parser<'a, &'a str, AssignmentTarget, 
 }
 
 fn parse_assignment_target(input: &str) -> Result<AssignmentTarget, String> {
-    assignment_target_parser()
-        .then_ignore(end())
-        .parse(input)
-        .into_result()
-        .map_err(|errs| {
-            errs.into_iter()
-                .map(|e| e.to_string())
-                .collect::<Vec<_>>()
-                .join("; ")
-        })
+    run_parser(assignment_target_parser(), input)
+}
+
+#[cfg(test)]
+mod tests {
+    use z33_emulator::runtime::Reg;
+
+    use super::{Argument, AssignmentTarget};
+
+    #[test]
+    fn argument_parses_direct_expression() {
+        assert!(matches!("5".parse::<Argument>(), Ok(Argument::Direct(_))));
+    }
+
+    #[test]
+    fn argument_parses_indirect_register() {
+        assert!(matches!(
+            "%a".parse::<Argument>(),
+            Ok(Argument::Indirect(Reg::A))
+        ));
+    }
+
+    #[test]
+    fn argument_parses_indexed() {
+        assert!(matches!(
+            "%b+4".parse::<Argument>(),
+            Ok(Argument::Indexed(Reg::B, _))
+        ));
+        // The `-` form is also indexed (with an inverted offset).
+        assert!(matches!(
+            "%a-2".parse::<Argument>(),
+            Ok(Argument::Indexed(Reg::A, _))
+        ));
+    }
+
+    #[test]
+    fn argument_rejects_garbage() {
+        assert!("@@@".parse::<Argument>().is_err());
+        assert!("".parse::<Argument>().is_err());
+    }
+
+    #[test]
+    fn assignment_target_parses_register() {
+        assert!(matches!(
+            "%sp".parse::<AssignmentTarget>(),
+            Ok(AssignmentTarget::Register(Reg::SP))
+        ));
+    }
+
+    #[test]
+    fn assignment_target_parses_address() {
+        assert!(matches!(
+            "100".parse::<AssignmentTarget>(),
+            Ok(AssignmentTarget::Address(_))
+        ));
+    }
+
+    #[test]
+    fn assignment_target_rejects_garbage() {
+        assert!("@@@".parse::<AssignmentTarget>().is_err());
+    }
 }
