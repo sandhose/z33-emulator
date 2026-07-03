@@ -1,0 +1,5 @@
+---
+source: emulator/src/preprocessor/mod.rs
+expression: result.source
+---
+_FOO_ was undefined
