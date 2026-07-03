@@ -256,6 +256,9 @@ impl zed::Extension for Z33Extension {
         user_provided_debug_adapter_path: Option<String>,
         worktree: &Worktree,
     ) -> Result<DebugAdapterBinary, String> {
+        // Unlike the LSP path, this deliberately reports no installation
+        // status: Zed's DAP API has no per-adapter status channel, so a cold
+        // first debug may pause silently while `cli_path` downloads the CLI.
         let path = match user_provided_debug_adapter_path {
             Some(path) => path,
             None => self.cli_path(worktree, None)?,
@@ -317,3 +320,77 @@ impl zed::Extension for Z33Extension {
 }
 
 zed::register_extension!(Z33Extension);
+
+#[cfg(test)]
+mod tests {
+    use zed_extension_api::serde_json::{self, Value};
+    use zed_extension_api::{AttachRequest, DebugConfig, DebugRequest, Extension, LaunchRequest};
+
+    use super::{version_key, Z33Extension};
+
+    #[test]
+    fn version_key_orders_numerically() {
+        // Lexicographic ordering would rank v0.9.0 above v0.10.0; the key must not.
+        let v0_9 = version_key("z33-cli-v0.9.0").expect("v0.9.0 parses");
+        let v0_10 = version_key("z33-cli-v0.10.0").expect("v0.10.0 parses");
+        assert_eq!(v0_9, (0, 9, 0));
+        assert_eq!(v0_10, (0, 10, 0));
+        assert!(v0_9 < v0_10);
+    }
+
+    #[test]
+    fn version_key_rejects_garbage() {
+        // Missing prefix, non-numeric parts, and too-few/too-many components.
+        assert_eq!(version_key("garbage"), None);
+        assert_eq!(version_key("z33-cli-v1.2"), None);
+        assert_eq!(version_key("z33-cli-v1.2.x"), None);
+        assert_eq!(version_key("z33-cli-v1.2.3.4"), None);
+    }
+
+    fn launch_config(program: &str, args: Vec<String>) -> DebugConfig {
+        DebugConfig {
+            label: "test".to_string(),
+            adapter: "z33".to_string(),
+            request: DebugRequest::Launch(LaunchRequest {
+                program: program.to_string(),
+                cwd: None,
+                args,
+                envs: Vec::new(),
+            }),
+            stop_on_entry: Some(true),
+        }
+    }
+
+    fn scenario_config(config: DebugConfig) -> Value {
+        let scenario = Z33Extension::new()
+            .dap_config_to_scenario(config)
+            .expect("launch config converts");
+        serde_json::from_str(&scenario.config).expect("config is valid JSON")
+    }
+
+    #[test]
+    fn scenario_includes_entrypoint_when_present() {
+        let config = scenario_config(launch_config("main.s", vec!["main".to_string()]));
+        assert_eq!(config["program"], Value::from("main.s"));
+        assert_eq!(config["entrypoint"], Value::from("main"));
+        assert_eq!(config["stopOnEntry"], Value::from(true));
+    }
+
+    #[test]
+    fn scenario_omits_entrypoint_when_absent() {
+        let config = scenario_config(launch_config("main.s", Vec::new()));
+        assert_eq!(config["program"], Value::from("main.s"));
+        assert!(config.get("entrypoint").is_none());
+    }
+
+    #[test]
+    fn scenario_rejects_attach() {
+        let config = DebugConfig {
+            label: "test".to_string(),
+            adapter: "z33".to_string(),
+            request: DebugRequest::Attach(AttachRequest { process_id: None }),
+            stop_on_entry: None,
+        };
+        assert!(Z33Extension::new().dap_config_to_scenario(config).is_err());
+    }
+}
