@@ -62,6 +62,7 @@
 mod ast;
 pub mod compiler;
 pub mod constants;
+pub mod dap;
 pub mod diagnostic;
 pub mod lsp;
 pub mod parser;

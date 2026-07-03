@@ -71,8 +71,9 @@ fn main() {
     // Then, setup the tracing formatter for logging and instrumentation
     let registry = tracing_subscriber::Registry::default().with(opt.filter_layer());
 
-    // LSP uses stdout for JSON-RPC, so all logging must go to stderr.
-    let use_stderr = matches!(opt.command, Subcommand::Lsp(_));
+    // LSP and DAP use stdout for their protocols, so all logging must go to
+    // stderr.
+    let use_stderr = matches!(opt.command, Subcommand::Lsp(_) | Subcommand::Dap(_));
 
     if opt.json {
         let json_layer = tracing_subscriber::fmt::layer()

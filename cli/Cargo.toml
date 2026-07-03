@@ -23,6 +23,7 @@ codespan-reporting.workspace = true
 clap_complete.workspace = true
 rustyline.workspace = true
 rustyline-derive.workspace = true
+serde_json.workspace = true
 shell-words.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
