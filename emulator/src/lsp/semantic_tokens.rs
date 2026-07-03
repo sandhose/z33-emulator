@@ -1,28 +1,40 @@
 //! Semantic token generation for Z33 assembly.
 //!
-//! Uses the parsed AST for precise tokenization of assembly constructs,
-//! and annotations for preprocessor directives.
+//! These tokens are a *semantic-only* overlay on top of each editor's base
+//! grammar (tree-sitter in Zed, `TextMate` in VS Code, Monarch in the web IDE).
+//! The grammars already classify every lexical construct — instructions,
+//! directives, registers, numbers, strings, comments and label definitions — so
+//! we deliberately emit **nothing** for those. We only add the two things a
+//! grammar cannot know without whole-program analysis:
+//!
+//! - **Macro references**: a bare identifier that expands to a `#define`d
+//!   macro. The grammars see it as a generic identifier; only the preprocessor
+//!   knows it is a macro. Emitted as [`SemanticTokenType::MACRO`].
+//! - **Resolved label references**: a label used in an expression, coloured by
+//!   what it points at — [`SemanticTokenType::FUNCTION`] when it targets code
+//!   and [`SemanticTokenType::VARIABLE`] when it targets data.
+//!
+//! Unresolved references emit nothing (diagnostics already flag undefined
+//! symbols), and macro *definitions* / label *definitions* emit nothing (the
+//! grammars classify those structurally).
+
+use std::collections::HashSet;
 
 use tower_lsp::lsp_types::{
     SemanticToken, SemanticTokenType, SemanticTokens, SemanticTokensLegend,
 };
 
-use super::document::DocumentState;
+use super::document::{DocumentState, LabelKind};
 use super::position;
-use crate::parser::expression::Node as ExpressionNode;
+use super::references::OccurrenceKind;
 use crate::parser::line::LineContent;
-use crate::parser::value::{DirectiveArgument, InstructionArgument, InstructionKind};
+use crate::parser::value::DirectiveArgument;
 
 /// The token types we use, in the order they appear in the legend.
 pub const TOKEN_TYPES: &[SemanticTokenType] = &[
-    SemanticTokenType::KEYWORD,   // 0: instructions
-    SemanticTokenType::MACRO,     // 1: directives (.word, .space, etc.)
-    SemanticTokenType::VARIABLE,  // 2: registers (%a, %b, etc.)
-    SemanticTokenType::FUNCTION,  // 3: label definitions (foo:)
-    SemanticTokenType::PARAMETER, // 4: label references / macro references
-    SemanticTokenType::NUMBER,    // 5: numeric literals
-    SemanticTokenType::STRING,    // 6: string literals
-    SemanticTokenType::COMMENT,   // 7: comments
+    SemanticTokenType::FUNCTION, // 0: label reference pointing at code
+    SemanticTokenType::VARIABLE, // 1: label reference pointing at data
+    SemanticTokenType::MACRO,    // 2: reference to a `#define`d macro
 ];
 
 #[must_use]
@@ -33,129 +45,51 @@ pub fn legend() -> SemanticTokensLegend {
     }
 }
 
-const TK_KEYWORD: u32 = 0;
-const TK_MACRO: u32 = 1;
-const TK_VARIABLE: u32 = 2;
-const TK_FUNCTION: u32 = 3;
-const TK_PARAMETER: u32 = 4;
-const TK_NUMBER: u32 = 5;
-const TK_STRING: u32 = 6;
-const TK_COMMENT: u32 = 7;
+const TK_FUNCTION: u32 = 0;
+const TK_VARIABLE: u32 = 1;
+const TK_MACRO: u32 = 2;
 
 /// A raw token before delta-encoding: `(start_byte, length, token_type)`.
 type RawToken = (usize, usize, u32);
 
-/// Produce semantic tokens for the document using AST data.
-#[allow(clippy::too_many_lines)]
+/// Produce semantic tokens for the document.
+#[must_use]
 pub fn semantic_tokens(analysis: Option<&DocumentState>, source: &str) -> SemanticTokens {
     let mut raw_tokens: Vec<RawToken> = Vec::new();
 
     if let Some(state) = analysis {
-        // AST-based tokens for assembly constructs
-        if let Some(program) = state.program() {
-            for line in &program.lines {
-                // Label definitions
-                for sym in &line.inner.symbols {
-                    if let Some(span) = state.resolve_span(sym.location.clone()) {
-                        raw_tokens.push((span.start, span.end - span.start, TK_FUNCTION));
-                    }
-                }
+        // 1. Macro references (lexical scan of the original source).
+        collect_macro_references(state, &mut raw_tokens);
 
-                // Instruction or directive content
-                if let Some(content) = &line.inner.content {
-                    match &content.inner {
-                        LineContent::Instruction { kind, arguments } => {
-                            if kind.inner != InstructionKind::Error {
-                                if let Some(span) = state.resolve_span(kind.location.clone()) {
-                                    raw_tokens.push((
-                                        span.start,
-                                        span.end - span.start,
-                                        TK_KEYWORD,
-                                    ));
-                                }
-                            }
+        // Spans already claimed by macro tokens. A macro whose value is itself
+        // an identifier resurfaces in the parsed AST under its *expanded* name;
+        // skip those label references so we don't double-tag the same span.
+        let macro_spans: Vec<(usize, usize)> =
+            raw_tokens.iter().map(|t| (t.0, t.0 + t.1)).collect();
 
-                            for arg in arguments {
-                                tokenize_argument(
-                                    &arg.inner,
-                                    &arg.location,
-                                    state,
-                                    &mut raw_tokens,
-                                );
-                            }
-                        }
-                        LineContent::Directive { kind, argument } => {
-                            if let Some(span) = state.resolve_span(kind.location.clone()) {
-                                // Include the '.' prefix in the token
-                                let dot_start = if span.start > 0 { span.start - 1 } else { 0 };
-                                raw_tokens.push((dot_start, span.end - dot_start, TK_MACRO));
-                            }
-
-                            tokenize_directive_argument(
-                                &argument.inner,
-                                &argument.location,
-                                state,
-                                &mut raw_tokens,
-                            );
-                        }
-                        LineContent::Error => {}
-                    }
-                }
-
-                // Inline // comment
-                if let Some(comment) = &line.inner.comment {
-                    if let Some(span) = state.resolve_span(comment.location.clone()) {
-                        // Include the "//" prefix (2 bytes before the comment text)
-                        let prefix_start = span.start.saturating_sub(2);
-                        raw_tokens.push((prefix_start, span.end - prefix_start, TK_COMMENT));
-                    }
-                }
+        // 2. Resolved label references, coloured code-vs-data.
+        let root = state.root_file_id();
+        for occ in state.occurrences() {
+            if occ.kind != OccurrenceKind::Reference || occ.file_id != root {
+                continue;
             }
-        }
-
-        // Preprocessor directive lines from annotations. Annotations cover the
-        // whole include tree, so only keep those in the root document (spans
-        // are byte offsets into the file identified by `file_id`).
-        if let Some(ann) = state.annotations() {
-            let root = state.root_file_id();
-            for def in ann.definitions.iter().filter(|d| d.file_id == root) {
-                raw_tokens.push((def.span.start, def.span.end - def.span.start, TK_MACRO));
+            let (start, end) = (occ.span.start, occ.span.end);
+            if macro_spans.iter().any(|(ms, me)| start < *me && *ms < end) {
+                continue;
             }
-            for undef in ann.undefinitions.iter().filter(|u| u.file_id == root) {
-                raw_tokens.push((
-                    undef.span.start,
-                    undef.span.end - undef.span.start,
-                    TK_MACRO,
-                ));
-            }
-            for inc in ann.inclusions.iter().filter(|i| i.file_id == root) {
-                raw_tokens.push((inc.span.start, inc.span.end - inc.span.start, TK_MACRO));
-            }
-            for block in ann.conditional_blocks.iter().filter(|b| b.file_id == root) {
-                for branch in &block.branches {
-                    raw_tokens.push((
-                        branch.directive_span.start,
-                        branch.directive_span.end - branch.directive_span.start,
-                        TK_MACRO,
-                    ));
-                }
-                if let Some(fallback) = &block.fallback {
-                    if !fallback.directive_span.is_empty() {
-                        raw_tokens.push((
-                            fallback.directive_span.start,
-                            fallback.directive_span.end - fallback.directive_span.start,
-                            TK_MACRO,
-                        ));
-                    }
-                }
+            match state.label_kind(&occ.name) {
+                // Unresolved reference: emit nothing (a diagnostic covers it).
+                None => {}
+                Some(LabelKind::Code) => raw_tokens.push((start, end - start, TK_FUNCTION)),
+                Some(LabelKind::Data) => raw_tokens.push((start, end - start, TK_VARIABLE)),
             }
         }
     }
 
-    // Sort by position and deduplicate overlapping tokens
+    // Sort by position (LSP requires tokens in order).
     raw_tokens.sort_by_key(|t| t.0);
 
-    // Convert to delta-encoded SemanticToken
+    // Convert to delta-encoded SemanticToken.
     let mut result = Vec::with_capacity(raw_tokens.len());
     let mut prev_line = 0u32;
     let mut prev_start = 0u32;
@@ -194,113 +128,288 @@ pub fn semantic_tokens(analysis: Option<&DocumentState>, source: &str) -> Semant
     }
 }
 
-/// Emit tokens for an instruction argument using AST data.
-fn tokenize_argument(
-    arg: &InstructionArgument,
-    arg_span: &std::ops::Range<usize>,
-    state: &DocumentState,
-    out: &mut Vec<RawToken>,
-) {
-    match arg {
-        InstructionArgument::Register(_) => {
-            if let Some(span) = state.resolve_span(arg_span.clone()) {
-                out.push((span.start, span.end - span.start, TK_VARIABLE));
+fn is_ident_start(b: u8) -> bool {
+    b.is_ascii_alphabetic() || b == b'_'
+}
+
+fn is_ident_char(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b == b'_'
+}
+
+/// Scan the original root source for bare identifiers that name a `#define`d
+/// macro and emit a [`SemanticTokenType::MACRO`] token for each.
+///
+/// The preprocessor expands macros away before the AST is built (a numeric
+/// macro disappears entirely, an identifier macro resurfaces under its expanded
+/// name), so the only reliable place to spot a macro *usage* is the original
+/// text. We therefore scan words directly, skipping any that fall inside a
+/// preprocessor directive line (the definition itself), a comment or a string.
+fn collect_macro_references(state: &DocumentState, out: &mut Vec<RawToken>) {
+    let Some(ann) = state.annotations() else {
+        return;
+    };
+
+    // Macro names are in scope regardless of which file defined them.
+    let keys: HashSet<&str> = ann.definitions.iter().map(|d| d.key.as_str()).collect();
+    if keys.is_empty() {
+        return;
+    }
+
+    let source = state.source();
+    let root = state.root_file_id();
+
+    // Spans in the root file that must not be scanned for macro usages.
+    let mut protected: Vec<(usize, usize)> = Vec::new();
+    for d in ann.definitions.iter().filter(|d| d.file_id == root) {
+        protected.push((d.span.start, d.span.end));
+    }
+    for u in ann.undefinitions.iter().filter(|u| u.file_id == root) {
+        protected.push((u.span.start, u.span.end));
+    }
+    for block in ann.conditional_blocks.iter().filter(|b| b.file_id == root) {
+        for branch in &block.branches {
+            protected.push((branch.directive_span.start, branch.directive_span.end));
+        }
+        if let Some(fallback) = &block.fallback {
+            protected.push((fallback.directive_span.start, fallback.directive_span.end));
+        }
+    }
+    // Comments and string literals from the parsed program.
+    if let Some(program) = state.program() {
+        for line in &program.lines {
+            if let Some(comment) = &line.inner.comment {
+                if let Some(span) = state.resolve_span(comment.location.clone()) {
+                    protected.push((span.start.saturating_sub(2), span.end));
+                }
+            }
+            if let Some(content) = &line.inner.content {
+                if let LineContent::Directive { argument, .. } = &content.inner {
+                    if matches!(argument.inner, DirectiveArgument::StringLiteral(_)) {
+                        if let Some(span) = state.resolve_span(argument.location.clone()) {
+                            protected.push((span.start, span.end));
+                        }
+                    }
+                }
             }
         }
-        InstructionArgument::Value(node) => {
-            tokenize_expression_top(node, arg_span, state, out);
-        }
-        InstructionArgument::Direct(located_node) => {
-            tokenize_expression(&located_node.inner, &located_node.location, state, out);
-        }
-        InstructionArgument::Indirect(located_reg) => {
-            if let Some(span) = state.resolve_span(located_reg.location.clone()) {
-                out.push((span.start, span.end - span.start, TK_VARIABLE));
+    }
+
+    let bytes = source.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if is_ident_start(bytes[i]) {
+            let start = i;
+            i += 1;
+            while i < bytes.len() && is_ident_char(bytes[i]) {
+                i += 1;
             }
-        }
-        InstructionArgument::Indexed { register, value } => {
-            if let Some(span) = state.resolve_span(register.location.clone()) {
-                out.push((span.start, span.end - span.start, TK_VARIABLE));
+            let word = &source[start..i];
+            let protected_here = protected.iter().any(|(ps, pe)| start < *pe && *ps < i);
+            if !protected_here && keys.contains(word) {
+                out.push((start, i - start, TK_MACRO));
             }
-            tokenize_expression(&value.inner, &value.location, state, out);
+        } else {
+            i += 1;
         }
-        InstructionArgument::Error => {}
     }
 }
 
-/// Emit tokens for a directive argument.
-fn tokenize_directive_argument(
-    arg: &DirectiveArgument,
-    arg_span: &std::ops::Range<usize>,
-    state: &DocumentState,
-    out: &mut Vec<RawToken>,
-) {
-    match arg {
-        DirectiveArgument::Expression(node) => {
-            tokenize_expression_top(node, arg_span, state, out);
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lsp::document::DocumentState;
+
+    /// A decoded semantic token: absolute position + type name.
+    #[derive(Debug, PartialEq, Eq)]
+    struct Decoded {
+        line: u32,
+        character: u32,
+        length: u32,
+        ty: &'static str,
+    }
+
+    /// Decode the delta-encoded tokens into absolute positions + type names.
+    fn decode(tokens: &SemanticTokens) -> Vec<Decoded> {
+        let mut line = 0u32;
+        let mut character = 0u32;
+        let mut out = Vec::new();
+        for t in &tokens.data {
+            if t.delta_line == 0 {
+                character += t.delta_start;
+            } else {
+                line += t.delta_line;
+                character = t.delta_start;
+            }
+            out.push(Decoded {
+                line,
+                character,
+                length: t.length,
+                ty: TOKEN_TYPES[t.token_type as usize].as_str(),
+            });
         }
-        DirectiveArgument::StringLiteral(_) => {
-            if let Some(span) = state.resolve_span(arg_span.clone()) {
-                out.push((span.start, span.end - span.start, TK_STRING));
+        out
+    }
+
+    fn tokens(src: &str) -> Vec<Decoded> {
+        let state = DocumentState::new(src.to_string());
+        decode(&semantic_tokens(Some(&state), src))
+    }
+
+    #[test]
+    fn legend_is_minimal() {
+        let names: Vec<&str> = TOKEN_TYPES.iter().map(SemanticTokenType::as_str).collect();
+        assert_eq!(names, vec!["function", "variable", "macro"]);
+    }
+
+    #[test]
+    fn label_reference_to_code_is_function() {
+        // `jmp code` targets an instruction, so the reference is `function`.
+        let src = "code:\n    reset\n    jmp code\n";
+        let toks = tokens(src);
+        assert_eq!(
+            toks,
+            vec![Decoded {
+                line: 2,
+                character: 8,
+                length: 4,
+                ty: "function"
+            }]
+        );
+    }
+
+    #[test]
+    fn label_reference_to_data_is_variable() {
+        // `jmp data` targets a `.word` cell, so the reference is `variable`.
+        let src = "    jmp data\ndata:\n    .word 42\n";
+        let toks = tokens(src);
+        assert_eq!(
+            toks,
+            vec![Decoded {
+                line: 0,
+                character: 8,
+                length: 4,
+                ty: "variable"
+            }]
+        );
+    }
+
+    #[test]
+    fn label_reference_to_space_is_variable() {
+        let src = "    ld buf, %a\nbuf:\n    .space 4\n";
+        let toks = tokens(src);
+        assert_eq!(
+            toks,
+            vec![Decoded {
+                line: 0,
+                character: 7,
+                length: 3,
+                ty: "variable"
+            }]
+        );
+    }
+
+    #[test]
+    fn label_reference_to_string_is_variable() {
+        let src = "    ld msg, %a\nmsg:\n    .string \"hi\"\n";
+        let toks = tokens(src);
+        assert_eq!(
+            toks,
+            vec![Decoded {
+                line: 0,
+                character: 7,
+                length: 3,
+                ty: "variable"
+            }]
+        );
+    }
+
+    #[test]
+    fn macro_reference_is_macro() {
+        // `N` expands to `5`; the grammar cannot tell it apart from a label, so
+        // the LSP marks it as a macro. The `#define` line itself is not tagged.
+        let src = "#define N 5\n    ld N, %a\n";
+        let toks = tokens(src);
+        assert_eq!(
+            toks,
+            vec![Decoded {
+                line: 1,
+                character: 7,
+                length: 1,
+                ty: "macro"
+            }]
+        );
+    }
+
+    #[test]
+    fn macro_reference_to_label_value_is_macro_only() {
+        // `PTR` expands to `data` (a label). It must be tagged once, as a
+        // macro, not also as a (data) label reference.
+        let src = "#define PTR data\ndata:\n    .word 1\n    jmp PTR\n";
+        let toks = tokens(src);
+        assert_eq!(
+            toks,
+            vec![Decoded {
+                line: 3,
+                character: 8,
+                length: 3,
+                ty: "macro"
+            }]
+        );
+    }
+
+    #[test]
+    fn undefined_reference_emits_nothing() {
+        let src = "    jmp nowhere\n";
+        assert_eq!(tokens(src), vec![]);
+    }
+
+    #[test]
+    fn lexical_constructs_emit_nothing() {
+        // Instruction, register, number, string, comment and the label
+        // definition are all left to the base grammar.
+        let src = "code:\n    ld 42, %a // a comment\n    .string \"hi\"\n";
+        assert_eq!(tokens(src), vec![]);
+    }
+
+    #[test]
+    fn macro_name_inside_comment_is_not_tagged() {
+        let src = "#define N 5\n    reset // N is five\n";
+        assert_eq!(tokens(src), vec![]);
+    }
+
+    #[test]
+    fn multi_token_macro_expansion_has_no_overlaps() {
+        // The classic "Overlapping semantic tokens" trigger: a macro that
+        // expands to several tokens, each of which used to map back onto the
+        // same original span. Now it yields a single macro token, no overlaps.
+        let src = "#define INC add %a, %b
+code:
+    INC
+    jmp code
+";
+        let state = DocumentState::new(src.to_string());
+        let toks = decode(&semantic_tokens(Some(&state), src));
+        // Assert no two tokens overlap on the same line.
+        for a in &toks {
+            for b in &toks {
+                if std::ptr::eq(a, b) {
+                    continue;
+                }
+                if a.line == b.line {
+                    let a_end = a.character + a.length;
+                    let b_end = b.character + b.length;
+                    assert!(
+                        a.character >= b_end || b.character >= a_end,
+                        "overlap between {a:?} and {b:?}"
+                    );
+                }
             }
         }
     }
-}
 
-/// Emit tokens for a top-level expression (no own Located wrapper).
-fn tokenize_expression_top(
-    node: &ExpressionNode,
-    fallback_span: &std::ops::Range<usize>,
-    state: &DocumentState,
-    out: &mut Vec<RawToken>,
-) {
-    match node {
-        ExpressionNode::Literal(_) => {
-            if let Some(span) = state.resolve_span(fallback_span.clone()) {
-                out.push((span.start, span.end - span.start, TK_NUMBER));
-            }
-        }
-        ExpressionNode::Variable(_) => {
-            if let Some(span) = state.resolve_span(fallback_span.clone()) {
-                out.push((span.start, span.end - span.start, TK_PARAMETER));
-            }
-        }
-        _ => tokenize_expression(node, fallback_span, state, out),
-    }
-}
-
-/// Recursively emit tokens for expression nodes.
-fn tokenize_expression(
-    node: &ExpressionNode,
-    span: &std::ops::Range<usize>,
-    state: &DocumentState,
-    out: &mut Vec<RawToken>,
-) {
-    match node {
-        ExpressionNode::Literal(_) => {
-            if let Some(s) = state.resolve_span(span.clone()) {
-                out.push((s.start, s.end - s.start, TK_NUMBER));
-            }
-        }
-        ExpressionNode::Variable(_) => {
-            if let Some(s) = state.resolve_span(span.clone()) {
-                out.push((s.start, s.end - s.start, TK_PARAMETER));
-            }
-        }
-        ExpressionNode::BinaryOr(a, b)
-        | ExpressionNode::BinaryAnd(a, b)
-        | ExpressionNode::LeftShift(a, b)
-        | ExpressionNode::RightShift(a, b)
-        | ExpressionNode::Sum(a, b)
-        | ExpressionNode::Substract(a, b)
-        | ExpressionNode::Multiply(a, b)
-        | ExpressionNode::Divide(a, b) => {
-            tokenize_expression(&a.inner, &a.location, state, out);
-            tokenize_expression(&b.inner, &b.location, state, out);
-        }
-        ExpressionNode::Invert(a) | ExpressionNode::BinaryNot(a) => {
-            tokenize_expression(&a.inner, &a.location, state, out);
-        }
-        ExpressionNode::Error => {}
+    #[test]
+    fn macro_name_inside_string_is_not_tagged() {
+        let src = "#define N 5\n    .string \"N\"\n";
+        assert_eq!(tokens(src), vec![]);
     }
 }

@@ -4,12 +4,12 @@ use std::ops::Range;
 use camino::{Utf8Path, Utf8PathBuf};
 
 use super::references::{self, SymbolOccurrence};
-use crate::compiler::layout::{self, Layout, MemoryLayoutError};
+use crate::compiler::layout::{self, Layout, MemoryLayoutError, Placement};
 use crate::compiler::memory::{self, MemoryFillError};
 use crate::constants::Address;
 use crate::diagnostic::{self, FileId};
 use crate::parser::assembly::ParseResult;
-use crate::parser::line::Program;
+use crate::parser::line::{LineContent, Program};
 use crate::parser::shared::ParseDiagnostic;
 use crate::parser::{self};
 use crate::preprocessor::{
@@ -23,6 +23,15 @@ const VIRTUAL_FILENAME: &str = "main.S";
 /// The [`FileId`] of the root document. The preprocessor always registers the
 /// entrypoint first, so it is guaranteed to be `0`.
 const ROOT_FILE_ID: FileId = 0;
+
+/// What a resolved label points at in the compiled memory layout.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LabelKind {
+    /// The label points at an instruction (executable code).
+    Code,
+    /// The label points at data (`.word`, `.string`, `.space`).
+    Data,
+}
 
 /// Cached analysis state for a single document, treated as a preprocessing
 /// root.
@@ -203,6 +212,29 @@ impl DocumentState {
     #[must_use]
     pub fn labels(&self) -> &BTreeMap<String, Address> {
         &self.layout.labels
+    }
+
+    /// Classify what a label points at, using the compiled memory layout.
+    ///
+    /// Returns [`LabelKind::Code`] when the label's address holds an
+    /// instruction and [`LabelKind::Data`] when it holds a `.word`, `.string`
+    /// or `.space` cell. Returns `None` when the label is undefined (not in the
+    /// layout). A defined label whose address was never filled (e.g. it sits
+    /// past the last placed cell) is treated as [`LabelKind::Code`].
+    #[must_use]
+    pub fn label_kind(&self, name: &str) -> Option<LabelKind> {
+        let address = *self.layout.labels.get(name)?;
+        let kind = match self.layout.memory.get(&address) {
+            Some((Placement::Line(content), _)) => match &content.inner {
+                LineContent::Instruction { .. } => LabelKind::Code,
+                // `.word` (the only directive that places a `Line` cell).
+                LineContent::Directive { .. } | LineContent::Error => LabelKind::Data,
+            },
+            Some((Placement::Reserved | Placement::Char(_) | Placement::Nul, _)) => LabelKind::Data,
+            // Defined but never filled: default to code.
+            None => LabelKind::Code,
+        };
+        Some(kind)
     }
 
     #[must_use]
