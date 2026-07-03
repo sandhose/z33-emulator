@@ -175,8 +175,13 @@
           "type": "FIELD",
           "name": "mnemonic",
           "content": {
-            "type": "SYMBOL",
-            "name": "mnemonic"
+            "type": "ALIAS",
+            "content": {
+              "type": "SYMBOL",
+              "name": "identifier"
+            },
+            "named": true,
+            "value": "mnemonic"
           }
         },
         {
@@ -213,150 +218,6 @@
           ]
         }
       ]
-    },
-    "mnemonic": {
-      "type": "TOKEN",
-      "content": {
-        "type": "PREC",
-        "value": 2,
-        "content": {
-          "type": "CHOICE",
-          "members": [
-            {
-              "type": "PATTERN",
-              "value": "[aA][dD][dD]"
-            },
-            {
-              "type": "PATTERN",
-              "value": "[aA][nN][dD]"
-            },
-            {
-              "type": "PATTERN",
-              "value": "[cC][aA][lL][lL]"
-            },
-            {
-              "type": "PATTERN",
-              "value": "[cC][mM][pP]"
-            },
-            {
-              "type": "PATTERN",
-              "value": "[dD][iI][vV]"
-            },
-            {
-              "type": "PATTERN",
-              "value": "[fF][aA][sS]"
-            },
-            {
-              "type": "PATTERN",
-              "value": "[iI][nN]"
-            },
-            {
-              "type": "PATTERN",
-              "value": "[jJ][mM][pP]"
-            },
-            {
-              "type": "PATTERN",
-              "value": "[jJ][eE][qQ]"
-            },
-            {
-              "type": "PATTERN",
-              "value": "[jJ][nN][eE]"
-            },
-            {
-              "type": "PATTERN",
-              "value": "[jJ][lL][eE]"
-            },
-            {
-              "type": "PATTERN",
-              "value": "[jJ][lL][tT]"
-            },
-            {
-              "type": "PATTERN",
-              "value": "[jJ][gG][eE]"
-            },
-            {
-              "type": "PATTERN",
-              "value": "[jJ][gG][tT]"
-            },
-            {
-              "type": "PATTERN",
-              "value": "[lL][dD]"
-            },
-            {
-              "type": "PATTERN",
-              "value": "[mM][uU][lL]"
-            },
-            {
-              "type": "PATTERN",
-              "value": "[nN][eE][gG]"
-            },
-            {
-              "type": "PATTERN",
-              "value": "[nN][oO][pP]"
-            },
-            {
-              "type": "PATTERN",
-              "value": "[nN][oO][tT]"
-            },
-            {
-              "type": "PATTERN",
-              "value": "[oO][rR]"
-            },
-            {
-              "type": "PATTERN",
-              "value": "[oO][uU][tT]"
-            },
-            {
-              "type": "PATTERN",
-              "value": "[pP][oO][pP]"
-            },
-            {
-              "type": "PATTERN",
-              "value": "[pP][uU][sS][hH]"
-            },
-            {
-              "type": "PATTERN",
-              "value": "[rR][eE][sS][eE][tT]"
-            },
-            {
-              "type": "PATTERN",
-              "value": "[rR][tT][iI]"
-            },
-            {
-              "type": "PATTERN",
-              "value": "[rR][tT][nN]"
-            },
-            {
-              "type": "PATTERN",
-              "value": "[sS][hH][lL]"
-            },
-            {
-              "type": "PATTERN",
-              "value": "[sS][hH][rR]"
-            },
-            {
-              "type": "PATTERN",
-              "value": "[sS][tT]"
-            },
-            {
-              "type": "PATTERN",
-              "value": "[sS][uU][bB]"
-            },
-            {
-              "type": "PATTERN",
-              "value": "[sS][wW][aA][pP]"
-            },
-            {
-              "type": "PATTERN",
-              "value": "[tT][rR][aA][pP]"
-            },
-            {
-              "type": "PATTERN",
-              "value": "[xX][oO][rR]"
-            }
-          ]
-        }
-      }
     },
     "_operand": {
       "type": "CHOICE",

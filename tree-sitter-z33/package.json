@@ -6,7 +6,6 @@
   "repository": "https://github.com/sandhose/z33-emulator",
   "license": "MIT",
   "author": "Quentin Gliech <gliech@unistra.fr>",
-  "main": "bindings/node",
   "keywords": [
     "parser",
     "tree-sitter",
