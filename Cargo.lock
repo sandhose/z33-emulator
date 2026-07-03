@@ -1944,7 +1944,6 @@ dependencies = [
  "chumsky",
  "clap",
  "clap_complete",
- "codespan-reporting",
  "rustyline",
  "rustyline-derive",
  "serde_json",
