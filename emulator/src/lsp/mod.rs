@@ -9,6 +9,7 @@ mod completion;
 mod diagnostics;
 mod document;
 mod hover;
+mod instructions;
 mod position;
 mod references;
 mod semantic_tokens;

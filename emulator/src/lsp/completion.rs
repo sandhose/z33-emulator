@@ -6,6 +6,7 @@ use tower_lsp::lsp_types::{
 };
 
 use super::document::DocumentState;
+use super::instructions::{directive_meta, meta, ArgType, DIRECTIVE_KINDS, INSTRUCTION_KINDS};
 use super::text::strip_inline_comment;
 use crate::parser::shared::is_identifier_char;
 use crate::parser::value::InstructionKind;
@@ -19,89 +20,13 @@ static REGISTERS_PREFIX: LazyLock<Vec<CompletionItem>> =
     LazyLock::new(|| build_register_completions(true));
 static BRACKET: LazyLock<CompletionItem> = LazyLock::new(build_bracket_snippet);
 
-/// What types of arguments an instruction expects at a given position.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum ArgType {
-    /// Only a register
-    Reg,
-    /// Immediate or register
-    ImmReg,
-    /// Any addressing mode
-    ImmRegDirIndIdx,
-    /// Memory addressing only (direct, indirect, indexed)
-    DirIndIdx,
-    /// Register or memory addressing
-    RegDirIndIdx,
-}
-
-/// Returns the expected argument types for a given instruction kind.
+/// Returns the expected argument type for a given instruction kind and
+/// position.
 ///
 /// Returns `None` for instructions that take no arguments, or for argument
 /// indices beyond what the instruction accepts.
-#[allow(clippy::match_same_arms)]
 fn expected_arg_type(kind: InstructionKind, arg_index: usize) -> Option<ArgType> {
-    use InstructionKind as K;
-    match (kind, arg_index) {
-        // 2-arg: (ImmRegDirIndIdx, Reg)
-        (
-            K::Add
-            | K::And
-            | K::Cmp
-            | K::Div
-            | K::Ld
-            | K::Mul
-            | K::Or
-            | K::Shl
-            | K::Shr
-            | K::Sub
-            | K::Xor,
-            0,
-        ) => Some(ArgType::ImmRegDirIndIdx),
-        (
-            K::Add
-            | K::And
-            | K::Cmp
-            | K::Div
-            | K::Ld
-            | K::Mul
-            | K::Or
-            | K::Shl
-            | K::Shr
-            | K::Sub
-            | K::Xor,
-            1,
-        ) => Some(ArgType::Reg),
-
-        // 2-arg: (DirIndIdx, Reg)
-        (K::Fas | K::In, 0) => Some(ArgType::DirIndIdx),
-        (K::Fas | K::In, 1) => Some(ArgType::Reg),
-
-        // 2-arg: (Reg, DirIndIdx)
-        (K::St, 0) => Some(ArgType::Reg),
-        (K::St, 1) => Some(ArgType::DirIndIdx),
-
-        // 2-arg: (ImmReg, DirIndIdx)
-        (K::Out, 0) => Some(ArgType::ImmReg),
-        (K::Out, 1) => Some(ArgType::DirIndIdx),
-
-        // 2-arg: (RegDirIndIdx, Reg)
-        (K::Swap, 0) => Some(ArgType::RegDirIndIdx),
-        (K::Swap, 1) => Some(ArgType::Reg),
-
-        // 1-arg: (ImmRegDirIndIdx)
-        (K::Call | K::Jmp | K::Jeq | K::Jne | K::Jle | K::Jlt | K::Jge | K::Jgt, 0) => {
-            Some(ArgType::ImmRegDirIndIdx)
-        }
-
-        // 1-arg: (Reg)
-        (K::Neg | K::Not | K::Pop, 0) => Some(ArgType::Reg),
-
-        // 1-arg: (ImmReg)
-        (K::Push, 0) => Some(ArgType::ImmReg),
-
-        // 0-arg or out-of-range
-        _ => None,
-    }
+    meta(kind).args.get(arg_index).copied()
 }
 
 /// If `prefix_typed` is true, the `%` has already been typed by the user, so
@@ -135,86 +60,48 @@ fn build_register_completions(prefix_typed: bool) -> Vec<CompletionItem> {
 }
 
 fn build_instruction_completions() -> Vec<CompletionItem> {
-    // (mnemonic, description, signature)
-    // No snippets — signature help and argument completions guide the user.
-    let instructions: &[(&str, &str, &str)] = &[
-        ("add", "Add a value to a register", "src, %dst"),
-        ("and", "Bitwise AND with a register", "src, %dst"),
-        ("call", "Push PC and jump to address", "addr"),
-        ("cmp", "Compare a value with a register", "src, %dst"),
-        ("div", "Divide a register by a value", "src, %dst"),
-        ("fas", "Fetch-and-set (atomic)", "[addr], %dst"),
-        ("in", "Read from I/O controller", "[port], %dst"),
-        ("jmp", "Unconditional jump", "addr"),
-        ("jeq", "Jump if equal (zero flag set)", "addr"),
-        ("jne", "Jump if not equal", "addr"),
-        ("jle", "Jump if less or equal", "addr"),
-        ("jlt", "Jump if strictly less", "addr"),
-        ("jge", "Jump if greater or equal", "addr"),
-        ("jgt", "Jump if strictly greater", "addr"),
-        ("ld", "Load a value into a register", "src, %dst"),
-        ("mul", "Multiply a register by a value", "src, %dst"),
-        ("neg", "Negate a register", "%reg"),
-        ("nop", "No operation", ""),
-        ("not", "Bitwise NOT of a register", "%reg"),
-        ("or", "Bitwise OR with a register", "src, %dst"),
-        ("out", "Write to I/O controller", "src, [port]"),
-        ("pop", "Pop value from stack", "%reg"),
-        ("push", "Push value onto stack", "src"),
-        ("reset", "Reset the computer", ""),
-        ("rti", "Return from interrupt", ""),
-        ("rtn", "Return from call", ""),
-        ("shl", "Shift left", "src, %dst"),
-        ("shr", "Shift right", "src, %dst"),
-        ("st", "Store register to memory", "%src, [addr]"),
-        ("sub", "Subtract a value from a register", "src, %dst"),
-        ("swap", "Swap a value and a register", "src, %dst"),
-        ("trap", "Trigger trap exception", ""),
-        ("xor", "Bitwise XOR with a register", "src, %dst"),
-    ];
-
-    instructions
+    // No snippets — argument completions guide the user through the operands.
+    INSTRUCTION_KINDS
         .iter()
-        .map(|(name, detail, signature)| CompletionItem {
-            label: (*name).to_string(),
-            kind: Some(CompletionItemKind::KEYWORD),
-            detail: Some((*detail).to_string()),
-            label_details: if signature.is_empty() {
-                None
-            } else {
-                Some(CompletionItemLabelDetails {
-                    detail: Some(format!(" {signature}")),
-                    ..Default::default()
-                })
-            },
-            ..Default::default()
+        .map(|&kind| {
+            let m = meta(kind);
+            CompletionItem {
+                label: format!("{kind}"),
+                kind: Some(CompletionItemKind::KEYWORD),
+                detail: Some(m.summary.to_string()),
+                label_details: if m.signature.is_empty() {
+                    None
+                } else {
+                    Some(CompletionItemLabelDetails {
+                        detail: Some(format!(" {}", m.signature)),
+                        ..Default::default()
+                    })
+                },
+                ..Default::default()
+            }
         })
         .collect()
 }
 
 fn build_directive_completions() -> Vec<CompletionItem> {
-    let directives = [
-        ("addr", ".addr", "Set current address"),
-        ("space", ".space", "Reserve memory cells"),
-        ("string", ".string", "Store a string literal"),
-        ("word", ".word", "Store a word value"),
-    ];
-
-    directives
-        .into_iter()
-        .map(|(short, full, detail)| CompletionItem {
-            label: full.to_string(),
-            kind: Some(CompletionItemKind::KEYWORD),
-            detail: Some("directive".to_string()),
-            label_details: Some(CompletionItemLabelDetails {
-                description: Some(detail.to_string()),
+    DIRECTIVE_KINDS
+        .iter()
+        .map(|&kind| {
+            let short = format!("{kind}");
+            CompletionItem {
+                label: format!(".{kind}"),
+                kind: Some(CompletionItemKind::KEYWORD),
+                detail: Some("directive".to_string()),
+                label_details: Some(CompletionItemLabelDetails {
+                    description: Some(directive_meta(kind).summary.to_string()),
+                    ..Default::default()
+                }),
+                // '.' is a trigger character and may already be typed, so
+                // insert/filter without the dot to avoid doubling.
+                insert_text: Some(short.clone()),
+                filter_text: Some(short),
                 ..Default::default()
-            }),
-            // '.' is a trigger character and may already be typed, so
-            // insert/filter without the dot to avoid doubling.
-            insert_text: Some(short.to_string()),
-            filter_text: Some(short.to_string()),
-            ..Default::default()
+            }
         })
         .collect()
 }

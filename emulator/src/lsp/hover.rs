@@ -1,5 +1,7 @@
 use super::document::DocumentState;
+use super::instructions::{directive_meta, meta};
 use crate::parser::shared::is_identifier_char;
+use crate::parser::value::{DirectiveKind, InstructionKind};
 
 /// Result of a hover lookup.
 pub struct HoverResult {
@@ -103,17 +105,20 @@ fn try_mnemonic_hover(source: &str, offset: usize) -> Option<HoverResult> {
     // Check for directive (preceded by '.')
     if start > 0 && bytes[start - 1] == b'.' {
         let word = &source[start..end];
-        let doc = directive_doc(word)?;
+        let kind = word.to_ascii_lowercase().parse::<DirectiveKind>().ok()?;
         return Some(HoverResult {
-            contents: doc.to_string(),
+            contents: directive_meta(kind).hover.to_string(),
             span: (start - 1)..end, // include the dot
         });
     }
 
     let word = &source[start..end];
-    let doc = instruction_doc(&word.to_ascii_lowercase())?;
+    let kind = word.to_ascii_lowercase().parse::<InstructionKind>().ok()?;
+    if kind == InstructionKind::Error {
+        return None;
+    }
     Some(HoverResult {
-        contents: doc.to_string(),
+        contents: meta(kind).hover.to_string(),
         span: start..end,
     })
 }
@@ -210,94 +215,6 @@ fn register_doc(reg: &str) -> Option<&'static str> {
              - Bit 4: **I** (Interrupt enable)\n\
              - Bit 5: **S** (Supervisor mode)",
         ),
-        _ => None,
-    }
-}
-
-#[allow(clippy::too_many_lines)]
-fn instruction_doc(mnemonic: &str) -> Option<&'static str> {
-    match mnemonic {
-        "add" => Some("**add** src, %dst\n\n`%dst ← %dst + src`\n\nSets flags: Z, N, O"),
-        "and" => Some("**and** src, %dst\n\n`%dst ← %dst & src`\n\nSets flags: Z"),
-        "call" => Some(
-            "**call** addr\n\n`push %pc; %pc ← addr`\n\n\
-             Pushes the return address onto the stack and jumps to `addr`. \
-             Use `rtn` to return.",
-        ),
-        "cmp" => Some(
-            "**cmp** src, %dst\n\n`%dst - src` (result discarded)\n\n\
-             Sets flags: Z, N, O. Use before conditional jumps.",
-        ),
-        "div" => Some("**div** src, %dst\n\n`%dst ← %dst / src`\n\nSets flags: Z, N"),
-        "fas" => Some(
-            "**fas** [addr], %dst\n\n`%dst ← mem[addr]; mem[addr] ← 1`\n\n\
-             Fetch-and-set. Atomic operation for synchronization. \
-             Sets flags: Z, N",
-        ),
-        "in" => Some(
-            "**in** [port], %dst\n\n`%dst ← IO[port]`\n\n\
-             Read from an I/O controller. Privileged instruction (supervisor mode only).",
-        ),
-        "jmp" => Some("**jmp** addr\n\n`%pc ← addr`\n\nUnconditional jump."),
-        "jeq" => Some("**jeq** addr\n\n`if Z then %pc ← addr`\n\nJump if equal (zero flag set)."),
-        "jne" => Some("**jne** addr\n\n`if ¬Z then %pc ← addr`\n\nJump if not equal."),
-        "jle" => Some(
-            "**jle** addr\n\n`if Z∨N then %pc ← addr`\n\nJump if less or equal (signed).",
-        ),
-        "jlt" => Some("**jlt** addr\n\n`if N then %pc ← addr`\n\nJump if strictly less (signed)."),
-        "jge" => Some(
-            "**jge** addr\n\n`if ¬N then %pc ← addr`\n\nJump if greater or equal (signed).",
-        ),
-        "jgt" => Some(
-            "**jgt** addr\n\n`if ¬Z∧¬N then %pc ← addr`\n\nJump if strictly greater (signed).",
-        ),
-        "ld" => Some("**ld** src, %dst\n\n`%dst ← src`\n\nLoad a value into a register."),
-        "mul" => Some("**mul** src, %dst\n\n`%dst ← %dst × src`\n\nSets flags: Z, N, O"),
-        "neg" => Some("**neg** %reg\n\n`%reg ← −%reg`\n\nTwo's complement negation. Sets flags: Z, N"),
-        "nop" => Some("**nop**\n\nNo operation. Does nothing for one cycle."),
-        "not" => Some("**not** %reg\n\n`%reg ← ~%reg`\n\nBitwise NOT. Sets flags: Z"),
-        "or" => Some("**or** src, %dst\n\n`%dst ← %dst | src`\n\nSets flags: Z"),
-        "out" => Some(
-            "**out** src, [port]\n\n`IO[port] ← src`\n\n\
-             Write to an I/O controller. Privileged instruction (supervisor mode only).",
-        ),
-        "pop" => Some("**pop** %reg\n\n`%reg ← mem[%sp]; %sp ← %sp + 1`\n\nPop a value from the stack."),
-        "push" => Some(
-            "**push** src\n\n`%sp ← %sp − 1; mem[%sp] ← src`\n\nPush a value onto the stack.",
-        ),
-        "reset" => Some("**reset**\n\nReset the computer. All registers and memory are cleared."),
-        "rti" => Some(
-            "**rti**\n\n`%pc ← mem[100]; %sr ← mem[101]`\n\n\
-             Return from interrupt. Restores PC and SR from fixed addresses.",
-        ),
-        "rtn" => Some("**rtn**\n\n`pop %pc`\n\nReturn from a `call`. Pops the return address from the stack."),
-        "shl" => Some("**shl** src, %dst\n\n`%dst ← %dst << src`\n\nBitwise shift left. Sets flags: Z, N, C"),
-        "shr" => Some("**shr** src, %dst\n\n`%dst ← %dst >> src`\n\nBitwise shift right (arithmetic). Sets flags: Z, N, C"),
-        "st" => Some("**st** %src, [addr]\n\n`mem[addr] ← %src`\n\nStore a register value to memory."),
-        "sub" => Some("**sub** src, %dst\n\n`%dst ← %dst − src`\n\nSets flags: Z, N, O"),
-        "swap" => Some(
-            "**swap** src, %dst\n\n`src ↔ %dst`\n\n\
-             Swap the values of a memory location (or register) and a register.",
-        ),
-        "trap" => Some(
-            "**trap**\n\nTrigger a trap exception.\n\n\
-             Saves %pc to address 100 and %sr to address 101, \
-             then jumps to the interrupt handler at address 200.",
-        ),
-        "xor" => Some("**xor** src, %dst\n\n`%dst ← %dst ^ src`\n\nSets flags: Z"),
-        _ => None,
-    }
-}
-
-fn directive_doc(name: &str) -> Option<&'static str> {
-    match name {
-        "word" => Some("**.word** expr\n\nStore a word (64-bit integer) value at the current address."),
-        "space" => Some("**.space** n\n\nReserve `n` memory cells (initialized to empty)."),
-        "string" => Some(
-            "**.string** \"text\"\n\n\
-             Store a null-terminated string. Each character occupies one memory cell.",
-        ),
-        "addr" => Some("**.addr** n\n\nSet the current assembly address to `n`. Subsequent instructions are placed starting at this address."),
         _ => None,
     }
 }
