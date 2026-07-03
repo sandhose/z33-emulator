@@ -1,7 +1,6 @@
 import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
-import rust from "@wasm-tool/rollup-plugin-rust";
 import { defineConfig } from "vite";
 
 export default defineConfig({
@@ -9,22 +8,13 @@ export default defineConfig({
   build: {
     target: "esnext",
   },
+  worker: {
+    format: "es",
+  },
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./app", import.meta.url)),
-      "z33-web-bindings": fileURLToPath(
-        new URL("./Cargo.toml", import.meta.url),
-      ),
     },
   },
-  plugins: [
-    tailwindcss(),
-    react(),
-    rust({
-      nodejs: false,
-      experimental: {
-        typescriptDeclarationDir: "types",
-      },
-    }),
-  ],
+  plugins: [tailwindcss(), react()],
 });

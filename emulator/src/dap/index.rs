@@ -67,7 +67,7 @@ impl FileInfo {
 }
 
 /// The line ↔ address index.
-pub(super) struct LineIndex {
+pub struct LineIndex {
     files: Vec<FileInfo>,
     addr_to_loc: BTreeMap<Address, Location>,
 }
@@ -75,7 +75,8 @@ pub(super) struct LineIndex {
 impl LineIndex {
     /// Build the index from the compiler debug info, the preprocessor source
     /// map and the file database.
-    pub(super) fn build(
+    #[must_use]
+    pub fn build(
         debug_info: &DebugInfo,
         pre_source_map: &ReferencingSourceMap,
         file_db: &FileDatabase,
@@ -131,6 +132,18 @@ impl LineIndex {
         self.addr_to_loc.get(&address)
     }
 
+    /// Resolve the source location of an address into owned `(path, line,
+    /// column)` values (all 1-based), if it maps to code.
+    #[must_use]
+    pub fn location_owned(&self, address: Address) -> Option<(String, u32, u32)> {
+        let loc = self.addr_to_loc.get(&address)?;
+        Some((
+            self.files[loc.file_index].path.clone(),
+            loc.line,
+            loc.column,
+        ))
+    }
+
     /// The stored path of a file by index.
     pub(super) fn path(&self, file_index: usize) -> &str {
         &self.files[file_index].path
@@ -144,7 +157,8 @@ impl LineIndex {
 
     /// Resolve a breakpoint request (`path`, 1-based `line`) to the adjusted
     /// line (the next line with code at or after `line`) and its address.
-    pub(super) fn resolve_breakpoint(&self, path: &str, line: u32) -> Option<(u32, Address)> {
+    #[must_use]
+    pub fn resolve_breakpoint(&self, path: &str, line: u32) -> Option<(u32, Address)> {
         let idx = self.find_file(path)?;
         let (&adjusted, &address) = self.files[idx].lines_with_code.range(line..).next()?;
         Some((adjusted, address))

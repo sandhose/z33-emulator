@@ -1,5 +1,5 @@
 import { useCallback, useDeferredValue, useSyncExternalStore } from "react";
-import type { Cell, Cycles, Registers } from "z33-web-bindings";
+import type { Cell, Cycles, Registers } from "../lib/wasm";
 import type { ComputerInterface } from "../computer-types";
 
 export const useMemoryCell = (

@@ -1,6 +1,6 @@
 import type * as monaco from "monaco-editor";
 import { useEffect, useRef, useState } from "react";
-import type { SourceMap } from "z33-web-bindings";
+import type { SourceMap } from "../lib/wasm";
 import type { ComputerInterface } from "../computer-types";
 import { buildByteToCharMap } from "../lib/utf8";
 import { useRegisters } from "./use-computer";

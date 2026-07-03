@@ -1,6 +1,6 @@
 import type * as monaco from "monaco-editor";
 import { useCallback, useMemo, useState } from "react";
-import type { SourceMap } from "z33-web-bindings";
+import type { SourceMap } from "./lib/wasm";
 import type { ComputerInterface, Following, Labels } from "./computer-types";
 import { RegisterPanel } from "./debug-sidebar";
 import { DebugToolbar } from "./debug-toolbar";

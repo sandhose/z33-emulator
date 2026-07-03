@@ -3,8 +3,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "vite build",
-    "start": "vite",
+    "build:wasm": "wasm-pack build --target web --out-dir pkg --out-name z33_web",
+    "build:wasm:dev": "wasm-pack build --dev --target web --out-dir pkg --out-name z33_web",
+    "build": "pnpm run build:wasm && vite build",
+    "start": "pnpm run build:wasm:dev && vite",
     "check": "oxlint app/ && oxfmt --check app/",
     "lint": "oxlint app/",
     "lint:fix": "oxlint --fix app/",
@@ -25,14 +27,14 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.3",
-    "@wasm-tool/rollup-plugin-rust": "^3.1.6",
     "knip": "^6.3.0",
     "oxfmt": "^0.57.0",
     "oxlint": "^1.72.0",
     "oxlint-tsgolint": "^0.24.0",
     "tailwindcss": "^4.3.2",
     "typescript": "6.0.3",
-    "vite": "^8.1.3"
+    "vite": "^8.1.3",
+    "wasm-pack": "^0.15.0"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",

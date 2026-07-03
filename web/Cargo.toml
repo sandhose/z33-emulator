@@ -25,8 +25,16 @@ console_error_panic_hook.workspace = true
 js-sys.workspace = true
 serde.workspace = true
 serde-wasm-bindgen.workspace = true
+serde_json.workspace = true
 tsify.workspace = true
 tracing.workspace = true
 tracing-wasm.workspace = true
 wasm-bindgen.workspace = true
 z33-emulator.workspace = true
+
+# WASM LSP/DAP bridge deps (wasm-only in practice, but their versions live in
+# the workspace table like every other dependency).
+futures.workspace = true
+tower.workspace = true
+tower-lsp.workspace = true
+wasm-bindgen-futures.workspace = true

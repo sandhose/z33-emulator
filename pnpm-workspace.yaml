@@ -13,6 +13,7 @@ onlyBuiltDependencies:
   - "@vscode/vsce-sign"
   - keytar
   - tree-sitter-cli
+  - wasm-pack
 
 strictDepBuilds: true
 
