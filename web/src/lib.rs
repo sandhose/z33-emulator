@@ -189,13 +189,6 @@ pub struct Program {
 impl Program {
     #[wasm_bindgen(getter)]
     #[must_use]
-    pub fn ast(&self) -> String {
-        let ast = self.program.to_node();
-        format!("{ast}")
-    }
-
-    #[wasm_bindgen(getter)]
-    #[must_use]
     pub fn labels(&self) -> Labels {
         Labels(
             self.program
@@ -383,12 +376,6 @@ pub struct Registers {
 
 #[wasm_bindgen]
 extern "C" {
-    #[wasm_bindgen(typescript_type = "(registers: Registers) => void")]
-    pub type RegistersCallback;
-
-    #[wasm_bindgen(typescript_type = "(cycles: Cycles) => void")]
-    pub type CyclesCallback;
-
     #[wasm_bindgen(typescript_type = "(cell: Cell) => void")]
     pub type MemoryCallback;
 
@@ -506,22 +493,10 @@ impl Computer {
         value.into()
     }
 
-    pub fn subscribe_cycles(&mut self, callback: CyclesCallback) -> JsValue {
-        self.cycles
-            .subscribe(callback.unchecked_into())
-            .unchecked_into()
-    }
-
     #[must_use]
     pub fn registers(&self) -> <Registers as Tsify>::JsType {
         let value = JsValue::from(self.registers.get());
         value.into()
-    }
-
-    pub fn subscribe_registers(&mut self, callback: RegistersCallback) -> Unsubscribe {
-        self.registers
-            .subscribe(callback.unchecked_into())
-            .unchecked_into()
     }
 
     pub fn memory(&mut self, address: u32) -> <Cell as Tsify>::JsType {
@@ -614,9 +589,9 @@ impl MemoryObserver {
     }
 }
 
+/// A cached value plus its serialized JS representation. [`set`](Self::set)
+/// only re-serializes when the value actually changes.
 struct Observable<T: Tsify> {
-    index: usize,
-    subscribers: Rc<RefCell<HashMap<usize, js_sys::Function>>>,
     value: T,
     js_value: T::JsType,
 }
@@ -626,34 +601,13 @@ impl<T: Tsify> Observable<T> {
     where
         T: Serialize + Clone,
     {
-        let subscribers = Rc::new(RefCell::new(HashMap::new()));
         let js_value = value.into_js().unwrap_throw();
-        Observable {
-            index: 0,
-            subscribers,
-            value,
-            js_value,
-        }
-    }
-
-    fn subscribe(&mut self, callback: js_sys::Function) -> JsValue {
-        let index = self.index.wrapping_add(1);
-        self.index = index;
-        self.subscribers.borrow_mut().insert(index, callback);
-        let weak_ref = Rc::downgrade(&self.subscribers);
-
-        Closure::once_into_js(move || {
-            let Some(subscribers) = weak_ref.upgrade() else {
-                return;
-            };
-            subscribers.borrow_mut().remove(&index);
-        })
+        Observable { value, js_value }
     }
 
     fn set(&mut self, value: T)
     where
         T: Serialize + PartialEq,
-        T::JsType: std::ops::Deref<Target = JsValue>,
     {
         if self.value == value {
             return;
@@ -661,11 +615,6 @@ impl<T: Tsify> Observable<T> {
 
         self.value = value;
         self.js_value = self.value.into_js().unwrap_throw();
-        for callback in self.subscribers.borrow().values() {
-            callback
-                .call1(&JsValue::NULL, &self.js_value)
-                .unwrap_throw();
-        }
     }
 
     fn get(&self) -> &T::JsType {
