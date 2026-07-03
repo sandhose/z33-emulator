@@ -88,6 +88,10 @@ pub(crate) struct WorkspaceManager {
     /// URIs we last published *non-empty* diagnostics for, so we can clear
     /// them.
     published: HashSet<Url>,
+    /// Client-side commands the client declared it can execute (from the
+    /// `experimental.commands` client capability). Server-produced commands
+    /// (e.g. the run code lens) are only emitted when advertised here.
+    client_commands: HashSet<String>,
 }
 
 impl WorkspaceManager {
@@ -99,6 +103,16 @@ impl WorkspaceManager {
     pub(crate) fn set_root(&mut self, root_uri: Option<Url>) {
         self.native_root = root_uri.as_ref().and_then(url_to_native_path);
         self.root_uri = root_uri;
+    }
+
+    pub(crate) fn set_client_commands(&mut self, commands: HashSet<String>) {
+        self.client_commands = commands;
+    }
+
+    /// Whether the client declared it can execute the given client-side
+    /// command (via the `experimental.commands` capability).
+    pub(crate) fn supports_client_command(&self, command: &str) -> bool {
+        self.client_commands.contains(command)
     }
 
     /// Replace the host-pushed base file map and re-analyze.
@@ -337,7 +351,7 @@ impl WorkspaceManager {
     }
 
     /// Compute the workspace-relative path for a document URI.
-    fn relative_for_uri(&self, uri: &Url) -> Utf8PathBuf {
+    pub(crate) fn relative_for_uri(&self, uri: &Url) -> Utf8PathBuf {
         // Prefer stripping the native root off the file path.
         if let (Some(root), Some(path)) = (&self.native_root, url_to_native_path(uri)) {
             if let Ok(rel) = path.strip_prefix(root) {

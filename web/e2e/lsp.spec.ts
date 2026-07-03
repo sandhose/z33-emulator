@@ -117,4 +117,29 @@ test.describe("LSP", () => {
       timeout: 5_000,
     });
   });
+
+  test("run code lens starts a debug session at the label", async ({
+    page,
+  }) => {
+    test.slow();
+    await loadWorkspace(
+      page,
+      { "main.s": "main:\n    ld 1, %a\n    reset\n" },
+      "main.s",
+    );
+
+    // The server only emits the lens because the web client advertises the
+    // z33.run command; Monaco renders it as a clickable code-lens link.
+    const lens = page.locator(".codelens-decoration a", {
+      hasText: "Run main",
+    });
+    await expect(lens).toBeVisible({ timeout: 15_000 });
+    await lens.click();
+
+    // Clicking must start a debug session with `main` as the entrypoint.
+    await expect(page.getByRole("toolbar", { name: "Debug" })).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.getByRole("region", { name: "Registers" })).toBeVisible();
+  });
 });

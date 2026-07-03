@@ -19,7 +19,9 @@ test.describe("Core flows", () => {
 
   test("fact.s auto-compiles successfully", async ({ cleanPage: page }) => {
     await waitForCompileSuccess(page);
-    await expect(page.getByRole("button", { name: "Run" })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Run", exact: true }),
+    ).toBeVisible();
   });
 
   test("compilation error and recovery", async ({ cleanPage: page }) => {
