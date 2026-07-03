@@ -1,15 +1,15 @@
 {
   "compilerOptions": {
-    "module": "node16",
+    "module": "esnext",
+    "moduleResolution": "bundler",
     "target": "es2022",
-    "lib": ["es2022"],
-    "outDir": "out",
-    "rootDir": "src",
+    "lib": ["es2022", "WebWorker"],
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
+    "noEmit": true,
     "forceConsistentCasingInFileNames": true
   },
   "include": ["src"],
-  "exclude": ["node_modules", "out"]
+  "exclude": ["node_modules", "dist"]
 }

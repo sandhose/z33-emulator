@@ -6,6 +6,7 @@ packages:
   - tree-sitter-z33
 
 ignoredBuiltDependencies:
+  - "@playwright/browser-chromium"
   - esbuild
   - msw
 
