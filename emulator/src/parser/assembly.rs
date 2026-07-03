@@ -91,6 +91,7 @@ fn instruction_argument<'a>() -> impl Parser<'a, &'a str, InstructionArgument, E
 // Instructions
 // ---------------------------------------------------------------------------
 
+// r[impl asm.mnemonics]
 fn instruction_kind<'a>() -> impl Parser<'a, &'a str, InstructionKind, Extra<'a>> + Clone {
     use InstructionKind as K;
 
@@ -263,6 +264,7 @@ fn inline_comment<'a>() -> impl Parser<'a, &'a str, Located<String>, Extra<'a>> 
         .map_with(|s, e| s.with_location(span_to_range(e.span())))
 }
 
+// r[impl asm.line-format]
 /// Parse a single line: optional labels, then optional content, then
 /// optional inline comment.
 fn line<'a>() -> impl Parser<'a, &'a str, Line, Extra<'a>> + Clone {

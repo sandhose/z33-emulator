@@ -19,6 +19,7 @@ bitflags! {
     }
 }
 
+// r[impl arch.initial-state]
 impl Default for StatusRegister {
     fn default() -> Self {
         // On startup, only the supervisor bit is set

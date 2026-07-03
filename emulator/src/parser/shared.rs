@@ -251,6 +251,7 @@ pub fn register<'a>() -> impl Parser<'a, &'a str, Reg, Extra<'a>> + Clone {
 // Expressions
 // ---------------------------------------------------------------------------
 
+// r[impl asm.expressions]
 #[must_use]
 #[allow(clippy::too_many_lines)]
 pub fn expression<'a>() -> impl Parser<'a, &'a str, ExpressionNode, Extra<'a>> + Clone {

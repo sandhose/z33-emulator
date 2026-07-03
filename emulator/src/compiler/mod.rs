@@ -95,6 +95,7 @@ impl Assembled {
     }
 }
 
+// r[impl arch.initial-state]
 /// Wrap a filled memory image into a [`Computer`] with its PC and SP set up.
 fn build_computer(memory: Memory, pc: C::Address) -> Computer {
     Computer {

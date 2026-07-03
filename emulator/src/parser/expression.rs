@@ -221,6 +221,7 @@ pub enum EvaluationError {
     Error,
 }
 
+// r[impl asm.expressions]
 impl Node {
     /// Evaluate a constant expression with a given context, returning a value
     ///

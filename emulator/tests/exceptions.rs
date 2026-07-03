@@ -561,3 +561,89 @@ fn exception_step_count_check() {
       [102] = 1
     ");
 }
+
+#[test]
+fn in_is_privileged() {
+    // r[verify inst.in]
+    // r[verify exc.code.privileged-instruction]
+    // `in` is defined but unimplemented (todo!()); its privilege check runs
+    // first, so executing it in user mode raises the exception instead of
+    // reaching the panic.
+    let state = run_program(
+        indoc! {"
+            .addr 100
+            .word user_code
+            .word 0
+
+            .addr 200
+            handler:
+                reset
+
+            .addr 1000
+            main:
+                rti
+            user_code:
+                in [42], %a
+                reset
+        "},
+        "main",
+        Steps::RunToCompletion,
+    );
+    // Exception code at mem[102] should be 3 (privileged instruction)
+    insta::assert_snapshot!(state, @r"
+    Registers:
+      %a  = 0
+      %b  = 0
+      %pc = 200
+      %sp = 10000
+      %sr = SUPERVISOR
+    Cycles: 2
+    Halted: reset
+    Memory:
+      [100] = 1002
+      [101] = 0
+      [102] = 3
+    ");
+}
+
+#[test]
+fn out_is_privileged() {
+    // r[verify inst.out]
+    // r[verify exc.code.privileged-instruction]
+    // Same as `in`: privilege check fires before the todo!() body.
+    let state = run_program(
+        indoc! {"
+            .addr 100
+            .word user_code
+            .word 0
+
+            .addr 200
+            handler:
+                reset
+
+            .addr 1000
+            main:
+                rti
+            user_code:
+                out %a, [42]
+                reset
+        "},
+        "main",
+        Steps::RunToCompletion,
+    );
+    // Exception code at mem[102] should be 3 (privileged instruction)
+    insta::assert_snapshot!(state, @r"
+    Registers:
+      %a  = 0
+      %b  = 0
+      %pc = 200
+      %sp = 10000
+      %sr = SUPERVISOR
+    Cycles: 2
+    Halted: reset
+    Memory:
+      [100] = 1002
+      [101] = 0
+      [102] = 3
+    ");
+}
