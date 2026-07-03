@@ -17,10 +17,9 @@ import { LanguageClient, type LanguageClientOptions } from "vscode-languageclien
 
 import initDapWasm, { WasmDapServer } from "../dist/pkg/z33_web.js";
 import { Z33DebugAdapter } from "./debug-adapter.js";
-import { includeWorkspaceFolderInPaths } from "./workspace-paths.js";
+import { collectWorkspaceFiles, FILE_GLOB } from "./workspace-paths.js";
 
 const WORKSPACE_FILES_METHOD = "z33/workspaceFiles";
-const FILE_GLOB = "**/*.{s,S}";
 /** Give the wasm worker a generous window to instantiate before giving up. */
 const HANDSHAKE_TIMEOUT_MS = 30_000;
 /** Debounce window for coalescing rapid file-watcher events. */
@@ -85,22 +84,8 @@ async function startLspWorker(
   return worker;
 }
 
-/** Collect every workspace `.s`/`.S` file as a relative-path → content map. */
-async function collectWorkspaceFiles(): Promise<Record<string, string>> {
-  const files: Record<string, string> = {};
-  const uris = await vscode.workspace.findFiles(FILE_GLOB);
-  const decoder = new TextDecoder();
-  const includeFolder = includeWorkspaceFolderInPaths();
-  for (const uri of uris) {
-    const relative = vscode.workspace.asRelativePath(uri, includeFolder);
-    const bytes = await vscode.workspace.fs.readFile(uri);
-    files[relative] = decoder.decode(bytes);
-  }
-  return files;
-}
-
 async function pushWorkspaceFiles(lsp: LanguageClient): Promise<void> {
-  const files = await collectWorkspaceFiles();
+  const { files } = await collectWorkspaceFiles();
   await lsp.sendNotification(WORKSPACE_FILES_METHOD, { files });
 }
 

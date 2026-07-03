@@ -4,8 +4,6 @@ node_modules/**
 tsconfig.json
 tsconfig.tsbuildinfo
 build.mjs
-.oxfmtrc.json
-.oxlintrc.json
 .gitignore
 **/*.map
 **/*.ts

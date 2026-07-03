@@ -11,7 +11,7 @@
 
 import * as vscode from "vscode";
 import type { WasmDapServer } from "../dist/pkg/z33_web.js";
-import { includeWorkspaceFolderInPaths } from "./workspace-paths.js";
+import { collectWorkspaceFiles } from "./workspace-paths.js";
 
 /** A launch request as sent by VS Code, before we inject the file map. */
 interface LaunchRequest {
@@ -37,39 +37,6 @@ function isLaunchRequest(message: unknown): message is LaunchRequest {
     (message as { type?: unknown }).type === "request" &&
     (message as { command?: unknown }).command === "launch"
   );
-}
-
-/**
- * Gather every workspace `.s`/`.S` file as a workspace-relative path → content
- * map, and resolve `program` to the matching relative path.
- */
-async function collectWorkspaceFiles(
-  program: string | undefined,
-): Promise<{ files: Record<string, string>; program: string }> {
-  const files: Record<string, string> = {};
-  const uris = await vscode.workspace.findFiles("**/*.{s,S}");
-
-  const decoder = new TextDecoder();
-  // Must match the LSP push in extension.ts so include resolution and program
-  // lookup agree on keys (folder-prefixed only when there are multiple roots).
-  const includeFolder = includeWorkspaceFolderInPaths();
-  let resolvedProgram = program ?? "";
-
-  for (const uri of uris) {
-    const relative = vscode.workspace.asRelativePath(uri, includeFolder);
-    const bytes = await vscode.workspace.fs.readFile(uri);
-    files[relative] = decoder.decode(bytes);
-
-    // Match the configured program (an absolute/`${file}` path) to its
-    // workspace-relative key so the in-memory FS lookup succeeds.
-    if (program !== undefined && program.length > 0) {
-      if (uri.fsPath === program || uri.toString() === program) {
-        resolvedProgram = relative;
-      }
-    }
-  }
-
-  return { files, program: resolvedProgram };
 }
 
 export class Z33DebugAdapter implements vscode.DebugAdapter {
