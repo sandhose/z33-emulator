@@ -12,7 +12,6 @@ mod hover;
 mod position;
 mod references;
 mod semantic_tokens;
-mod signature;
 mod symbols;
 mod workspace;
 
