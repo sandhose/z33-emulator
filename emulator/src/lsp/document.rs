@@ -90,7 +90,16 @@ impl DocumentState {
     #[must_use]
     pub fn analyze<FS: Filesystem>(fs: &FS, root_path: &Utf8Path) -> Self {
         let mut workspace = Workspace::new(fs, root_path);
-        let original_source = workspace.file_db().source(ROOT_FILE_ID).to_string();
+        // The root file is only registered in the file database if it could be
+        // read. When the filesystem fails to produce it (e.g. an unreadable or
+        // missing root), `ROOT_FILE_ID` is absent and `source()` would panic —
+        // fall back to empty source so the preprocessor-error path below still
+        // produces diagnostics.
+        let original_source = if workspace.file_ids().any(|(id, _)| id == ROOT_FILE_ID) {
+            workspace.file_db().source(ROOT_FILE_ID).to_string()
+        } else {
+            String::new()
+        };
 
         match workspace.preprocess() {
             Ok(result) => {
@@ -158,10 +167,17 @@ impl DocumentState {
                     .file_ids()
                     .map(|(id, path)| (id, path.to_owned()))
                     .collect();
-                let file_sources: BTreeMap<FileId, String> = file_paths
+                let mut file_sources: BTreeMap<FileId, String> = file_paths
                     .keys()
                     .map(|&id| (id, workspace.file_db().source(id).to_string()))
                     .collect();
+                // When the root file itself failed to load it is absent from
+                // the registry above. Register it (with whatever source we
+                // have, possibly empty) so error diagnostics can still be
+                // attributed to the root document instead of being dropped.
+                file_sources
+                    .entry(ROOT_FILE_ID)
+                    .or_insert_with(|| original_source.clone());
 
                 Self {
                     original_source,
@@ -591,5 +607,27 @@ mod tests {
         let fs = fs(&[("main.s", "#include \"nope.s\"\n    reset\n")]);
         let state = DocumentState::analyze(&fs, Utf8Path::new("main.s"));
         assert!(state.preprocessor_error().is_some());
+    }
+
+    #[test]
+    fn unreadable_root_does_not_panic_and_yields_diagnostics() {
+        // The root file does not exist in the filesystem, so it can never be
+        // read. `analyze` must not panic (it used to eagerly read the root
+        // source out of the file database) and must still surface the load
+        // failure as a diagnostic.
+        let fs = fs(&[]);
+        let state = DocumentState::analyze(&fs, Utf8Path::new("main.s"));
+
+        assert!(
+            state.preprocessor_error().is_some(),
+            "an unreadable root should be a preprocessor error"
+        );
+        assert!(state.source().is_empty());
+
+        let diagnostics = crate::lsp::diagnostics::diagnostics_by_file(&state);
+        assert!(
+            !diagnostics.is_empty(),
+            "the load failure should be reported as a diagnostic"
+        );
     }
 }

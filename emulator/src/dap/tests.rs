@@ -175,6 +175,43 @@ fn breakpoint_inside_factorielle_is_hit() {
 }
 
 #[test]
+fn breakpoints_survive_restart() {
+    let mut h = Harness::new();
+    h.launch(true);
+
+    // Line 8 is `cmp 1,%a` inside `factorielle`.
+    let bp = h.send(
+        "setBreakpoints",
+        json!({
+            "source": { "path": "/fact.s" },
+            "breakpoints": [{ "line": 8 }],
+        }),
+    );
+    let resp = find_response(&bp, "setBreakpoints").expect("setBreakpoints response");
+    assert_eq!(resp["body"]["breakpoints"][0]["verified"], json!(true));
+
+    // Restart: the client does NOT re-send setBreakpoints, so the session must
+    // carry the breakpoint over and re-resolve it against the fresh program.
+    let restart = h.send("restart", json!({}));
+    assert_eq!(
+        find_response(&restart, "restart").expect("restart response")["success"],
+        json!(true)
+    );
+
+    // Continue from entry: we must still stop at the breakpoint on line 8.
+    h.send("continue", json!({ "threadId": 1 }));
+    let events = h.drive();
+    let stopped = find_event(&events, "stopped").expect("stopped at breakpoint after restart");
+    assert_eq!(stopped["body"]["reason"], json!("breakpoint"));
+
+    let st = h.send("stackTrace", json!({ "threadId": 1 }));
+    let resp = find_response(&st, "stackTrace").expect("stackTrace response");
+    let frame = &resp["body"]["stackFrames"][0];
+    assert_eq!(frame["name"], json!("factorielle"));
+    assert_eq!(frame["line"], json!(8));
+}
+
+#[test]
 fn breakpoint_on_comment_line_adjusts_forward() {
     let mut h = Harness::new();
     h.launch(true);
@@ -807,6 +844,197 @@ fn read_and_write_memory_roundtrip() {
         find_response(&rd2, "readMemory").unwrap()["body"]["data"],
         json!("AQAAAAAAAAA=")
     );
+}
+
+#[test]
+fn scopes_with_sp_above_stack_start_is_empty() {
+    let mut h = Harness::new();
+    h.launch(true);
+
+    // Push `sp` past the stack base via setVariable. The stack depth is
+    // `STACK_START - sp`, which must saturate to 0 instead of underflowing.
+    let resp = h.send(
+        "setVariable",
+        json!({ "variablesReference": 1, "name": "sp", "value": "10001" }),
+    );
+    assert_eq!(
+        find_response(&resp, "setVariable").expect("setVariable response")["success"],
+        json!(true)
+    );
+
+    // Requesting scopes must not panic and the Stack scope is empty.
+    let out = h.send("scopes", json!({ "frameId": 0 }));
+    let scopes = find_response(&out, "scopes").expect("scopes response");
+    let stack = scopes["body"]["scopes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["name"] == "Stack")
+        .expect("Stack scope present");
+    assert_eq!(stack["indexedVariables"], json!(0));
+}
+
+#[test]
+fn write_memory_straddling_end_is_atomic() {
+    let mut h = Harness::new();
+    launch_globals(&mut h);
+
+    // Seed the last valid cell (9999) with a known pattern.
+    let seed = h.send(
+        "writeMemory",
+        json!({ "memoryReference": "9999", "offset": 0, "data": "AQIDBAUGBwg=" }),
+    );
+    assert_eq!(
+        find_response(&seed, "writeMemory").unwrap()["body"]["bytesWritten"],
+        json!(8)
+    );
+
+    // A 16-byte write from cell 9999 straddles the end of memory (cell 10000
+    // is out of range) and must be rejected atomically.
+    let wr = h.send(
+        "writeMemory",
+        json!({ "memoryReference": "9999", "offset": 0, "data": "/////////////////////w==" }),
+    );
+    assert_eq!(
+        find_response(&wr, "writeMemory").expect("writeMemory response")["success"],
+        json!(false)
+    );
+
+    // The seeded cell must be unchanged (no partial write leaked through).
+    let rd = h.send(
+        "readMemory",
+        json!({ "memoryReference": "9999", "offset": 0, "count": 8 }),
+    );
+    assert_eq!(
+        find_response(&rd, "readMemory").unwrap()["body"]["data"],
+        json!("AQIDBAUGBwg=")
+    );
+}
+
+#[test]
+fn read_memory_overflowing_reference_is_rejected() {
+    let mut h = Harness::new();
+    launch_globals(&mut h);
+
+    // A cell address this large overflows when multiplied by the cell size
+    // (8 bytes); it must produce an error response, not panic.
+    let rd = h.send(
+        "readMemory",
+        json!({ "memoryReference": "1500000000000000000", "offset": 0, "count": 8 }),
+    );
+    assert_eq!(
+        find_response(&rd, "readMemory").expect("readMemory response")["success"],
+        json!(false)
+    );
+}
+
+#[test]
+fn read_memory_unaligned_offset_reports_cell_address() {
+    let mut h = Harness::new();
+    launch_globals(&mut h);
+    let ev = h.send("evaluate", json!({ "expression": "value" }));
+    let mref = find_response(&ev, "evaluate").unwrap()["body"]["memoryReference"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    // Seed a known little-endian byte pattern into the cell: bytes 01..08.
+    h.send(
+        "writeMemory",
+        json!({ "memoryReference": mref, "offset": 0, "data": "AQIDBAUGBwg=" }),
+    );
+
+    // Read 2 bytes at an unaligned byte offset of 1 (mid-cell): bytes 02, 03.
+    let rd = h.send(
+        "readMemory",
+        json!({ "memoryReference": mref, "offset": 1, "count": 2 }),
+    );
+    let body = &find_response(&rd, "readMemory").unwrap()["body"];
+    // base64 of [0x02, 0x03].
+    assert_eq!(body["data"], json!("AgM="));
+    // The `address` field is cell-granular: it names the containing cell, not
+    // the byte offset, so it still equals the original memory reference.
+    assert_eq!(body["address"], json!(mref));
+}
+
+#[test]
+fn read_memory_past_end_reports_unreadable_tail() {
+    let mut h = Harness::new();
+    launch_globals(&mut h);
+
+    // Cell 9999 is the last valid cell (MEMORY_SIZE == 10000). Reading two
+    // cells' worth of bytes from there leaves the second cell unreadable.
+    let rd = h.send(
+        "readMemory",
+        json!({ "memoryReference": "9999", "offset": 0, "count": 16 }),
+    );
+    let body = &find_response(&rd, "readMemory").unwrap()["body"];
+    assert_eq!(body["address"], json!("9999"));
+    assert_eq!(body["unreadableBytes"], json!(8));
+    // Only the readable 8 bytes are returned (base64 of 8 zero bytes).
+    assert_eq!(body["data"], json!("AAAAAAAAAAA="));
+}
+
+#[test]
+fn write_memory_unaligned_requires_allow_partial() {
+    let mut h = Harness::new();
+    launch_globals(&mut h);
+    let ev = h.send("evaluate", json!({ "expression": "value" }));
+    let mref = find_response(&ev, "evaluate").unwrap()["body"]["memoryReference"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    // Unaligned (mid-cell) write without allowPartial is rejected.
+    let wr = h.send(
+        "writeMemory",
+        json!({ "memoryReference": mref, "offset": 1, "data": "/w==" }),
+    );
+    let resp = find_response(&wr, "writeMemory").expect("writeMemory response");
+    assert_eq!(resp["success"], json!(false));
+
+    // `value` holds 42; it must be untouched by the rejected write.
+    let ev = h.send("evaluate", json!({ "expression": "[value]" }));
+    assert!(find_response(&ev, "evaluate").unwrap()["body"]["result"]
+        .as_str()
+        .unwrap()
+        .starts_with("42"));
+
+    // With allowPartial the same write succeeds via read-modify-write, setting
+    // byte 1 of the cell to 0xff: 42 | (0xff << 8) == 65322.
+    let wr = h.send(
+        "writeMemory",
+        json!({ "memoryReference": mref, "offset": 1, "data": "/w==", "allowPartial": true }),
+    );
+    assert_eq!(
+        find_response(&wr, "writeMemory").unwrap()["body"]["bytesWritten"],
+        json!(1)
+    );
+    let ev = h.send("evaluate", json!({ "expression": "[value]" }));
+    assert!(find_response(&ev, "evaluate").unwrap()["body"]["result"]
+        .as_str()
+        .unwrap()
+        .starts_with("65322"));
+}
+
+#[test]
+fn set_variable_parses_negative_hex() {
+    let mut h = Harness::new();
+    launch_globals(&mut h);
+    let globals = scope_ref(&mut h, 0, "Globals");
+    let resp = h.send(
+        "setVariable",
+        json!({ "variablesReference": globals, "name": "value", "value": "-0x2a" }),
+    );
+    let resp = find_response(&resp, "setVariable").expect("setVariable response");
+    assert_eq!(resp["success"], json!(true));
+    // -0x2a == -42.
+    assert_eq!(resp["body"]["value"], json!("-42"));
+    let ev = h.send("evaluate", json!({ "expression": "[value]" }));
+    assert!(find_response(&ev, "evaluate").unwrap()["body"]["result"]
+        .as_str()
+        .unwrap()
+        .starts_with("-42"));
 }
 
 #[test]

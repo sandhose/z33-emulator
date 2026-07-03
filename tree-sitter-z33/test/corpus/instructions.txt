@@ -92,3 +92,31 @@ uppercase mnemonic
     (register)
     (register)))
 
+
+==================
+mnemonic-named identifier operands
+==================
+    push or
+    jmp add
+---
+
+(source_file
+  (instruction
+    mnemonic: (mnemonic)
+    (identifier))
+  (newline)
+  (instruction
+    mnemonic: (mnemonic)
+    (identifier)))
+
+==================
+uppercase registers
+==================
+    add %A, %SP
+---
+
+(source_file
+  (instruction
+    mnemonic: (mnemonic)
+    (register)
+    (register)))

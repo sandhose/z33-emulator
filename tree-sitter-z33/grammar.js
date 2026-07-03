@@ -52,13 +52,6 @@ function ci(word) {
   );
 }
 
-const MNEMONICS = [
-  "add", "and", "call", "cmp", "div", "fas", "in", "jmp", "jeq", "jne",
-  "jle", "jlt", "jge", "jgt", "ld", "mul", "neg", "nop", "not", "or",
-  "out", "pop", "push", "reset", "rti", "rtn", "shl", "shr", "st", "sub",
-  "swap", "trap", "xor",
-];
-
 const DIRECTIVES = ["word", "space", "string", "addr"];
 const REGISTERS = ["a", "b", "pc", "sp", "sr"];
 
@@ -106,13 +99,18 @@ module.exports = grammar({
     // Instructions
     // -------------------------------------------------------------------
 
+    // The mnemonic is lexically just an identifier (aliased to a `mnemonic`
+    // node). Making it a dedicated reserved-word token was greedy: it stole
+    // mnemonic-shaped labels (`add:`) and mnemonic-shaped identifier operands
+    // (`push or`, `jmp add`), turning them into ERROR nodes. The chumsky
+    // reference only commits to a label on the trailing `:`, so identifiers and
+    // mnemonics must share the same lexical shape. Actual-mnemonic coloring is
+    // handled in the highlight queries with a case-insensitive `#match?`.
     instruction: ($) =>
       seq(
-        field("mnemonic", $.mnemonic),
+        field("mnemonic", alias($.identifier, $.mnemonic)),
         optional(seq($._operand, repeat(seq(",", $._operand)))),
       ),
-
-    mnemonic: (_) => token(prec(2, choice(...MNEMONICS.map(ci)))),
 
     _operand: ($) =>
       choice($.register, $.direct, $.indirect, $.indexed, $._expression),

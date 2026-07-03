@@ -83,3 +83,17 @@ no trailing newline
   (instruction
     mnemonic: (mnemonic)))
 
+
+==================
+mnemonic-named label
+==================
+add:
+    reset
+---
+
+(source_file
+  (label
+    name: (identifier))
+  (newline)
+  (instruction
+    mnemonic: (mnemonic)))

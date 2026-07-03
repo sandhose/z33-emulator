@@ -18,7 +18,6 @@ bitflags.workspace = true
 camino.workspace = true
 chumsky.workspace = true
 codespan-reporting.workspace = true
-dashmap.workspace = true
 percent-encoding.workspace = true
 serde.workspace = true
 serde_json.workspace = true

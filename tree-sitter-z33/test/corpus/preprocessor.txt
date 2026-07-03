@@ -206,3 +206,16 @@ handler:
       (identifier))
     (register)))
 
+
+==================
+define with trailing comment
+==================
+#define X 5 // set X
+---
+
+(source_file
+  (preproc_define
+    (preproc_directive)
+    name: (identifier)
+    value: (preproc_arg))
+  (comment))

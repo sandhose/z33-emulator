@@ -3,24 +3,28 @@
   "title": "Z33 Debug Adapter Configuration",
   "type": "object",
   "properties": {
-    "adapter": {
-      "type": "string",
-      "enum": ["z33"]
-    },
     "label": {
       "type": "string",
       "description": "Human-readable name for this debug configuration",
-      "examples": ["Debug main.s"]
+      "examples": [
+        "Debug main.s"
+      ]
     },
     "program": {
       "type": "string",
       "description": "Path to the Z33 assembly file to debug",
-      "examples": ["main.s", "samples/fact.s"]
+      "examples": [
+        "main.s",
+        "samples/fact.s"
+      ]
     },
     "entrypoint": {
       "type": "string",
       "description": "Label to start execution from. Defaults to whichever of main, start, run, or entry is defined in the program.",
-      "examples": ["main", "start"]
+      "examples": [
+        "main",
+        "start"
+      ]
     },
     "stopOnEntry": {
       "type": "boolean",
@@ -28,6 +32,8 @@
       "default": false
     }
   },
-  "required": ["program", "adapter"],
+  "required": [
+    "program"
+  ],
   "additionalProperties": false
 }
