@@ -2,7 +2,28 @@
 
 This is an emulator for the z33 architecture used in the _"Architecture des Systèmes d'Exploitation"_ course at the University of Strasbourg.
 
-## Getting the emulator
+## Web editor
+
+The easiest way to use the emulator is the web IDE at **<https://sandhose.github.io/z33-emulator/>** — an editor with completion, hover documentation and live diagnostics, plus a step debugger with registers, breakpoints and a full memory view. Everything runs in the browser; there is nothing to install.
+
+## Editor extensions
+
+### Visual Studio Code
+
+Install **Z33 Assembly** from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=quentin-gliech.z33-assembly), or from [Open VSX](https://open-vsx.org/extension/quentin-gliech/z33-assembly) for VSCodium and other compatible editors.
+
+It is a pure web extension: syntax highlighting, diagnostics, completion, go-to-definition/rename and the debugger (`F5` with a `z33` launch configuration) all run as WebAssembly inside the editor, so it works the same on desktop VS Code and on [vscode.dev](https://vscode.dev) / [github.dev](https://github.dev).
+
+### Zed
+
+The Zed extension is not published to the extension registry yet, but it can be installed as a dev extension (this compiles it locally, so a [Rust toolchain](https://www.rust-lang.org/tools/install) is required):
+
+1. Clone this repository.
+2. In Zed, open the command palette and run `zed: install dev extension`, then select the `zed/` directory.
+
+The extension provides highlighting (tree-sitter), the language server and the debugger. It uses `z33-cli` from your `PATH` if available, and otherwise downloads a prebuilt binary from the GitHub releases automatically.
+
+## Command-line emulator
 
 ### Binaries
 
