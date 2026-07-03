@@ -132,7 +132,7 @@
     "vscode-languageclient": "^10.1.0"
   },
   "devDependencies": {
-    "@types/vscode": "^1.125.0",
+    "@types/vscode": "~1.100.0",
     "@vscode/test-web": "^0.0.81",
     "@vscode/vsce": "^3.9.2",
     "esbuild": "^0.28.0",
