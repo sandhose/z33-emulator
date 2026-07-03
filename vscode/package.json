@@ -3,7 +3,7 @@
   "displayName": "Z33 Assembly",
   "description": "Z33 (Zorglub-33) assembly language support",
   "version": "0.7.0",
-  "publisher": "sandhose",
+  "publisher": "quentin-gliech",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -135,6 +135,7 @@
     "@types/vscode": "~1.100.0",
     "@vscode/vsce": "^3.9.2",
     "esbuild": "^0.28.0",
+    "ovsx": "^1.0.2",
     "oxfmt": "^0.57.0",
     "oxlint": "^1.72.0",
     "typescript": "6.0.3",
