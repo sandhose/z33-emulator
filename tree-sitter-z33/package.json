@@ -1,6 +1,6 @@
 {
   "name": "tree-sitter-z33",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "private": true,
   "description": "Z33 (Zorglub-33) assembly grammar for tree-sitter",
   "repository": "https://github.com/sandhose/z33-emulator",
