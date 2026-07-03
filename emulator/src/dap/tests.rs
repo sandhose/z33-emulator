@@ -1091,3 +1091,47 @@ fn register_value(messages: &[Value], name: &str) -> String {
         .expect("register present")
         .to_owned()
 }
+
+/// VS Code sends a `source` request (with `sourceReference: 0` and only a
+/// path) whenever it cannot open a frame's `Source.path` itself — e.g. the
+/// relative paths of `#include`d files in the web extension. Regression test:
+/// this must return the file's content, not "unsupported request".
+#[test]
+fn source_request_by_path() {
+    let mut h = Harness::new();
+    h.send("initialize", json!({}));
+    h.send(
+        "launch",
+        json!({
+            "program": "/main.s",
+            "entrypoint": "main",
+            "stopOnEntry": true,
+            "files": {
+                "/main.s": "#include \"lib.s\"\nmain:\n    call helper\n    reset\n",
+                "/lib.s": "helper:\n    rtn\n",
+            },
+        }),
+    );
+    h.send("configurationDone", json!({}));
+
+    // Mimic VS Code's fallback shape: sourceReference 0, path-only lookup.
+    let out = h.send(
+        "source",
+        json!({
+            "source": { "name": "lib.s", "path": "/lib.s", "sourceReference": 0 },
+            "sourceReference": 0,
+        }),
+    );
+    let resp = find_response(&out, "source").expect("source response");
+    assert_eq!(
+        resp["success"],
+        json!(true),
+        "source request must succeed: {resp}"
+    );
+    assert_eq!(resp["body"]["content"], json!("helper:\n    rtn\n"));
+
+    // Unknown paths still fail cleanly.
+    let out = h.send("source", json!({ "source": { "path": "/nope.s" } }));
+    let resp = find_response(&out, "source").expect("source response");
+    assert_eq!(resp["success"], json!(false));
+}
