@@ -18,7 +18,7 @@
 //! symbols), and macro *definitions* / label *definitions* emit nothing (the
 //! grammars classify those structurally).
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 
 use tower_lsp::lsp_types::{
     SemanticToken, SemanticTokenType, SemanticTokens, SemanticTokensLegend,
@@ -27,8 +27,10 @@ use tower_lsp::lsp_types::{
 use super::document::{DocumentState, LabelKind};
 use super::position;
 use super::references::OccurrenceKind;
+use crate::diagnostic::FileId;
 use crate::parser::line::LineContent;
 use crate::parser::value::DirectiveArgument;
+use crate::preprocessor::SourceAnnotations;
 
 /// The token types we use, in the order they appear in the legend.
 pub const TOKEN_TYPES: &[SemanticTokenType] = &[
@@ -136,6 +138,58 @@ fn is_ident_char(b: u8) -> bool {
     b.is_ascii_alphanumeric() || b == b'_'
 }
 
+/// Scope events per macro name, ordered by position in the ROOT file. A
+/// directive in the root anchors at its own line; a directive in an
+/// `#include`d file anchors at the root `#include` line that pulled it in
+/// (falling back to "live from the top" when the include site cannot be
+/// identified, e.g. nested includes). The secondary key preserves directive
+/// order within one anchor so a define+undefine pair inside an included file
+/// nets out correctly at the include site.
+fn macro_scope_events<'a>(
+    state: &DocumentState,
+    ann: &'a SourceAnnotations,
+    root: FileId,
+) -> HashMap<&'a str, Vec<(usize, usize, bool)>> {
+    let anchor = |file_id: FileId, own_start: usize| -> (usize, usize) {
+        if file_id == root {
+            return (own_start, 0);
+        }
+        let target = state.file_path(file_id);
+        let site = ann
+            .inclusions
+            .iter()
+            .filter(|inc| inc.file_id == root)
+            .find(|inc| {
+                target.is_some_and(|path| {
+                    path.as_str() == inc.path || path.as_str().ends_with(inc.path.as_str())
+                })
+            })
+            .map(|inc| inc.span.start);
+        (site.unwrap_or(0), own_start)
+    };
+
+    // (anchor position, tie-break, is-define)
+    let mut events: HashMap<&str, Vec<(usize, usize, bool)>> = HashMap::new();
+    for d in &ann.definitions {
+        let (pos, tie) = anchor(d.file_id, d.span.start);
+        events
+            .entry(d.key.as_str())
+            .or_default()
+            .push((pos, tie, true));
+    }
+    for u in &ann.undefinitions {
+        let (pos, tie) = anchor(u.file_id, u.span.start);
+        events
+            .entry(u.key.as_str())
+            .or_default()
+            .push((pos, tie, false));
+    }
+    for list in events.values_mut() {
+        list.sort_unstable_by_key(|&(pos, tie, _)| (pos, tie));
+    }
+    events
+}
+
 /// Scan the original root source for bare identifiers that name a `#define`d
 /// macro and emit a [`SemanticTokenType::MACRO`] token for each.
 ///
@@ -149,14 +203,23 @@ fn collect_macro_references(state: &DocumentState, out: &mut Vec<RawToken>) {
         return;
     };
 
-    // Macro names are in scope regardless of which file defined them.
-    let keys: HashSet<&str> = ann.definitions.iter().map(|d| d.key.as_str()).collect();
-    if keys.is_empty() {
-        return;
-    }
-
     let source = state.source();
     let root = state.root_file_id();
+
+    let events = macro_scope_events(state, ann, root);
+    if events.is_empty() {
+        return;
+    }
+    // A word is a live macro at `at` iff the last scope event before `at` is a
+    // definition.
+    let live = |word: &str, at: usize| -> bool {
+        events.get(word).is_some_and(|list| {
+            list.iter()
+                .rev()
+                .find(|&&(pos, _, _)| pos < at)
+                .is_some_and(|&(_, _, is_define)| is_define)
+        })
+    };
 
     // Spans in the root file that must not be scanned for macro usages.
     let mut protected: Vec<(usize, usize)> = Vec::new();
@@ -205,7 +268,7 @@ fn collect_macro_references(state: &DocumentState, out: &mut Vec<RawToken>) {
             }
             let word = &source[start..i];
             let protected_here = protected.iter().any(|(ps, pe)| start < *pe && *ps < i);
-            if !protected_here && keys.contains(word) {
+            if !protected_here && live(word, start) {
                 out.push((start, i - start, TK_MACRO));
             }
         } else {
@@ -253,6 +316,58 @@ mod tests {
     fn tokens(src: &str) -> Vec<Decoded> {
         let state = DocumentState::new(src.to_string());
         decode(&semantic_tokens(Some(&state), src))
+    }
+
+    #[test]
+    fn macro_usage_after_undefine_is_not_tagged() {
+        // After `#undefine N`, `N` is a plain identifier again.
+        let src = "#define N 5\n#undefine N\nmain:\n    push N\n    reset\n";
+        let toks = tokens(src);
+        assert!(toks.iter().all(|t| t.ty != "macro"), "{toks:?}");
+    }
+
+    #[test]
+    fn macro_usage_before_define_is_not_tagged() {
+        // A usage textually before the `#define` is out of scope.
+        let src = "main:\n    push N\n    reset\n#define N 5\n";
+        let toks = tokens(src);
+        assert!(toks.iter().all(|t| t.ty != "macro"), "{toks:?}");
+    }
+
+    #[test]
+    fn cross_file_macro_is_live_after_the_include_site() {
+        use camino::Utf8PathBuf;
+
+        use crate::preprocessor::InMemoryFilesystem;
+
+        // `N` is defined by lib.s: live only after the `#include` line.
+        let root = "main:\n    push N\n#include \"lib.s\"\n    push N\n    reset\n";
+        let fs = InMemoryFilesystem::new([
+            (Utf8PathBuf::from("main.s"), root.to_string()),
+            (Utf8PathBuf::from("lib.s"), "#define N 5\n".to_string()),
+        ]);
+        let state = DocumentState::analyze(&fs, Utf8PathBuf::from("main.s").as_path());
+        let toks = decode(&semantic_tokens(Some(&state), root));
+        let macros: Vec<_> = toks.iter().filter(|t| t.ty == "macro").collect();
+        // Only the second `push N` (line 3) is a live macro usage.
+        assert_eq!(macros.len(), 1, "{toks:?}");
+        assert_eq!(macros[0].line, 3, "{toks:?}");
+    }
+
+    #[test]
+    fn reference_to_unplaced_label_defaults_to_code() {
+        // `end:` has no placed cell after it; label_kind falls back to Code.
+        let src = "main:\n    jmp end\n    reset\nend:\n";
+        let toks = tokens(src);
+        assert_eq!(
+            toks,
+            vec![Decoded {
+                line: 1,
+                character: 8,
+                length: 3,
+                ty: "function"
+            }]
+        );
     }
 
     #[test]
