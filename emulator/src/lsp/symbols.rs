@@ -9,14 +9,16 @@ pub fn document_symbols(state: &DocumentState) -> Vec<DocumentSymbol> {
     let source = state.source();
     let mut symbols = Vec::new();
 
-    // Labels — use occurrence map for definition spans
+    // Labels — use occurrence map for definition spans. Only include labels
+    // whose definition lives in this (root) document.
+    let root = state.root_file_id();
     let mut label_defs: Vec<(&str, u32, std::ops::Range<usize>)> = state
         .labels()
         .iter()
         .filter_map(|(name, addr)| {
             let def = state
                 .occurrences_of(name)
-                .find(|o| o.kind == OccurrenceKind::Definition)?;
+                .find(|o| o.kind == OccurrenceKind::Definition && o.file_id == root)?;
             Some((name.as_str(), *addr, def.span.clone()))
         })
         .collect();
@@ -62,9 +64,9 @@ pub fn document_symbols(state: &DocumentState) -> Vec<DocumentSymbol> {
         });
     }
 
-    // Macros (#define)
+    // Macros (#define) defined in this document
     if let Some(annotations) = state.annotations() {
-        for def in &annotations.definitions {
+        for def in annotations.definitions.iter().filter(|d| d.file_id == root) {
             let Some(range) = position::range(source, def.span.clone()) else {
                 continue;
             };

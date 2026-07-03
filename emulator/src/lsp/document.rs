@@ -1,37 +1,52 @@
 use std::collections::BTreeMap;
+use std::ops::Range;
 
-use camino::Utf8PathBuf;
+use camino::{Utf8Path, Utf8PathBuf};
 
-use super::references::{self, OccurrenceKind, SymbolOccurrence};
+use super::references::{self, SymbolOccurrence};
 use crate::compiler::layout::{self, Layout, MemoryLayoutError};
 use crate::compiler::memory::{self, MemoryFillError};
 use crate::constants::Address;
-use crate::diagnostic::{self};
+use crate::diagnostic::{self, FileId};
 use crate::parser::assembly::ParseResult;
 use crate::parser::line::Program;
 use crate::parser::shared::ParseDiagnostic;
 use crate::parser::{self};
 use crate::preprocessor::{
-    InMemoryFilesystem, PreprocessorError, ReferencingSourceMap, SourceAnnotations, Workspace,
+    Filesystem, InMemoryFilesystem, PreprocessorError, ReferencingSourceMap, SourceAnnotations,
+    Workspace,
 };
 
 /// The virtual filename used for single-file LSP documents.
 const VIRTUAL_FILENAME: &str = "main.S";
 
-/// Cached analysis state for a single document.
+/// The [`FileId`] of the root document. The preprocessor always registers the
+/// entrypoint first, so it is guaranteed to be `0`.
+const ROOT_FILE_ID: FileId = 0;
+
+/// Cached analysis state for a single document, treated as a preprocessing
+/// root.
 ///
 /// Runs the full pipeline (preprocess → parse → layout → fill) synchronously
 /// on construction. The preprocessor handles comment stripping, macro
-/// expansion, and conditional compilation.
+/// expansion, conditional compilation, and `#include` resolution against the
+/// provided [`Filesystem`].
+///
+/// Because a document may `#include` others, analysis spans multiple files:
+/// every [`SymbolOccurrence`], diagnostic, and span carries the [`FileId`] of
+/// the file it belongs to. Use [`file_path`](Self::file_path) /
+/// [`file_source`](Self::file_source) to map a [`FileId`] back to its path and
+/// contents.
 pub struct DocumentState {
-    /// The original source as provided by the editor.
+    /// The original source of the root document (what the editor shows).
     original_source: String,
-    /// Maps byte offsets in the preprocessed source back to the original.
+    /// Maps byte offsets in the preprocessed source back to the original files.
     /// `None` when preprocessing failed.
     source_map: Option<ReferencingSourceMap>,
-    /// File ID of the original source in the file database (always 0 for
-    /// single-file workspaces).
-    original_file_id: usize,
+    /// Relative path of every source file involved in this analysis.
+    file_paths: BTreeMap<FileId, Utf8PathBuf>,
+    /// Source text of every file involved in this analysis (keyed by id).
+    file_sources: BTreeMap<FileId, String>,
     /// Preprocessor error, if any.
     preprocessor_error: Option<PreprocessorError>,
     /// Parse result (only available if preprocessing succeeded).
@@ -42,67 +57,82 @@ pub struct DocumentState {
     layout_errors: Vec<MemoryLayoutError>,
     fill_errors: Vec<MemoryFillError>,
     /// All symbol occurrences (definitions + references) with spans resolved
-    /// to original source coordinates.
+    /// to original-source coordinates and tagged with their file id.
     occurrences: Vec<SymbolOccurrence>,
 }
 
 impl DocumentState {
-    /// Analyze a document through the full pipeline.
+    /// Analyze a single, self-contained document (no `#include` resolution).
+    ///
+    /// Convenience wrapper around [`analyze`](Self::analyze) used by tests and
+    /// callers that don't have a workspace filesystem.
     #[must_use]
     pub fn new(source: String) -> Self {
-        let fs = InMemoryFilesystem::new([(Utf8PathBuf::from(VIRTUAL_FILENAME), source.clone())]);
-        let mut workspace = Workspace::new(&fs, VIRTUAL_FILENAME);
+        let fs = InMemoryFilesystem::new([(Utf8PathBuf::from(VIRTUAL_FILENAME), source)]);
+        Self::analyze(&fs, Utf8Path::new(VIRTUAL_FILENAME))
+    }
+
+    /// Analyze a document through the full pipeline, using `fs` as the root of
+    /// the workspace and `root_path` (relative to that root) as the
+    /// entrypoint.
+    ///
+    /// `#include` directives are resolved against `fs`, so cross-file features
+    /// work as long as the filesystem can produce the included files.
+    #[must_use]
+    pub fn analyze<FS: Filesystem>(fs: &FS, root_path: &Utf8Path) -> Self {
+        let mut workspace = Workspace::new(fs, root_path);
+        let original_source = workspace.file_db().source(ROOT_FILE_ID).to_string();
 
         match workspace.preprocess() {
             Ok(result) => {
                 let source_map: ReferencingSourceMap = result.source_map.into();
-                let original_file_id = 0;
+
+                // Snapshot the file registry (relative path + source) for every
+                // file that took part in this analysis.
+                let file_paths: BTreeMap<FileId, Utf8PathBuf> = workspace
+                    .file_ids()
+                    .map(|(id, path)| (id, path.to_owned()))
+                    .collect();
+                let file_sources: BTreeMap<FileId, String> = file_paths
+                    .keys()
+                    .map(|&id| (id, workspace.file_db().source(id).to_string()))
+                    .collect();
 
                 let parse_result = parser::parse(&result.source);
                 let (layout, layout_errors) =
                     layout::layout_memory(&parse_result.program.inner.lines);
                 let (_, fill_errors) = memory::fill_memory(&layout);
 
-                // Collect all symbol occurrences and resolve spans to
-                // original source coordinates.
-                let raw_occurrences = references::collect_occurrences(
-                    Some(&parse_result.program.inner),
-                    Some(&result.annotations),
-                );
-
-                let occurrences = raw_occurrences
-                    .into_iter()
-                    .filter_map(|mut occ| {
-                        // Annotation spans (macro defs) are already in original
-                        // coordinates. AST spans need resolve_span.
-                        if occ.kind == OccurrenceKind::Definition
-                            && result
-                                .annotations
-                                .definitions
-                                .iter()
-                                .any(|d| d.key == occ.name && d.span == occ.span)
-                        {
-                            // Already in original coordinates
+                // AST occurrences carry preprocessed spans: resolve each back
+                // to (file_id, original range).
+                let mut occurrences: Vec<SymbolOccurrence> =
+                    references::collect_occurrences(Some(&parse_result.program.inner))
+                        .into_iter()
+                        .filter_map(|mut occ| {
+                            let (file_id, range) =
+                                diagnostic::resolve_to_original(&source_map, occ.span.clone())?;
+                            occ.file_id = file_id;
+                            occ.span = range;
                             Some(occ)
-                        } else if let Some((file_id, range)) =
-                            diagnostic::resolve_to_original(&source_map, occ.span.clone())
-                        {
-                            if file_id == original_file_id {
-                                occ.span = range;
-                                Some(occ)
-                            } else {
-                                None
-                            }
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
+                        })
+                        .collect();
+
+                // Macro (#define) definitions come from annotations, already in
+                // original coordinates with a file id.
+                for def in &result.annotations.definitions {
+                    occurrences.push(SymbolOccurrence {
+                        name: def.key.clone(),
+                        file_id: def.file_id,
+                        span: def.span.clone(),
+                        kind: references::OccurrenceKind::Definition,
+                    });
+                }
 
                 Self {
-                    original_source: source,
+                    original_source,
                     source_map: Some(source_map),
-                    original_file_id,
+                    file_paths,
+                    file_sources,
                     preprocessor_error: None,
                     parse_result: Some(parse_result),
                     annotations: Some(result.annotations),
@@ -113,11 +143,22 @@ impl DocumentState {
                 }
             }
             Err(error) => {
-                let original_file_id = 0;
+                // Even on failure, expose whatever files were loaded so
+                // diagnostics can be attributed to the right file.
+                let file_paths: BTreeMap<FileId, Utf8PathBuf> = workspace
+                    .file_ids()
+                    .map(|(id, path)| (id, path.to_owned()))
+                    .collect();
+                let file_sources: BTreeMap<FileId, String> = file_paths
+                    .keys()
+                    .map(|&id| (id, workspace.file_db().source(id).to_string()))
+                    .collect();
+
                 Self {
-                    original_source: source,
+                    original_source,
                     source_map: None,
-                    original_file_id,
+                    file_paths,
+                    file_sources,
                     preprocessor_error: Some(error),
                     parse_result: None,
                     annotations: None,
@@ -130,10 +171,28 @@ impl DocumentState {
         }
     }
 
-    /// The original source text (what the editor shows).
+    /// The original source text of the root document (what the editor shows).
     #[must_use]
     pub fn source(&self) -> &str {
         &self.original_source
+    }
+
+    /// The [`FileId`] of the root document.
+    #[must_use]
+    pub fn root_file_id(&self) -> FileId {
+        ROOT_FILE_ID
+    }
+
+    /// The relative path of a file that took part in this analysis.
+    #[must_use]
+    pub fn file_path(&self, file_id: FileId) -> Option<&Utf8Path> {
+        self.file_paths.get(&file_id).map(Utf8PathBuf::as_path)
+    }
+
+    /// The source text of a file that took part in this analysis.
+    #[must_use]
+    pub fn file_source(&self, file_id: FileId) -> Option<&str> {
+        self.file_sources.get(&file_id).map(String::as_str)
     }
 
     #[must_use]
@@ -178,16 +237,18 @@ impl DocumentState {
         &self.occurrences
     }
 
-    /// Find the symbol occurrence at the given byte offset in the original
-    /// source, if any.
+    /// Find the symbol occurrence at the given byte offset in the **root**
+    /// document, if any. The cursor is always in the root document, so
+    /// occurrences from included files are ignored here.
     #[must_use]
     pub fn occurrence_at(&self, offset: usize) -> Option<&SymbolOccurrence> {
         self.occurrences
             .iter()
-            .find(|occ| occ.span.contains(&offset))
+            .find(|occ| occ.file_id == ROOT_FILE_ID && occ.span.contains(&offset))
     }
 
-    /// Find all occurrences of the symbol with the given name.
+    /// Find all occurrences of the symbol with the given name, across every
+    /// file in the analysis.
     pub fn occurrences_of<'a>(
         &'a self,
         name: &'a str,
@@ -195,20 +256,28 @@ impl DocumentState {
         self.occurrences.iter().filter(move |occ| occ.name == name)
     }
 
-    /// Map a byte range in the preprocessed source back to a byte range in
-    /// the original source. Returns the span unchanged if no source map is
-    /// available.
+    /// Map a byte range in the preprocessed source back to a byte range in the
+    /// **root** document. Returns `None` if the span belongs to an included
+    /// file. Returns the span unchanged if no source map is available.
     #[must_use]
-    pub fn resolve_span(&self, span: std::ops::Range<usize>) -> Option<std::ops::Range<usize>> {
-        let Some(source_map) = self.source_map.as_ref() else {
-            return Some(span);
-        };
-        let (file_id, range) = diagnostic::resolve_to_original(source_map, span)?;
-        if file_id == self.original_file_id {
+    pub fn resolve_span(&self, span: Range<usize>) -> Option<Range<usize>> {
+        let (file_id, range) = self.resolve_span_file(span.clone())?;
+        if file_id == ROOT_FILE_ID {
             Some(range)
         } else {
             None
         }
+    }
+
+    /// Map a byte range in the preprocessed source back to the file id and
+    /// byte range in that original file. Returns `(ROOT_FILE_ID, span)`
+    /// unchanged if no source map is available.
+    #[must_use]
+    pub fn resolve_span_file(&self, span: Range<usize>) -> Option<(FileId, Range<usize>)> {
+        let Some(source_map) = self.source_map.as_ref() else {
+            return Some((ROOT_FILE_ID, span));
+        };
+        diagnostic::resolve_to_original(source_map, span)
     }
 }
 
@@ -436,5 +505,59 @@ mod tests {
 
         // Should produce a fill error for undefined label
         assert!(!state.fill_errors().is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // Multi-file analysis
+    // -----------------------------------------------------------------------
+
+    use crate::preprocessor::InMemoryFilesystem;
+
+    fn fs(files: &[(&str, &str)]) -> InMemoryFilesystem {
+        InMemoryFilesystem::new(
+            files
+                .iter()
+                .map(|(p, c)| (Utf8PathBuf::from(*p), (*c).to_string()))
+                .collect::<std::collections::HashMap<_, _>>(),
+        )
+    }
+
+    #[test]
+    fn include_resolves_across_files() {
+        let fs = fs(&[
+            ("main.s", "#include \"util.s\"\n    jmp target\n"),
+            ("util.s", "target:\n    reset\n"),
+        ]);
+        let state = DocumentState::analyze(&fs, Utf8Path::new("main.s"));
+
+        // No preprocessor error: the include resolved.
+        assert!(state.preprocessor_error().is_none());
+
+        // The label `target` is known and its definition lives in util.s.
+        assert!(state.labels().contains_key("target"));
+        let def = state
+            .occurrences_of("target")
+            .find(|o| o.kind == references::OccurrenceKind::Definition)
+            .expect("definition of target");
+        let def_path = state.file_path(def.file_id).unwrap();
+        assert_eq!(def_path, Utf8Path::new("util.s"));
+        assert_eq!(
+            slice(state.file_source(def.file_id).unwrap(), &def.span),
+            "target"
+        );
+
+        // The reference `jmp target` lives in the root document.
+        let reference = state
+            .occurrences_of("target")
+            .find(|o| o.kind == references::OccurrenceKind::Reference)
+            .expect("reference to target");
+        assert_eq!(reference.file_id, state.root_file_id());
+    }
+
+    #[test]
+    fn missing_include_is_a_preprocessor_error() {
+        let fs = fs(&[("main.s", "#include \"nope.s\"\n    reset\n")]);
+        let state = DocumentState::analyze(&fs, Utf8Path::new("main.s"));
+        assert!(state.preprocessor_error().is_some());
     }
 }

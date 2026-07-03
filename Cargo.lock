@@ -1992,6 +1992,7 @@ dependencies = [
  "indoc",
  "insta",
  "parse-display",
+ "percent-encoding",
  "pretty_assertions",
  "serde_json",
  "smallvec",

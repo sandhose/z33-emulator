@@ -6,18 +6,26 @@
 
 use std::ops::Range;
 
+use crate::diagnostic::FileId;
 use crate::parser::expression::Node as ExpressionNode;
 use crate::parser::line::{LineContent, Program};
 use crate::parser::value::{DirectiveArgument, InstructionArgument};
-use crate::preprocessor::SourceAnnotations;
 
 /// A single occurrence of a symbol in the source.
 #[derive(Debug, Clone)]
 pub struct SymbolOccurrence {
     /// The symbol name.
     pub name: String,
-    /// Byte span in the preprocessed source (use `resolve_span` to map to
-    /// original).
+    /// The original file the occurrence lives in.
+    ///
+    /// While occurrences are being collected from the AST this is a
+    /// placeholder (`0`); [`DocumentState`](super::document::DocumentState)
+    /// overwrites it with the real file id once the span has been resolved
+    /// through the source map.
+    pub file_id: FileId,
+    /// Byte span of the occurrence. Freshly collected AST occurrences carry a
+    /// span in the *preprocessed* source; once resolved they carry a span in
+    /// the *original* file identified by `file_id`.
     pub span: Range<usize>,
     /// Whether this is a definition or a reference.
     pub kind: OccurrenceKind,
@@ -32,15 +40,17 @@ pub enum OccurrenceKind {
     Reference,
 }
 
-/// Collect all symbol occurrences from the parsed program and annotations.
+/// Collect all symbol occurrences from the parsed program.
 ///
-/// Returns occurrences with spans in the **preprocessed** source. The caller
-/// should use `DocumentState::resolve_span` to map them to original-source
-/// coordinates.
-pub fn collect_occurrences(
-    program: Option<&Program>,
-    annotations: Option<&SourceAnnotations>,
-) -> Vec<SymbolOccurrence> {
+/// Returns occurrences with spans in the **preprocessed** source and a
+/// placeholder `file_id` of `0`. The caller should use
+/// [`DocumentState`](super::document::DocumentState) to map them to
+/// original-source coordinates and assign the real file id.
+///
+/// Macro (`#define`) definitions are *not* collected here: they come from the
+/// preprocessor annotations, which already carry original-source spans and file
+/// ids, and are added by the caller.
+pub fn collect_occurrences(program: Option<&Program>) -> Vec<SymbolOccurrence> {
     let mut occurrences = Vec::new();
 
     if let Some(program) = program {
@@ -51,6 +61,7 @@ pub fn collect_occurrences(
             for symbol in &line_inner.symbols {
                 occurrences.push(SymbolOccurrence {
                     name: symbol.inner.clone(),
+                    file_id: 0,
                     span: symbol.location.clone(),
                     kind: OccurrenceKind::Definition,
                 });
@@ -60,17 +71,6 @@ pub fn collect_occurrences(
             if let Some(content) = &line_inner.content {
                 collect_from_content(&content.inner, &mut occurrences);
             }
-        }
-    }
-
-    // Macro definitions from annotations
-    if let Some(ann) = annotations {
-        for def in &ann.definitions {
-            occurrences.push(SymbolOccurrence {
-                name: def.key.clone(),
-                span: def.span.clone(),
-                kind: OccurrenceKind::Definition,
-            });
         }
     }
 
@@ -130,6 +130,7 @@ fn collect_from_expression_top(
         ExpressionNode::Variable(name) => {
             out.push(SymbolOccurrence {
                 name: name.clone(),
+                file_id: 0,
                 span: fallback_span.clone(),
                 kind: OccurrenceKind::Reference,
             });
@@ -148,6 +149,7 @@ fn collect_from_expression(
         ExpressionNode::Variable(name) => {
             out.push(SymbolOccurrence {
                 name: name.clone(),
+                file_id: 0,
                 span: parent_span.clone(),
                 kind: OccurrenceKind::Reference,
             });
