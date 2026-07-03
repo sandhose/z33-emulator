@@ -59,9 +59,7 @@ use crate::diagnostic::{
     preprocessor_error_to_diagnostics, render_to_string, resolve_diagnostic_spans,
 };
 use crate::parser::ExpressionNode;
-use crate::preprocessor::{
-    Filesystem, InMemoryFilesystem, NativeFilesystem, ReferencingSourceMap, Workspace,
-};
+use crate::preprocessor::{Filesystem, InMemoryFilesystem, NativeFilesystem, SourceMap, Workspace};
 use crate::runtime::registers::StatusRegister;
 use crate::runtime::{Cell, Computer, Instruction, ProcessorError, Reg};
 
@@ -1861,7 +1859,7 @@ fn compile_program<FS: Filesystem>(
             .collect::<String>()
     })?;
 
-    let ref_map: ReferencingSourceMap = preprocess.source_map.into();
+    let ref_map: SourceMap = preprocess.source_map;
     let parse_result = crate::parse(&preprocess.source);
 
     // First pass: gather labels and surface any diagnostics.
@@ -1903,7 +1901,7 @@ fn compile_program<FS: Filesystem>(
 
 fn render_diagnostics(
     diagnostics: &[codespan_reporting::diagnostic::Diagnostic<crate::diagnostic::FileId>],
-    source_map: &ReferencingSourceMap,
+    source_map: &SourceMap,
     workspace: &Workspace,
 ) -> String {
     diagnostics

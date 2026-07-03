@@ -16,7 +16,7 @@ use std::ops::Range;
 use crate::compiler::DebugInfo;
 use crate::constants::Address;
 use crate::diagnostic::FileDatabase;
-use crate::preprocessor::ReferencingSourceMap;
+use crate::preprocessor::SourceMap;
 
 /// A resolved source location.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -78,7 +78,7 @@ impl LineIndex {
     #[must_use]
     pub fn build(
         debug_info: &DebugInfo,
-        pre_source_map: &ReferencingSourceMap,
+        pre_source_map: &SourceMap,
         file_db: &FileDatabase,
     ) -> Self {
         // First pass: discover which original files are referenced and create a
@@ -176,14 +176,8 @@ impl LineIndex {
 
 /// Compose an address's preprocessed byte range with the preprocessor source
 /// map to obtain `(original_file_id, original_range)`.
-fn resolve(
-    pre_source_map: &ReferencingSourceMap,
-    range: &Range<usize>,
-) -> Option<(usize, Range<usize>)> {
-    let (chunk_key, span) = pre_source_map.find_with_key(range.start)?;
-    let start = span.range.start + (range.start - chunk_key);
-    let end = span.range.start + (range.end - chunk_key);
-    Some((span.file_id, start..end))
+fn resolve(pre_source_map: &SourceMap, range: &Range<usize>) -> Option<(usize, Range<usize>)> {
+    crate::diagnostic::resolve_to_original(pre_source_map, range.clone())
 }
 
 fn base_name(path: &str) -> &str {

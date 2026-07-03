@@ -15,11 +15,11 @@ use z33_emulator::compile;
 use z33_emulator::constants::Address;
 use z33_emulator::dap::LineIndex;
 use z33_emulator::diagnostic::{
-    diagnostics_to_json, preprocessor_error_to_diagnostics, resolve_diagnostic_spans, FileDatabase,
-    FileId,
+    diagnostics_to_json, preprocessor_error_to_diagnostics, resolve_diagnostic_spans,
+    resolve_to_original, FileDatabase, FileId,
 };
 use z33_emulator::preprocessor::{
-    InMemoryFilesystem, PreprocessorError, ReferencingSourceMap, Workspace,
+    InMemoryFilesystem, PreprocessorError, SourceMap as PreSourceMap, Workspace,
 };
 use z33_emulator::runtime::{Memory, ProcessorError};
 
@@ -102,7 +102,7 @@ impl InMemoryPreprocessor {
             }
         };
         let source_str = &preprocess_result.source;
-        let source_map: ReferencingSourceMap = preprocess_result.source_map.into();
+        let source_map: PreSourceMap = preprocess_result.source_map;
         let parse_result = z33_emulator::parser::parse(source_str);
 
         // Run the full pipeline — compile() handles parse diagnostics,
@@ -155,20 +155,19 @@ pub struct SourceLocation {
 /// location) to produce a map of address → original source location.
 fn compose_source_maps(
     debug_source_map: &BTreeMap<Address, Range<usize>>,
-    preprocessor_source_map: &ReferencingSourceMap,
+    preprocessor_source_map: &PreSourceMap,
     file_db: &FileDatabase,
 ) -> BTreeMap<Address, SourceLocation> {
     debug_source_map
         .iter()
         .filter_map(|(&address, range)| {
-            let (chunk_key, span) = preprocessor_source_map.find_with_key(range.start)?;
-            let start = span.range.start + (range.start - chunk_key);
-            let end = span.range.start + (range.end - chunk_key);
+            let (file_id, orig_range) =
+                resolve_to_original(preprocessor_source_map, range.clone())?;
             Some((
                 address,
                 SourceLocation {
-                    file: file_db.name(span.file_id),
-                    span: (start, end),
+                    file: file_db.name(file_id),
+                    span: (orig_range.start, orig_range.end),
                 },
             ))
         })
@@ -179,7 +178,7 @@ fn compose_source_maps(
 #[derive(Clone)]
 #[allow(clippy::struct_field_names)]
 pub struct Program {
-    source_map: ReferencingSourceMap,
+    source_map: PreSourceMap,
     file_db: FileDatabase,
     preprocessed_file_id: FileId,
     program: z33_emulator::parser::location::Located<z33_emulator::parser::Program>,

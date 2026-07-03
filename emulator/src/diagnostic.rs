@@ -360,7 +360,7 @@ pub fn simple_error(
 /// using the preprocessor source map.
 #[must_use]
 pub fn resolve_to_original(
-    source_map: &crate::preprocessor::ReferencingSourceMap,
+    source_map: &crate::preprocessor::SourceMap,
     range: Range<usize>,
 ) -> Option<(FileId, Range<usize>)> {
     let (chunk_key, span) = source_map.find_with_key(range.start)?;
@@ -376,7 +376,7 @@ pub fn resolve_to_original(
 #[must_use]
 pub fn resolve_diagnostic_spans(
     diag: &Diagnostic<FileId>,
-    source_map: &crate::preprocessor::ReferencingSourceMap,
+    source_map: &crate::preprocessor::SourceMap,
 ) -> Diagnostic<FileId> {
     let labels = diag
         .labels
