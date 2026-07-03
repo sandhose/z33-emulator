@@ -27,7 +27,6 @@ pub struct RunOpt {
 }
 
 impl RunOpt {
-    #[allow(clippy::too_many_lines)]
     pub fn exec(self) -> anyhow::Result<()> {
         let fs = NativeFilesystem::from_env()?;
         info!(path = ?self.input, "Reading program");

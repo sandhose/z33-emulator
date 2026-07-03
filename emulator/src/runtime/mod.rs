@@ -36,9 +36,6 @@ pub enum ProcessorError {
     #[error("invalid value for register {reg}: {inner}")]
     InvalidRegister { reg: Reg, inner: CellError },
 
-    #[error("invalid address {address}")]
-    InvalidAddress { address: C::Word },
-
     #[error("computer reset")]
     Reset,
 }
@@ -231,10 +228,6 @@ impl Computer {
         Ok(val)
     }
 }
-
-#[derive(Error, Debug)]
-#[error("could not parse address")]
-pub struct AddressParseError;
 
 #[cfg(test)]
 mod tests {

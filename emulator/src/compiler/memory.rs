@@ -38,20 +38,6 @@ pub enum MemoryFillError {
     },
 }
 
-impl MemoryFillError {
-    /// The primary location for this error (for backward compat).
-    #[must_use]
-    pub fn location(&self) -> &Range<usize> {
-        match self {
-            MemoryFillError::Evaluation { location, .. }
-            | MemoryFillError::Compute { location, .. } => location,
-            MemoryFillError::InstructionCompilation {
-                instruction_span, ..
-            } => instruction_span,
-        }
-    }
-}
-
 #[derive(Debug, Error)]
 pub enum InstructionCompilationError {
     #[error("'{instruction}' takes {expected} argument(s), got {got}")]

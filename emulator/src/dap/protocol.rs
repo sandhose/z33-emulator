@@ -98,9 +98,6 @@ pub struct LaunchArguments {
 #[derive(Debug, Deserialize)]
 pub struct SourceBreakpoint {
     pub line: u32,
-    #[serde(default)]
-    #[allow(dead_code)]
-    pub column: Option<u32>,
 }
 
 /// Arguments to `setBreakpoints`.
@@ -204,9 +201,6 @@ pub struct SetVariableArguments {
 #[derive(Debug, Deserialize)]
 pub struct EvaluateArguments {
     pub expression: String,
-    #[serde(default)]
-    #[allow(dead_code)]
-    pub context: Option<String>,
     #[serde(default)]
     pub format: Option<ValueFormat>,
 }
