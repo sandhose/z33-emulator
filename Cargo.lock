@@ -1944,7 +1944,6 @@ dependencies = [
  "chumsky",
  "clap",
  "clap_complete",
- "codespan-reporting",
  "rustyline",
  "rustyline-derive",
  "serde_json",
@@ -1975,7 +1974,6 @@ dependencies = [
  "thiserror",
  "tower-lsp",
  "tracing",
- "tracing-subscriber",
  "unicode-segmentation",
 ]
 

@@ -16,7 +16,7 @@ use std::ops::Range;
 use crate::compiler::DebugInfo;
 use crate::constants::Address;
 use crate::diagnostic::FileDatabase;
-use crate::preprocessor::ReferencingSourceMap;
+use crate::preprocessor::SourceMap;
 
 /// A resolved source location.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -30,7 +30,6 @@ pub(super) struct Location {
 
 struct FileInfo {
     path: String,
-    source: String,
     /// Byte offset of the start of each line (line 1 starts at
     /// `line_starts[0]`).
     line_starts: Vec<usize>,
@@ -39,7 +38,7 @@ struct FileInfo {
 }
 
 impl FileInfo {
-    fn new(path: String, source: String) -> Self {
+    fn new(path: String, source: &str) -> Self {
         let mut line_starts = vec![0usize];
         for (offset, byte) in source.bytes().enumerate() {
             if byte == b'\n' {
@@ -48,7 +47,6 @@ impl FileInfo {
         }
         Self {
             path,
-            source,
             line_starts,
             lines_with_code: BTreeMap::new(),
         }
@@ -78,7 +76,7 @@ impl LineIndex {
     #[must_use]
     pub fn build(
         debug_info: &DebugInfo,
-        pre_source_map: &ReferencingSourceMap,
+        pre_source_map: &SourceMap,
         file_db: &FileDatabase,
     ) -> Self {
         // First pass: discover which original files are referenced and create a
@@ -96,7 +94,7 @@ impl LineIndex {
                 let idx = files.len();
                 files.push(FileInfo::new(
                     file_db.name(original_file_id),
-                    file_db.source(original_file_id).to_owned(),
+                    file_db.source(original_file_id),
                 ));
                 idx
             });
@@ -149,12 +147,6 @@ impl LineIndex {
         &self.files[file_index].path
     }
 
-    /// Return the source content of a file matching `path`, if any.
-    pub(super) fn source_of(&self, path: &str) -> Option<&str> {
-        self.find_file(path)
-            .map(|idx| self.files[idx].source.as_str())
-    }
-
     /// Resolve a breakpoint request (`path`, 1-based `line`) to the adjusted
     /// line (the next line with code at or after `line`) and its address.
     #[must_use]
@@ -176,14 +168,8 @@ impl LineIndex {
 
 /// Compose an address's preprocessed byte range with the preprocessor source
 /// map to obtain `(original_file_id, original_range)`.
-fn resolve(
-    pre_source_map: &ReferencingSourceMap,
-    range: &Range<usize>,
-) -> Option<(usize, Range<usize>)> {
-    let (chunk_key, span) = pre_source_map.find_with_key(range.start)?;
-    let start = span.range.start + (range.start - chunk_key);
-    let end = span.range.start + (range.end - chunk_key);
-    Some((span.file_id, start..end))
+fn resolve(pre_source_map: &SourceMap, range: &Range<usize>) -> Option<(usize, Range<usize>)> {
+    crate::diagnostic::resolve_to_original(pre_source_map, range.clone())
 }
 
 fn base_name(path: &str) -> &str {

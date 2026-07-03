@@ -12,9 +12,6 @@ use crate::diagnostic::FileId;
 /// All preprocessor annotations for a single file.
 #[derive(Debug, Default)]
 pub struct SourceAnnotations {
-    /// Lines starting with `#` that aren't recognized directives.
-    pub comments: Vec<Range<usize>>,
-
     /// `#define KEY [VALUE]` directives.
     pub definitions: Vec<DefinitionAnnotation>,
 

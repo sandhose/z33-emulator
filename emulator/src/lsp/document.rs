@@ -13,8 +13,7 @@ use crate::parser::line::{LineContent, Program};
 use crate::parser::shared::ParseDiagnostic;
 use crate::parser::{self};
 use crate::preprocessor::{
-    Filesystem, InMemoryFilesystem, PreprocessorError, ReferencingSourceMap, SourceAnnotations,
-    Workspace,
+    Filesystem, InMemoryFilesystem, PreprocessorError, SourceAnnotations, SourceMap, Workspace,
 };
 
 /// The virtual filename used for single-file LSP documents.
@@ -51,7 +50,7 @@ pub struct DocumentState {
     original_source: String,
     /// Maps byte offsets in the preprocessed source back to the original files.
     /// `None` when preprocessing failed.
-    source_map: Option<ReferencingSourceMap>,
+    source_map: Option<SourceMap>,
     /// Relative path of every source file involved in this analysis.
     file_paths: BTreeMap<FileId, Utf8PathBuf>,
     /// Source text of every file involved in this analysis (keyed by id).
@@ -103,7 +102,7 @@ impl DocumentState {
 
         match workspace.preprocess() {
             Ok(result) => {
-                let source_map: ReferencingSourceMap = result.source_map.into();
+                let source_map = result.source_map;
 
                 // Snapshot the file registry (relative path + source) for every
                 // file that took part in this analysis.

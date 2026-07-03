@@ -11,7 +11,7 @@ use crate::constants as C;
 use crate::diagnostic::{compilation_error_to_diagnostic, parse_diagnostic_to_codespan, FileId};
 use crate::parser::line::Program;
 use crate::parser::shared::ParseDiagnostic;
-use crate::runtime::{Computer, Registers};
+use crate::runtime::{Computer, Memory, Registers};
 
 pub mod layout;
 pub mod memory;
@@ -54,20 +54,69 @@ pub struct CompileResult {
     pub diagnostics: Vec<Diagnostic<FileId>>,
 }
 
-/// Compile a program, accumulating all diagnostics from parsing, layout,
-/// and memory fill.
-///
-/// If `entrypoint` is `Some`, the resulting computer's PC is set to that
-/// label. If `None`, no entrypoint is selected (check-only mode).
-///
-/// Parse diagnostics are included in the output alongside compilation errors.
+/// The result of assembling a program: layout + fill are done once and do not
+/// depend on any entrypoint. Turn it into a runnable [`Computer`] with
+/// [`into_computer`](Self::into_computer).
+pub struct Assembled {
+    /// Debug info (labels, source map) — always available.
+    pub debug_info: DebugInfo,
+
+    /// All diagnostics (parse errors + layout errors + fill errors), already
+    /// in codespan format ready for rendering.
+    pub diagnostics: Vec<Diagnostic<FileId>>,
+
+    /// The filled memory image.
+    memory: Memory,
+
+    /// Whether any parse/layout/fill errors were collected.
+    has_errors: bool,
+}
+
+impl Assembled {
+    /// The labels discovered during layout.
+    #[must_use]
+    pub fn labels(&self) -> &Labels {
+        &self.debug_info.labels
+    }
+
+    /// Build a runnable [`Computer`] with its program counter set to
+    /// `entrypoint`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CompilationError::UnknownEntrypoint`] if `entrypoint` is not a
+    /// known label.
+    pub fn into_computer(self, entrypoint: &str) -> Result<Computer, CompilationError> {
+        let Some(&pc) = self.debug_info.labels.get(entrypoint) else {
+            return Err(CompilationError::UnknownEntrypoint(entrypoint.to_string()));
+        };
+        debug!(pc, entrypoint, "Found entrypoint");
+        Ok(build_computer(self.memory, pc))
+    }
+}
+
+/// Wrap a filled memory image into a [`Computer`] with its PC and SP set up.
+fn build_computer(memory: Memory, pc: C::Address) -> Computer {
+    Computer {
+        memory,
+        registers: Registers {
+            pc,
+            sp: C::STACK_START,
+            ..Default::default()
+        },
+        ..Default::default()
+    }
+}
+
+/// Assemble a program: run parse-diagnostic collection, layout and fill once,
+/// producing the debug info and the filled memory. This does not depend on an
+/// entrypoint; use [`Assembled::into_computer`] to obtain a runnable machine.
 #[tracing::instrument(skip(program, parse_diagnostics))]
-pub fn compile(
+pub fn assemble(
     program: &Program,
     parse_diagnostics: &[ParseDiagnostic],
-    entrypoint: Option<&str>,
     preprocessed_file_id: FileId,
-) -> CompileResult {
+) -> Assembled {
     // Convert parse diagnostics to codespan format
     let mut diagnostics: Vec<Diagnostic<FileId>> = parse_diagnostics
         .iter()
@@ -90,23 +139,52 @@ pub fn compile(
         diagnostics.push(compilation_error_to_diagnostic(&ce, preprocessed_file_id));
     }
 
-    // Build computer only if there are no errors at all
     let has_errors = has_layout_errors || has_fill_errors || !parse_diagnostics.is_empty();
 
+    let source_map = layout.source_map();
+    let debug_info = DebugInfo {
+        labels: layout.labels,
+        source_map,
+    };
+
+    Assembled {
+        debug_info,
+        diagnostics,
+        memory,
+        has_errors,
+    }
+}
+
+/// Compile a program, accumulating all diagnostics from parsing, layout,
+/// and memory fill.
+///
+/// If `entrypoint` is `Some`, the resulting computer's PC is set to that
+/// label. If `None`, no entrypoint is selected (check-only mode).
+///
+/// Parse diagnostics are included in the output alongside compilation errors.
+///
+/// This is a thin wrapper over [`assemble`]: it assembles once, then
+/// conditionally builds the [`Computer`] for the requested entrypoint.
+pub fn compile(
+    program: &Program,
+    parse_diagnostics: &[ParseDiagnostic],
+    entrypoint: Option<&str>,
+    preprocessed_file_id: FileId,
+) -> CompileResult {
+    let Assembled {
+        debug_info,
+        mut diagnostics,
+        memory,
+        has_errors,
+    } = assemble(program, parse_diagnostics, preprocessed_file_id);
+
+    // Build computer only if there are no errors and an entrypoint was given.
     let computer = if has_errors {
         None
     } else if let Some(ep) = entrypoint {
-        if let Some(&pc) = layout.labels.get(ep) {
+        if let Some(&pc) = debug_info.labels.get(ep) {
             debug!(pc, entrypoint = ep, "Found entrypoint");
-            Some(Computer {
-                memory,
-                registers: Registers {
-                    pc,
-                    sp: C::STACK_START,
-                    ..Default::default()
-                },
-                ..Default::default()
-            })
+            Some(build_computer(memory, pc))
         } else {
             diagnostics.push(compilation_error_to_diagnostic(
                 &CompilationError::UnknownEntrypoint(ep.to_string()),
@@ -116,12 +194,6 @@ pub fn compile(
         }
     } else {
         None
-    };
-
-    let source_map = layout.source_map();
-    let debug_info = DebugInfo {
-        labels: layout.labels,
-        source_map,
     };
 
     CompileResult {

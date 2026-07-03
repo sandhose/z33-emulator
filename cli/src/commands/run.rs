@@ -6,7 +6,7 @@ use tracing::{debug, info};
 use z33_emulator::diagnostic::{
     preprocessor_error_to_diagnostics, render_to_string, resolve_diagnostic_spans,
 };
-use z33_emulator::preprocessor::{NativeFilesystem, ReferencingSourceMap, Workspace};
+use z33_emulator::preprocessor::{NativeFilesystem, SourceMap, Workspace};
 use z33_emulator::{compile, parse};
 
 use crate::interactive::run_interactive;
@@ -27,7 +27,6 @@ pub struct RunOpt {
 }
 
 impl RunOpt {
-    #[allow(clippy::too_many_lines)]
     pub fn exec(self) -> anyhow::Result<()> {
         let fs = NativeFilesystem::from_env()?;
         info!(path = ?self.input, "Reading program");
@@ -43,7 +42,7 @@ impl RunOpt {
             }
         };
         let source = preprocess_result.source.as_str();
-        let source_map: ReferencingSourceMap = preprocess_result.source_map.into();
+        let source_map: SourceMap = preprocess_result.source_map;
 
         debug!("Parsing program");
         let parse_result = parse(source);

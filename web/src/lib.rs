@@ -15,11 +15,11 @@ use z33_emulator::compile;
 use z33_emulator::constants::Address;
 use z33_emulator::dap::LineIndex;
 use z33_emulator::diagnostic::{
-    diagnostics_to_json, preprocessor_error_to_diagnostics, resolve_diagnostic_spans, FileDatabase,
-    FileId,
+    diagnostics_to_json, preprocessor_error_to_diagnostics, resolve_diagnostic_spans,
+    resolve_to_original, FileDatabase, FileId,
 };
 use z33_emulator::preprocessor::{
-    InMemoryFilesystem, PreprocessorError, ReferencingSourceMap, Workspace,
+    InMemoryFilesystem, PreprocessorError, SourceMap as PreSourceMap, Workspace,
 };
 use z33_emulator::runtime::{Memory, ProcessorError};
 
@@ -102,7 +102,7 @@ impl InMemoryPreprocessor {
             }
         };
         let source_str = &preprocess_result.source;
-        let source_map: ReferencingSourceMap = preprocess_result.source_map.into();
+        let source_map: PreSourceMap = preprocess_result.source_map;
         let parse_result = z33_emulator::parser::parse(source_str);
 
         // Run the full pipeline — compile() handles parse diagnostics,
@@ -155,20 +155,19 @@ pub struct SourceLocation {
 /// location) to produce a map of address → original source location.
 fn compose_source_maps(
     debug_source_map: &BTreeMap<Address, Range<usize>>,
-    preprocessor_source_map: &ReferencingSourceMap,
+    preprocessor_source_map: &PreSourceMap,
     file_db: &FileDatabase,
 ) -> BTreeMap<Address, SourceLocation> {
     debug_source_map
         .iter()
         .filter_map(|(&address, range)| {
-            let (chunk_key, span) = preprocessor_source_map.find_with_key(range.start)?;
-            let start = span.range.start + (range.start - chunk_key);
-            let end = span.range.start + (range.end - chunk_key);
+            let (file_id, orig_range) =
+                resolve_to_original(preprocessor_source_map, range.clone())?;
             Some((
                 address,
                 SourceLocation {
-                    file: file_db.name(span.file_id),
-                    span: (start, end),
+                    file: file_db.name(file_id),
+                    span: (orig_range.start, orig_range.end),
                 },
             ))
         })
@@ -179,7 +178,7 @@ fn compose_source_maps(
 #[derive(Clone)]
 #[allow(clippy::struct_field_names)]
 pub struct Program {
-    source_map: ReferencingSourceMap,
+    source_map: PreSourceMap,
     file_db: FileDatabase,
     preprocessed_file_id: FileId,
     program: z33_emulator::parser::location::Located<z33_emulator::parser::Program>,
@@ -188,13 +187,6 @@ pub struct Program {
 
 #[wasm_bindgen]
 impl Program {
-    #[wasm_bindgen(getter)]
-    #[must_use]
-    pub fn ast(&self) -> String {
-        let ast = self.program.to_node();
-        format!("{ast}")
-    }
-
     #[wasm_bindgen(getter)]
     #[must_use]
     pub fn labels(&self) -> Labels {
@@ -206,30 +198,6 @@ impl Program {
                 .map(ToOwned::to_owned)
                 .collect(),
         )
-    }
-
-    /// Check whether the program can be assembled (layout + fill phases).
-    ///
-    /// Returns a JSON-formatted diagnostic report string on failure, or
-    /// `None` on success.
-    #[wasm_bindgen]
-    #[must_use]
-    pub fn check(&self) -> Option<String> {
-        let result = compile(
-            &self.program.inner,
-            &self.parse_diagnostics,
-            None,
-            self.preprocessed_file_id,
-        );
-        if result.diagnostics.is_empty() {
-            return None;
-        }
-        let diagnostics: Vec<_> = result
-            .diagnostics
-            .iter()
-            .map(|d| resolve_diagnostic_spans(d, &self.source_map))
-            .collect();
-        Some(diagnostics_to_json(&diagnostics, &self.file_db))
     }
 
     /// Compile the program at the given entrypoint
@@ -384,12 +352,6 @@ pub struct Registers {
 
 #[wasm_bindgen]
 extern "C" {
-    #[wasm_bindgen(typescript_type = "(registers: Registers) => void")]
-    pub type RegistersCallback;
-
-    #[wasm_bindgen(typescript_type = "(cycles: Cycles) => void")]
-    pub type CyclesCallback;
-
     #[wasm_bindgen(typescript_type = "(cell: Cell) => void")]
     pub type MemoryCallback;
 
@@ -507,22 +469,10 @@ impl Computer {
         value.into()
     }
 
-    pub fn subscribe_cycles(&mut self, callback: CyclesCallback) -> JsValue {
-        self.cycles
-            .subscribe(callback.unchecked_into())
-            .unchecked_into()
-    }
-
     #[must_use]
     pub fn registers(&self) -> <Registers as Tsify>::JsType {
         let value = JsValue::from(self.registers.get());
         value.into()
-    }
-
-    pub fn subscribe_registers(&mut self, callback: RegistersCallback) -> Unsubscribe {
-        self.registers
-            .subscribe(callback.unchecked_into())
-            .unchecked_into()
     }
 
     pub fn memory(&mut self, address: u32) -> <Cell as Tsify>::JsType {
@@ -615,9 +565,9 @@ impl MemoryObserver {
     }
 }
 
+/// A cached value plus its serialized JS representation. [`set`](Self::set)
+/// only re-serializes when the value actually changes.
 struct Observable<T: Tsify> {
-    index: usize,
-    subscribers: Rc<RefCell<HashMap<usize, js_sys::Function>>>,
     value: T,
     js_value: T::JsType,
 }
@@ -627,34 +577,13 @@ impl<T: Tsify> Observable<T> {
     where
         T: Serialize + Clone,
     {
-        let subscribers = Rc::new(RefCell::new(HashMap::new()));
         let js_value = value.into_js().unwrap_throw();
-        Observable {
-            index: 0,
-            subscribers,
-            value,
-            js_value,
-        }
-    }
-
-    fn subscribe(&mut self, callback: js_sys::Function) -> JsValue {
-        let index = self.index.wrapping_add(1);
-        self.index = index;
-        self.subscribers.borrow_mut().insert(index, callback);
-        let weak_ref = Rc::downgrade(&self.subscribers);
-
-        Closure::once_into_js(move || {
-            let Some(subscribers) = weak_ref.upgrade() else {
-                return;
-            };
-            subscribers.borrow_mut().remove(&index);
-        })
+        Observable { value, js_value }
     }
 
     fn set(&mut self, value: T)
     where
         T: Serialize + PartialEq,
-        T::JsType: std::ops::Deref<Target = JsValue>,
     {
         if self.value == value {
             return;
@@ -662,11 +591,6 @@ impl<T: Tsify> Observable<T> {
 
         self.value = value;
         self.js_value = self.value.into_js().unwrap_throw();
-        for callback in self.subscribers.borrow().values() {
-            callback
-                .call1(&JsValue::NULL, &self.js_value)
-                .unwrap_throw();
-        }
     }
 
     fn get(&self) -> &T::JsType {

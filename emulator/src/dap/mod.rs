@@ -51,17 +51,16 @@ pub use self::index::LineIndex;
 use self::protocol::{
     Breakpoint, Capabilities, EvaluateArguments, IncomingRequest, LaunchArguments,
     ReadMemoryArguments, Scope, ScopesArguments, SetBreakpointsArguments, SetVariableArguments,
-    Source, SourceArguments, StackFrame, Variable, VariablesArguments, WriteMemoryArguments,
+    Source, StackFrame, Variable, VariablesArguments, WriteMemoryArguments,
 };
 use crate::constants as C;
 use crate::constants::Address;
 use crate::diagnostic::{
-    preprocessor_error_to_diagnostics, render_to_string, resolve_diagnostic_spans,
+    compilation_error_to_diagnostic, preprocessor_error_to_diagnostics, render_to_string,
+    resolve_diagnostic_spans,
 };
 use crate::parser::ExpressionNode;
-use crate::preprocessor::{
-    Filesystem, InMemoryFilesystem, NativeFilesystem, ReferencingSourceMap, Workspace,
-};
+use crate::preprocessor::{Filesystem, InMemoryFilesystem, NativeFilesystem, SourceMap, Workspace};
 use crate::runtime::registers::StatusRegister;
 use crate::runtime::{Cell, Computer, Instruction, ProcessorError, Reg};
 
@@ -318,7 +317,6 @@ impl DebugSession {
             "evaluate" => self.on_evaluate(&req),
             "readMemory" => self.on_read_memory(&req),
             "writeMemory" => self.on_write_memory(&req),
-            "source" => self.on_source(&req),
             "restart" => self.on_restart(&req),
             "disconnect" => {
                 self.exit_requested = true;
@@ -847,25 +845,6 @@ impl DebugSession {
         ) {
             Ok(written) => vec![self.response(req, json!({ "bytesWritten": written }))],
             Err(msg) => vec![self.response_err(req, msg)],
-        }
-    }
-
-    fn on_source(&mut self, req: &IncomingRequest) -> Vec<Value> {
-        let args: SourceArguments = match serde_json::from_value(req.arguments.clone()) {
-            Ok(a) => a,
-            Err(e) => return vec![self.response_err(req, format!("invalid arguments: {e}"))],
-        };
-        let content = {
-            let Some(program) = self.program.as_ref() else {
-                return vec![self.response_err(req, "no program launched")];
-            };
-            args.source
-                .and_then(|s| s.path.or(s.name))
-                .and_then(|p| program.index.source_of(&p).map(str::to_owned))
-        };
-        match content {
-            Some(content) => vec![self.response(req, json!({ "content": content }))],
-            None => vec![self.response_err(req, "source not found")],
         }
     }
 
@@ -1861,40 +1840,44 @@ fn compile_program<FS: Filesystem>(
             .collect::<String>()
     })?;
 
-    let ref_map: ReferencingSourceMap = preprocess.source_map.into();
+    let ref_map: SourceMap = preprocess.source_map;
     let parse_result = crate::parse(&preprocess.source);
 
-    // First pass: gather labels and surface any diagnostics.
-    let check = crate::compile(
+    // Assemble once (layout + fill); the entrypoint is chosen afterwards.
+    let assembled = crate::compiler::assemble(
         &parse_result.program.inner,
         &parse_result.diagnostics,
-        None,
         preprocess.preprocessed_file_id,
     );
-    if !check.diagnostics.is_empty() {
-        return Err(render_diagnostics(&check.diagnostics, &ref_map, &workspace));
+    if !assembled.diagnostics.is_empty() {
+        return Err(render_diagnostics(
+            &assembled.diagnostics,
+            &ref_map,
+            &workspace,
+        ));
     }
 
-    let entrypoint = choose_entrypoint(entrypoint, &check.debug_info.labels)?;
+    let entrypoint = choose_entrypoint(entrypoint, assembled.labels())?;
 
-    // Second pass: build the computer with the chosen entrypoint.
-    let built = crate::compile(
-        &parse_result.program.inner,
-        &parse_result.diagnostics,
-        Some(&entrypoint),
-        preprocess.preprocessed_file_id,
-    );
-    let Some(computer) = built.computer else {
-        return Err(render_diagnostics(&built.diagnostics, &ref_map, &workspace));
+    let index = LineIndex::build(&assembled.debug_info, &ref_map, workspace.file_db());
+    let labels = assembled.debug_info.labels.clone();
+
+    let computer = match assembled.into_computer(&entrypoint) {
+        Ok(computer) => computer,
+        Err(e) => {
+            let diag = compilation_error_to_diagnostic(&e, preprocess.preprocessed_file_id);
+            return Err(render_diagnostics(
+                std::slice::from_ref(&diag),
+                &ref_map,
+                &workspace,
+            ));
+        }
     };
-
-    let file_db = workspace.into_file_db();
-    let index = LineIndex::build(&built.debug_info, &ref_map, &file_db);
 
     Ok(LoadedProgram {
         computer,
         index,
-        labels: built.debug_info.labels,
+        labels,
         requested_lines: HashMap::new(),
         bp_by_file: HashMap::new(),
         breakpoints: HashSet::new(),
@@ -1903,7 +1886,7 @@ fn compile_program<FS: Filesystem>(
 
 fn render_diagnostics(
     diagnostics: &[codespan_reporting::diagnostic::Diagnostic<crate::diagnostic::FileId>],
-    source_map: &ReferencingSourceMap,
+    source_map: &SourceMap,
     workspace: &Workspace,
 ) -> String {
     diagnostics

@@ -41,22 +41,14 @@ struct FileContent {
     references: HashMap<Utf8PathBuf, Utf8PathBuf>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct SourceMap {
     // A map of spans, from their starting position to the span
     spans: BTreeMap<usize, Span>,
 }
 
 impl SourceMap {
-    #[must_use]
-    pub fn find(&self, position: usize) -> Option<&Span> {
-        self.spans
-            .range(..=position)
-            .next_back()
-            .map(|(_, span)| span)
-    }
-
-    /// Like [`find`](Self::find), but also returns the chunk start offset.
+    /// Find the span for a position, also returning the chunk start offset.
     ///
     /// This is needed to compute the exact position within the original file:
     /// `original_offset = span.range.start + (position - chunk_key)`
@@ -66,48 +58,6 @@ impl SourceMap {
             .range(..=position)
             .next_back()
             .map(|(&key, span)| (key, span))
-    }
-
-    /// Return the chunk start offset for the chunk containing `position`.
-    #[must_use]
-    pub fn chunk_key(&self, position: usize) -> Option<usize> {
-        self.spans
-            .range(..=position)
-            .next_back()
-            .map(|(&key, _)| key)
-    }
-}
-
-#[derive(Clone)]
-pub struct ReferencingSourceMap {
-    spans: BTreeMap<usize, Span>,
-}
-
-impl ReferencingSourceMap {
-    #[must_use]
-    pub fn find(&self, position: usize) -> Option<&Span> {
-        self.spans
-            .range(..=position)
-            .next_back()
-            .map(|(_, span)| span)
-    }
-
-    /// Like [`find`](Self::find), but also returns the chunk start offset.
-    ///
-    /// This is needed to compute the exact position within the original file:
-    /// `original_offset = span.range.start + (position - chunk_key)`
-    #[must_use]
-    pub fn find_with_key(&self, position: usize) -> Option<(usize, &Span)> {
-        self.spans
-            .range(..=position)
-            .next_back()
-            .map(|(&key, span)| (key, span))
-    }
-}
-
-impl From<SourceMap> for ReferencingSourceMap {
-    fn from(value: SourceMap) -> Self {
-        Self { spans: value.spans }
     }
 }
 

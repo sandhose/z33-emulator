@@ -129,21 +129,6 @@ pub enum MemoryLayoutError {
     },
 }
 
-impl MemoryLayoutError {
-    #[must_use]
-    pub fn location(&self) -> Option<&Range<usize>> {
-        match self {
-            MemoryLayoutError::DuplicateLabel { location, .. }
-            | MemoryLayoutError::InvalidDirectiveArgument { location, .. }
-            | MemoryLayoutError::MemoryOverlap {
-                new_location: location,
-                ..
-            } => Some(location),
-            MemoryLayoutError::DirectiveArgumentEvaluation { .. } => None,
-        }
-    }
-}
-
 /// Lays out the memory, collecting all errors instead of stopping at the first.
 ///
 /// Always produces a `Layout` (possibly partial) plus a vector of errors.

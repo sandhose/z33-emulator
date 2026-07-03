@@ -49,7 +49,11 @@ export function useCompilation(activeFile: string, monacoInstance: Monaco) {
       files,
       toMonacoPath(activeFile),
     );
-    const { program } = preprocessor.compile();
+    // A single compile() runs the whole preprocess+parse+layout+fill pipeline
+    // and already reports its diagnostics; reuse that report instead of
+    // re-running the pipeline via program.check().
+    const result = preprocessor.compile();
+    const program = result.program;
 
     if (!program) {
       setCompilationResult({
@@ -61,8 +65,7 @@ export function useCompilation(activeFile: string, monacoInstance: Monaco) {
     }
 
     const labels = program.labels;
-    const checkReport = program.check();
-    if (checkReport === undefined) {
+    if (result.report === undefined) {
       setCompilationResult({ type: "success", labels });
     } else {
       setCompilationResult({
