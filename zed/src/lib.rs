@@ -72,11 +72,17 @@ impl zed::Extension for Z33Extension {
             }
         };
 
-        let configuration = json!({
+        // `LaunchRequest` has no dedicated entrypoint field; mirror the
+        // `z33-cli run <program> <entrypoint>` convention and treat the first
+        // launch argument as the entrypoint label when present.
+        let mut configuration = json!({
             "program": launch.program,
             "stopOnEntry": config.stop_on_entry.unwrap_or(false),
-        })
-        .to_string();
+        });
+        if let Some(entrypoint) = launch.args.first() {
+            configuration["entrypoint"] = json!(entrypoint);
+        }
+        let configuration = configuration.to_string();
 
         Ok(DebugScenario {
             adapter: config.adapter,
