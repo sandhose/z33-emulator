@@ -19,8 +19,7 @@ export const useRegisters = (computer: ComputerInterface): Registers => {
     (cb: (registers: Registers) => void) => computer.subscribe_registers(cb),
     [computer],
   );
-  const registers = useSyncExternalStore(subscribe, () => computer.registers());
-  return useDeferredValue(registers);
+  return useSyncExternalStore(subscribe, () => computer.registers());
 };
 
 export const useCycles = (computer: ComputerInterface): Cycles => {
@@ -28,6 +27,5 @@ export const useCycles = (computer: ComputerInterface): Cycles => {
     (cb: (cycles: Cycles) => void) => computer.subscribe_cycles(cb),
     [computer],
   );
-  const cycles = useSyncExternalStore(subscribe, () => computer.cycles());
-  return useDeferredValue(cycles);
+  return useSyncExternalStore(subscribe, () => computer.cycles());
 };
