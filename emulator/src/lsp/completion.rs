@@ -267,43 +267,18 @@ fn detect_context_from_text(line_text: &str, pos_in_line: usize) -> CursorContex
         return CursorContext::Mnemonic;
     }
 
-    // Try to match the mnemonic to a known instruction
-    let kind = match mnemonic_text.to_ascii_lowercase().as_str() {
-        "add" => InstructionKind::Add,
-        "and" => InstructionKind::And,
-        "call" => InstructionKind::Call,
-        "cmp" => InstructionKind::Cmp,
-        "div" => InstructionKind::Div,
-        "fas" => InstructionKind::Fas,
-        "in" => InstructionKind::In,
-        "jmp" => InstructionKind::Jmp,
-        "jeq" => InstructionKind::Jeq,
-        "jne" => InstructionKind::Jne,
-        "jle" => InstructionKind::Jle,
-        "jlt" => InstructionKind::Jlt,
-        "jge" => InstructionKind::Jge,
-        "jgt" => InstructionKind::Jgt,
-        "ld" => InstructionKind::Ld,
-        "mul" => InstructionKind::Mul,
-        "neg" => InstructionKind::Neg,
-        "nop" => InstructionKind::Nop,
-        "not" => InstructionKind::Not,
-        "or" => InstructionKind::Or,
-        "out" => InstructionKind::Out,
-        "pop" => InstructionKind::Pop,
-        "push" => InstructionKind::Push,
-        "reset" => InstructionKind::Reset,
-        "rti" => InstructionKind::Rti,
-        "rtn" => InstructionKind::Rtn,
-        "shl" => InstructionKind::Shl,
-        "shr" => InstructionKind::Shr,
-        "st" => InstructionKind::St,
-        "sub" => InstructionKind::Sub,
-        "swap" => InstructionKind::Swap,
-        "trap" => InstructionKind::Trap,
-        "xor" => InstructionKind::Xor,
-        _ => return CursorContext::Mnemonic,
+    // Resolve the mnemonic through the derived `FromStr`. Unknown mnemonics (and
+    // the `<error>` placeholder, which never matches an alphabetic word) fall
+    // back to offering mnemonic completions.
+    let Ok(kind) = mnemonic_text
+        .to_ascii_lowercase()
+        .parse::<InstructionKind>()
+    else {
+        return CursorContext::Mnemonic;
     };
+    if kind == InstructionKind::Error {
+        return CursorContext::Mnemonic;
+    }
 
     // Cursor is still within the mnemonic
     let after_mnemonic = &trimmed[mnemonic_end..];
