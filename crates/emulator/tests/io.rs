@@ -6,11 +6,10 @@
 use indoc::indoc;
 use pretty_assertions::assert_eq;
 use z33_emulator::compiler::DebugInfo;
-use z33_emulator::constants as C;
 use z33_emulator::preprocessor::{InMemoryFilesystem, Workspace};
 use z33_emulator::runtime::registers::StatusRegister;
 use z33_emulator::runtime::{Cell, Computer, ProcessorError};
-use z33_emulator::{compile, parse};
+use z33_emulator::{compile, constants as C, parse};
 
 /// Compile a program to a ready-to-run [`Computer`] and its debug info.
 fn build(source: &str, entrypoint: &str) -> (Computer, DebugInfo) {
@@ -208,6 +207,102 @@ fn echo_sample_polling() {
     // End-to-end: the polling echo sample reflects its input back to the host.
     let (mut computer, _) = build(include_str!("../../../samples/echo.s"), "main");
     computer.io.serial.push_input(b"hi\x04"); // "hi" then Ctrl-D
+    run(&mut computer);
+    assert_eq!(computer.io.serial.drain_output(), b"hi");
+}
+
+#[test]
+fn in_and_out_leave_flags_unchanged() {
+    // r[verify inst.in]
+    // r[verify inst.out]
+    // `in`/`out` set no flags: force every flag on beforehand and check that
+    // none of them moved after issuing both instructions.
+    let (mut computer, _) = build(
+        indoc! {"
+            .addr 1000
+            main:
+                ld 42, %a
+                out %a, [111]
+                in  [111], %a
+                reset
+        "},
+        "main",
+    );
+    computer.registers.sr = StatusRegister::all();
+    let before = computer.registers.sr;
+    run(&mut computer);
+    assert_eq!(computer.registers.sr, before);
+}
+
+#[test]
+fn hardware_interrupt_is_not_delivered_on_the_exception_recovery_step() {
+    // r[verify io.interrupt.delivery]
+    // r[verify exc.handling.save-state]
+    // A software exception (trap) and a pending hardware interrupt must not
+    // collide on the same step: the trap's save area (100-102) must survive
+    // intact until a later step delivers the interrupt.
+    let (mut computer, _) = build(
+        indoc! {"
+            .addr 200
+            handler:
+                nop
+                reset
+
+            .addr 1000
+            main:
+                ld 256, %sr     // interrupt-enable (supervisor stays set)
+                trap
+                reset
+        "},
+        "main",
+    );
+
+    // Step 1: enable interrupts. No pending edge yet, so nothing is delivered.
+    computer.step().unwrap();
+    assert!(computer
+        .registers
+        .sr
+        .contains(StatusRegister::INTERRUPT_ENABLE));
+
+    // Arm a pending serial interrupt edge *after* IE was enabled, so it
+    // cannot be delivered as a side effect of the previous step.
+    computer.io.write(110, 1); // enable rx interrupts (E bit)
+    computer.io.serial.push_input(b"z"); // raises the edge
+
+    // Step 2: `trap` triggers a software exception. Its recovery must not
+    // also deliver the pending hardware interrupt on this same step.
+    computer.step().unwrap();
+    assert_eq!(computer.registers.pc, C::INTERRUPT_HANDLER);
+    assert_eq!(word_at(&computer, C::INTERRUPT_PC_SAVE), 1002);
+    assert_eq!(word_at(&computer, C::INTERRUPT_SR_SAVE), 256);
+    assert_eq!(word_at(&computer, C::INTERRUPT_EXCEPTION), 4); // trap
+
+    // Step 3: executing the handler's first instruction (`nop`) completes
+    // normally, so the pending hardware interrupt is now delivered, clobbering
+    // the save area with the interrupt's own state.
+    computer.step().unwrap();
+    assert_eq!(computer.registers.pc, C::INTERRUPT_HANDLER);
+    assert_eq!(word_at(&computer, C::INTERRUPT_EXCEPTION), 0); // hardware interrupt
+}
+
+#[test]
+fn echo_sample_interrupt_driven_batched() {
+    // A single multi-byte delivery raises only one interrupt edge; the
+    // sample's handler must drain the receive queue to see every byte
+    // instead of assuming one byte per interrupt.
+    // r[verify io.serial.interrupt.raise]
+    let (mut computer, debug_info) =
+        build(include_str!("../../../samples/echo-interrupt.s"), "main");
+    let idle = *debug_info.labels.get("idle").expect("idle label");
+
+    computer.step().unwrap(); // out RX_IRQ_ENABLE, [CONTROL]
+    computer.step().unwrap(); // ld SR_SUPERVISOR_IE, %sr
+    assert_eq!(computer.registers.pc, idle);
+
+    // Deliver "hi" and Ctrl-D in a single push: one interrupt edge covers all
+    // three bytes.
+    computer.io.serial.push_input(b"hi\x04");
+
     run(&mut computer);
     assert_eq!(computer.io.serial.drain_output(), b"hi");
 }

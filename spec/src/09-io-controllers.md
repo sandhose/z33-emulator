@@ -156,7 +156,7 @@ r[io.serial.control.rx-interrupt-enable]
 Writing the control register with the E bit set arms receive interrupts; writing it clear disarms them.
 
 r[io.serial.interrupt.raise]
-While receive interrupts are armed (E set), each byte delivered into the receive queue raises a hardware interrupt.
+While receive interrupts are armed (E set), delivering data into the receive queue raises a hardware interrupt. A single delivery may carry several bytes at once (for example, a host flushing a whole line or paste in one go), in which case it still raises only one interrupt; likewise, several pending interrupts collapse into a single edge to the processor. Handlers therefore cannot assume one byte per interrupt: they should poll the R bit and drain the receive queue until it is empty before returning.
 
 r[io.serial.interrupt.enable-with-queued]
 Arming receive interrupts (writing E from 0 to 1) while the receive queue is already non-empty raises a hardware interrupt immediately, so a program never misses input that arrived before it enabled interrupts.

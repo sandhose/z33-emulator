@@ -81,7 +81,6 @@ impl SerialConsole {
     ///
     /// If receive interrupts are enabled ([`Self::irq_on_ready`]), delivering
     /// bytes raises a hardware interrupt.
-    // r[impl io.serial.data.read]
     pub fn push_input(&mut self, bytes: &[u8]) {
         if bytes.is_empty() {
             return;
@@ -94,7 +93,6 @@ impl SerialConsole {
     }
 
     /// Take everything the program has written, leaving the buffer empty.
-    // r[impl io.serial.data.write]
     #[must_use]
     pub fn drain_output(&mut self) -> Vec<u8> {
         std::mem::take(&mut self.output)
@@ -115,8 +113,8 @@ impl SerialConsole {
 
     /// Read the status register, computing the R/T/I bits.
     ///
-    /// Reading the status register clears the I bit (but not a pending edge that
-    /// [`Self::poll_interrupt`] may still deliver).
+    /// Reading the status register clears the I bit (but not a pending edge
+    /// that [`Self::poll_interrupt`] may still deliver).
     // r[impl io.serial.status.tx-ready]
     // r[impl io.serial.status.interrupt]
     fn read_status(&mut self) -> Word {
@@ -147,11 +145,13 @@ impl SerialConsole {
     }
 
     /// Read the data register: pop the front byte, or 0 if the queue is empty.
+    // r[impl io.serial.data.read]
     fn read_data(&mut self) -> Word {
         self.input.pop_front().map_or(0, Word::from)
     }
 
     /// Write the data register: append the low byte to the output buffer.
+    // r[impl io.serial.data.write]
     fn write_data(&mut self, value: Word) {
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         let byte = (value & 0xFF) as u8;
@@ -336,6 +336,39 @@ mod tests {
             serial.read(SERIAL_STATUS_PORT) & STATUS_INTERRUPT,
             STATUS_INTERRUPT
         );
+    }
+
+    #[test]
+    fn status_read_preserves_pending_edge() {
+        // The I status bit and the pending interrupt edge are independent:
+        // clearing the former (by reading the status register) does not
+        // consume the latter.
+        // r[verify io.serial.status.read-clears-interrupt]
+        // r[verify io.serial.interrupt.edge]
+        let mut serial = SerialConsole::default();
+        serial.write(SERIAL_STATUS_PORT, CONTROL_RX_INTERRUPT_ENABLE);
+        serial.push_input(b"x");
+
+        // Reading the status register clears the I bit...
+        let status = serial.read(SERIAL_STATUS_PORT);
+        assert_eq!(status & STATUS_INTERRUPT, STATUS_INTERRUPT);
+        let status = serial.read(SERIAL_STATUS_PORT);
+        assert_eq!(status & STATUS_INTERRUPT, 0);
+
+        // ...but the interrupt edge is still delivered.
+        assert!(serial.poll_interrupt());
+    }
+
+    #[test]
+    fn push_input_empty_is_noop() {
+        // An empty delivery raises no interrupt and leaves R clear.
+        // r[verify io.serial.status.rx-ready]
+        let mut serial = SerialConsole::default();
+        serial.write(SERIAL_STATUS_PORT, CONTROL_RX_INTERRUPT_ENABLE);
+        serial.push_input(&[]);
+        assert!(!serial.input_ready());
+        assert!(!serial.poll_interrupt());
+        assert_eq!(serial.read(SERIAL_STATUS_PORT) & STATUS_RX_READY, 0);
     }
 
     #[test]
