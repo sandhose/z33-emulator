@@ -490,6 +490,21 @@ impl Computer {
             .subscribe(address, callback.unchecked_into())
             .unchecked_into()
     }
+
+    /// Push bytes into the serial console's receive buffer. Each call raises a
+    /// single receive-interrupt edge, so push once per keystroke or paste
+    /// chunk.
+    pub fn push_serial_input(&mut self, bytes: &[u8]) {
+        self.inner.io.serial.push_input(bytes);
+    }
+
+    /// Drain and return the bytes the program has written to the serial
+    /// console since the last call. Polled once per step/batch by the caller,
+    /// mirroring the registers/cycles getter model.
+    #[must_use]
+    pub fn drain_serial_output(&mut self) -> Vec<u8> {
+        self.inner.io.serial.drain_output()
+    }
 }
 
 struct MemoryObserver {

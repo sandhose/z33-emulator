@@ -10,6 +10,7 @@ import { stripLeadingSlash } from "./lib/file-paths";
 import { MemoryPanel } from "./memory-panel";
 import { MultiFileEditor } from "./multi-file-editor";
 import { ResizeHandle } from "./panel-resize-handle";
+import { SerialConsole } from "./serial-console";
 import { useAppStore } from "./stores/app-store";
 import { useFileStore } from "./stores/file-store";
 import { Group, Panel } from "react-resizable-panels";
@@ -91,34 +92,42 @@ const DebugLayoutInner: React.FC<DebugLayoutInnerProps> = ({
         onFileChange={setActiveFile}
         onStop={onStopDebug}
       />
-      <Group orientation="horizontal" id="z33-h" className="flex-1 min-h-0">
-        <Panel defaultSize="65%" minSize="40%" id="z33-editor">
-          <MultiFileEditor
-            filePath={activeFile}
-            readOnly
-            onEditorMount={handleDebugEditorMount}
-          />
+      <Group orientation="vertical" id="z33-v" className="flex-1 min-h-0">
+        <Panel defaultSize="75%" minSize="30%" id="z33-main">
+          <Group orientation="horizontal" id="z33-h" className="h-full">
+            <Panel defaultSize="65%" minSize="40%" id="z33-editor">
+              <MultiFileEditor
+                filePath={activeFile}
+                readOnly
+                onEditorMount={handleDebugEditorMount}
+              />
+            </Panel>
+            <ResizeHandle />
+            <Panel defaultSize="35%" minSize="20%" maxSize="50%" id="z33-right">
+              <div className="flex flex-col h-full border-l">
+                <div className="shrink-0 border-b">
+                  <RegisterPanel
+                    computer={computer}
+                    labels={labels}
+                    following={following}
+                    onFollow={setFollowing}
+                  />
+                </div>
+                <div className="flex-1 min-h-0">
+                  <MemoryPanel
+                    computer={computer}
+                    labels={labels}
+                    following={following}
+                    onFollow={setFollowing}
+                  />
+                </div>
+              </div>
+            </Panel>
+          </Group>
         </Panel>
-        <ResizeHandle />
-        <Panel defaultSize="35%" minSize="20%" maxSize="50%" id="z33-right">
-          <div className="flex flex-col h-full border-l">
-            <div className="shrink-0 border-b">
-              <RegisterPanel
-                computer={computer}
-                labels={labels}
-                following={following}
-                onFollow={setFollowing}
-              />
-            </div>
-            <div className="flex-1 min-h-0">
-              <MemoryPanel
-                computer={computer}
-                labels={labels}
-                following={following}
-                onFollow={setFollowing}
-              />
-            </div>
-          </div>
+        <ResizeHandle orientation="vertical" />
+        <Panel defaultSize="25%" minSize="10%" collapsible id="z33-console">
+          <SerialConsole computer={computer} />
         </Panel>
       </Group>
     </div>

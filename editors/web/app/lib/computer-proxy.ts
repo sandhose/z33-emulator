@@ -194,6 +194,7 @@ export class ComputerProxy implements ComputerInterface {
   #statusSubs = new Set<(s: RunStatus) => void>();
   #pcSubs = new Set<() => void>();
   #cellSubs = new Map<number, Set<(c: Cell) => void>>();
+  #outputSubs = new Set<(bytes: number[]) => void>();
 
   constructor(
     workerClient: EmulatorWorkerClient,
@@ -277,6 +278,22 @@ export class ComputerProxy implements ComputerInterface {
     this.#client.send({ type: "setSpeed", speed });
   }
 
+  /** Send bytes to the serial console; one receive-interrupt edge per call. */
+  sendInput(bytes: number[]): void {
+    this.#client.send({ type: "input", bytes });
+  }
+
+  /**
+   * Subscribe to serial output. The callback fires with each non-empty batch of
+   * bytes the program has written, as they arrive on worker snapshots.
+   */
+  onOutput(cb: (bytes: number[]) => void): Unsubscribe {
+    this.#outputSubs.add(cb);
+    return () => {
+      this.#outputSubs.delete(cb);
+    };
+  }
+
   resolveBreakpoint(
     file: string,
     line: number,
@@ -337,6 +354,10 @@ export class ComputerProxy implements ComputerInterface {
     }
 
     this.applyCells(snapshot.changedCells);
+
+    if (snapshot.output.length > 0) {
+      for (const cb of this.#outputSubs) cb(snapshot.output);
+    }
   }
 
   applyCells(cells: [number, Cell][]): void {
