@@ -10,6 +10,7 @@ use crate::constants as C;
 pub(crate) mod arguments;
 mod exception;
 mod instructions;
+pub mod io;
 mod memory;
 pub mod registers;
 
@@ -17,6 +18,7 @@ pub use self::arguments::ExtractValue;
 use self::arguments::{ExtractError, Ind, ResolveAddress};
 pub use self::exception::Exception;
 pub(crate) use self::instructions::Instruction;
+pub use self::io::{Device, IoBus, SerialConsole};
 pub use self::memory::{Cell, Memory};
 use self::memory::{CellError, MemoryError};
 use self::registers::StatusRegister;
@@ -54,6 +56,7 @@ pub struct Computer {
     pub registers: Registers,
     pub memory: Memory,
     pub cycles: usize,
+    pub io: IoBus,
 }
 
 impl std::fmt::Debug for Computer {
@@ -124,17 +127,21 @@ impl Computer {
             Ok(cost)
         }
 
-        let cost = inner(self).or_else(|e| {
-            if let ProcessorError::Exception(e) = e {
-                self.recover_from_exception(&e)
-                    .map_err(ProcessorError::Exception)
-                    // r[impl exec.cycles.exception]
-                    .map(|()| 1) // TODO: fixed cost for exceptions?
-            } else {
-                Err(e)
+        match inner(self) {
+            Ok(cost) => {
+                self.cycles += cost;
+                // The instruction completed normally; hardware interrupts are
+                // only delivered between instructions.
+                self.poll_hardware_interrupt()?;
             }
-        })?;
-        self.cycles += cost;
+            Err(ProcessorError::Exception(e)) => {
+                self.recover_from_exception(&e)
+                    .map_err(ProcessorError::Exception)?;
+                // r[impl exec.cycles.exception]
+                self.cycles += 1; // TODO: fixed cost for exceptions?
+            }
+            Err(e) => return Err(e),
+        }
         trace!("Register state {:?}", self.registers);
         Ok(())
     }
@@ -183,6 +190,25 @@ impl Computer {
         }
         // r[impl exc.handling.jump]
         self.registers.pc = C::INTERRUPT_HANDLER;
+        Ok(())
+    }
+
+    /// Deliver a pending hardware interrupt, if any, between instructions.
+    ///
+    /// A hardware interrupt is only delivered when interrupts are enabled
+    /// (`%sr.IE`). The interrupt-enable check happens *before* polling the bus,
+    /// so a pending interrupt edge is preserved (not consumed) while interrupts
+    /// are masked and gets delivered once they are re-enabled. Delivery reuses
+    /// the standard exception path, which clears `IE` for hardware interrupts.
+    // r[impl io.interrupt.delivery]
+    fn poll_hardware_interrupt(&mut self) -> Result<()> {
+        if self.registers.sr.contains(StatusRegister::INTERRUPT_ENABLE) && self.io.poll_interrupt()
+        {
+            self.recover_from_exception(&Exception::HardwareInterrupt)
+                .map_err(ProcessorError::Exception)?;
+            // r[impl exec.cycles.exception]
+            self.cycles += 1;
+        }
         Ok(())
     }
 

@@ -230,9 +230,14 @@ impl Instruction {
             }
 
             // r[impl inst.in]
-            Self::In(_, _) => {
+            Self::In(port, reg) => {
                 computer.check_privileged()?;
-                todo!();
+                // The operand names a port number, not a memory address, so we
+                // resolve it as an address without dereferencing memory.
+                let port = port.resolve_address(&computer.registers)?;
+                let value = computer.io.read(port);
+                // `in` sets no flags.
+                computer.set_register(*reg, value.into())?;
             }
 
             // r[impl inst.jmp]
@@ -368,9 +373,14 @@ impl Instruction {
             }
 
             // r[impl inst.out]
-            Self::Out(_, _) => {
+            Self::Out(src, port) => {
                 computer.check_privileged()?;
-                todo!()
+                let value = src.extract_word(computer)?;
+                // The destination operand names a port number, not a memory
+                // address.
+                let port = port.resolve_address(&computer.registers)?;
+                // `out` sets no flags.
+                computer.io.write(port, value);
             }
 
             // r[impl inst.pop]
