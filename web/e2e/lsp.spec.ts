@@ -129,7 +129,7 @@ test.describe("LSP", () => {
     );
 
     // The server only emits the lens because the web client advertises the
-    // z33.run command; Monaco renders it as a clickable code-lens link.
+    // zorglub33.run command; Monaco renders it as a clickable code-lens link.
     const lens = page.locator(".codelens-decoration a", {
       hasText: "Run main",
     });

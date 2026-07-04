@@ -14,7 +14,7 @@ use clap::Parser;
 use serde_json::Value;
 use z33_emulator::dap::DebugSession;
 
-/// Start the Z33 Debug Adapter Protocol server (DAP)
+/// Start the Zorglub33 Debug Adapter Protocol server (DAP)
 #[derive(Parser, Debug)]
 pub struct DapOpt {}
 

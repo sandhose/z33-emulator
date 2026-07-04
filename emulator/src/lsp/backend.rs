@@ -21,11 +21,11 @@ use super::workspace::WorkspaceManager;
 use super::{completion, hover, position, semantic_tokens, symbols};
 
 /// The custom notification the host uses to push in-memory workspace files.
-pub const WORKSPACE_FILES_METHOD: &str = "z33/workspaceFiles";
+pub const WORKSPACE_FILES_METHOD: &str = "zorglub33/workspaceFiles";
 
 /// Client-side command carried by the run code lens. Only emitted when the
 /// client advertised it in the `experimental.commands` capability.
-pub const RUN_COMMAND: &str = "z33.run";
+pub const RUN_COMMAND: &str = "zorglub33.run";
 
 /// LSP backend for Z33 assembly.
 ///
@@ -39,7 +39,7 @@ pub const RUN_COMMAND: &str = "z33.run";
 /// - **Native**: when the client sends a `file://` `rootUri` (or workspace
 ///   folder) in `initialize`, unopened files are read from disk relative to
 ///   that root.
-/// - **Host-pushed**: the client may send a custom `z33/workspaceFiles`
+/// - **Host-pushed**: the client may send a custom `zorglub33/workspaceFiles`
 ///   notification whose params are `{ "files": { "relative/path.s": "content",
 ///   ... } }`. This replaces the in-memory base file map and triggers
 ///   re-analysis. The web IDE and the VS Code web extension use this because
@@ -77,7 +77,7 @@ impl Backend {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
-    /// Custom `z33/workspaceFiles` notification handler.
+    /// Custom `zorglub33/workspaceFiles` notification handler.
     ///
     /// Params: `{ "files": { "<relative path>": "<content>", ... } }`.
     pub async fn workspace_files(&self, params: serde_json::Value) {
@@ -87,10 +87,10 @@ impl Backend {
     }
 }
 
-/// Parse the params of the `z33/workspaceFiles` notification into a relative
-/// path -> content map. Unknown or malformed entries are silently ignored.
-/// Extract the client-side commands advertised in the `experimental`
-/// client capability: `{"experimental": {"commands": ["z33.run", ...]}}`.
+/// Parse the params of the `zorglub33/workspaceFiles` notification into a
+/// relative path -> content map. Unknown or malformed entries are silently
+/// ignored. Extract the client-side commands advertised in the `experimental`
+/// client capability: `{"experimental": {"commands": ["zorglub33.run", ...]}}`.
 fn parse_client_commands(
     experimental: Option<&serde_json::Value>,
 ) -> std::collections::HashSet<String> {
@@ -107,8 +107,8 @@ fn parse_client_commands(
 
 /// Build the code lenses for a document: an informational lens (resolved
 /// address + reference count) on every label defined in it, preceded by a
-/// `z33.run` lens on executable labels when `run_lens_path` is set (i.e. the
-/// client advertised it can execute the command).
+/// `zorglub33.run` lens on executable labels when `run_lens_path` is set (i.e.
+/// the client advertised it can execute the command).
 fn build_code_lenses(
     source: &str,
     analysis: &super::document::DocumentState,
@@ -199,7 +199,7 @@ impl LanguageServer for Backend {
         });
         // Client-side commands the client can execute, advertised through the
         // open-ended `experimental` capability (same convention as
-        // rust-analyzer): `{"experimental": {"commands": ["z33.run", ...]}}`.
+        // rust-analyzer): `{"experimental": {"commands": ["zorglub33.run", ...]}}`.
         // Server-produced `Command`s (e.g. the run code lens) are only
         // emitted when the client declared it can handle them.
         let client_commands = parse_client_commands(params.capabilities.experimental.as_ref());
@@ -245,14 +245,14 @@ impl LanguageServer for Backend {
                 ..Default::default()
             },
             server_info: Some(ServerInfo {
-                name: "z33-lsp".to_string(),
+                name: "zorglub33-lsp".to_string(),
                 version: Some(env!("CARGO_PKG_VERSION").to_string()),
             }),
         })
     }
 
     async fn initialized(&self, _params: InitializedParams) {
-        tracing::info!("Z33 LSP server initialized");
+        tracing::info!("Zorglub33 LSP server initialized");
     }
 
     async fn shutdown(&self) -> jsonrpc::Result<()> {
@@ -543,14 +543,14 @@ mod tests {
 
     #[test]
     fn parses_client_commands_capability() {
-        let caps = json!({ "commands": ["z33.run", "z33.other"] });
+        let caps = json!({ "commands": ["zorglub33.run", "zorglub33.other"] });
         let cmds = parse_client_commands(Some(&caps));
         assert!(cmds.contains(RUN_COMMAND));
-        assert!(cmds.contains("z33.other"));
+        assert!(cmds.contains("zorglub33.other"));
 
         assert!(parse_client_commands(None).is_empty());
         assert!(parse_client_commands(Some(&json!({}))).is_empty());
-        assert!(parse_client_commands(Some(&json!({ "commands": "z33.run" }))).is_empty());
+        assert!(parse_client_commands(Some(&json!({ "commands": "zorglub33.run" }))).is_empty());
     }
 
     #[test]
@@ -558,7 +558,7 @@ mod tests {
         let src = "main:\n    reset\nvalue:\n    .word 42\n";
         let analysis = DocumentState::new(src.to_string());
 
-        // Client did not advertise z33.run: informational lenses only.
+        // Client did not advertise zorglub33.run: informational lenses only.
         let lenses = build_code_lenses(src, &analysis, None);
         assert_eq!(lenses.len(), 2);
         assert!(lenses

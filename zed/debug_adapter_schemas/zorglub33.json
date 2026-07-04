@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "Z33 Debug Adapter Configuration",
+  "title": "Zorglub33 Debug Adapter Configuration",
   "type": "object",
   "properties": {
     "label": {
@@ -12,7 +12,7 @@
     },
     "program": {
       "type": "string",
-      "description": "Path to the Z33 assembly file to debug",
+      "description": "Path to the Zorglub33 assembly file to debug",
       "examples": [
         "main.s",
         "samples/fact.s"

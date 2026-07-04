@@ -1,4 +1,4 @@
-// Z33 web extension entry point.
+// Zorglub33 web extension entry point.
 //
 // Runs entirely in the browser extension host (works in vscode.dev / github.dev
 // and desktop VS Code alike). There is no native binary: the language server is
@@ -7,7 +7,7 @@
 // Wiring:
 //   * LSP  — spawn a classic worker, hand it the wasm bytes (handshake), then
 //     attach a browser LanguageClient. Push all workspace `.s`/`.S` files via
-//     the custom `z33/workspaceFiles` notification and keep it fresh with a
+//     the custom `zorglub33/workspaceFiles` notification and keep it fresh with a
 //     file-system watcher.
 //   * DAP  — instantiate the wasm on the host once and register an inline debug
 //     adapter factory (`Z33DebugAdapter`).
@@ -23,13 +23,13 @@ import {
   uriForWorkspaceRelativePath,
 } from "./workspace-paths.js";
 
-const WORKSPACE_FILES_METHOD = "z33/workspaceFiles";
+const WORKSPACE_FILES_METHOD = "zorglub33/workspaceFiles";
 /**
  * Client-side command carried by the server's run code lens. Advertised to
  * the server via the `experimental.commands` client capability; the server
  * only emits the lens when it sees the advertisement.
  */
-const RUN_COMMAND = "z33.run";
+const RUN_COMMAND = "zorglub33.run";
 /** Give the wasm worker a generous window to instantiate before giving up. */
 const HANDSHAKE_TIMEOUT_MS = 30_000;
 /** Debounce window for coalescing rapid file-watcher events. */
@@ -78,7 +78,7 @@ async function startLspWorker(
     // Never hang activation forever if the worker goes silent.
     const timer = setTimeout(() => {
       cleanup();
-      reject(new Error("Timed out waiting for the Z33 language server to start"));
+      reject(new Error("Timed out waiting for the Zorglub33 language server to start"));
     }, HANDSHAKE_TIMEOUT_MS);
     worker.addEventListener("message", onMessage);
     worker.addEventListener("error", onError);
@@ -104,7 +104,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     await activateInner(context);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    void vscode.window.showErrorMessage(`Z33 extension failed to activate: ${message}`);
+    void vscode.window.showErrorMessage(`Zorglub33 extension failed to activate: ${message}`);
     throw error;
   }
 }
@@ -120,16 +120,21 @@ async function activateInner(context: vscode.ExtensionContext): Promise<void> {
     // Manage on-disk, virtual (vscode.dev / github.dev) and unsaved documents;
     // deliberately exclude read-only virtual schemes (git/diff views).
     documentSelector: [
-      { language: "z33-assembly", scheme: "file" },
-      { language: "z33-assembly", scheme: "vscode-vfs" },
-      { language: "z33-assembly", scheme: "untitled" },
+      { language: "zorglub33-assembly", scheme: "file" },
+      { language: "zorglub33-assembly", scheme: "vscode-vfs" },
+      { language: "zorglub33-assembly", scheme: "untitled" },
       // @vscode/test-web mounts the workspace under this scheme; without it
       // the extension is untestable in a dev web host.
-      { language: "z33-assembly", scheme: "vscode-test-web" },
+      { language: "zorglub33-assembly", scheme: "vscode-test-web" },
     ],
   };
 
-  client = new LanguageClient("z33-assembly", "Z33 Language Server", worker, clientOptions);
+  client = new LanguageClient(
+    "zorglub33-assembly",
+    "Zorglub33 Language Server",
+    worker,
+    clientOptions,
+  );
   // Tell the server which client-side commands we can execute, so it emits
   // the run code lens (rust-analyzer-style `experimental.commands`).
   client.registerFeature({
@@ -156,11 +161,13 @@ async function activateInner(context: vscode.ExtensionContext): Promise<void> {
     vscode.commands.registerCommand(RUN_COMMAND, async (args: { path: string; label: string }) => {
       const uri = await uriForWorkspaceRelativePath(args.path);
       if (uri === undefined) {
-        void vscode.window.showErrorMessage(`Z33: could not find ${args.path} in the workspace`);
+        void vscode.window.showErrorMessage(
+          `Zorglub33: could not find ${args.path} in the workspace`,
+        );
         return;
       }
       await vscode.debug.startDebugging(vscode.workspace.getWorkspaceFolder(uri), {
-        type: "z33",
+        type: "zorglub33",
         request: "launch",
         name: `Run ${args.label}`,
         program: uri.toString(),
@@ -193,7 +200,7 @@ async function activateInner(context: vscode.ExtensionContext): Promise<void> {
             await pushWorkspaceFiles(client);
           }
         } catch (error) {
-          console.error("[z33] failed to push workspace files", error);
+          console.error("[zorglub33] failed to push workspace files", error);
         }
       });
     }, WATCH_DEBOUNCE_MS);
@@ -217,7 +224,9 @@ async function activateInner(context: vscode.ExtensionContext): Promise<void> {
       return new vscode.DebugAdapterInlineImplementation(new Z33DebugAdapter(new WasmDapServer()));
     },
   };
-  context.subscriptions.push(vscode.debug.registerDebugAdapterDescriptorFactory("z33", factory));
+  context.subscriptions.push(
+    vscode.debug.registerDebugAdapterDescriptorFactory("zorglub33", factory),
+  );
 }
 
 export function deactivate(): Promise<void> | undefined {

@@ -1,4 +1,4 @@
-//! WASM bridge for the Z33 Debug Adapter.
+//! WASM bridge for the Zorglub33 Debug Adapter.
 //!
 //! Thin synchronous wrapper over the transport-agnostic [`DebugSession`]. The
 //! JS host owns the transport and framing; this only decodes/encodes DAP
