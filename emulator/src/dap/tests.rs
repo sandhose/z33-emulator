@@ -1135,3 +1135,20 @@ fn source_request_by_path() {
     let resp = find_response(&out, "source").expect("source response");
     assert_eq!(resp["success"], json!(false));
 }
+
+/// A clean halt must leave the run's result in the debug console — without
+/// this a breakpoint-less launch (e.g. from the run code lens) opens and
+/// terminates in milliseconds with nothing visible anywhere.
+#[test]
+fn clean_halt_prints_summary() {
+    let mut h = Harness::new();
+    let out = h.launch(false);
+    let output = find_event(&out, "output").expect("output event on halt");
+    let text = output["body"]["output"].as_str().unwrap();
+    assert!(
+        text.starts_with("Program halted after") && text.contains("%a = 120"),
+        "unexpected halt summary: {text}"
+    );
+    // The summary precedes termination.
+    assert!(find_event(&out, "terminated").is_some());
+}

@@ -979,10 +979,29 @@ impl DebugSession {
 
     fn terminate_now(&mut self, code: i64) -> Vec<Value> {
         self.state = State::Terminated;
-        vec![
-            self.make_event("terminated", Value::Null),
-            self.make_event("exited", json!({ "exitCode": code })),
-        ]
+        let mut out = Vec::new();
+        // A clean halt would otherwise be invisible (the session opens and
+        // closes in milliseconds when there are no breakpoints): leave the
+        // run's result in the debug console.
+        if code == EXIT_OK {
+            if let Some(program) = self.program.as_ref() {
+                let computer = &program.computer;
+                let regs = &computer.registers;
+                let summary = format!(
+                    "Program halted after {} cycles\n  %a = {}\n  %b = {}\n",
+                    computer.cycles,
+                    format_cell(&regs.a, false),
+                    format_cell(&regs.b, false),
+                );
+                out.push(self.make_event(
+                    "output",
+                    json!({ "category": "console", "output": summary }),
+                ));
+            }
+        }
+        out.push(self.make_event("terminated", Value::Null));
+        out.push(self.make_event("exited", json!({ "exitCode": code })));
+        out
     }
 
     /// If the program is loaded and configuration is done, deliver the initial
