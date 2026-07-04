@@ -50,7 +50,11 @@ function SelectContent({
   sideOffset = 4,
   align = "center",
   alignOffset = 0,
-  alignItemWithTrigger = true,
+  // Keep the popup a plain dropdown anchored below/above the trigger. The
+  // base-ui "align selected item over the trigger" mode clips (and breaks
+  // scrolling for) the popup when the selected item is far down the list and
+  // the trigger sits near a viewport edge — as the toolbar selects do.
+  alignItemWithTrigger = false,
   ...props
 }: SelectPrimitive.Popup.Props &
   Pick<
