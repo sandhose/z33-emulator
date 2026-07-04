@@ -80,8 +80,8 @@ pub(crate) struct WorkspaceManager {
     root_uri: Option<Url>,
     /// Workspace root as a native path, if the root URI was a `file://` URI.
     native_root: Option<Utf8PathBuf>,
-    /// Host-pushed base files (see `z33/workspaceFiles`), keyed by relative
-    /// path.
+    /// Host-pushed base files (see `zorglub33/workspaceFiles`), keyed by
+    /// relative path.
     base_files: HashMap<Utf8PathBuf, String>,
     /// Currently open documents, keyed by URI.
     documents: HashMap<Url, Document>,

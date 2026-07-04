@@ -1,4 +1,4 @@
-//! WASM bridge for the Z33 Language Server.
+//! WASM bridge for the Zorglub33 Language Server.
 //!
 //! Wraps the runtime-agnostic tower-lsp [`Backend`] and exposes a plain
 //! JSON message-passing interface suitable for `@codemirror/lsp-client`'s

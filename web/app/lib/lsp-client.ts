@@ -34,7 +34,7 @@ interface LspClient {
 const CLIENT_CAPABILITIES = {
   // Client-side commands this host can execute (rust-analyzer-style
   // advertisement); the server gates its run code lens on this.
-  experimental: { commands: ["z33.run"] },
+  experimental: { commands: ["zorglub33.run"] },
   textDocument: {
     synchronization: { dynamicRegistration: false },
     publishDiagnostics: { relatedInformation: true },

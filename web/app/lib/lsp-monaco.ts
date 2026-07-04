@@ -7,7 +7,7 @@
 // (with `rootUri: null`) relativizes URIs to their last path segment, so
 // `file:///fact.s` maps to the workspace-relative path `fact.s` and
 // `#include` directives resolve between open documents and the pushed
-// `z33/workspaceFiles` base map.
+// `zorglub33/workspaceFiles` base map.
 import type * as monaco from "monaco-editor";
 import {
   toCodeLens,
@@ -56,7 +56,7 @@ const lspPosition = (position: monaco.IPosition) => ({
   character: position.column - 1,
 });
 
-/** All files currently in the store, as an LSP `z33/workspaceFiles` payload. */
+/** All files currently in the store, as an LSP `zorglub33/workspaceFiles` payload. */
 function workspaceFilesParams(): { files: Record<string, string> } {
   return { files: { ...useFileStore.getState().files } };
 }
@@ -145,7 +145,7 @@ function setupDocumentSync(m: Monaco, disposables: Disposable[]): FlushFn {
 
   // Push the base file map first so includes resolve immediately, then open
   // every existing model.
-  client.notify("z33/workspaceFiles", workspaceFilesParams());
+  client.notify("zorglub33/workspaceFiles", workspaceFilesParams());
   for (const model of m.editor.getModels()) attach(model);
 
   const onCreate = m.editor.onDidCreateModel(attach);
@@ -166,7 +166,7 @@ function setupDocumentSync(m: Monaco, disposables: Disposable[]): FlushFn {
     const keys = sortedKeys(state.files);
     if (keys === knownKeys) return;
     knownKeys = keys;
-    client.notify("z33/workspaceFiles", workspaceFilesParams());
+    client.notify("zorglub33/workspaceFiles", workspaceFilesParams());
   });
 
   disposables.push(onCreate, onDispose, { dispose: unsubscribe });
@@ -430,7 +430,7 @@ async function registerSemanticTokens(
 let initialized = false;
 
 /** Register all Z33 language features against the given Monaco instance. */
-/** Arguments carried by the server's `z33.run` code lens. */
+/** Arguments carried by the server's `zorglub33.run` code lens. */
 export interface RunCommandArgs {
   path: string;
   label: string;
@@ -439,7 +439,7 @@ export interface RunCommandArgs {
 let runCommandHandler: ((args: RunCommandArgs) => void) | null = null;
 
 /**
- * Install the handler for the run code lens (`z33.run`). The command is
+ * Install the handler for the run code lens (`zorglub33.run`). The command is
  * advertised to the server via the `experimental.commands` capability
  * (lsp-client.ts) and registered with Monaco in `setupLsp`; the app provides
  * the actual behavior (start a debug session at the label) here.
@@ -454,9 +454,12 @@ export function setupLsp(m: Monaco): void {
   // Execution target for the server's run code lens. Registered once,
   // globally: Monaco's code-lens widget dispatches the lens command through
   // the command service by id.
-  m.editor.registerCommand("z33.run", (_accessor, args: RunCommandArgs) => {
-    runCommandHandler?.(args);
-  });
+  m.editor.registerCommand(
+    "zorglub33.run",
+    (_accessor, args: RunCommandArgs) => {
+      runCommandHandler?.(args);
+    },
+  );
 
   if (initialized) return;
   initialized = true;

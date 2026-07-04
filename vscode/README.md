@@ -1,4 +1,4 @@
-# Z33 Assembly for Visual Studio Code
+# Zorglub33 for Visual Studio Code
 
 Language support and debugging for the Zorglub-33 (Z33) educational
 computer architecture, used in the *Architecture des Systèmes
@@ -36,7 +36,7 @@ Open a folder containing your `.s` files and create
   "version": "0.2.0",
   "configurations": [
     {
-      "type": "z33",
+      "type": "zorglub33",
       "request": "launch",
       "name": "Run fact.s",
       "program": "${workspaceFolder}/fact.s",

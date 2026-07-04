@@ -10,9 +10,9 @@ The easiest way to use the emulator is the web IDE at **<https://sandhose.github
 
 ### Visual Studio Code
 
-Install **Z33 Assembly** from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=quentin-gliech.z33-assembly), or from [Open VSX](https://open-vsx.org/extension/quentin-gliech/z33-assembly) for VSCodium and other compatible editors.
+Install **Zorglub33** from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=quentin-gliech.z33-assembly), or from [Open VSX](https://open-vsx.org/extension/quentin-gliech/z33-assembly) for VSCodium and other compatible editors.
 
-It is a pure web extension: syntax highlighting, diagnostics, completion, go-to-definition/rename and the debugger (`F5` with a `z33` launch configuration) all run as WebAssembly inside the editor, so it works the same on desktop VS Code and on [vscode.dev](https://vscode.dev) / [github.dev](https://github.dev).
+It is a pure web extension: syntax highlighting, diagnostics, completion, go-to-definition/rename and the debugger (`F5` with a `zorglub33` launch configuration) all run as WebAssembly inside the editor, so it works the same on desktop VS Code and on [vscode.dev](https://vscode.dev) / [github.dev](https://github.dev).
 
 ### Zed
 

@@ -1,7 +1,7 @@
 {
   "name": "z33-assembly",
-  "displayName": "Z33 Assembly",
-  "description": "Z33 (Zorglub-33) assembly language support",
+  "displayName": "Zorglub33",
+  "description": "Zorglub33 (Z33) assembly language support",
   "version": "0.8.2",
   "publisher": "quentin-gliech",
   "license": "MIT",
@@ -18,15 +18,15 @@
   ],
   "browser": "./dist/extension.js",
   "activationEvents": [
-    "onLanguage:z33-assembly"
+    "onLanguage:zorglub33-assembly"
   ],
   "contributes": {
     "languages": [
       {
-        "id": "z33-assembly",
+        "id": "zorglub33-assembly",
         "aliases": [
-          "Z33 Assembly",
-          "z33"
+          "Zorglub33 Assembly",
+          "zorglub33"
         ],
         "extensions": [
           ".s",
@@ -37,22 +37,22 @@
     ],
     "grammars": [
       {
-        "language": "z33-assembly",
-        "scopeName": "source.z33",
-        "path": "./syntaxes/z33.tmLanguage.json"
+        "language": "zorglub33-assembly",
+        "scopeName": "source.zorglub33",
+        "path": "./syntaxes/zorglub33.tmLanguage.json"
       }
     ],
     "breakpoints": [
       {
-        "language": "z33-assembly"
+        "language": "zorglub33-assembly"
       }
     ],
     "debuggers": [
       {
-        "type": "z33",
-        "label": "Z33 Debug",
+        "type": "zorglub33",
+        "label": "Zorglub33 Debug",
         "languages": [
-          "z33-assembly"
+          "zorglub33-assembly"
         ],
         "configurationAttributes": {
           "launch": {
@@ -62,7 +62,7 @@
             "properties": {
               "program": {
                 "type": "string",
-                "description": "Path to the Z33 assembly entry file to debug.",
+                "description": "Path to the Zorglub33 assembly entry file to debug.",
                 "default": "${file}"
               },
               "entrypoint": {
@@ -80,9 +80,9 @@
         },
         "initialConfigurations": [
           {
-            "type": "z33",
+            "type": "zorglub33",
             "request": "launch",
-            "name": "Debug Z33 program",
+            "name": "Debug Zorglub33 program",
             "program": "${file}",
             "entrypoint": "main",
             "stopOnEntry": true
@@ -90,12 +90,12 @@
         ],
         "configurationSnippets": [
           {
-            "label": "Z33: Launch program",
-            "description": "Debug a Z33 assembly program",
+            "label": "Zorglub33: Launch program",
+            "description": "Debug a Zorglub33 assembly program",
             "body": {
-              "type": "z33",
+              "type": "zorglub33",
               "request": "launch",
-              "name": "Debug Z33 program",
+              "name": "Debug Zorglub33 program",
               "program": "^\"\\${file}\"",
               "entrypoint": "main",
               "stopOnEntry": true
@@ -105,9 +105,9 @@
       }
     ],
     "configuration": {
-      "title": "Z33 Assembly",
+      "title": "Zorglub33",
       "properties": {
-        "z33-assembly.trace.server": {
+        "zorglub33-assembly.trace.server": {
           "type": "string",
           "enum": [
             "off",
@@ -115,7 +115,7 @@
             "verbose"
           ],
           "default": "off",
-          "description": "Trace communication between VS Code and the Z33 language server"
+          "description": "Trace communication between VS Code and the Zorglub33 language server"
         }
       }
     }

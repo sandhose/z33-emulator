@@ -350,7 +350,7 @@ mod tests {
     fn launch_config(program: &str, args: Vec<String>) -> DebugConfig {
         DebugConfig {
             label: "test".to_string(),
-            adapter: "z33".to_string(),
+            adapter: "zorglub33".to_string(),
             request: DebugRequest::Launch(LaunchRequest {
                 program: program.to_string(),
                 cwd: None,
@@ -387,7 +387,7 @@ mod tests {
     fn scenario_rejects_attach() {
         let config = DebugConfig {
             label: "test".to_string(),
-            adapter: "z33".to_string(),
+            adapter: "zorglub33".to_string(),
             request: DebugRequest::Attach(AttachRequest { process_id: None }),
             stop_on_entry: None,
         };

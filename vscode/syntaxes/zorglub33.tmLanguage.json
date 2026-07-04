@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
-  "name": "Z33 Assembly",
-  "scopeName": "source.z33",
+  "name": "Zorglub33 Assembly",
+  "scopeName": "source.zorglub33",
   "patterns": [
     { "include": "#comment" },
     { "include": "#preprocessor" },
@@ -18,35 +18,35 @@
   "repository": {
     "comment": {
       "match": "//.*$",
-      "name": "comment.line.double-slash.z33"
+      "name": "comment.line.double-slash.zorglub33"
     },
     "preprocessor": {
       "patterns": [
         {
           "match": "^\\s*(#(?:define|undefine))\\s+([A-Za-z_]\\w*)",
           "captures": {
-            "1": { "name": "keyword.control.directive.preprocessor.z33" },
-            "2": { "name": "entity.name.constant.preprocessor.z33" }
+            "1": { "name": "keyword.control.directive.preprocessor.zorglub33" },
+            "2": { "name": "entity.name.constant.preprocessor.zorglub33" }
           }
         },
         {
           "match": "^\\s*(#include)\\s+(\"[^\"]*\")",
           "captures": {
-            "1": { "name": "keyword.control.directive.preprocessor.z33" },
-            "2": { "name": "string.quoted.double.z33" }
+            "1": { "name": "keyword.control.directive.preprocessor.zorglub33" },
+            "2": { "name": "string.quoted.double.zorglub33" }
           }
         },
         {
           "match": "^\\s*(#error)\\s+(\"[^\"]*\")",
           "captures": {
-            "1": { "name": "keyword.control.directive.preprocessor.z33" },
-            "2": { "name": "string.quoted.double.z33" }
+            "1": { "name": "keyword.control.directive.preprocessor.zorglub33" },
+            "2": { "name": "string.quoted.double.zorglub33" }
           }
         },
         {
           "match": "^\\s*(#(?:if|elif|else|endif))",
           "captures": {
-            "1": { "name": "keyword.control.directive.preprocessor.z33" }
+            "1": { "name": "keyword.control.directive.preprocessor.zorglub33" }
           }
         }
       ]
@@ -54,69 +54,69 @@
     "label-definition": {
       "match": "\\b([A-Za-z_]\\w*)\\s*:",
       "captures": {
-        "1": { "name": "entity.name.label.z33" }
+        "1": { "name": "entity.name.label.zorglub33" }
       }
     },
     "directive": {
       "match": "(?i)\\.(word|addr|space|string)\\b",
-      "name": "keyword.directive.z33"
+      "name": "keyword.directive.zorglub33"
     },
     "instruction": {
       "match": "(?i)\\b(add|sub|mul|div|neg|and|or|xor|not|shl|shr|ld|st|jmp|jeq|jne|jle|jlt|jge|jgt|cmp|call|rtn|reset|rti|in|out|nop|push|pop|swap|trap|fas)\\b",
-      "name": "keyword.mnemonic.z33"
+      "name": "keyword.mnemonic.zorglub33"
     },
     "register": {
       "match": "(?i)%(a|b|pc|sp|sr)\\b",
-      "name": "variable.language.register.z33"
+      "name": "variable.language.register.zorglub33"
     },
     "number": {
       "patterns": [
         {
           "match": "\\b0[xX][0-9A-Fa-f]+\\b",
-          "name": "constant.numeric.hex.z33"
+          "name": "constant.numeric.hex.zorglub33"
         },
         {
           "match": "\\b0[oO][0-7]+\\b",
-          "name": "constant.numeric.octal.z33"
+          "name": "constant.numeric.octal.zorglub33"
         },
         {
           "match": "\\b0[bB][01]+\\b",
-          "name": "constant.numeric.binary.z33"
+          "name": "constant.numeric.binary.zorglub33"
         },
         {
           "match": "\\b[0-9]+\\b",
-          "name": "constant.numeric.decimal.z33"
+          "name": "constant.numeric.decimal.zorglub33"
         }
       ]
     },
     "string": {
       "begin": "\"",
       "end": "\"",
-      "name": "string.quoted.double.z33",
+      "name": "string.quoted.double.zorglub33",
       "patterns": [
         {
           "match": "\\\\[\\\\\"n]",
-          "name": "constant.character.escape.z33"
+          "name": "constant.character.escape.zorglub33"
         }
       ]
     },
     "identifier": {
       "match": "\\b[A-Za-z_]\\w*\\b",
-      "name": "variable.other.z33"
+      "name": "variable.other.zorglub33"
     },
     "operator": {
       "match": "<<|>>|[+\\-*/&|~]",
-      "name": "keyword.operator.z33"
+      "name": "keyword.operator.zorglub33"
     },
     "punctuation": {
       "patterns": [
         {
           "match": "[\\[\\]()]",
-          "name": "punctuation.bracket.z33"
+          "name": "punctuation.bracket.zorglub33"
         },
         {
           "match": "[,:]",
-          "name": "punctuation.delimiter.z33"
+          "name": "punctuation.delimiter.zorglub33"
         }
       ]
     }

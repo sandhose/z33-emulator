@@ -2,7 +2,7 @@ use clap::Parser;
 use z33_emulator::lsp::tower_lsp::{LspService, Server};
 use z33_emulator::lsp::{Backend, WORKSPACE_FILES_METHOD};
 
-/// Start the Z33 Language Server (LSP)
+/// Start the Zorglub33 Language Server (LSP)
 #[derive(Parser, Debug)]
 pub struct LspOpt {}
 
