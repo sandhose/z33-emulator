@@ -185,13 +185,13 @@ jobs:
 
       - name: Package the extension
         run: npx vsce package --no-dependencies --out z33-assembly.vsix
-        working-directory: vscode
+        working-directory: editors/vscode
 
       - name: Upload the .vsix as artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: vscode-extension
-          path: vscode/z33-assembly.vsix
+          path: editors/vscode/z33-assembly.vsix
 
   marketplace:
     name: Publish to the extension marketplaces
@@ -221,7 +221,7 @@ jobs:
         with:
           node-version: "24"
 
-      # Only needed for the pinned vsce/ovsx CLIs in vscode/'s devDependencies;
+      # Only needed for the pinned vsce/ovsx CLIs in editors/vscode/'s devDependencies;
       # the extension itself is taken prebuilt from the vsix job's artifact.
       - name: Install dependencies
         run: pnpm i
@@ -230,7 +230,7 @@ jobs:
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: vscode-extension
-          path: vscode
+          path: editors/vscode
 
       # Trusted publishing: the `marketplace` environment's OIDC token is
       # exchanged for a Microsoft Entra credential (a user-assigned managed
@@ -245,7 +245,7 @@ jobs:
 
       - name: Publish to the Visual Studio Marketplace
         run: pnpm exec vsce publish --azure-credential --no-dependencies --packagePath z33-assembly.vsix
-        working-directory: vscode
+        working-directory: editors/vscode
 
       # Open VSX is optional: the step is skipped until an OVSX_PAT secret is
       # configured (requires an open-vsx.org account owning the
@@ -253,7 +253,7 @@ jobs:
       - name: Publish to Open VSX
         if: env.OVSX_PAT != ''
         run: pnpm exec ovsx publish z33-assembly.vsix # zizmor: ignore[use-trusted-publishing]
-        working-directory: vscode
+        working-directory: editors/vscode
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
 
@@ -313,16 +313,16 @@ jobs:
 
       - name: Install Node dependencies
         run: pnpm i
-        working-directory: web
+        working-directory: editors/web
 
       - name: Build the app
         run: pnpm run build
-        working-directory: web
+        working-directory: editors/web
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
-          path: "./web/dist"
+          path: "./editors/web/dist"
 
       - name: Deploy to GitHub Pages
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0

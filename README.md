@@ -19,7 +19,7 @@ It is a pure web extension: syntax highlighting, diagnostics, completion, go-to-
 The Zed extension is not published to the extension registry yet, but it can be installed as a dev extension (this compiles it locally, so a [Rust toolchain](https://www.rust-lang.org/tools/install) is required):
 
 1. Clone this repository.
-2. In Zed, open the command palette and run `zed: install dev extension`, then select the `zed/` directory.
+2. In Zed, open the command palette and run `zed: install dev extension`, then select the `editors/zed/` directory.
 
 The extension provides highlighting (tree-sitter), the language server and the debugger. It uses `z33-cli` from your `PATH` if available, and otherwise downloads a prebuilt binary from the GitHub releases automatically.
 

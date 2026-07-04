@@ -1,5 +1,5 @@
 [package]
-name = "z33-web"
+name = "z33-wasm"
 description.workspace = true
 homepage.workspace = true
 version.workspace = true

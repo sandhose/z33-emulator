@@ -122,7 +122,7 @@
   },
   "scripts": {
     "vscode:prepublish": "pnpm run build",
-    "build:wasm": "wasm-pack build ../web --target web --out-dir ../vscode/dist/pkg --out-name z33_web",
+    "build:wasm": "wasm-pack build ../../crates/wasm --target web --out-dir ../../editors/vscode/dist/pkg --out-name z33_web",
     "build:bundle": "node build.mjs --production",
     "build": "pnpm run build:wasm && pnpm run build:bundle",
     "watch": "node build.mjs --watch",

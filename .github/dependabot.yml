@@ -19,7 +19,7 @@ updates:
     cooldown:
       default-days: 7
     ignore:
-      # Must stay in sync with engines.vscode in vscode/package.json:
+      # Must stay in sync with engines.vscode in editors/vscode/package.json:
       # vsce refuses to package when @types/vscode exceeds the engine floor.
       # Bump both together when raising the minimum VS Code version.
       - dependency-name: "@types/vscode"

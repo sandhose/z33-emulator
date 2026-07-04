@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Sets the project version across every shipped manifest:
 #   - Cargo.toml [workspace.package] (inherited by all crates) + Cargo.lock
-#   - vscode/package.json (the VS Code extension)
-#   - zed/extension.toml (the Zed extension), whose pinned tree-sitter
+#   - editors/vscode/package.json (the VS Code extension)
+#   - editors/zed/extension.toml (the Zed extension), whose pinned tree-sitter
 #     grammar `rev` is also refreshed to the current HEAD
 #   - tree-sitter-z33/package.json and tree-sitter.json (the grammar),
 #     plus the committed generated parser, which embeds that version
@@ -32,9 +32,9 @@ perl -0777 -pi -e 's/^version = "[^"]+"/version = "$ENV{VERSION}"/m' Cargo.toml
 perl -0777 -pi -e '
   s/^version = "[^"]+"/version = "$ENV{VERSION}"/m;
   s/^rev = "[0-9a-f]+"/rev = "$ENV{GRAMMAR_REV}"/m;
-' zed/extension.toml
+' editors/zed/extension.toml
 
-(cd vscode && npm pkg set version="$VERSION")
+(cd editors/vscode && npm pkg set version="$VERSION")
 (cd tree-sitter-z33 && npm pkg set version="$VERSION")
 
 TMP="$(mktemp)"

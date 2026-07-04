@@ -7,7 +7,7 @@ import {
 
 const sampleFiles = Object.fromEntries(
   Object.entries(
-    import.meta.glob<string>("../../../samples/*.s", {
+    import.meta.glob<string>("../../../../samples/*.s", {
       query: "?raw",
       import: "default",
       eager: true,

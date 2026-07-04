@@ -1,8 +1,8 @@
 # $schema: https://www.schemastore.org/pnpm-workspace.json
 
 packages:
-  - web
-  - vscode
+  - editors/web
+  - editors/vscode
   - tree-sitter-z33
 
 ignoredBuiltDependencies:

@@ -4,7 +4,7 @@
  * @license MIT
  *
  * This grammar mirrors the chumsky-based reference parser in
- * `emulator/src/parser/`. Notable points that were verified against the
+ * `crates/emulator/src/parser/`. Notable points that were verified against the
  * reference implementation:
  *
  *  - Comments are `//` to end of line (`parser/assembly.rs::inline_comment`).

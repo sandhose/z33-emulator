@@ -119,21 +119,21 @@ jobs:
 
       - name: Reuse the wasm bindings for the vscode extension
         run: |
-          mkdir -p vscode/dist
-          cp -r web/pkg vscode/dist/pkg
+          mkdir -p editors/vscode/dist
+          cp -r editors/web/pkg editors/vscode/dist/pkg
 
       - name: Run lint and format check
         run: pnpm -r run check
 
       - name: Check for unused exports
-        run: pnpm -r --filter './web' knip
+        run: pnpm -r --filter './editors/web' knip
 
   e2e:
     name: "Playwright E2E tests"
     runs-on: ubuntu-24.04
     defaults:
       run:
-        working-directory: web
+        working-directory: editors/web
     steps:
       - name: Checkout sources
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -170,8 +170,8 @@ jobs:
         with:
           name: playwright-report
           path: |
-            web/playwright-report/
-            web/test-results/
+            editors/web/playwright-report/
+            editors/web/test-results/
           retention-days: 7
 
   tree-sitter:
