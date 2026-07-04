@@ -45,6 +45,11 @@ export type WorkerRequest =
   | { type: "pause" }
   | { type: "stop" }
   | { type: "setBreakpoints"; addresses: number[] }
+  /**
+   * Target clock speed in cycles per second; `null` = full speed. Stateful like
+   * `setBreakpoints` and may arrive mid-run.
+   */
+  | { type: "setSpeed"; speed: number | null }
   | { id: number; type: "resolveBreakpoint"; file: string; line: number }
   | { type: "watchCells"; addresses: number[] }
   | { type: "unwatchCells"; addresses: number[] };

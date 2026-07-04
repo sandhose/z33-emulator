@@ -1,5 +1,11 @@
-import { PauseIcon, PencilIcon, PlayIcon, StepForwardIcon } from "lucide-react";
-import { memo } from "react";
+import {
+  GaugeIcon,
+  PauseIcon,
+  PencilIcon,
+  PlayIcon,
+  StepForwardIcon,
+} from "lucide-react";
+import { memo, useEffect } from "react";
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
 import {
@@ -20,7 +26,17 @@ import { useCycles } from "./hooks/use-computer";
 import { useStepRunner } from "./hooks/use-step-runner";
 import { cn } from "./lib/utils";
 import { useAppStore } from "./stores/app-store";
+import { SPEED_OPTIONS, useSpeedStore } from "./stores/speed-store";
 import { ThemeSwitcher } from "./theme-switcher";
+
+/** Stable select key for a speed value ("max" or the number in cycles/s). */
+const speedKey = (speed: number | null): string =>
+  speed === null ? "max" : String(speed);
+
+/** Select `items` map: stable key -> human label (rendered by SelectValue). */
+const SPEED_ITEMS = Object.fromEntries(
+  SPEED_OPTIONS.map((o) => [speedKey(o.speed), o.label]),
+);
 
 type DebugToolbarProps = {
   className?: string;
@@ -69,6 +85,13 @@ const DebugToolbarInner: React.FC<{
   const cycles = useCycles(computer);
   const { halt, panicked, running, stepOnce, run, pause } =
     useStepRunner(computer);
+  const speed = useSpeedStore((s) => s.speed);
+  const setSpeed = useSpeedStore((s) => s.setSpeed);
+
+  // Seed the worker on session start and apply live speed changes mid-run.
+  useEffect(() => {
+    computer.setSpeed(speed);
+  }, [computer, speed]);
 
   const disabled = halt || panicked !== null;
 
@@ -102,6 +125,39 @@ const DebugToolbarInner: React.FC<{
           Run
         </Button>
       )}
+
+      <Select
+        value={speedKey(speed)}
+        items={SPEED_ITEMS}
+        onValueChange={(v) => {
+          const option = SPEED_OPTIONS.find((o) => speedKey(o.speed) === v);
+          if (option) setSpeed(option.speed);
+        }}
+      >
+        <Tooltip>
+          <TooltipTrigger
+            render={<SelectTrigger size="xs" className="w-24 font-mono" />}
+          >
+            <GaugeIcon data-icon="inline-start" />
+            <SelectValue />
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            Clock speed in cycles per second — instructions with memory operands
+            take proportionally longer
+          </TooltipContent>
+        </Tooltip>
+        <SelectContent align="start">
+          {SPEED_OPTIONS.map((o) => (
+            <SelectItem
+              key={speedKey(o.speed)}
+              value={speedKey(o.speed)}
+              className="font-mono text-xs"
+            >
+              {o.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
 
       <div className="mx-2 h-4 w-px bg-border" />
 
