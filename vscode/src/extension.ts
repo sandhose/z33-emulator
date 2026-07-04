@@ -17,9 +17,19 @@ import { LanguageClient, type LanguageClientOptions } from "vscode-languageclien
 
 import initDapWasm, { WasmDapServer } from "../dist/pkg/z33_web.js";
 import { Z33DebugAdapter } from "./debug-adapter.js";
-import { collectWorkspaceFiles, FILE_GLOB } from "./workspace-paths.js";
+import {
+  collectWorkspaceFiles,
+  FILE_GLOB,
+  includeWorkspaceFolderInPaths,
+} from "./workspace-paths.js";
 
 const WORKSPACE_FILES_METHOD = "z33/workspaceFiles";
+/**
+ * Client-side command carried by the server's run code lens. Advertised to
+ * the server via the `experimental.commands` client capability; the server
+ * only emits the lens when it sees the advertisement.
+ */
+const RUN_COMMAND = "z33.run";
 /** Give the wasm worker a generous window to instantiate before giving up. */
 const HANDSHAKE_TIMEOUT_MS = 30_000;
 /** Debounce window for coalescing rapid file-watcher events. */
@@ -113,11 +123,53 @@ async function activateInner(context: vscode.ExtensionContext): Promise<void> {
       { language: "z33-assembly", scheme: "file" },
       { language: "z33-assembly", scheme: "vscode-vfs" },
       { language: "z33-assembly", scheme: "untitled" },
+      // @vscode/test-web mounts the workspace under this scheme; without it
+      // the extension is untestable in a dev web host.
+      { language: "z33-assembly", scheme: "vscode-test-web" },
     ],
   };
 
   client = new LanguageClient("z33-assembly", "Z33 Language Server", worker, clientOptions);
+  // Tell the server which client-side commands we can execute, so it emits
+  // the run code lens (rust-analyzer-style `experimental.commands`).
+  client.registerFeature({
+    fillClientCapabilities(capabilities) {
+      capabilities.experimental = {
+        ...(capabilities.experimental as Record<string, unknown> | undefined),
+        commands: [RUN_COMMAND],
+      };
+    },
+    initialize() {},
+    getState() {
+      return { kind: "static" };
+    },
+    clear() {},
+  });
   await client.start();
+
+  // Handler for the run code lens: start a debug session with the lens's
+  // label as the entrypoint. The lens carries the server's workspace-relative
+  // path; map it back to the real file URI (the debug adapter matches
+  // `program` against `uri.toString()`).
+  context.subscriptions.push(
+    vscode.commands.registerCommand(RUN_COMMAND, async (args: { path: string; label: string }) => {
+      const includeFolder = includeWorkspaceFolderInPaths();
+      const uris = await vscode.workspace.findFiles(FILE_GLOB);
+      const uri = uris.find((u) => vscode.workspace.asRelativePath(u, includeFolder) === args.path);
+      if (uri === undefined) {
+        void vscode.window.showErrorMessage(`Z33: could not find ${args.path} in the workspace`);
+        return;
+      }
+      await vscode.debug.startDebugging(vscode.workspace.getWorkspaceFolder(uri), {
+        type: "z33",
+        request: "launch",
+        name: `Run ${args.label}`,
+        program: uri.toString(),
+        entrypoint: args.label,
+        stopOnEntry: false,
+      });
+    }),
+  );
 
   // Seed the server's include-resolution base map and keep it in sync. Watcher
   // events can arrive in bursts (multi-file save, branch switch); debounce and

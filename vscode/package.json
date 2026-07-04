@@ -17,6 +17,9 @@
     "Debuggers"
   ],
   "browser": "./dist/extension.js",
+  "activationEvents": [
+    "onLanguage:z33-assembly"
+  ],
   "contributes": {
     "languages": [
       {

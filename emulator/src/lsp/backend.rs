@@ -15,12 +15,17 @@ use tower_lsp::lsp_types::{
 };
 use tower_lsp::{jsonrpc, Client, LanguageServer};
 
+use super::document::LabelKind;
 use super::references::OccurrenceKind;
 use super::workspace::WorkspaceManager;
 use super::{completion, hover, position, semantic_tokens, symbols};
 
 /// The custom notification the host uses to push in-memory workspace files.
 pub const WORKSPACE_FILES_METHOD: &str = "z33/workspaceFiles";
+
+/// Client-side command carried by the run code lens. Only emitted when the
+/// client advertised it in the `experimental.commands` capability.
+pub const RUN_COMMAND: &str = "z33.run";
 
 /// LSP backend for Z33 assembly.
 ///
@@ -84,6 +89,90 @@ impl Backend {
 
 /// Parse the params of the `z33/workspaceFiles` notification into a relative
 /// path -> content map. Unknown or malformed entries are silently ignored.
+/// Extract the client-side commands advertised in the `experimental`
+/// client capability: `{"experimental": {"commands": ["z33.run", ...]}}`.
+fn parse_client_commands(
+    experimental: Option<&serde_json::Value>,
+) -> std::collections::HashSet<String> {
+    experimental
+        .and_then(|e| e.get("commands"))
+        .and_then(|c| c.as_array())
+        .map(|cmds| {
+            cmds.iter()
+                .filter_map(|c| c.as_str().map(str::to_owned))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Build the code lenses for a document: an informational lens (resolved
+/// address + reference count) on every label defined in it, preceded by a
+/// `z33.run` lens on executable labels when `run_lens_path` is set (i.e. the
+/// client advertised it can execute the command).
+fn build_code_lenses(
+    source: &str,
+    analysis: &super::document::DocumentState,
+    run_lens_path: Option<&camino::Utf8Path>,
+) -> Vec<CodeLens> {
+    let root = analysis.root_file_id();
+    let mut lenses = Vec::new();
+
+    for (name, addr) in analysis.labels() {
+        // Only place a lens on labels defined in this document.
+        let Some(def) = analysis
+            .occurrences_of(name)
+            .find(|o| o.kind == OccurrenceKind::Definition && o.file_id == root)
+        else {
+            continue;
+        };
+        let Some(range) = position::range(source, def.span.clone()) else {
+            continue;
+        };
+
+        // Executable labels get a run lens (start execution with this label
+        // as the entrypoint), when the client can handle it.
+        if let Some(path) = run_lens_path {
+            if analysis.label_kind(name) == Some(LabelKind::Code) {
+                lenses.push(CodeLens {
+                    range,
+                    command: Some(Command {
+                        title: format!("\u{25b6} Run {name}"),
+                        command: RUN_COMMAND.to_string(),
+                        arguments: Some(vec![serde_json::json!({
+                            "path": path,
+                            "label": name,
+                        })]),
+                    }),
+                    data: None,
+                });
+            }
+        }
+
+        let ref_count = analysis
+            .occurrences_of(name)
+            .filter(|o| o.kind != OccurrenceKind::Definition)
+            .count();
+
+        let refs = match ref_count {
+            0 => "0 references".to_string(),
+            1 => "1 reference".to_string(),
+            n => format!("{n} references"),
+        };
+
+        lenses.push(CodeLens {
+            range,
+            command: Some(Command {
+                title: format!("address {addr} | {refs}"),
+                command: String::new(),
+                arguments: None,
+            }),
+            data: None,
+        });
+    }
+
+    lenses
+}
+
 fn parse_workspace_files(params: &serde_json::Value) -> HashMap<Utf8PathBuf, String> {
     let mut files = HashMap::new();
     if let Some(map) = params.get("files").and_then(serde_json::Value::as_object) {
@@ -108,7 +197,18 @@ impl LanguageServer for Backend {
                 .and_then(|folders| folders.into_iter().next())
                 .map(|folder| folder.uri)
         });
-        self.lock().set_root(root_uri);
+        // Client-side commands the client can execute, advertised through the
+        // open-ended `experimental` capability (same convention as
+        // rust-analyzer): `{"experimental": {"commands": ["z33.run", ...]}}`.
+        // Server-produced `Command`s (e.g. the run code lens) are only
+        // emitted when the client declared it can handle them.
+        let client_commands = parse_client_commands(params.capabilities.experimental.as_ref());
+
+        {
+            let mut manager = self.lock();
+            manager.set_root(root_uri);
+            manager.set_client_commands(client_commands);
+        }
 
         Ok(InitializeResult {
             capabilities: ServerCapabilities {
@@ -312,7 +412,7 @@ impl LanguageServer for Backend {
     ) -> jsonrpc::Result<Option<Vec<CodeLens>>> {
         let uri = &params.text_document.uri;
 
-        let (source, analysis) = {
+        let (source, analysis, run_lens_path) = {
             let manager = self.lock();
             let Some(source) = manager.source(uri) else {
                 return Ok(None);
@@ -320,47 +420,16 @@ impl LanguageServer for Backend {
             let Some(analysis) = manager.analysis(uri) else {
                 return Ok(None);
             };
-            (source, analysis)
+            // The run lens only makes sense where a client-side handler
+            // exists (VS Code extension, web IDE). Other clients (e.g. Zed)
+            // get the informational lens only.
+            let run_lens_path = manager
+                .supports_client_command(RUN_COMMAND)
+                .then(|| manager.relative_for_uri(uri));
+            (source, analysis, run_lens_path)
         };
 
-        let root = analysis.root_file_id();
-        let mut lenses = Vec::new();
-
-        for (name, addr) in analysis.labels() {
-            // Only place a lens on labels defined in this document.
-            let Some(def) = analysis
-                .occurrences_of(name)
-                .find(|o| o.kind == OccurrenceKind::Definition && o.file_id == root)
-            else {
-                continue;
-            };
-            let Some(range) = position::range(&source, def.span.clone()) else {
-                continue;
-            };
-
-            let ref_count = analysis
-                .occurrences_of(name)
-                .filter(|o| o.kind != OccurrenceKind::Definition)
-                .count();
-
-            let refs = match ref_count {
-                0 => "0 references".to_string(),
-                1 => "1 reference".to_string(),
-                n => format!("{n} references"),
-            };
-            let title = format!("address {addr} | {refs}");
-
-            lenses.push(CodeLens {
-                range,
-                command: Some(Command {
-                    title,
-                    command: String::new(),
-                    arguments: None,
-                }),
-                data: None,
-            });
-        }
-
+        let lenses = build_code_lenses(&source, &analysis, run_lens_path.as_deref());
         if lenses.is_empty() {
             Ok(None)
         } else {
@@ -437,7 +506,8 @@ mod tests {
     use camino::Utf8PathBuf;
     use serde_json::json;
 
-    use super::parse_workspace_files;
+    use super::{build_code_lenses, parse_client_commands, parse_workspace_files, RUN_COMMAND};
+    use crate::lsp::document::DocumentState;
 
     #[test]
     fn parses_workspace_files_params() {
@@ -469,5 +539,46 @@ mod tests {
         let files = parse_workspace_files(&json!({ "files": { "a.s": 1, "b.s": "ok" } }));
         assert_eq!(files.len(), 1);
         assert!(files.contains_key(&Utf8PathBuf::from("b.s")));
+    }
+
+    #[test]
+    fn parses_client_commands_capability() {
+        let caps = json!({ "commands": ["z33.run", "z33.other"] });
+        let cmds = parse_client_commands(Some(&caps));
+        assert!(cmds.contains(RUN_COMMAND));
+        assert!(cmds.contains("z33.other"));
+
+        assert!(parse_client_commands(None).is_empty());
+        assert!(parse_client_commands(Some(&json!({}))).is_empty());
+        assert!(parse_client_commands(Some(&json!({ "commands": "z33.run" }))).is_empty());
+    }
+
+    #[test]
+    fn run_lens_gated_on_client_capability_and_label_kind() {
+        let src = "main:\n    reset\nvalue:\n    .word 42\n";
+        let analysis = DocumentState::new(src.to_string());
+
+        // Client did not advertise z33.run: informational lenses only.
+        let lenses = build_code_lenses(src, &analysis, None);
+        assert_eq!(lenses.len(), 2);
+        assert!(lenses
+            .iter()
+            .all(|l| l.command.as_ref().unwrap().command.is_empty()));
+
+        // Client advertised it: the code label gains a run lens, the data
+        // label does not.
+        let lenses = build_code_lenses(src, &analysis, Some(camino::Utf8Path::new("main.s")));
+        assert_eq!(lenses.len(), 3);
+        let run: Vec<_> = lenses
+            .iter()
+            .filter(|l| l.command.as_ref().unwrap().command == RUN_COMMAND)
+            .collect();
+        assert_eq!(run.len(), 1);
+        let cmd = run[0].command.as_ref().unwrap();
+        assert_eq!(cmd.title, "\u{25b6} Run main");
+        assert_eq!(
+            cmd.arguments,
+            Some(vec![json!({ "path": "main.s", "label": "main" })])
+        );
     }
 }

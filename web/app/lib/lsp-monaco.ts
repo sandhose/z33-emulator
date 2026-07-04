@@ -430,7 +430,34 @@ async function registerSemanticTokens(
 let initialized = false;
 
 /** Register all Z33 language features against the given Monaco instance. */
+/** Arguments carried by the server's `z33.run` code lens. */
+export interface RunCommandArgs {
+  path: string;
+  label: string;
+}
+
+let runCommandHandler: ((args: RunCommandArgs) => void) | null = null;
+
+/**
+ * Install the handler for the run code lens (`z33.run`). The command is
+ * advertised to the server via the `experimental.commands` capability
+ * (lsp-client.ts) and registered with Monaco in `setupLsp`; the app provides
+ * the actual behavior (start a debug session at the label) here.
+ */
+export function setRunCommandHandler(
+  handler: ((args: RunCommandArgs) => void) | null,
+): void {
+  runCommandHandler = handler;
+}
+
 export function setupLsp(m: Monaco): void {
+  // Execution target for the server's run code lens. Registered once,
+  // globally: Monaco's code-lens widget dispatches the lens command through
+  // the command service by id.
+  m.editor.registerCommand("z33.run", (_accessor, args: RunCommandArgs) => {
+    runCommandHandler?.(args);
+  });
+
   if (initialized) return;
   initialized = true;
 

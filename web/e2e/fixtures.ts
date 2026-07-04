@@ -22,7 +22,7 @@ export async function waitForCompileError(page: Page): Promise<void> {
 
 export async function enterDebugMode(page: Page): Promise<void> {
   await waitForCompileSuccess(page);
-  await page.getByRole("button", { name: "Run" }).click();
+  await page.getByRole("button", { name: "Run", exact: true }).click();
   await expect(page.getByRole("toolbar", { name: "Debug" })).toBeVisible();
 }
 

@@ -1,11 +1,12 @@
 import { useMonaco } from "@monaco-editor/react";
 import type * as monaco from "monaco-editor";
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { DebugLayout } from "./debug-layout";
 import { EditToolbar } from "./edit-toolbar";
 import { FileSidebar } from "./file-sidebar";
 import { useCompilation } from "./hooks/use-compilation";
 import { stripLeadingSlash } from "./lib/file-paths";
+import { setRunCommandHandler } from "./lib/lsp-monaco";
 import { getMonacoFiles } from "./lib/monaco-sync";
 import { MultiFileEditor } from "./multi-file-editor";
 import { useAppStore } from "./stores/app-store";
@@ -26,10 +27,9 @@ const App = () => {
     monacoInstance,
   );
 
-  const handleRun = useCallback(
-    (entrypoint: string) => {
-      if (compilationResult.type !== "success") return;
-      setEntrypoint(activeFile, entrypoint);
+  const runFile = useCallback(
+    (file: string, entrypoint: string) => {
+      setEntrypoint(file, entrypoint);
       // Use the freshest editor contents, keyed by file-store name (no leading
       // slash) to match the emulator worker / LSP URI conventions.
       const files = Object.fromEntries(
@@ -38,13 +38,35 @@ const App = () => {
           content,
         ]),
       );
-      void startDebug(files, activeFile, entrypoint).catch((e: unknown) => {
-        // check() should have caught errors before Run; this is a safety net.
+      void startDebug(files, file, entrypoint).catch((e: unknown) => {
+        // The compile check should have caught errors before Run; this is a
+        // safety net.
         console.error("Failed to start debug session:", e);
       });
     },
-    [compilationResult, activeFile, setEntrypoint, startDebug],
+    [setEntrypoint, startDebug],
   );
+
+  const handleRun = useCallback(
+    (entrypoint: string) => {
+      if (compilationResult.type !== "success") return;
+      runFile(activeFile, entrypoint);
+    },
+    [compilationResult, activeFile, runFile],
+  );
+
+  // The LSP run code lens: start (or restart) a debug session with the lens's
+  // file as the program and its label as the entrypoint. The lens path is the
+  // server's workspace-relative path — the same no-leading-slash convention as
+  // the file store.
+  useEffect(() => {
+    setRunCommandHandler(({ path, label }) => {
+      const { mode, stopDebug } = useAppStore.getState();
+      if (mode.type === "debug") stopDebug();
+      runFile(path, label);
+    });
+    return () => setRunCommandHandler(null);
+  }, [runFile]);
 
   const handleEditorMount = useCallback(
     (editor: monaco.editor.IStandaloneCodeEditor) => {
