@@ -14,7 +14,7 @@
     }
   ],
   "metadata": {
-    "version": "0.8.1",
+    "version": "0.8.2",
     "license": "MIT",
     "description": "Z33 (Zorglub-33) assembly grammar for tree-sitter",
     "authors": [
