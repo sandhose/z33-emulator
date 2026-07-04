@@ -296,6 +296,9 @@ pub enum BatchStatus {
 pub struct BatchResult {
     pub status: BatchStatus,
     pub steps: u32,
+    /// Cycles consumed by this batch (1 per instruction + 1 per memory
+    /// operand). Lets the caller pace execution by clock speed.
+    pub cycles: usize,
     pub error: Option<String>,
 }
 
@@ -397,6 +400,7 @@ impl Computer {
         let mut steps: u32 = 0;
         let mut status = BatchStatus::Running;
         let mut error = None;
+        let cycles_before = self.inner.cycles;
 
         while steps < max_steps {
             match self.inner.step() {
@@ -425,6 +429,7 @@ impl Computer {
         BatchResult {
             status,
             steps,
+            cycles: self.inner.cycles - cycles_before,
             error,
         }
     }

@@ -273,6 +273,10 @@ export class ComputerProxy implements ComputerInterface {
     this.#client.send({ type: "setBreakpoints", addresses });
   }
 
+  setSpeed(speed: number | null): void {
+    this.#client.send({ type: "setSpeed", speed });
+  }
+
   resolveBreakpoint(
     file: string,
     line: number,

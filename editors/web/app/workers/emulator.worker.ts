@@ -4,6 +4,12 @@
 // `../lib/emulator-protocol`. Continuous "run" is executed here in bounded
 // batches (via the wasm `run_batch`), yielding to the event loop between
 // batches so `pause` / `setBreakpoints` messages are processed promptly.
+//
+// A paced mode ("run slowly") is layered on top: when a target clock speed
+// (cycles per second) is set, each rAF/timeout wake-up runs one batch sized to
+// the cycles owed since the last one, pacing against `performance.now()` using
+// the per-batch cycle cost reported by the emulator. Full speed
+// (`speed === null`) uses the trampoline.
 import type {
   RunStatus,
   Snapshot,
@@ -22,6 +28,11 @@ import wasmUrl from "../../pkg/z33_web_bg.wasm?url";
 const BATCH_SIZE = 50_000;
 /** Minimum interval between pushed snapshots while running (ms). */
 const SNAPSHOT_INTERVAL_MS = 40;
+/**
+ * Bounds catch-up in the paced loop after the tab was hidden (worker rAF pauses
+ * in background tabs, so `dueAt` would otherwise fall far behind wall time).
+ */
+const MAX_CATCHUP_MS = 100;
 
 const ready = init({ module_or_path: wasmUrl });
 
@@ -46,6 +57,10 @@ let breakpoints: number[] = [];
 const watched = new Map<number, () => void>();
 const pendingCells = new Map<number, Cell>();
 let lastSnapshotAt = 0;
+/** Target clock speed in cycles per second; `null` = full speed. */
+let speed: number | null = null;
+/** Virtual time (ms) at which the next batch is due in the paced loop. */
+let dueAt = 0;
 
 function post(message: WorkerResponse): void {
   // oxlint-disable-next-line unicorn/require-post-message-target-origin -- Worker.postMessage takes no targetOrigin
@@ -99,28 +114,102 @@ function scheduleTick(): void {
   trampoline.port2.postMessage(null);
 }
 
-function runTick(): void {
-  if (!running || !computer) return;
+/**
+ * Run one batch of at most `maxSteps` instructions, handling the terminal
+ * outcomes shared by both run loops: on throw or terminal status the run stops
+ * and the final snapshot is pushed, returning `null`. Returns the batch result
+ * when execution should continue.
+ */
+function executeBatch(
+  maxSteps: number,
+): ReturnType<Computer["run_batch"]> | null {
+  if (!computer) return null;
   let result: ReturnType<Computer["run_batch"]>;
   try {
-    result = computer.run_batch(BATCH_SIZE, Uint32Array.from(breakpoints));
+    result = computer.run_batch(maxSteps, Uint32Array.from(breakpoints));
   } catch (error) {
     running = false;
     pushSnapshot("panicked", String(error));
-    return;
+    return null;
   }
 
   const status = statusFromBatch(result.status);
   if (status !== "running") {
     running = false;
     pushSnapshot(status, result.error ?? undefined);
-    return;
+    return null;
   }
+  return result;
+}
+
+function runTick(): void {
+  // A stale trampoline tick can fire after a switch to the paced loop; the
+  // `speed === null` guard makes it a no-op so only one scheduling chain runs.
+  if (!running || !computer || speed !== null) return;
+  if (!executeBatch(BATCH_SIZE)) return;
 
   if (performance.now() - lastSnapshotAt >= SNAPSHOT_INTERVAL_MS) {
     pushSnapshot("running");
   }
   scheduleTick();
+}
+
+// Paced loop scheduling. The rAF/timeout is only a wake-up; accuracy comes from
+// pacing `dueAt` against `performance.now()`. Worker rAF is preferred (it pauses
+// in background tabs, avoiding wasted wake-ups), with a setTimeout fallback.
+const useRaf = typeof self.requestAnimationFrame === "function";
+let slowTickHandle: number | null = null;
+
+function scheduleSlowTick(): void {
+  slowTickHandle = useRaf
+    ? self.requestAnimationFrame(slowTick)
+    : setTimeout(slowTick, 16);
+}
+
+function cancelSlowTick(): void {
+  if (slowTickHandle === null) return;
+  if (useRaf) self.cancelAnimationFrame(slowTickHandle);
+  else clearTimeout(slowTickHandle);
+  slowTickHandle = null;
+}
+
+function slowTick(): void {
+  // A stale rAF/timeout callback can fire after a switch to full speed or a
+  // pause; the `speed === null` / `running` guards make it a no-op.
+  if (!running || !computer || speed === null) return;
+  const now = performance.now();
+  dueAt = Math.max(dueAt, now - MAX_CATCHUP_MS);
+  if (dueAt <= now) {
+    // One batch per wake-up: every instruction costs >= 1 cycle, so
+    // `result.cycles >= steps == budget >= owed` — a single call always
+    // advances `dueAt` past `now`. When instructions cost more than 1 cycle we
+    // overshoot slightly and `dueAt` self-corrects (idle a bit longer); the
+    // long-run rate stays exact. At slow speeds `owed` rounds to 1, keeping
+    // single-instruction granularity.
+    const owed = Math.ceil(((now - dueAt) * speed) / 1000);
+    const result = executeBatch(Math.min(Math.max(1, owed), BATCH_SIZE));
+    if (!result) return;
+    dueAt += (result.cycles * 1000) / speed;
+    if (now - lastSnapshotAt >= SNAPSHOT_INTERVAL_MS) {
+      pushSnapshot("running");
+    }
+  }
+  scheduleSlowTick();
+}
+
+/**
+ * Start (or restart) the scheduling chain matching the current speed. Keeps
+ * exactly one chain alive: any pending slow tick is cancelled, and a stale
+ * trampoline tick no-ops on its `speed === null` guard.
+ */
+function startRunLoop(): void {
+  cancelSlowTick();
+  if (speed === null) {
+    scheduleTick();
+  } else {
+    dueAt = performance.now();
+    scheduleSlowTick();
+  }
 }
 
 function watch(address: number): void {
@@ -142,6 +231,7 @@ function unwatch(address: number): void {
 
 function stopSession(): void {
   running = false;
+  cancelSlowTick();
   breakpoints = [];
   for (const unsubscribe of watched.values()) unsubscribe();
   watched.clear();
@@ -225,12 +315,13 @@ self.addEventListener("message", (event: MessageEvent<WorkerRequest>) => {
       case "run": {
         if (!computer || running) return;
         running = true;
-        scheduleTick();
+        startRunLoop();
         break;
       }
       case "pause": {
         if (!running) return;
         running = false;
+        cancelSlowTick();
         pushSnapshot("paused");
         break;
       }
@@ -240,6 +331,16 @@ self.addEventListener("message", (event: MessageEvent<WorkerRequest>) => {
       }
       case "setBreakpoints": {
         breakpoints = message.addresses;
+        break;
+      }
+      case "setSpeed": {
+        const previous = speed;
+        // Coerce invalid speeds (0, negative, NaN, Infinity, non-numbers) to
+        // full speed: 0 would push `dueAt` to Infinity and silently freeze.
+        const s = message.speed;
+        speed = typeof s === "number" && Number.isFinite(s) && s > 0 ? s : null;
+        // Restart the scheduling chain when the speed changes mid-run.
+        if (running && previous !== speed) startRunLoop();
         break;
       }
       case "resolveBreakpoint": {
