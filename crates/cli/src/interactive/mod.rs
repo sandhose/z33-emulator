@@ -102,6 +102,18 @@ enum Command {
     /// Continue the program until the next breakpoint or reset
     Continue,
 
+    /// Send text to the program's serial console input
+    ///
+    /// The text is delivered to the serial receive queue followed by a newline
+    /// (Enter is `\n`), as one delivery (one interrupt for interrupt-driven
+    /// programs). With no argument, only a newline is sent. Queue input before
+    /// `continue` so a program polling for input does not spin forever.
+    Input {
+        /// The text to send. A trailing newline is always appended.
+        #[clap(value_parser, trailing_var_arg = true, allow_hyphen_values = true)]
+        text: Vec<String>,
+    },
+
     /// Show informations about the current debugging session
     Info {
         #[clap(subcommand)]
@@ -247,6 +259,21 @@ impl Session {
     }
 }
 
+/// Drain serial output produced by the guest and write it raw to stdout.
+///
+/// Program output bypasses `tracing` on purpose: it must not be mangled by log
+/// formatting. Write errors are ignored — a broken stdout is not recoverable
+/// here and should not abort the debugging session.
+fn flush_serial_output(computer: &mut Computer) {
+    let output = computer.io.serial.drain_output();
+    if !output.is_empty() {
+        use std::io::Write;
+        let stdout = std::io::stdout();
+        let mut handle = stdout.lock();
+        let _ = handle.write_all(&output).and_then(|()| handle.flush());
+    }
+}
+
 #[allow(clippy::too_many_lines)]
 pub(crate) fn run_interactive(computer: &mut Computer, debug_info: DebugInfo) {
     info!("Running in interactive mode. Type \"help\" to list available commands.");
@@ -268,6 +295,11 @@ pub(crate) fn run_interactive(computer: &mut Computer, debug_info: DebugInfo) {
     let mut halted = false;
 
     'read: loop {
+        // Flush any serial output produced by the previous command's execution
+        // before the next prompt renders (covers step / continue / interrupt,
+        // including paths that `continue 'read`).
+        flush_serial_output(computer);
+
         // A macro to unwrap an error, log it and continue the loop
         macro_rules! warn_and_continue {
             ($e:expr) => {
@@ -411,6 +443,15 @@ pub(crate) fn run_interactive(computer: &mut Computer, debug_info: DebugInfo) {
                     break;
                 }
             },
+
+            (Command::Input { text }, _) => {
+                // Reconstruct the line from the parsed words and append Enter.
+                let mut bytes = text.join(" ").into_bytes();
+                bytes.push(b'\n');
+                let len = bytes.len();
+                computer.io.serial.push_input(&bytes);
+                info!("Queued {len} byte(s) to serial input");
+            }
 
             (Command::Info { sub }, _) => match sub {
                 Some(InfoCommand::Breakpoints) => {
