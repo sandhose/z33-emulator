@@ -1,10 +1,10 @@
 target
 .vim
 node_modules
-vscode/out
+editors/vscode/out
 *.vsix
-zed/extension.wasm
+editors/zed/extension.wasm
 # Zed's dev-extension grammar-fetch cache (a full clone of this repo)
-zed/grammars/
+editors/zed/grammars/
 # Generated mdBook output
 spec/book/

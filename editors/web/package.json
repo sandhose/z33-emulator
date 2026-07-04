@@ -3,8 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build:wasm": "wasm-pack build --target web --out-dir pkg --out-name z33_web",
-    "build:wasm:dev": "wasm-pack build --dev --target web --out-dir pkg --out-name z33_web",
+    "build:wasm": "wasm-pack build ../../crates/wasm --target web --out-dir ../../editors/web/pkg --out-name z33_web",
+    "build:wasm:dev": "wasm-pack build ../../crates/wasm --dev --target web --out-dir ../../editors/web/pkg --out-name z33_web",
     "build": "pnpm run build:wasm && vite build",
     "start": "pnpm run build:wasm:dev && vite",
     "check": "oxlint app/ && oxfmt --check app/",

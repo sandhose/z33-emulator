@@ -51,7 +51,7 @@ impl WasmLspServer {
         let on_message: js_sys::Function = on_message.unchecked_into();
 
         // Register the custom multi-file workspace notification, exactly like
-        // the native CLI does (see cli/src/commands/lsp.rs).
+        // the native CLI does (see crates/cli/src/commands/lsp.rs).
         let (service, socket) = LspService::build(Backend::new)
             .custom_method(WORKSPACE_FILES_METHOD, Backend::workspace_files)
             .finish();

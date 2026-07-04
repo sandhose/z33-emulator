@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 
-members = ["emulator", "cli", "web", "zed"]
+members = ["crates/emulator", "crates/cli", "crates/wasm", "editors/zed"]
 
 [workspace.package]
 description = "An emulator for the Zorglub-33 architecture"
@@ -58,7 +58,7 @@ wasm-bindgen-futures = "0.4"
 tokio = { version = "1", features = ["io-std", "rt"] }
 tower = "0.4"
 tower-lsp = "0.20"
-z33-emulator = { path = "emulator" }
+z33-emulator = { path = "crates/emulator" }
 
 [profile.release]
 lto = "thin"

@@ -87,8 +87,8 @@ jobs:
           for file in \
             Cargo.toml \
             Cargo.lock \
-            vscode/package.json \
-            zed/extension.toml \
+            editors/vscode/package.json \
+            editors/zed/extension.toml \
             tree-sitter-z33/package.json \
             tree-sitter-z33/tree-sitter.json \
             tree-sitter-z33/src/parser.c; do
