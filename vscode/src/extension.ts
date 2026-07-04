@@ -20,7 +20,7 @@ import { Z33DebugAdapter } from "./debug-adapter.js";
 import {
   collectWorkspaceFiles,
   FILE_GLOB,
-  includeWorkspaceFolderInPaths,
+  uriForWorkspaceRelativePath,
 } from "./workspace-paths.js";
 
 const WORKSPACE_FILES_METHOD = "z33/workspaceFiles";
@@ -149,13 +149,12 @@ async function activateInner(context: vscode.ExtensionContext): Promise<void> {
 
   // Handler for the run code lens: start a debug session with the lens's
   // label as the entrypoint. The lens carries the server's workspace-relative
-  // path; map it back to the real file URI (the debug adapter matches
-  // `program` against `uri.toString()`).
+  // path; resolve it directly against the workspace folders (the debug adapter
+  // matches `program` against `uri.toString()`). No `findFiles` here — web
+  // hosts' search providers are unreliable, and the lens path is exact anyway.
   context.subscriptions.push(
     vscode.commands.registerCommand(RUN_COMMAND, async (args: { path: string; label: string }) => {
-      const includeFolder = includeWorkspaceFolderInPaths();
-      const uris = await vscode.workspace.findFiles(FILE_GLOB);
-      const uri = uris.find((u) => vscode.workspace.asRelativePath(u, includeFolder) === args.path);
+      const uri = await uriForWorkspaceRelativePath(args.path);
       if (uri === undefined) {
         void vscode.window.showErrorMessage(`Z33: could not find ${args.path} in the workspace`);
         return;
