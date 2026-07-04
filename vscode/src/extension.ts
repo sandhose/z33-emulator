@@ -166,7 +166,10 @@ async function activateInner(context: vscode.ExtensionContext): Promise<void> {
         name: `Run ${args.label}`,
         program: uri.toString(),
         entrypoint: args.label,
-        stopOnEntry: false,
+        // Start paused on the label's first instruction (mirrors the web
+        // IDE, whose debug mode always starts stopped): the student lands in
+        // the debugger looking at their code, not at an already-finished run.
+        stopOnEntry: true,
       });
     }),
   );
