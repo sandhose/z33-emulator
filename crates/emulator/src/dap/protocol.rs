@@ -201,6 +201,11 @@ pub struct SetVariableArguments {
 #[derive(Debug, Deserialize)]
 pub struct EvaluateArguments {
     pub expression: String,
+    /// The context the expression is evaluated in (`"repl"`, `"watch"`,
+    /// `"hover"`, ...). Used to route `repl` input to the serial console while
+    /// the program is running instead of evaluating it as an expression.
+    #[serde(default)]
+    pub context: Option<String>,
     #[serde(default)]
     pub format: Option<ValueFormat>,
 }

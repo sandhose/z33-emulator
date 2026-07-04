@@ -1152,3 +1152,174 @@ fn clean_halt_prints_summary() {
     // The summary precedes termination.
     assert!(find_event(&out, "terminated").is_some());
 }
+
+// --------------------------------------------------------------------------
+// Serial console over the DAP
+// --------------------------------------------------------------------------
+
+/// Polling serial echo (a trimmed copy of `samples/echo.s`): busy-waits for a
+/// byte, echoes it, and halts on EOT (Ctrl-D, byte 4).
+const ECHO_SOURCE: &str = indoc::indoc! {r"
+    main:
+    poll:
+        in  [110], %a
+        and 1, %a
+        jeq poll
+        in  [111], %a
+        cmp 4, %a
+        jeq done
+        out %a, [111]
+        jmp poll
+    done:
+        reset
+"};
+
+/// A program that emits a byte forever: it never halts on its own, so a single
+/// `run_chunk` returns while still running (the `Pending` arm).
+const OUT_LOOP_SOURCE: &str = indoc::indoc! {r"
+    main:
+        ld 72, %a
+    loop:
+        out %a, [111]
+        jmp loop
+"};
+
+impl Harness {
+    /// initialize + launch + configurationDone, WITHOUT driving to completion.
+    /// Used for programs that busy-wait for serial input and never halt on
+    /// their own, where [`Harness::drive`] would loop forever.
+    fn launch_source(&mut self, program: &str, source: &str, stop_on_entry: bool) -> Vec<Value> {
+        self.send("initialize", json!({}));
+        self.send(
+            "launch",
+            json!({
+                "program": program,
+                "entrypoint": "main",
+                "stopOnEntry": stop_on_entry,
+                "files": { program: source },
+            }),
+        );
+        self.send("configurationDone", json!({}))
+    }
+
+    /// Advance the program by one instruction budget.
+    fn pump(&mut self) -> Vec<Value> {
+        self.session.run_chunk()
+    }
+}
+
+/// Concatenate the text of every `stdout`-category `output` event.
+fn stdout_text(messages: &[Value]) -> String {
+    messages
+        .iter()
+        .filter(|m| {
+            m["type"] == "event" && m["event"] == "output" && m["body"]["category"] == "stdout"
+        })
+        .filter_map(|m| m["body"]["output"].as_str())
+        .collect()
+}
+
+#[test]
+fn run_chunk_streams_stdout_while_running() {
+    let mut h = Harness::new();
+    // Not stopping on entry: the out-loop starts running immediately.
+    h.launch_source("/out.s", OUT_LOOP_SOURCE, false);
+    assert!(h.session.is_running(), "out-loop should be running");
+
+    let out = h.pump();
+    // The budget is exhausted without stopping (Pending), yet the bytes written
+    // so far must already have streamed out as a stdout output event.
+    assert!(
+        h.session.is_running(),
+        "program is an infinite loop; still running after one chunk"
+    );
+    let text = stdout_text(&out);
+    assert!(
+        !text.is_empty() && text.chars().all(|c| c == 'H'),
+        "expected streamed 'H' bytes, got {text:?}"
+    );
+    assert!(
+        find_event(&out, "stopped").is_none() && find_event(&out, "terminated").is_none(),
+        "no stop/terminate event on the Pending path"
+    );
+}
+
+#[test]
+fn repl_input_echoes_and_eot_terminates() {
+    let mut h = Harness::new();
+    h.launch_source("/echo.s", ECHO_SOURCE, false);
+    assert!(h.session.is_running());
+
+    // Busy-poll a chunk with no input available: nothing echoed yet.
+    let out = h.pump();
+    assert!(stdout_text(&out).is_empty(), "no input yet, no echo");
+
+    // REPL console input while running is routed to the serial console.
+    let resp = h.send("evaluate", json!({ "expression": "hi", "context": "repl" }));
+    let resp = find_response(&resp, "evaluate").expect("evaluate response");
+    assert_eq!(resp["success"], json!(true));
+
+    // Pump: the echo program reads "hi\n" back out.
+    let out = h.pump();
+    assert!(
+        stdout_text(&out).contains("hi"),
+        "expected echoed input, got {:?}",
+        stdout_text(&out)
+    );
+    assert!(h.session.is_running());
+
+    // EOT (byte 4) ends the program; any preceding output must come first.
+    h.send("zorglub33/serialInput", json!({ "data": "!\u{4}" }));
+    let out = h.pump();
+    let out_idx = out
+        .iter()
+        .position(|m| m["event"] == "output" && m["body"]["category"] == "stdout")
+        .expect("remaining '!' output before terminate");
+    let term_idx = out
+        .iter()
+        .position(|m| m["event"] == "terminated")
+        .expect("terminated after EOT");
+    assert!(out_idx < term_idx, "stdout output must precede terminated");
+    assert!(stdout_text(&out).contains('!'));
+}
+
+#[test]
+fn serial_input_custom_request_round_trip() {
+    let mut h = Harness::new();
+    h.launch_source("/echo.s", ECHO_SOURCE, false);
+
+    let resp = h.send("zorglub33/serialInput", json!({ "data": "z" }));
+    let resp = find_response(&resp, "zorglub33/serialInput").expect("serialInput response");
+    assert_eq!(resp["success"], json!(true));
+
+    // The byte reaches the program and is echoed back.
+    let out = h.pump();
+    assert!(
+        stdout_text(&out).contains('z'),
+        "custom-request input should be echoed, got {:?}",
+        stdout_text(&out)
+    );
+}
+
+#[test]
+fn evaluate_without_repl_context_while_stopped_evaluates() {
+    let mut h = Harness::new();
+    // Stopped on entry: `evaluate` must keep expression-evaluation behavior,
+    // and must NOT route to serial input.
+    h.launch(true);
+
+    let reg = h.send("evaluate", json!({ "expression": "%pc" }));
+    assert_eq!(
+        find_response(&reg, "evaluate").unwrap()["body"]["type"],
+        json!("register")
+    );
+    // A "repl" context while Stopped still evaluates (routing is Running-only).
+    let label = h.send(
+        "evaluate",
+        json!({ "expression": "factorielle", "context": "repl" }),
+    );
+    assert_eq!(
+        find_response(&label, "evaluate").unwrap()["body"]["type"],
+        json!("address")
+    );
+}

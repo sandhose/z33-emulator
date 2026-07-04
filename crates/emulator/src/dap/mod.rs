@@ -277,6 +277,37 @@ impl DebugSession {
         self.exit_requested
     }
 
+    /// Feed bytes into the serial console's input queue. A single call is one
+    /// interrupt edge (see [`SerialConsole::push_input`]), so callers should
+    /// push one line at a time. Used by the `zorglub33/serialInput` custom
+    /// request and by REPL console input while the program is running; a no-op
+    /// if no program is loaded.
+    pub fn enqueue_serial_input(&mut self, bytes: &[u8]) {
+        if let Some(program) = self.program.as_mut() {
+            program.computer.io.serial.push_input(bytes);
+        }
+    }
+
+    /// Drain the computer's serial output into DAP `output` events.
+    ///
+    /// The serial console is a byte-oriented character device; program output
+    /// is rendered as a single `stdout`-category `output` event decoded with
+    /// [`String::from_utf8_lossy`] (invalid byte sequences become U+FFFD).
+    /// Lossy decoding is deliberate: the alternative (base64/hex) would be
+    /// unreadable in the Debug Console, and Z33 programs emit text. Returns an
+    /// empty vector when nothing is buffered.
+    fn drain_serial_output_events(&mut self) -> Vec<Value> {
+        let bytes = match self.program.as_mut() {
+            Some(program) => program.computer.io.serial.drain_output(),
+            None => return Vec::new(),
+        };
+        if bytes.is_empty() {
+            return Vec::new();
+        }
+        let text = String::from_utf8_lossy(&bytes).into_owned();
+        vec![self.make_event("output", json!({ "category": "stdout", "output": text }))]
+    }
+
     // ----------------------------------------------------------------------
     // Message handling
     // ----------------------------------------------------------------------
@@ -319,6 +350,7 @@ impl DebugSession {
             "writeMemory" => self.on_write_memory(&req),
             "source" => self.on_source(&req),
             "restart" => self.on_restart(&req),
+            "zorglub33/serialInput" => self.on_serial_input(&req),
             "disconnect" => {
                 self.exit_requested = true;
                 self.state = State::Terminated;
@@ -773,6 +805,19 @@ impl DebugSession {
             Err(e) => return vec![self.response_err(req, format!("invalid arguments: {e}"))],
         };
 
+        // REPL console input while the program is running: treat the typed line
+        // as serial input (Enter is `\n`) rather than an expression. Only while
+        // `Running` — when stopped at a breakpoint the user is inspecting state,
+        // so `evaluate` keeps its expression-evaluation behavior there. The
+        // response `result` is empty because the Debug Console already renders
+        // the line the user typed; any device echo streams back as `stdout`.
+        if self.state == State::Running && args.context.as_deref() == Some("repl") {
+            let mut line = args.expression;
+            line.push('\n');
+            self.enqueue_serial_input(line.as_bytes());
+            return vec![self.response(req, json!({ "result": "", "variablesReference": 0 }))];
+        }
+
         let hex = args.format.unwrap_or_default().hex;
         let result = {
             let Some(program) = self.program.as_ref() else {
@@ -897,6 +942,21 @@ impl DebugSession {
         }
     }
 
+    /// Custom `zorglub33/serialInput` request: `{ "data": "<string>" }`. Feeds
+    /// the string's UTF-8 bytes into the serial input queue. This is the seam a
+    /// VS Code pseudo-terminal (or any host wanting a dedicated console) uses
+    /// to deliver input without going through `evaluate`.
+    fn on_serial_input(&mut self, req: &IncomingRequest) -> Vec<Value> {
+        let data = req
+            .arguments
+            .get("data")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned();
+        self.enqueue_serial_input(data.as_bytes());
+        vec![self.response(req, Value::Null)]
+    }
+
     // ----------------------------------------------------------------------
     // Execution driving
     // ----------------------------------------------------------------------
@@ -955,24 +1015,34 @@ impl DebugSession {
     }
 
     fn finish_run(&mut self, outcome: Outcome) -> Vec<Value> {
+        // Flush any serial output first so program output (category "stdout")
+        // always precedes the stopped/terminated/exception events, and — on the
+        // `Pending` path — streams to the Debug Console during long print loops
+        // instead of buffering until the next stop. The halt/exception summaries
+        // below use category "console", so they stay visually distinct.
+        let mut out = self.drain_serial_output_events();
         match outcome {
-            Outcome::Pending => Vec::new(),
+            Outcome::Pending => out,
             Outcome::Stopped(reason) => {
                 self.state = State::Stopped;
                 self.invalidate_handles();
-                vec![self.stopped_event(reason, None, None)]
+                out.push(self.stopped_event(reason, None, None));
+                out
             }
-            Outcome::Terminated(code) => self.terminate_now(code),
+            Outcome::Terminated(code) => {
+                out.extend(self.terminate_now(code));
+                out
+            }
             Outcome::Exception(msg) => {
                 self.state = State::Stopped;
                 self.exception_pending = true;
                 self.invalidate_handles();
-                let output = self.make_event(
+                out.push(self.make_event(
                     "output",
                     json!({ "category": "console", "output": format!("Exception: {msg}\n") }),
-                );
-                let stopped = self.stopped_event_named("exception", Some(msg.clone()), Some(msg));
-                vec![output, stopped]
+                ));
+                out.push(self.stopped_event_named("exception", Some(msg.clone()), Some(msg)));
+                out
             }
         }
     }
