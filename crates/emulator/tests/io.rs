@@ -250,7 +250,9 @@ fn hardware_interrupt_is_not_delivered_on_the_exception_recovery_step() {
 
             .addr 1000
             main:
-                ld 256, %sr     // interrupt-enable (supervisor stays set)
+                ld 256, %sr     // interrupt-enable only (%sr is overwritten, clearing
+                                // SUPERVISOR; trap needs no privilege and the handler
+                                // entry re-sets it)
                 trap
                 reset
         "},
