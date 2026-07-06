@@ -22,8 +22,10 @@ const IO_BATCH: usize = 10_000;
 
 /// A message from the background stdin reader thread.
 enum Input {
-    /// A line read from stdin, including its trailing `\n`.
-    Line(String),
+    /// A line of raw bytes read from stdin, including its trailing `\n`. Bytes
+    /// are forwarded verbatim (the serial console is byte-oriented and must not
+    /// require valid UTF-8).
+    Line(Vec<u8>),
     /// Stdin reached EOF; no further input will ever arrive.
     Eof,
 }
@@ -103,8 +105,11 @@ fn spawn_stdin_reader() -> Receiver<Input> {
     thread::spawn(move || {
         let mut reader = BufReader::new(std::io::stdin());
         loop {
-            let mut line = String::new();
-            match reader.read_line(&mut line) {
+            // Read raw bytes, not a `String`: stdin may carry non-UTF-8 bytes
+            // and the serial console is byte-oriented. `read_line` would error
+            // on the first invalid byte and drop the rest of the input.
+            let mut line = Vec::new();
+            match reader.read_until(b'\n', &mut line) {
                 // EOF or a read error: signal EOF once and stop reading forever.
                 Ok(0) | Err(_) => {
                     let _ = tx.send(Input::Eof);
@@ -153,7 +158,7 @@ fn run_with_io(computer: &mut Computer) -> anyhow::Result<()> {
         // Feed any input that has arrived since the last iteration.
         while stdin_open {
             match rx.try_recv() {
-                Ok(Input::Line(line)) => computer.io.serial.push_input(line.as_bytes()),
+                Ok(Input::Line(line)) => computer.io.serial.push_input(&line),
                 Ok(Input::Eof) | Err(TryRecvError::Disconnected) => stdin_open = false,
                 Err(TryRecvError::Empty) => break,
             }

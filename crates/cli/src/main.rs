@@ -71,9 +71,13 @@ fn main() {
     // Then, setup the tracing formatter for logging and instrumentation
     let registry = tracing_subscriber::Registry::default().with(opt.filter_layer());
 
-    // LSP and DAP use stdout for their protocols, so all logging must go to
-    // stderr.
-    let use_stderr = matches!(opt.command, Subcommand::Lsp(_) | Subcommand::Dap(_));
+    // LSP and DAP use stdout for their protocols, and `run` streams the guest's
+    // serial output on stdout, so for all three logging must go to stderr to
+    // keep stdout clean.
+    let use_stderr = matches!(
+        opt.command,
+        Subcommand::Run(_) | Subcommand::Lsp(_) | Subcommand::Dap(_)
+    );
 
     if opt.json {
         let json_layer = tracing_subscriber::fmt::layer()
