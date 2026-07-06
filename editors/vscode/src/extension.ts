@@ -17,6 +17,7 @@ import { LanguageClient, type LanguageClientOptions } from "vscode-languageclien
 
 import initDapWasm, { WasmDapServer } from "../dist/pkg/z33_web.js";
 import { Z33DebugAdapter } from "./debug-adapter.js";
+import { SerialTerminalManager } from "./serial-terminal.js";
 import {
   collectWorkspaceFiles,
   FILE_GLOB,
@@ -219,9 +220,30 @@ async function activateInner(context: vscode.ExtensionContext): Promise<void> {
 
   // --- Debug adapter (inline wasm) ---------------------------------------
   await initDapWasm({ module_or_path: wasmBytes });
+
+  // Serial console: one pseudo-terminal per debug session. The adapter funnels
+  // program stdout into the session's terminal (suppressing the Debug Console
+  // echo), and the terminal forwards keystrokes back via `zorglub33/serialInput`.
+  const serial = new SerialTerminalManager();
+  context.subscriptions.push(
+    { dispose: () => serial.dispose() },
+    vscode.debug.onDidStartDebugSession((session) => {
+      if (session.type === "zorglub33") {
+        serial.start(session);
+      }
+    }),
+    vscode.debug.onDidTerminateDebugSession((session) => {
+      if (session.type === "zorglub33") {
+        serial.terminate(session);
+      }
+    }),
+  );
+
   const factory: vscode.DebugAdapterDescriptorFactory = {
-    createDebugAdapterDescriptor() {
-      return new vscode.DebugAdapterInlineImplementation(new Z33DebugAdapter(new WasmDapServer()));
+    createDebugAdapterDescriptor(session) {
+      return new vscode.DebugAdapterInlineImplementation(
+        new Z33DebugAdapter(new WasmDapServer(), (text) => serial.writeStdout(session.id, text)),
+      );
     },
   };
   context.subscriptions.push(

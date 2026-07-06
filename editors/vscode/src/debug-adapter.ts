@@ -39,6 +39,24 @@ function isLaunchRequest(message: unknown): message is LaunchRequest {
   );
 }
 
+/** A program-output `output` event (DAP `category: "stdout"`), which the serial
+ * terminal mirrors. Exception/halt summaries use `category: "console"` and are
+ * left alone. */
+function stdoutOutputText(message: unknown): string | undefined {
+  if (typeof message !== "object" || message === null) {
+    return undefined;
+  }
+  const event = message as { type?: unknown; event?: unknown; body?: unknown };
+  if (event.type !== "event" || event.event !== "output") {
+    return undefined;
+  }
+  const body = event.body as { category?: unknown; output?: unknown } | undefined;
+  if (body?.category !== "stdout" || typeof body.output !== "string") {
+    return undefined;
+  }
+  return body.output;
+}
+
 export class Z33DebugAdapter implements vscode.DebugAdapter {
   private readonly sendEmitter = new vscode.EventEmitter<vscode.DebugProtocolMessage>();
   readonly onDidSendMessage: vscode.Event<vscode.DebugProtocolMessage> = this.sendEmitter.event;
@@ -69,7 +87,17 @@ export class Z33DebugAdapter implements vscode.DebugAdapter {
   private launching = false;
   private readonly queued: vscode.DebugProtocolMessage[] = [];
 
-  constructor(private readonly server: WasmDapServer) {}
+  /**
+   * Optional sink for program stdout: when set and it returns `true`, a serial
+   * terminal consumed the output and we suppress the Debug Console echo (so the
+   * bytes aren't shown twice). Returns `false` when no live terminal is
+   * attached, in which case the `output` event is forwarded unchanged so output
+   * is never lost.
+   */
+  constructor(
+    private readonly server: WasmDapServer,
+    private readonly onStdout?: (text: string) => boolean,
+  ) {}
 
   handleMessage(message: vscode.DebugProtocolMessage): void {
     if (isLaunchRequest(message)) {
@@ -195,6 +223,16 @@ export class Z33DebugAdapter implements vscode.DebugAdapter {
   }
 
   private emit(message: unknown): void {
+    // Divert program stdout into the serial terminal when one is attached, and
+    // suppress the Debug Console echo so output isn't shown twice. If no
+    // terminal consumes it (closed by the user, or creation raced the first
+    // bytes), fall through and forward it normally — never lose output.
+    if (this.onStdout !== undefined) {
+      const text = stdoutOutputText(message);
+      if (text !== undefined && this.onStdout(text)) {
+        return;
+      }
+    }
     this.rewriteOutgoingSources(message);
     this.sendEmitter.fire(message as vscode.DebugProtocolMessage);
   }
