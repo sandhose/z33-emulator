@@ -24,6 +24,33 @@ done:
     reset
 `;
 
+// Read the visible terminal buffer through the test hook the component exposes
+// (`window.__z33Terminal`). xterm renders to a canvas-less DOM grid, so there is
+// no accessible text node to assert on — we read the buffer directly instead.
+async function terminalText(page: import("@playwright/test").Page): Promise<string> {
+  return page.evaluate(() => {
+    const terminal = (globalThis as { __z33Terminal?: unknown }).__z33Terminal as
+      | {
+          buffer: {
+            active: {
+              length: number;
+              getLine: (
+                i: number,
+              ) => { translateToString: (trim: boolean) => string } | undefined;
+            };
+          };
+        }
+      | undefined;
+    if (!terminal) return "";
+    const { active } = terminal.buffer;
+    const lines: string[] = [];
+    for (let i = 0; i < active.length; i++) {
+      lines.push(active.getLine(i)?.translateToString(true) ?? "");
+    }
+    return lines.join("\n");
+  });
+}
+
 test.describe("Serial console", () => {
   test("echoes typed input back to the console", async ({ page }) => {
     await loadWorkspace(page, { "echo.s": ECHO_PROGRAM }, "echo.s");
@@ -35,14 +62,17 @@ test.describe("Serial console", () => {
       .getByRole("button", { name: "Run", exact: true })
       .click();
 
-    const console = page.getByRole("textbox", { name: "Serial console output" });
-    await expect(console).toBeVisible();
+    // Click the terminal screen to focus it (xterm moves focus to its hidden
+    // helper textarea, which receives the keystrokes).
+    const screen = page.locator(".xterm-screen");
+    await expect(screen).toBeVisible();
+    await screen.click();
 
-    // Focus the console and type: the program should echo each byte back.
-    await console.click();
+    // Type: the program should echo each byte back into the terminal buffer.
     await page.keyboard.type("hi");
-
-    await expect(console).toHaveText(/hi/);
+    await expect
+      .poll(() => terminalText(page), { timeout: 10_000 })
+      .toContain("hi");
 
     // Ctrl-D (EOT) ends the program.
     await page.keyboard.press("Control+d");
