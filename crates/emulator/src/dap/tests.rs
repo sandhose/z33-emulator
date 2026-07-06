@@ -1301,6 +1301,112 @@ fn serial_input_custom_request_round_trip() {
     );
 }
 
+/// Emits the two bytes of `é` (0xC3, 0xA9) with a `reset` in between so a
+/// breakpoint can be placed on the instruction that supplies the second byte —
+/// forcing the two `out`s into separate drains.
+const SPLIT_CHAR_SOURCE: &str = indoc::indoc! {r"
+    main:
+        ld  195, %a
+        out %a, [111]
+        ld  169, %a
+        out %a, [111]
+        reset
+"};
+
+#[test]
+fn split_utf8_character_across_drain_boundary_decodes_once() {
+    let mut h = Harness::new();
+    h.launch_source("/split.s", SPLIT_CHAR_SOURCE, true);
+
+    // Breakpoint on line 4 (`ld 169, %a`), the instruction right after the
+    // first `out`: the 0xC3 lead byte of `é` has been emitted but its 0xA9
+    // continuation byte has not.
+    h.send(
+        "setBreakpoints",
+        json!({
+            "source": { "path": "/split.s" },
+            "breakpoints": [{ "line": 4 }],
+        }),
+    );
+
+    // Run to the breakpoint. The drain there sees only the lone lead byte,
+    // which must be held back rather than emitted as a replacement char.
+    h.send("continue", json!({ "threadId": 1 }));
+    let to_bp = h.drive();
+    assert!(
+        find_event(&to_bp, "stopped").is_some(),
+        "should stop at the breakpoint"
+    );
+    assert!(
+        !stdout_text(&to_bp).contains('\u{FFFD}'),
+        "incomplete lead byte must not be emitted as U+FFFD yet, got {:?}",
+        stdout_text(&to_bp)
+    );
+
+    // Continue to completion: the second `out` supplies 0xA9, completing `é`.
+    h.send("continue", json!({ "threadId": 1 }));
+    let to_end = h.drive();
+    let text = format!("{}{}", stdout_text(&to_bp), stdout_text(&to_end));
+    assert!(text.contains('é'), "expected 'é', got {text:?}");
+    assert!(
+        !text.contains('\u{FFFD}'),
+        "no replacement chars expected, got {text:?}"
+    );
+}
+
+/// Emits a lone 0xFF byte (never a valid UTF-8 start) and halts.
+const BAD_BYTE_SOURCE: &str = indoc::indoc! {r"
+    main:
+        ld  255, %a
+        out %a, [111]
+        reset
+"};
+
+#[test]
+fn invalid_serial_byte_decodes_to_replacement_immediately() {
+    let mut h = Harness::new();
+    h.launch_source("/bad.s", BAD_BYTE_SOURCE, false);
+    let out = h.drive();
+    assert!(
+        stdout_text(&out).contains('\u{FFFD}'),
+        "lone 0xFF should decode to U+FFFD, got {:?}",
+        stdout_text(&out)
+    );
+}
+
+/// Emits only the lead byte of a two-byte character, then halts — the trailing
+/// byte never arrives.
+const TRUNCATED_CHAR_SOURCE: &str = indoc::indoc! {r"
+    main:
+        ld  195, %a
+        out %a, [111]
+        reset
+"};
+
+#[test]
+fn program_halting_mid_character_flushes_held_back_byte() {
+    let mut h = Harness::new();
+    h.launch_source("/trunc.s", TRUNCATED_CHAR_SOURCE, false);
+    let out = h.drive();
+
+    // The held-back lead byte must be flushed (lossily) with the terminating
+    // events, never silently dropped.
+    let out_idx = out
+        .iter()
+        .position(|m| m["event"] == "output" && m["body"]["category"] == "stdout")
+        .expect("held-back byte flushed as a stdout event");
+    let term_idx = out
+        .iter()
+        .position(|m| m["event"] == "terminated")
+        .expect("terminated event");
+    assert!(out_idx < term_idx, "flushed output must precede terminated");
+    assert!(
+        stdout_text(&out).contains('\u{FFFD}'),
+        "held-back lead byte should flush as U+FFFD, got {:?}",
+        stdout_text(&out)
+    );
+}
+
 #[test]
 fn evaluate_without_repl_context_while_stopped_evaluates() {
     let mut h = Harness::new();

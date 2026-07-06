@@ -220,6 +220,12 @@ pub struct DebugSession {
     /// Monotonic allocator for dynamic handles (never reset, so stale handles
     /// stay invalid once cleared).
     next_dyn: i64,
+    /// Bytes of a valid-but-incomplete trailing UTF-8 sequence carried over
+    /// from the previous serial-output drain, so a multi-byte character split
+    /// across a drain boundary decodes as one character instead of U+FFFD
+    /// replacements (see [`DebugSession::serial_output_events`]). At most 3
+    /// bytes; reset whenever the computer is (re)loaded.
+    serial_utf8_carry: Vec<u8>,
 }
 
 impl Default for DebugSession {
@@ -245,6 +251,7 @@ impl DebugSession {
             launch_args: None,
             dyn_handles: HashMap::new(),
             next_dyn: 0,
+            serial_utf8_carry: Vec::new(),
         }
     }
 
@@ -296,11 +303,39 @@ impl DebugSession {
     /// Lossy decoding is deliberate: the alternative (base64/hex) would be
     /// unreadable in the Debug Console, and Z33 programs emit text. Returns an
     /// empty vector when nothing is buffered.
-    fn drain_serial_output_events(&mut self) -> Vec<Value> {
-        let bytes = match self.program.as_mut() {
+    ///
+    /// A multi-byte UTF-8 character can straddle a drain boundary (the program
+    /// emits its bytes with successive `out` instructions, and a
+    /// [`CHUNK_SIZE`] boundary — or a breakpoint — can fall between them). To
+    /// avoid decoding such a character as two U+FFFD replacements, a trailing
+    /// *valid-but-incomplete* sequence is held back in
+    /// [`Self::serial_utf8_carry`] and prepended to the next drain. Truly
+    /// invalid bytes are never held back (they decode to U+FFFD immediately).
+    ///
+    /// When `flush` is set, the carried-over incomplete sequence is NOT held
+    /// back — it is decoded (lossily, as U+FFFD) right now. Callers pass
+    /// `flush = true` on terminal outcomes (halt/exception), where no further
+    /// bytes will ever arrive to complete the character, so holding it back
+    /// would silently drop it. The streaming (non-flush) path is used while the
+    /// program keeps running.
+    fn serial_output_events(&mut self, flush: bool) -> Vec<Value> {
+        let fresh = match self.program.as_mut() {
             Some(program) => program.computer.io.serial.drain_output(),
-            None => return Vec::new(),
+            None => Vec::new(),
         };
+        // Prepend bytes carried over from a previous drain that ended in the
+        // middle of a multi-byte character.
+        let mut bytes = std::mem::take(&mut self.serial_utf8_carry);
+        bytes.extend(fresh);
+        if bytes.is_empty() {
+            return Vec::new();
+        }
+        // Unless we are flushing, split off any trailing valid-but-incomplete
+        // UTF-8 sequence so its continuation bytes decode with it next time.
+        if !flush {
+            let keep = utf8_decodable_len(&bytes);
+            self.serial_utf8_carry = bytes.split_off(keep);
+        }
         if bytes.is_empty() {
             return Vec::new();
         }
@@ -390,6 +425,7 @@ impl DebugSession {
         match load_program(&args) {
             Ok(program) => {
                 self.stop_on_entry = args.stop_on_entry;
+                self.serial_utf8_carry.clear();
                 self.program = Some(program);
                 self.launch_args = Some(args);
                 let resp = self.response(req, Value::Null);
@@ -931,6 +967,7 @@ impl DebugSession {
                 self.entered = false;
                 self.exception_pending = false;
                 self.pause_requested = false;
+                self.serial_utf8_carry.clear();
                 self.stop_on_entry = args.stop_on_entry;
                 self.state = State::Initialized;
                 let resp = self.response(req, Value::Null);
@@ -1020,7 +1057,14 @@ impl DebugSession {
         // `Pending` path — streams to the Debug Console during long print loops
         // instead of buffering until the next stop. The halt/exception summaries
         // below use category "console", so they stay visually distinct.
-        let mut out = self.drain_serial_output_events();
+        //
+        // On terminal outcomes (halt/exception) no more serial bytes will come,
+        // so any incomplete UTF-8 sequence held back from a previous drain must
+        // be flushed now (lossily) rather than silently dropped. On a plain
+        // `Stopped` the program will resume, so the held-back bytes are kept and
+        // completed by the next drain.
+        let flush = matches!(outcome, Outcome::Terminated(_) | Outcome::Exception(_));
+        let mut out = self.serial_output_events(flush);
         match outcome {
             Outcome::Pending => out,
             Outcome::Stopped(reason) => {
@@ -1230,6 +1274,25 @@ impl DebugSession {
 // --------------------------------------------------------------------------
 // Free helpers
 // --------------------------------------------------------------------------
+
+/// Length of the prefix of `bytes` that should be decoded and emitted now,
+/// holding back only a trailing sequence that is a *valid but incomplete* start
+/// of a multi-byte UTF-8 character (so its continuation bytes can arrive on the
+/// next drain). Invalid bytes are decoded immediately — only an
+/// incomplete-at-end sequence is held back.
+///
+/// [`str::from_utf8`]'s error distinguishes the two cases: `error_len() ==
+/// None` means the input ends mid-character (hold back from `valid_up_to()`);
+/// `Some(_)` means a genuinely invalid byte, which we decode (lossily) now.
+fn utf8_decodable_len(bytes: &[u8]) -> usize {
+    match std::str::from_utf8(bytes) {
+        Ok(_) => bytes.len(),
+        Err(e) => match e.error_len() {
+            Some(_) => bytes.len(),
+            None => e.valid_up_to(),
+        },
+    }
+}
 
 fn register_var(name: &str, value: String) -> Variable {
     Variable {
