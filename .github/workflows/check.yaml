@@ -222,6 +222,51 @@ jobs:
       - name: Build the Zed extension
         run: cargo build -p z33-zed --target wasm32-wasip1
 
+  editors-vim-nvim:
+    name: "Vim & Neovim plugins smoke test"
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Install Neovim
+        uses: rhysd/action-setup-vim@febef33995d6649302e9d88dda81e071b68f16a7 # v1.6.1
+        with:
+          neovim: true
+          version: stable
+
+      - name: Install classic Vim
+        run: sudo apt-get update && sudo apt-get install -y vim
+
+      - name: Neovim smoke test
+        run: nvim --headless -u NONE -N -l editors/nvim/tests/smoke.lua
+
+      - name: Vim smoke test
+        run: |
+          cat > /tmp/z33-vim-smoke.vim <<'VIMSCRIPT'
+          " CI smoke test for the classic Vim plugin (editors/vim/): just
+          " enough to catch "plugin doesn't even load" regressions --
+          " ftdetect + syntax must both engage on a real Z33 sample.
+          set rtp+=editors/vim
+          filetype plugin indent on
+          syntax on
+          edit samples/fact.s
+          if &filetype !=# 'z33'
+            call writefile(['FAIL: expected filetype z33, got: ' . &filetype], '/tmp/z33-vim-smoke-result.txt')
+            cquit 1
+          endif
+          if !exists('b:current_syntax') || b:current_syntax !=# 'z33'
+            call writefile(['FAIL: expected syntax z33, got: ' . get(b:, 'current_syntax', '<unset>')], '/tmp/z33-vim-smoke-result.txt')
+            cquit 1
+          endif
+          call writefile(['OK: filetype=' . &filetype . ' syntax=' . b:current_syntax], '/tmp/z33-vim-smoke-result.txt')
+          qall!
+          VIMSCRIPT
+          vim -es -N -u NONE -S /tmp/z33-vim-smoke.vim
+          cat /tmp/z33-vim-smoke-result.txt
+
   zizmor:
     name: Audit GitHub Actions
     runs-on: ubuntu-24.04
