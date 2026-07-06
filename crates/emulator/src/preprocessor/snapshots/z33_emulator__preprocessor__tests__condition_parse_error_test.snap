@@ -1,9 +1,8 @@
 ---
-source: emulator/src/preprocessor/mod.rs
-assertion_line: 860
+source: crates/emulator/src/preprocessor/mod.rs
 expression: report
 ---
-error: invalid condition syntax: found end of input expected any, '*', '/', '+', '-', '<', '>', '&', '|', '=', or '!'
+error: invalid condition syntax: found end of input expected any, '*', '/', '+', '-', '<', '>', '&', '|', '=', '!', or ')'
   ┌─ /invalid.S:2:5
   │
 2 │ #if (1 + 5

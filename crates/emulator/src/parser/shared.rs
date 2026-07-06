@@ -255,125 +255,132 @@ pub fn register<'a>() -> impl Parser<'a, &'a str, Reg, Extra<'a>> + Clone {
 #[must_use]
 #[allow(clippy::too_many_lines)]
 pub fn expression<'a>() -> impl Parser<'a, &'a str, ExpressionNode, Extra<'a>> + Clone {
-    // Parenthesized expressions need recursion
-    let atom = recursive(|expr| {
+    // The whole precedence ladder is wrapped in `recursive` so that a
+    // parenthesized atom recurses into the TOP-LEVEL expression parser (the
+    // outermost bitwise-or tier) rather than back into the atom tier. Without
+    // this, `( ... )` could only wrap a bare atom and operator expressions like
+    // `(1 << 8)` failed to parse.
+    recursive(|expr| {
         let number = number_literal().map(|v| ExpressionNode::Literal(ExpressionValue::from(v)));
 
         let variable = identifier().map(|i: &str| ExpressionNode::Variable(i.into()));
 
+        // A parenthesized group closes over the full expression (`expr`), so
+        // any operator expression is valid between the parentheses.
         let paren = expr.delimited_by(just('(').then(hspace()), hspace().then(just(')')));
 
-        number.or(variable).or(paren)
-    });
+        let atom = number.or(variable).or(paren);
 
-    // Unary operators
-    let unary = choice((
-        just('-')
-            .ignore_then(hspace())
-            .ignore_then(atom.clone())
-            .map_with(|rhs, e| {
-                ExpressionNode::Invert(Box::new(rhs).with_location(span_to_range(e.span())))
-            }),
-        just('~')
-            .ignore_then(hspace())
-            .ignore_then(atom.clone())
-            .map_with(|rhs, e| {
-                ExpressionNode::BinaryNot(Box::new(rhs).with_location(span_to_range(e.span())))
-            }),
-        atom,
-    ));
+        // Unary operators
+        let unary = choice((
+            just('-')
+                .ignore_then(hspace())
+                .ignore_then(atom.clone())
+                .map_with(|rhs, e| {
+                    ExpressionNode::Invert(Box::new(rhs).with_location(span_to_range(e.span())))
+                }),
+            just('~')
+                .ignore_then(hspace())
+                .ignore_then(atom.clone())
+                .map_with(|rhs, e| {
+                    ExpressionNode::BinaryNot(Box::new(rhs).with_location(span_to_range(e.span())))
+                }),
+            atom,
+        ));
 
-    // Multiplication / Division
-    let op = just('*').to(true).or(just('/').to(false));
-    let product = unary.clone().foldl_with(
-        hspace()
-            .ignore_then(op)
-            .then_ignore(hspace())
-            .then(unary)
-            .repeated(),
-        |lhs, (is_mul, rhs), e| {
-            let span = e.span();
-            let lhs = Box::new(lhs).with_location(span.start..span.start);
-            let rhs = Box::new(rhs).with_location(span.end..span.end);
-            if is_mul {
-                ExpressionNode::Multiply(lhs, rhs)
-            } else {
-                ExpressionNode::Divide(lhs, rhs)
-            }
-        },
-    );
-
-    // Addition / Subtraction
-    let op = just('+').to(true).or(just('-').to(false));
-    let sum = product.clone().foldl_with(
-        hspace()
-            .ignore_then(op)
-            .then_ignore(hspace())
-            .then(product)
-            .repeated(),
-        |lhs, (is_add, rhs), e| {
-            let span = e.span();
-            let lhs = Box::new(lhs).with_location(span.start..span.start);
-            let rhs = Box::new(rhs).with_location(span.end..span.end);
-            if is_add {
-                ExpressionNode::Sum(lhs, rhs)
-            } else {
-                ExpressionNode::Substract(lhs, rhs)
-            }
-        },
-    );
-
-    // Shifts
-    let op = just("<<").to(true).or(just(">>").to(false));
-    let shift = sum.clone().foldl_with(
-        hspace()
-            .ignore_then(op)
-            .then_ignore(hspace())
-            .then(sum)
-            .repeated(),
-        |lhs, (is_left, rhs), e| {
-            let span = e.span();
-            let lhs = Box::new(lhs).with_location(span.start..span.start);
-            let rhs = Box::new(rhs).with_location(span.end..span.end);
-            if is_left {
-                ExpressionNode::LeftShift(lhs, rhs)
-            } else {
-                ExpressionNode::RightShift(lhs, rhs)
-            }
-        },
-    );
-
-    // Bitwise AND (must not match &&)
-    let band = shift.clone().foldl_with(
-        hspace()
-            .ignore_then(just('&').then_ignore(just('&').not()))
-            .then_ignore(hspace())
-            .ignore_then(shift)
-            .repeated(),
-        |lhs, rhs, e| {
-            let span = e.span();
-            let lhs = Box::new(lhs).with_location(span.start..span.start);
-            let rhs = Box::new(rhs).with_location(span.end..span.end);
-            ExpressionNode::BinaryAnd(lhs, rhs)
-        },
-    );
-
-    // Bitwise OR (must not match ||)
-    band.clone()
-        .foldl_with(
+        // Multiplication / Division
+        let op = just('*').to(true).or(just('/').to(false));
+        let product = unary.clone().foldl_with(
             hspace()
-                .ignore_then(just('|').then_ignore(just('|').not()))
+                .ignore_then(op)
                 .then_ignore(hspace())
-                .ignore_then(band)
+                .then(unary)
+                .repeated(),
+            |lhs, (is_mul, rhs), e| {
+                let span = e.span();
+                let lhs = Box::new(lhs).with_location(span.start..span.start);
+                let rhs = Box::new(rhs).with_location(span.end..span.end);
+                if is_mul {
+                    ExpressionNode::Multiply(lhs, rhs)
+                } else {
+                    ExpressionNode::Divide(lhs, rhs)
+                }
+            },
+        );
+
+        // Addition / Subtraction
+        let op = just('+').to(true).or(just('-').to(false));
+        let sum = product.clone().foldl_with(
+            hspace()
+                .ignore_then(op)
+                .then_ignore(hspace())
+                .then(product)
+                .repeated(),
+            |lhs, (is_add, rhs), e| {
+                let span = e.span();
+                let lhs = Box::new(lhs).with_location(span.start..span.start);
+                let rhs = Box::new(rhs).with_location(span.end..span.end);
+                if is_add {
+                    ExpressionNode::Sum(lhs, rhs)
+                } else {
+                    ExpressionNode::Substract(lhs, rhs)
+                }
+            },
+        );
+
+        // Shifts
+        let op = just("<<").to(true).or(just(">>").to(false));
+        let shift = sum.clone().foldl_with(
+            hspace()
+                .ignore_then(op)
+                .then_ignore(hspace())
+                .then(sum)
+                .repeated(),
+            |lhs, (is_left, rhs), e| {
+                let span = e.span();
+                let lhs = Box::new(lhs).with_location(span.start..span.start);
+                let rhs = Box::new(rhs).with_location(span.end..span.end);
+                if is_left {
+                    ExpressionNode::LeftShift(lhs, rhs)
+                } else {
+                    ExpressionNode::RightShift(lhs, rhs)
+                }
+            },
+        );
+
+        // Bitwise AND (must not match &&)
+        let band = shift.clone().foldl_with(
+            hspace()
+                .ignore_then(just('&').then_ignore(just('&').not()))
+                .then_ignore(hspace())
+                .ignore_then(shift)
                 .repeated(),
             |lhs, rhs, e| {
                 let span = e.span();
                 let lhs = Box::new(lhs).with_location(span.start..span.start);
                 let rhs = Box::new(rhs).with_location(span.end..span.end);
-                ExpressionNode::BinaryOr(lhs, rhs)
+                ExpressionNode::BinaryAnd(lhs, rhs)
             },
-        )
-        .boxed()
+        );
+
+        // Bitwise OR (must not match ||)
+        band.clone()
+            .foldl_with(
+                hspace()
+                    .ignore_then(just('|').then_ignore(just('|').not()))
+                    .then_ignore(hspace())
+                    .ignore_then(band)
+                    .repeated(),
+                |lhs, rhs, e| {
+                    let span = e.span();
+                    let lhs = Box::new(lhs).with_location(span.start..span.start);
+                    let rhs = Box::new(rhs).with_location(span.end..span.end);
+                    ExpressionNode::BinaryOr(lhs, rhs)
+                },
+            )
+            .boxed()
+    })
+    .boxed()
 }
 
 // ---------------------------------------------------------------------------
@@ -400,4 +407,66 @@ pub fn parse_register_str(input: &str) -> Result<Reg, String> {
             .collect::<Vec<_>>()
             .join("; ")
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use pretty_assertions::assert_eq;
+
+    use super::super::expression::{EmptyContext, Node};
+    use super::parse_expression_str;
+
+    #[track_caller]
+    fn eval(input: &str) -> i128 {
+        let node = parse_expression_str(input).expect("parse failed");
+        node.evaluate::<EmptyContext, i128>(&EmptyContext)
+            .expect("evaluation failed")
+    }
+
+    #[test]
+    fn parenthesized_operator_expressions_parse() {
+        // Regression: before parens recursed into the full expression parser
+        // (instead of only the atom parser), each of these failed with
+        // "unexpected '<'/'+'/'*', expected ')'".
+        assert_eq!(eval("(1 << 8)"), 256);
+        assert_eq!(eval("(1 + 8)"), 9);
+        assert_eq!(eval("(2 * 3) + 1"), 7);
+    }
+
+    #[test]
+    fn parens_override_precedence() {
+        // Each case differs from the unparenthesized reading, pinning that the
+        // parentheses actually regroup across every precedence tier.
+        assert_eq!(eval("(1 + 2) * 3"), 9); // vs `1 + 2 * 3` == 7
+        assert_eq!(eval("1 + (2 * 3)"), 7);
+        assert_eq!(eval("(1 + 1) << 2"), 8); // vs `1 + 1 << 2` == 5
+        assert_eq!(eval("(1 | 2) & 3"), 3);
+        assert_eq!(eval("(1 | 4) & 2"), 0); // vs `1 | 4 & 2` == 1
+    }
+
+    #[test]
+    fn nested_and_unary_parens() {
+        assert_eq!(eval("((1 + 2))"), 3);
+        assert_eq!(eval("-(1 + 2)"), -3);
+        assert_eq!(eval("(1 + (2 * (3 + 1)))"), 9);
+    }
+
+    #[test]
+    fn top_level_precedence_is_preserved() {
+        assert_eq!(eval("1 + 2 * 3"), 7);
+        assert_eq!(eval("1 << 1 + 1"), 4); // shift binds looser than sum
+        assert_eq!(eval("1 | 2 & 3"), 3); // or binds looser than and
+        assert_eq!(eval("7 - 2 - 1"), 4); // subtraction is left associative
+        assert_eq!(eval("2 * 3 + 4 / 2"), 8);
+    }
+
+    #[test]
+    fn binary_not_still_parses_in_parens() {
+        // `~` parses fine (its *evaluation* is a deliberate `todo!()`), so only
+        // check that a parenthesized bitwise-not produces the expected node.
+        assert!(matches!(
+            parse_expression_str("(~1)"),
+            Ok(Node::BinaryNot(_))
+        ));
+    }
 }
