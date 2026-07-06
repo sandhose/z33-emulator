@@ -26,6 +26,11 @@ const SERIAL_INPUT_REQUEST = "zorglub33/serialInput";
  * gotcha: `onDidWrite` fires into the void until the terminal is live.
  */
 class SerialPty implements vscode.Pseudoterminal {
+  // Cap the pre-open buffer so a chatty program that outputs long before the
+  // terminal is shown can't grow `pending` without bound. 256 KiB is far more
+  // than any reasonable pre-open burst; older bytes are dropped from the front.
+  private static readonly MAX_PENDING = 256 * 1024;
+
   private readonly writeEmitter = new vscode.EventEmitter<string>();
   readonly onDidWrite: vscode.Event<string> = this.writeEmitter.event;
   private readonly closeEmitter = new vscode.EventEmitter<void>();
@@ -33,6 +38,7 @@ class SerialPty implements vscode.Pseudoterminal {
 
   private opened = false;
   private pending = "";
+  private pendingTruncated = false;
   private accepting = true;
   private closed = false;
 
@@ -46,8 +52,10 @@ class SerialPty implements vscode.Pseudoterminal {
   open(): void {
     this.opened = true;
     if (this.pending.length > 0) {
-      this.writeEmitter.fire(this.pending);
+      const notice = this.pendingTruncated ? "\x1b[2m[... output truncated]\x1b[0m\r\n" : "";
+      this.writeEmitter.fire(notice + this.pending);
       this.pending = "";
+      this.pendingTruncated = false;
     }
   }
 
@@ -65,6 +73,10 @@ class SerialPty implements vscode.Pseudoterminal {
       this.writeEmitter.fire(text);
     } else {
       this.pending += text;
+      if (this.pending.length > SerialPty.MAX_PENDING) {
+        this.pending = this.pending.slice(this.pending.length - SerialPty.MAX_PENDING);
+        this.pendingTruncated = true;
+      }
     }
   }
 
@@ -90,13 +102,16 @@ class SerialPty implements vscode.Pseudoterminal {
       return;
     }
     // Translate terminal conventions to the host's serial convention:
-    //   * Enter arrives as CR (\r) → send LF (\n), the host line convention.
+    //   * Enter arrives as CR (\r), possibly followed by LF (\r\n on a
+    //     Windows-style paste or other CRLF-delivering path) → send a single
+    //     LF (\n), the host line convention. Matching `\r\n?` (not just `\r`)
+    //     avoids turning one CRLF into two host newlines.
     //   * Backspace arrives as DEL (\x7f) → send BS (\x08), matching the web
     //     console.
     // Everything else (including control chars like Ctrl-D = EOT \x04) passes
     // through untouched — that is the whole point: the program decides what to
     // do with them (echo.s exits on EOT).
-    const translated = data.replace(/\r/g, "\n").replace(/\x7f/g, "\x08");
+    const translated = data.replace(/\r\n?/g, "\n").replace(/\x7f/g, "\x08");
     // Forward the whole chunk as ONE request so a paste is a single IRQ edge,
     // matching the emulator's one-edge-per-`push_input` contract.
     this.session
@@ -107,29 +122,53 @@ class SerialPty implements vscode.Pseudoterminal {
   }
 }
 
+/** One workspace-scoped terminal, tracked so a live one is never clobbered. */
+interface WorkspaceEntry {
+  sessionId: string;
+  terminal: vscode.Terminal;
+  /** Set once the owning session's debug adapter has terminated. */
+  ended: boolean;
+}
+
 /**
  * Owns one serial terminal per live debug session and routes stdout to it.
  *
  * Keyed two ways: by session id (so the adapter can find the pty when an
  * `output` event flows) and by workspace (so starting a new session in the same
- * workspace disposes the previous session's terminal — a fresh terminal per
- * session, no unbounded accumulation, while a terminated session's scrollback
- * survives until then).
+ * workspace disposes any *already-ended* previous session's terminal — a fresh
+ * terminal per sequential session, no unbounded accumulation, while a
+ * terminated session's scrollback survives until then). Terminals belonging to
+ * still-running sessions in the same workspace are deliberately left alone:
+ * disposing them unconditionally would kill a live sibling session's terminal
+ * out from under it whenever a second concurrent session starts.
  */
 export class SerialTerminalManager {
   private readonly bySession = new Map<string, SerialPty>();
-  private readonly byWorkspace = new Map<string, vscode.Terminal>();
+  private readonly byWorkspace = new Map<string, WorkspaceEntry[]>();
 
   /** Create (and reveal) the serial terminal for a starting session. */
   start(session: vscode.DebugSession): void {
     const workspaceKey = session.workspaceFolder?.uri.toString() ?? "";
-    // Replace any leftover terminal from a previous run in this workspace.
-    this.byWorkspace.get(workspaceKey)?.dispose();
+    const entries = this.byWorkspace.get(workspaceKey) ?? [];
+
+    // Dispose only the terminals whose owning session has already ended;
+    // keep the rest so concurrent sessions in the same workspace coexist.
+    const live: WorkspaceEntry[] = [];
+    for (const entry of entries) {
+      if (entry.ended) {
+        entry.terminal.dispose();
+      } else {
+        live.push(entry);
+      }
+    }
 
     const pty = new SerialPty(session);
+    // VS Code disambiguates duplicate terminal names (e.g. "Zorglub33 Serial
+    // #2") automatically, so concurrent sessions don't need distinct names.
     const terminal = vscode.window.createTerminal({ name: TERMINAL_NAME, pty });
     this.bySession.set(session.id, pty);
-    this.byWorkspace.set(workspaceKey, terminal);
+    live.push({ sessionId: session.id, terminal, ended: false });
+    this.byWorkspace.set(workspaceKey, live);
     // Reveal without stealing focus from the editor.
     terminal.show(true);
   }
@@ -139,6 +178,14 @@ export class SerialTerminalManager {
     const pty = this.bySession.get(session.id);
     pty?.markTerminated();
     this.bySession.delete(session.id);
+
+    const workspaceKey = session.workspaceFolder?.uri.toString() ?? "";
+    const entry = this.byWorkspace
+      .get(workspaceKey)
+      ?.find((candidate) => candidate.sessionId === session.id);
+    if (entry !== undefined) {
+      entry.ended = true;
+    }
   }
 
   /**
@@ -157,8 +204,10 @@ export class SerialTerminalManager {
   }
 
   dispose(): void {
-    for (const terminal of this.byWorkspace.values()) {
-      terminal.dispose();
+    for (const entries of this.byWorkspace.values()) {
+      for (const entry of entries) {
+        entry.terminal.dispose();
+      }
     }
     this.bySession.clear();
     this.byWorkspace.clear();
