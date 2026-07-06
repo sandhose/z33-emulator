@@ -566,9 +566,8 @@ fn exception_step_count_check() {
 fn in_is_privileged() {
     // r[verify inst.in]
     // r[verify exc.code.privileged-instruction]
-    // `in` is defined but unimplemented (todo!()); its privilege check runs
-    // first, so executing it in user mode raises the exception instead of
-    // reaching the panic.
+    // `in` is privileged; its privilege check runs first, so executing it in
+    // user mode raises the exception before any I/O access happens.
     let state = run_program(
         indoc! {"
             .addr 100
@@ -610,7 +609,7 @@ fn in_is_privileged() {
 fn out_is_privileged() {
     // r[verify inst.out]
     // r[verify exc.code.privileged-instruction]
-    // Same as `in`: privilege check fires before the todo!() body.
+    // Same as `in`: the privilege check fires before any I/O access.
     let state = run_program(
         indoc! {"
             .addr 100
