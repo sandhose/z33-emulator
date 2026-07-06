@@ -1,11 +1,5 @@
 import { TerminalIcon, Trash2Icon } from "lucide-react";
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
+import { lazy, Suspense, useCallback, useRef } from "react";
 import { Button } from "./components/ui/button";
 import {
   Tooltip,
@@ -13,109 +7,30 @@ import {
   TooltipTrigger,
 } from "./components/ui/tooltip";
 import type { ComputerProxy } from "./lib/computer-proxy";
-import { cn } from "./lib/utils";
+import type { SerialTerminalHandle } from "./serial-terminal";
+
+// Lazy-load the xterm-backed terminal so xterm (~82 KB gzip) lands in its own
+// chunk and stays out of the initial bundle. It is only needed once the debug
+// panel renders.
+const SerialTerminal = lazy(() => import("./serial-terminal"));
 
 type SerialConsoleProps = {
   computer: ComputerProxy;
 };
 
-const encoder = new TextEncoder();
-
-/** How close to the bottom (px) still counts as "following" the output. */
-const AUTOSCROLL_THRESHOLD = 24;
-
 /**
- * A minimal serial terminal wired to the emulator's serial console
- * (ports 110-111). Program output is decoded and appended to an ephemeral
- * scrollback; printable keystrokes, Enter, Backspace, Ctrl-<letter> and pastes
- * are forwarded to the emulator as receive bytes. There is **no local echo** —
- * only what the program writes back appears.
- *
- * Scrollback lives in component state and is reset whenever the `computer`
- * (i.e. the debug session) changes.
+ * A serial terminal wired to the emulator's serial console (ports 110-111),
+ * backed by xterm.js. Program output is written straight to the terminal;
+ * keystrokes and pastes are translated to receive bytes and forwarded to the
+ * emulator. There is **no local echo** — only what the program writes back
+ * appears. Scrollback is ephemeral: it resets whenever the debug session (the
+ * `computer`) changes.
  */
 export const SerialConsole: React.FC<SerialConsoleProps> = ({ computer }) => {
-  const [text, setText] = useState("");
-  const scrollRef = useRef<HTMLDivElement>(null);
-  // Tracks whether the view should stick to the bottom on new output.
-  const followRef = useRef(true);
-
-  // Reset scrollback and subscribe to output whenever the session changes. A
-  // fresh streaming decoder per session avoids carrying a partial multi-byte
-  // sequence across sessions.
-  useEffect(() => {
-    setText("");
-    followRef.current = true;
-    const decoder = new TextDecoder();
-    const unsubscribe = computer.onOutput((bytes) => {
-      const chunk = decoder.decode(Uint8Array.from(bytes), { stream: true });
-      if (chunk) setText((prev) => prev + chunk);
-    });
-    return unsubscribe;
-  }, [computer]);
-
-  // Auto-scroll to the bottom after new output, unless the user scrolled up.
-  useLayoutEffect(() => {
-    const el = scrollRef.current;
-    if (el && followRef.current) el.scrollTop = el.scrollHeight;
-  }, [text]);
-
-  const handleScroll = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
-    followRef.current = distance <= AUTOSCROLL_THRESHOLD;
-  }, []);
-
-  const handleKeyDown = useCallback(
-    (event: React.KeyboardEvent<HTMLDivElement>) => {
-      if (event.metaKey || event.altKey) return;
-
-      if (event.ctrlKey) {
-        // Map Ctrl-<letter> to its control code (Ctrl-D -> 4 = EOT). Leave
-        // browser shortcuts like Ctrl-C/Ctrl-V (copy/paste) alone.
-        const code = event.key.toUpperCase().codePointAt(0);
-        if (
-          event.key.length === 1 &&
-          code !== undefined &&
-          code >= 65 &&
-          code <= 90
-        ) {
-          if (event.key === "c" || event.key === "v") return;
-          event.preventDefault();
-          computer.sendInput([code - 64]);
-        }
-        return;
-      }
-
-      if (event.key === "Enter") {
-        event.preventDefault();
-        computer.sendInput([0x0a]);
-      } else if (event.key === "Backspace") {
-        event.preventDefault();
-        computer.sendInput([0x08]);
-      } else if (event.key.length === 1) {
-        event.preventDefault();
-        computer.sendInput([...encoder.encode(event.key)]);
-      }
-    },
-    [computer],
-  );
-
-  const handlePaste = useCallback(
-    (event: React.ClipboardEvent<HTMLDivElement>) => {
-      const pasted = event.clipboardData.getData("text");
-      if (!pasted) return;
-      event.preventDefault();
-      // One receive-interrupt edge for the whole paste.
-      computer.sendInput([...encoder.encode(pasted)]);
-    },
-    [computer],
-  );
+  const terminalRef = useRef<SerialTerminalHandle>(null);
 
   const clear = useCallback(() => {
-    setText("");
-    followRef.current = true;
+    terminalRef.current?.clear();
   }, []);
 
   return (
@@ -143,22 +58,10 @@ export const SerialConsole: React.FC<SerialConsoleProps> = ({ computer }) => {
           </Tooltip>
         </div>
       </div>
-      <div
-        ref={scrollRef}
-        onScroll={handleScroll}
-        onKeyDown={handleKeyDown}
-        onPaste={handlePaste}
-        tabIndex={0}
-        role="textbox"
-        aria-label="Serial console output"
-        aria-multiline="true"
-        className={cn(
-          "flex-1 min-h-0 overflow-auto whitespace-pre-wrap break-words",
-          "px-2.5 py-1.5 font-mono text-xs leading-relaxed outline-none",
-          "focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
-        )}
-      >
-        {text}
+      <div className="flex-1 min-h-0 p-1.5">
+        <Suspense fallback={null}>
+          <SerialTerminal computer={computer} ref={terminalRef} />
+        </Suspense>
       </div>
     </div>
   );
