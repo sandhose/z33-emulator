@@ -83,4 +83,49 @@ test.describe("Serial console", () => {
       }),
     ).toBeVisible();
   });
+
+  test("normalizes newlines within a paste to line feeds", async ({
+    page,
+  }) => {
+    await loadWorkspace(page, { "echo.s": ECHO_PROGRAM }, "echo.s");
+    await enterDebugMode(page);
+
+    await page
+      .getByRole("toolbar", { name: "Debug" })
+      .getByRole("button", { name: "Run", exact: true })
+      .click();
+
+    const screen = page.locator(".xterm-screen");
+    await expect(screen).toBeVisible();
+    await screen.click();
+
+    // Drive xterm's own `paste()` API instead of `keyboard.type`: real browser
+    // paste events go through the same internal normalization (embedded
+    // newlines become a bare `\r`), so this exercises the exact input our
+    // `translateInput` regression fix targets, without needing a real
+    // clipboard/paste simulation.
+    await page.evaluate(() => {
+      const terminal = (
+        globalThis as { __z33Terminal?: { paste: (data: string) => void } }
+      ).__z33Terminal;
+      terminal?.paste("hi\nbye");
+    });
+
+    // With newlines correctly translated to LF, the echoed bytes produce two
+    // separate lines. A regression that forwards the raw CR byte instead
+    // would make "bye" overwrite "hi" in place (bare CR just returns the
+    // cursor to column 0), collapsing both into a single line.
+    await expect
+      .poll(() => terminalText(page), { timeout: 10_000 })
+      .toMatch(/hi\nbye/);
+
+    // Ctrl-D (EOT) ends the program.
+    await page.keyboard.press("Control+d");
+    await expect(
+      page.getByRole("toolbar", { name: "Debug" }).getByRole("button", {
+        name: "Run",
+        exact: true,
+      }),
+    ).toBeVisible();
+  });
 });

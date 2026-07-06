@@ -48,13 +48,18 @@ const FONT_FAMILY =
  * escapes dropped (no cursor semantics on a serial line), other control chars
  * forwarded as-is, everything else UTF-8 encoded. Returns `null` when nothing
  * should be sent.
+ *
+ * Newlines are normalized to LF before encoding: a typed Enter arrives as a
+ * lone `\r`, but xterm also normalizes any newlines *inside* a pasted string
+ * to `\r` (never `\r\n`, but handle both defensively) — without this, a
+ * multi-line paste would send raw CR bytes that the LF-oriented emulator
+ * never recognizes as a line terminator.
  */
 function translateInput(data: string): Uint8Array | null {
-  if (data === "\r") return Uint8Array.of(0x0a);
   if (data === "\u007F") return Uint8Array.of(0x08);
   // Escape sequences (arrows, function keys, ...) carry no serial meaning.
   if (data.startsWith("\u001B")) return null;
-  return encoder.encode(data);
+  return encoder.encode(data.replaceAll(/\r\n?/gu, "\n"));
 }
 
 /**
