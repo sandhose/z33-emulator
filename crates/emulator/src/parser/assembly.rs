@@ -517,6 +517,66 @@ mod tests {
     }
 
     #[test]
+    fn parse_directive_parenthesized_expression() {
+        // Regression: `( ... )` used to only wrap a bare atom, so an operator
+        // expression inside parentheses failed to parse.
+        let result = parse(".word (1 << 8)");
+        assert!(
+            result.diagnostics.is_empty(),
+            "diagnostics: {:?}",
+            result
+                .diagnostics
+                .iter()
+                .map(|d| &d.message)
+                .collect::<Vec<_>>()
+        );
+        let line = &result.program.inner.lines[0].inner;
+        match &line.content {
+            Some(Located {
+                inner: LineContent::Directive { kind, argument },
+                ..
+            }) => {
+                assert_eq!(kind.inner, DirectiveKind::Word);
+                assert!(matches!(
+                    argument.inner,
+                    DirectiveArgument::Expression(ExpressionNode::LeftShift(..))
+                ));
+            }
+            other => panic!("expected directive, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_instruction_parenthesized_immediate() {
+        let result = parse("    ld (1 << 8), %a");
+        assert!(
+            result.diagnostics.is_empty(),
+            "diagnostics: {:?}",
+            result
+                .diagnostics
+                .iter()
+                .map(|d| &d.message)
+                .collect::<Vec<_>>()
+        );
+        let line = &result.program.inner.lines[0].inner;
+        match &line.content {
+            Some(Located {
+                inner: LineContent::Instruction { kind, arguments },
+                ..
+            }) => {
+                assert_eq!(kind.inner, InstructionKind::Ld);
+                assert_eq!(arguments.len(), 2);
+                assert!(matches!(
+                    arguments[0].inner,
+                    InstructionArgument::Value(ExpressionNode::LeftShift(..))
+                ));
+                assert_eq!(arguments[1].inner, InstructionArgument::Register(Reg::A));
+            }
+            other => panic!("expected instruction, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn parse_hex_literal() {
         let result = parse(".word 0xFF");
         assert!(

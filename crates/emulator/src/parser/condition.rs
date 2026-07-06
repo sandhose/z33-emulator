@@ -427,6 +427,15 @@ mod tests {
     }
 
     #[test]
+    fn parenthesized_arithmetic_in_condition_test() {
+        // Conditions embed the shared expression parser, so a parenthesized
+        // operator expression (e.g. `#if (1 << 8) == 256`) must parse.
+        assert!(evaluate("(1 << 8) == 256"));
+        assert!(evaluate("(1 + 2) * 3 == 9"));
+        assert!(evaluate("1 + (2 * 3) == 7"));
+    }
+
+    #[test]
     fn logical_operations_test() {
         assert!(evaluate("true && true"));
         assert!(!evaluate("true && false"));
