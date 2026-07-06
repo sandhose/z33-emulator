@@ -19,8 +19,9 @@
 #define EXCEPTION 102   // where the CPU stores the exception code
 #define HARDWARE_INTERRUPT 0    // exception code for a device interrupt
 
-// %sr layout: supervisor is bit 9 (512), interrupt-enable is bit 8 (256).
-#define SR_SUPERVISOR_IE 768
+// %sr layout: supervisor is bit 9, already set at boot; interrupt-enable is
+// bit 8. Build the mask with a bit shift instead of a magic number.
+#define SR_INTERRUPT_ENABLE 1 << 8      // %sr bit 8: interrupt enable
 
 .addr 200
 handler:
@@ -50,6 +51,6 @@ halt:
 .addr 1000
 main:
     out RX_IRQ_ENABLE, [CONTROL]    // arm an interrupt on receive
-    ld  SR_SUPERVISOR_IE, %sr       // stay supervisor, enable interrupts
+    or  SR_INTERRUPT_ENABLE, %sr    // switch on interrupts (we boot in supervisor mode)
 idle:
     jmp idle                        // do nothing until interrupted

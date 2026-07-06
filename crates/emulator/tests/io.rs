@@ -138,7 +138,7 @@ fn hardware_interrupt_is_delivered_between_instructions() {
             .addr 1000
             main:
                 out 1, [110]        // enable rx interrupts (E bit)
-                ld 768, %sr         // supervisor (512) + interrupt-enable (256)
+                or 1 << 8, %sr      // switch on interrupt-enable (bit 8; supervisor stays set)
             idle:
                 jmp idle
         "},
@@ -153,7 +153,7 @@ fn hardware_interrupt_is_delivered_between_instructions() {
     // %sr.IE is not set yet so nothing is delivered.
     computer.step().unwrap();
     assert_eq!(computer.registers.pc, 1001);
-    // Step 2: `ld 768, %sr` enables interrupts; the pending interrupt is then
+    // Step 2: `or 1 << 8, %sr` enables interrupts; the pending interrupt is then
     // delivered between this instruction and the next.
     computer.step().unwrap();
 
@@ -185,7 +185,7 @@ fn masked_interrupt_edge_is_preserved() {
             main:
                 out 1, [110]        // enable rx interrupts, but %sr.IE is clear
                 nop
-                ld 768, %sr         // now enable interrupts
+                or 1 << 8, %sr      // now enable interrupts (bit 8)
             idle:
                 jmp idle
         "},
@@ -196,7 +196,7 @@ fn masked_interrupt_edge_is_preserved() {
     computer.step().unwrap(); // out: arms E -> raises edge; IE still clear
     computer.step().unwrap(); // nop: IE still clear, edge preserved
     assert_eq!(computer.registers.pc, 1002);
-    computer.step().unwrap(); // ld %sr: IE set -> edge delivered
+    computer.step().unwrap(); // or %sr: IE set -> edge delivered
     assert_eq!(computer.registers.pc, C::INTERRUPT_HANDLER);
 }
 
@@ -298,7 +298,7 @@ fn echo_sample_interrupt_driven_batched() {
     let idle = *debug_info.labels.get("idle").expect("idle label");
 
     computer.step().unwrap(); // out RX_IRQ_ENABLE, [CONTROL]
-    computer.step().unwrap(); // ld SR_SUPERVISOR_IE, %sr
+    computer.step().unwrap(); // or SR_INTERRUPT_ENABLE, %sr
     assert_eq!(computer.registers.pc, idle);
 
     // Deliver "hi" and Ctrl-D in a single push: one interrupt edge covers all
@@ -321,7 +321,7 @@ fn echo_sample_interrupt_driven() {
     // Run the setup (arm the controller + enable interrupts) up to the idle
     // loop.
     computer.step().unwrap(); // out RX_IRQ_ENABLE, [CONTROL]
-    computer.step().unwrap(); // ld SR_SUPERVISOR_IE, %sr
+    computer.step().unwrap(); // or SR_INTERRUPT_ENABLE, %sr
     assert_eq!(computer.registers.pc, idle);
 
     let mut halted = false;
