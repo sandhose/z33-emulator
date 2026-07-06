@@ -56,6 +56,13 @@ let running = false;
 let breakpoints: number[] = [];
 const watched = new Map<number, () => void>();
 const pendingCells = new Map<number, Cell>();
+/**
+ * Bytes the program has written to the serial console since the last snapshot.
+ * Filled after every step/batch (before the push decision) and drained into the
+ * snapshot, so it rides the same 40ms throttle and terminal flush as
+ * `pendingCells` — no trailing bytes are lost.
+ */
+let outputBuffer: number[] = [];
 let lastSnapshotAt = 0;
 /** Target clock speed in cycles per second; `null` = full speed. */
 let speed: number | null = null;
@@ -86,6 +93,8 @@ function buildSnapshot(status: RunStatus, error?: string): Snapshot {
   const pc = registers.pc;
   const changedCells = [...pendingCells.entries()];
   pendingCells.clear();
+  const output = outputBuffer;
+  outputBuffer = [];
   return {
     registers,
     cycles: computer.cycles(),
@@ -94,7 +103,15 @@ function buildSnapshot(status: RunStatus, error?: string): Snapshot {
     ...(error === undefined ? {} : { error }),
     pc,
     location: sourceIndex?.location_for(pc) ?? null,
+    output,
   };
+}
+
+/** Drain the emulator's serial output into the pending output buffer. */
+function drainOutput(): void {
+  if (!computer) return;
+  const bytes = computer.drain_serial_output();
+  if (bytes.length > 0) outputBuffer.push(...bytes);
 }
 
 function pushSnapshot(status: RunStatus, error?: string): void {
@@ -129,10 +146,14 @@ function executeBatch(
     result = computer.run_batch(maxSteps, Uint32Array.from(breakpoints));
   } catch (error) {
     running = false;
+    drainOutput();
     pushSnapshot("panicked", String(error));
     return null;
   }
 
+  // Drain serial output before the push decision so bytes emitted by this batch
+  // ride the same snapshot as the state that produced them.
+  drainOutput();
   const status = statusFromBatch(result.status);
   if (status !== "running") {
     running = false;
@@ -236,6 +257,7 @@ function stopSession(): void {
   for (const unsubscribe of watched.values()) unsubscribe();
   watched.clear();
   pendingCells.clear();
+  outputBuffer = [];
   computer?.free();
   computer = null;
   sourceIndex = null;
@@ -300,6 +322,7 @@ self.addEventListener("message", (event: MessageEvent<WorkerRequest>) => {
             Math.max(1, message.n),
             Uint32Array.from([]),
           );
+          drainOutput();
           const status = statusFromBatch(result.status);
           // A finished step budget reads back as "running"; surface it as a
           // stopped (paused) state since we are not continuously running.
@@ -308,6 +331,7 @@ self.addEventListener("message", (event: MessageEvent<WorkerRequest>) => {
             result.error ?? undefined,
           );
         } catch (error) {
+          drainOutput();
           pushSnapshot("panicked", String(error));
         }
         break;
@@ -355,6 +379,11 @@ self.addEventListener("message", (event: MessageEvent<WorkerRequest>) => {
       }
       case "unwatchCells": {
         for (const address of message.addresses) unwatch(address);
+        break;
+      }
+      case "input": {
+        // One IRQ edge per message; works whether running or paused.
+        computer?.push_serial_input(Uint8Array.from(message.bytes));
         break;
       }
     }

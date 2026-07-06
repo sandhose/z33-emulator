@@ -26,6 +26,11 @@ export interface Snapshot {
   pc: number;
   /** Resolved source location of `%pc`, if it maps to code. */
   location: SourcePosition | null;
+  /**
+   * Bytes the program has written to the serial console since the previous
+   * snapshot. Rides the same throttle + terminal-flush as `changedCells`.
+   */
+  output: number[];
 }
 
 // ---------------------------------------------------------------------------
@@ -52,7 +57,9 @@ export type WorkerRequest =
   | { type: "setSpeed"; speed: number | null }
   | { id: number; type: "resolveBreakpoint"; file: string; line: number }
   | { type: "watchCells"; addresses: number[] }
-  | { type: "unwatchCells"; addresses: number[] };
+  | { type: "unwatchCells"; addresses: number[] }
+  /** Bytes typed/pasted into the serial console; one IRQ edge per message. */
+  | { type: "input"; bytes: number[] };
 
 // ---------------------------------------------------------------------------
 // Worker -> main thread
