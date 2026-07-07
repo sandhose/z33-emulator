@@ -14,6 +14,13 @@
 "   modeline           — `// vim: ft=z33` wins on its own (Vim applies
 "                        modelines after ftdetect); nothing to implement.
 
+" Neovim has its own detection path (lua/z33/ftdetect.lua, armed by the Lua
+" `ftdetect/z33.lua` + `vim.filetype.add`). Bail out here so the two don't
+" install duplicate `.s`/`.S` autocmds under Neovim.
+if has('nvim')
+  finish
+endif
+
 if get(g:, 'z33_no_ftdetect', 0)
   finish
 endif

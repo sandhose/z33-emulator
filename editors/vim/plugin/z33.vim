@@ -6,6 +6,13 @@
 " convenience lives in the Neovim plugin only) — see the README for release
 " links. Opt out completely with `let g:z33_no_lsp = 1`.
 
+" Neovim uses the native LSP path (lsp/z33.lua + lua/z33/init.lua) instead of
+" vim-lsp, so this registration is Vim-only. Bail out under Neovim before
+" touching g:loaded_z33 (the Lua plugin owns that variable there).
+if has('nvim')
+  finish
+endif
+
 if exists('g:loaded_z33')
   finish
 endif

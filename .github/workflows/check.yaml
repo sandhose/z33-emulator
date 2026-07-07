@@ -241,7 +241,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y vim
 
       - name: Neovim smoke test
-        run: nvim --headless -u NONE -N -l editors/nvim/tests/smoke.lua
+        run: nvim --headless -u NONE -N -l editors/vim/tests/smoke.lua
 
       - name: Vim smoke test
         run: |

@@ -75,6 +75,18 @@ end
 -- Starting an already-active highlighter is a no-op, so this is safe on both.
 -- Opt out with `vim.g.z33_no_treesitter_start`. No-ops (no error) when the
 -- parser is absent, so a z33 buffer before `:TSInstall z33` is harmless.
+--
+-- Interaction with the bundled regex syntax (syntax/z33.vim, shared with the
+-- classic-Vim side of this plugin): this needs NO special handling here, and it
+-- is deliberately left to Neovim core. On the `FileType z33` event two autocmds
+-- fire — core's `syntaxset` (`au FileType * if !exists('b:ts_highlight') | set
+-- syntax=<ft>`, which loads syntax/z33.vim) and this one. `vim.treesitter.start`
+-- BOTH sets `b:ts_highlight = true` AND blanks `syntax` to `''` (clearing any
+-- regex syntax already loaded). So regardless of which autocmd runs first, the
+-- end state with a parser is TS-only (no double highlight); without a parser the
+-- probe below returns early, `b:ts_highlight` is never set, and core's syntaxset
+-- autocmd loads the regex fallback (`b:current_syntax == 'z33'`). Both branches
+-- verified empirically on Neovim 0.12.
 local function register_autostart()
   vim.api.nvim_create_autocmd("FileType", {
     pattern = "z33",

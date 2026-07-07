@@ -328,7 +328,7 @@ function M.ensure(cb)
     if not ok then
       -- User declined (or downloads disabled): point them at the README.
       if vim.g.z33_auto_download ~= false then
-        notify("z33-cli required. Install it on PATH or run :Z33Download. See editors/nvim/README.md", vim.log.levels.WARN)
+        notify("z33-cli required. Install it on PATH or run :Z33Download. See editors/vim/README.md", vim.log.levels.WARN)
       end
       return finish(nil)
     end

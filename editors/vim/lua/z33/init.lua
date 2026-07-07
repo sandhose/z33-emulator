@@ -182,7 +182,7 @@ function M.setup(opts)
     -- nvim-lspconfig fallback.
     vim.schedule(function()
       vim.notify(
-        "[z33] native LSP needs Neovim 0.11+; see editors/nvim/README.md for the nvim-lspconfig fallback",
+        "[z33] native LSP needs Neovim 0.11+; see editors/vim/README.md for the nvim-lspconfig fallback",
         vim.log.levels.WARN
       )
     end)

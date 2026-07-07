@@ -23,46 +23,29 @@ The Zed extension is not published to the extension registry yet, but it can be 
 
 The extension provides highlighting (tree-sitter), the language server and the debugger. It uses `z33-cli` from your `PATH` if available, and otherwise downloads a prebuilt binary from the GitHub releases automatically.
 
-### Vim
+### Vim / Neovim
 
-A classic Vim plugin lives in [`editors/vim/`](editors/vim). It provides
-filetype detection for Z33 sources (`.s`/`.S`, with a content heuristic so it
-won't hijack your GNU asm files), syntax highlighting, comment/indent
-defaults, and optional zero-config
-[vim-lsp](https://github.com/prabirshrestha/vim-lsp) integration against
-`z33-cli lsp`.
+A single universal plugin for both editors lives in
+[`editors/vim/`](editors/vim). In **classic Vim** it provides filetype
+detection for `.s`/`.S` (a content heuristic so it won't hijack your GNU asm
+files), regex syntax highlighting, comment/indent defaults, and optional
+zero-config [vim-lsp](https://github.com/prabirshrestha/vim-lsp) integration
+against `z33-cli lsp`. In **Neovim** it adds tree-sitter highlighting (with the
+regex syntax as a fallback until you `:TSInstall z33`), native LSP (0.11+),
+debugging via [`nvim-dap`](https://github.com/mfussenegger/nvim-dap), and
+automatic download of the `z33-cli` binary from GitHub releases.
 
-Install with [vim-plug](https://github.com/junegunn/vim-plug):
+Install with [vim-plug](https://github.com/junegunn/vim-plug) (Vim or Neovim):
 
 ```vim
 Plug 'sandhose/z33-emulator', { 'rtp': 'editors/vim' }
 ```
 
-The LSP integration activates only when vim-lsp is installed and the
-`z33-cli` binary is on your `PATH` (grab one from the
-[releases page](https://github.com/sandhose/z33-emulator/releases) or build
-it with `cargo build --release -p z33-cli`). See
-[`editors/vim/README.md`](editors/vim/README.md) for other install methods
-and configuration. The plugin also works in Neovim as a plain Vim plugin, but
-Neovim users should prefer the dedicated [`editors/nvim/`](editors/nvim)
-plugin below.
-
-### Neovim
-
-A Neovim-first plugin lives in [`editors/nvim/`](editors/nvim/). It provides
-filetype detection for `.s`/`.S`, tree-sitter highlighting/indent/folds,
-native LSP (Neovim 0.11+, wired to `z33-cli lsp`), debugging via
-[`nvim-dap`](https://github.com/mfussenegger/nvim-dap) (`z33-cli dap`), and
-automatic download of the `z33-cli` binary from GitHub releases (with
-consent).
-
-Because the plugin is in a subdirectory of this monorepo, lazy.nvim cannot
-load it from a plain `"sandhose/z33-emulator"` spec — lazy.nvim only puts the
-repository *root* on the runtimepath and has no subdirectory option. Use the
-`dir =` recipe against a local clone, or the `rtp` option in vim-plug/packer
-— see [`editors/nvim/README.md`](editors/nvim/README.md) for the exact
-snippets, config variables (`vim.g.z33_filetypes`, `vim.g.z33_auto_download`),
-`:checkhealth z33`, `:Z33Download`, and `:TSInstall z33`.
+lazy.nvim can't load a monorepo subdirectory from a plain
+`"sandhose/z33-emulator"` spec, so its users need the `dir =` recipe against a
+local clone. See [`editors/vim/README.md`](editors/vim/README.md) for that,
+plus all install methods, config variables, the tree-sitter-vs-regex story,
+`:checkhealth z33`, `:Z33Download` and `:TSInstall z33`.
 
 ## Command-line emulator
 

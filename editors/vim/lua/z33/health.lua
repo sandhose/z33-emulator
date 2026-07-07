@@ -87,6 +87,26 @@ function M.check()
     health.info("nvim-treesitter not installed (optional; enables syntax highlighting)")
   end
 
+  -- Effective highlighting mode. Probed independently of nvim-treesitter: the
+  -- parser + queries can be present on the runtimepath without it. When the
+  -- parser loads, the FileType autostart runs vim.treesitter.start (which blanks
+  -- the legacy syntax); otherwise a z33 buffer falls back to the bundled regex
+  -- syntax (syntax/z33.vim, shared with the classic-Vim side).
+  local add_ok, added = pcall(function()
+    return vim.treesitter.language.add and vim.treesitter.language.add("z33")
+  end)
+  local parser_loadable = add_ok and added == true
+  if vim.g.z33_no_treesitter_start then
+    health.info(
+      "highlighting: regex fallback (syntax/z33.vim) — tree-sitter auto-start disabled"
+        .. " via vim.g.z33_no_treesitter_start"
+    )
+  elseif parser_loadable then
+    health.ok("highlighting: tree-sitter (z33 parser found; regex syntax/z33.vim is disabled per-buffer)")
+  else
+    health.info("highlighting: regex fallback (syntax/z33.vim) — install the parser with :TSInstall z33 for tree-sitter")
+  end
+
   -- nvim-dap.
   if pcall(require, "dap") then
     health.ok("nvim-dap installed (debugging available)")
