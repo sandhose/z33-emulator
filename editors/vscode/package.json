@@ -2,7 +2,7 @@
   "name": "z33-assembly",
   "displayName": "Zorglub33",
   "description": "Zorglub33 (Z33) assembly language support",
-  "version": "0.8.2",
+  "version": "0.8.3",
   "publisher": "quentin-gliech",
   "license": "MIT",
   "repository": {
