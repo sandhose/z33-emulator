@@ -23,6 +23,30 @@ The Zed extension is not published to the extension registry yet, but it can be 
 
 The extension provides highlighting (tree-sitter), the language server and the debugger. It uses `z33-cli` from your `PATH` if available, and otherwise downloads a prebuilt binary from the GitHub releases automatically.
 
+### Vim / Neovim
+
+A single universal plugin for both editors lives in
+[`editors/vim/`](editors/vim). In **classic Vim** it provides filetype
+detection for `.s`/`.S` (a content heuristic so it won't hijack your GNU asm
+files), regex syntax highlighting, comment/indent defaults, and optional
+zero-config [vim-lsp](https://github.com/prabirshrestha/vim-lsp) integration
+against `z33-cli lsp`. In **Neovim** it adds tree-sitter highlighting (with the
+regex syntax as a fallback until you `:TSInstall z33`), native LSP (0.11+),
+debugging via [`nvim-dap`](https://github.com/mfussenegger/nvim-dap), and
+automatic download of the `z33-cli` binary from GitHub releases.
+
+Install with [vim-plug](https://github.com/junegunn/vim-plug) (Vim or Neovim):
+
+```vim
+Plug 'sandhose/z33-emulator', { 'rtp': 'editors/vim' }
+```
+
+lazy.nvim can't load a monorepo subdirectory from a plain
+`"sandhose/z33-emulator"` spec, so its users need the `dir =` recipe against a
+local clone. See [`editors/vim/README.md`](editors/vim/README.md) for that,
+plus all install methods, config variables, the tree-sitter-vs-regex story,
+`:checkhealth z33`, `:Z33Download` and `:TSInstall z33`.
+
 ## Command-line emulator
 
 ### Binaries
