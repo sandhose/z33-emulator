@@ -2,8 +2,8 @@
 --
 -- `setup()` is idempotent and cheap: it registers filetype detection, the
 -- tree-sitter parser config, native LSP, and (when present) nvim-dap. The
--- `z33-cli` binary is resolved lazily through `cli_path` / `cli_cmd` /
--- `cli_path_async` — nothing downloads or blocks at startup.
+-- `z33-cli` binary is resolved lazily through `cli_path` (sync) and
+-- `z33.download`'s `ensure` (async) — nothing downloads or blocks at startup.
 
 local M = {}
 
@@ -20,32 +20,6 @@ function M.cli_path()
     return on_path
   end
   return require("z33.download").cached_binary()
-end
-
---- Builds the `{ path, subcmd }` argv for the given subcommand, or nil if no
---- binary is available. Purely synchronous: it never triggers a download.
---- `setup()` guarantees the native LSP is only enabled once this resolves, so
---- the `lsp/z33.lua` `cmd` function can treat a nil return as a hard bug.
---- @param subcmd string
---- @return string[]|nil
-function M.cli_cmd(subcmd)
-  local path = M.cli_path()
-  if path then
-    return { path, subcmd }
-  end
-  return nil
-end
-
---- Async resolution: resolves a usable binary path (downloading with consent if
---- necessary) and calls `cb(path_or_nil)` on the main loop. Used by the DAP
---- adapter.
---- @param cb fun(path: string|nil)
-function M.cli_path_async(cb)
-  local path = M.cli_path()
-  if path then
-    return cb(path)
-  end
-  require("z33.download").ensure(cb)
 end
 
 -- ---------------------------------------------------------------------------
@@ -108,26 +82,20 @@ end
 
 M.enable_lsp = enable_lsp
 
--- Guard so we only ever arm the lazy download-then-enable flow once.
-local lsp_download_armed = false
-
 --- Called when no binary is resolvable at setup() time. Instead of enabling the
 --- LSP (whose `cmd` would then have no binary and crash the core), it arms a
 --- one-shot FileType=z33 autocmd: the first z33 buffer runs the async
 --- ensure/download flow (consent prompt included) and, on success, enables the
---- LSP so that buffer (and any others already open) attaches. On decline or
---- failure the download layer notifies once and we do not retry until
---- `:Z33Download` succeeds (which re-enables the LSP itself).
+--- LSP so that buffer (and any others already open) attaches. `once = true`
+--- guarantees the arm-download flow fires exactly once. On decline or failure
+--- the download layer notifies once and we do not retry until `:Z33Download`
+--- succeeds (which re-enables the LSP itself).
 local function arm_lazy_lsp()
   vim.api.nvim_create_autocmd("FileType", {
     pattern = "z33",
     once = true,
     desc = "z33: fetch z33-cli then enable the LSP on the first z33 buffer",
     callback = function()
-      if lsp_download_armed then
-        return
-      end
-      lsp_download_armed = true
       require("z33.download").ensure(function(bin)
         if bin then
           enable_lsp()

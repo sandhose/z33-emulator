@@ -224,7 +224,8 @@ Standard nvim-dap keymaps work as usual.
 Run **`:checkhealth z33`** to verify your setup: Neovim version, whether
 `z33-cli` is on `PATH`/cached, platform download support, nvim-treesitter (+ the
 `z33` parser) and nvim-dap availability, and which highlighting mode
-(tree-sitter vs. regex fallback) is in effect.
+(tree-sitter vs. regex fallback) is in effect. If highlighting looks basic when
+you wanted tree-sitter, run `:TSInstall z33`.
 
 ## Troubleshooting
 
@@ -236,21 +237,11 @@ package that maps it to `r` (legacy S-PLUS used `.s`). Both use `:setf`, which
 silently no-ops once a filetype has been set during detection, so depending on
 load order they can win over this plugin.
 
-To reclaim only genuine Z33 files, the plugin scans the first 64 lines of a
-`.s`/`.S` buffer for signals that effectively never appear in GNU asm — the
-`%pc`/`%sr`/`%a`/`%b` registers (never `%sp`, a real x86 AT&T register), the
-`.addr` directive (`.word`/`.space`/`.string` are excluded, being standard GNU
-`as` directives too), and the `#include`/`#define`/`#undefine`/`#if`/`#elif`/
-`#endif`/`#error` preprocessor (note `#undefine`, not `#undef`). It only acts
-when the current filetype is `""`, `asm` or `r`, so it never overrides a more
-confident detector, and a GNU-asm `.s` file keeps its filetype. In Neovim a
-force-override autocmd (in `ftdetect/z33.lua`) additionally wins over `:setf`
-regardless of load order. If you'd rather stop polyglot from claiming `.s`/`.S`
-at the source, set `let g:polyglot_disabled = ['r-lang']` before it loads.
-
-### `:checkhealth z33` (Neovim) / `:TSInstall z33`
-
-`:checkhealth z33` reports the whole setup. If highlighting looks like plain
-regex when you wanted tree-sitter, install the parser with `:TSInstall z33`
-(works on both nvim-treesitter branches). If you want to force the regex
-fallback, set `vim.g.z33_no_treesitter_start = true`.
+To reclaim only genuine Z33 files without stealing real GNU-asm ones, the plugin
+scans each `.s`/`.S` buffer for Z33-specific markers (registers, the `.addr`
+directive, the preprocessor) that effectively never appear in GNU asm, acting
+only when no confident filetype is already set — so a GNU-asm `.s` keeps its
+filetype (the exact signal list and its rationale live in one place, the header
+comment of `ftdetect/z33.vim`). If you'd rather stop polyglot from claiming
+`.s`/`.S` at the source, set `let g:polyglot_disabled = ['r-lang']` before it
+loads.

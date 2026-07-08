@@ -238,7 +238,10 @@ jobs:
           version: stable
 
       - name: Install classic Vim
-        run: sudo apt-get update && sudo apt-get install -y vim
+        uses: rhysd/action-setup-vim@febef33995d6649302e9d88dda81e071b68f16a7 # v1.6.1
+        with:
+          neovim: false
+          version: stable
 
       - name: Neovim smoke test
         run: nvim --headless -u NONE -N -l editors/vim/tests/smoke.lua

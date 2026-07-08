@@ -16,7 +16,7 @@ function M.setup()
   -- nvim-dap an executable adapter. If resolution fails, report an error via
   -- the callback's error string so nvim-dap surfaces it instead of hanging.
   dap.adapters.z33 = function(callback, _config)
-    require("z33").cli_path_async(function(bin)
+    require("z33.download").ensure(function(bin)
       if not bin then
         return callback({ type = "executable", command = "z33-cli", args = { "dap" } })
         -- Note: passing a bogus command lets nvim-dap fail visibly; the

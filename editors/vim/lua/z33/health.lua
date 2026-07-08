@@ -15,7 +15,6 @@ function M.check()
   end
 
   -- z33-cli availability.
-  local z33 = require("z33")
   local on_path = vim.fn.exepath("z33-cli")
   local download = require("z33.download")
   if on_path ~= "" then
@@ -40,6 +39,16 @@ function M.check()
   if vim.uv.os_uname().sysname == "Darwin" then
     health.info("macOS: downloaded binaries have the quarantine xattr stripped best-effort")
   end
+
+  -- Whether the z33 tree-sitter parser is loadable on the runtimepath. Probed
+  -- independently of nvim-treesitter (the parser + queries can be present
+  -- without it) and reused for both the "parser installed" report below and the
+  -- effective-highlighting-mode line. language.add returns true (or nil on
+  -- older nvim) when the parser loads.
+  local add_ok, added = pcall(function()
+    return vim.treesitter.language.add and vim.treesitter.language.add("z33")
+  end)
+  local parser_loadable = add_ok and added == true
 
   -- nvim-treesitter + z33 parser.
   local ts_ok = pcall(require, "nvim-treesitter")
@@ -66,16 +75,7 @@ function M.check()
       )
     end
 
-    local has_parser = false
-    local lang_ok, has = pcall(function()
-      -- Works regardless of how the parser was installed.
-      return vim.treesitter.language.add and vim.treesitter.language.add("z33")
-    end)
-    if lang_ok and has ~= false then
-      -- language.add returns true (or nil on older nvim) when the parser loads.
-      has_parser = pcall(vim.treesitter.get_string_parser, "", "z33")
-    end
-    if has_parser then
+    if parser_loadable then
       health.ok("z33 tree-sitter parser is installed")
     else
       health.warn("z33 tree-sitter parser not installed; run :TSInstall z33")
@@ -87,15 +87,10 @@ function M.check()
     health.info("nvim-treesitter not installed (optional; enables syntax highlighting)")
   end
 
-  -- Effective highlighting mode. Probed independently of nvim-treesitter: the
-  -- parser + queries can be present on the runtimepath without it. When the
+  -- Effective highlighting mode (reuses parser_loadable from above). When the
   -- parser loads, the FileType autostart runs vim.treesitter.start (which blanks
   -- the legacy syntax); otherwise a z33 buffer falls back to the bundled regex
   -- syntax (syntax/z33.vim, shared with the classic-Vim side).
-  local add_ok, added = pcall(function()
-    return vim.treesitter.language.add and vim.treesitter.language.add("z33")
-  end)
-  local parser_loadable = add_ok and added == true
   if vim.g.z33_no_treesitter_start then
     health.info(
       "highlighting: regex fallback (syntax/z33.vim) — tree-sitter auto-start disabled"
@@ -126,9 +121,6 @@ function M.check()
   if vim.g.z33_filetypes then
     health.info("vim.g.z33_filetypes set (all .s/.S files forced to z33)")
   end
-
-  -- Silence an unused-variable lint while keeping the require for side effects.
-  local _ = z33
 end
 
 return M

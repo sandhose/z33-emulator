@@ -11,18 +11,18 @@
 
 return {
   cmd = function(dispatchers)
-    local cmd = require("z33").cli_cmd("lsp")
+    local path = require("z33").cli_path()
     -- Unreachable: setup() gates `vim.lsp.enable("z33")` on a resolvable
     -- binary. Assert with a clear message instead of returning nil (which
     -- would crash the LSP core) if the invariant is ever violated.
     assert(
-      cmd,
+      path,
       "z33: LSP was started without a resolvable z33-cli binary; run :Z33Download or add z33-cli to PATH"
     )
-    return vim.lsp.rpc.start(cmd, dispatchers)
+    return vim.lsp.rpc.start({ path, "lsp" }, dispatchers)
   end,
   filetypes = { "z33" },
-  -- Fall back to the buffer's directory when there is no `.git` marker so the
-  -- server always attaches even for a lone scratch file.
+  -- Prefer a `.git` root; with no marker, nvim core attaches to the buffer's
+  -- own directory (single-file mode), so a lone scratch file still works.
   root_markers = { ".git" },
 }

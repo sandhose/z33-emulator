@@ -48,27 +48,16 @@ function M.platform()
   return nil, ("unsupported OS: %s"):format(sysname)
 end
 
---- Parses `z33-cli-vX.Y.Z` into a numerically comparable key.
---- (Lexicographic comparison would rank v0.9.0 above v0.10.0.)
+--- Parses the version out of a `z33-cli-vX.Y.Z` cache dir name into a
+--- `vim.version` object (numerically comparable). Returns nil for non-matching
+--- names such as the `z33-cli-latest` fallback dir, which keeps it lowest
+--- priority.
 local function version_key(dir)
   local tag = dir:match("^z33%-cli%-v(.+)$")
   if not tag then
     return nil
   end
-  local major, minor, patch = tag:match("^(%d+)%.(%d+)%.(%d+)$")
-  if not major then
-    return nil
-  end
-  return { tonumber(major), tonumber(minor), tonumber(patch) }
-end
-
-local function key_less(a, b)
-  for i = 1, 3 do
-    if a[i] ~= b[i] then
-      return a[i] < b[i]
-    end
-  end
-  return false
+  return vim.version.parse(tag)
 end
 
 --- Newest previously downloaded binary, if any (used when GitHub is
@@ -80,14 +69,14 @@ function M.cached_binary()
     return nil
   end
   local root = base_dir()
-  local entries = vim.fn.readdir and vim.fn.isdirectory(root) == 1 and vim.fn.readdir(root) or {}
+  local entries = vim.fn.isdirectory(root) == 1 and vim.fn.readdir(root) or {}
   local best, best_key
   for _, name in ipairs(entries) do
     local key = version_key(name)
     if key then
       local bin = vim.fs.joinpath(root, name, platform.binary)
       if vim.uv.fs_stat(bin) then
-        if not best_key or key_less(best_key, key) then
+        if not best_key or vim.version.lt(best_key, key) then
           best, best_key = bin, key
         end
       end
@@ -283,7 +272,6 @@ local function fetch_and_install(platform, done)
 end
 
 --- Resolves the consent decision, then downloads. `cb(path_or_nil)`.
---- `notify_only` skips the eventual error notification (caller handles it).
 local function with_consent(cb)
   local auto = vim.g.z33_auto_download
   if auto == false then
@@ -305,6 +293,11 @@ end
 --- callers share a single download.
 --- @param cb fun(path: string|nil)
 function M.ensure(cb)
+  -- A binary on PATH always wins — use it without prompting or downloading.
+  local on_path = vim.fn.exepath("z33-cli")
+  if on_path ~= "" then
+    return cb(on_path)
+  end
   -- Already cached from a previous session? Use it without prompting.
   local cached = M.cached_binary()
   if cached then
