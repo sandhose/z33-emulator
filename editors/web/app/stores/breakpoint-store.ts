@@ -1,10 +1,11 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
+import type { ResolvedBreakpoint } from "../lib/wasm";
 
 const BREAKPOINTS_KEY = "z33:breakpoints";
 
-/** A breakpoint resolved against a compiled program. */
-export type ResolvedBreakpoint = { line: number; address: number };
+/** A breakpoint resolved against a compiled program (tsify-generated type). */
+export type { ResolvedBreakpoint };
 
 /** Resolution result per file: requested line -> resolved info (or null). */
 export type ResolvedMap = Record<
