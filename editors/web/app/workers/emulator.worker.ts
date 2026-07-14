@@ -184,7 +184,7 @@ let slowTickHandle: number | null = null;
 function scheduleSlowTick(): void {
   slowTickHandle = useRaf
     ? self.requestAnimationFrame(slowTick)
-    : setTimeout(slowTick, 16);
+    : self.setTimeout(slowTick, 16);
 }
 
 function cancelSlowTick(): void {
