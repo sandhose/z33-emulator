@@ -183,6 +183,71 @@ fn workspace_files_seed_cross_file_goto_definition() {
 }
 
 #[test]
+fn null_root_uri_relativizes_to_file_name_including_encoded_spaces() {
+    // The web IDE convention: `rootUri: null` and flat `file:///name` URIs
+    // that relativize to their last path segment. A space in the file name is
+    // percent-encoded on the wire but must match the raw
+    // `zorglub33/workspaceFiles` key.
+    let mut h = Harness::new();
+    let out = h.request("initialize", json!({ "capabilities": {}, "rootUri": null }));
+    assert!(!out[0]["result"].is_null());
+    h.notify("initialized", json!({}));
+
+    let main_src = "#include \"my util.s\"\n    jmp target\n";
+    h.notify(
+        "textDocument/didOpen",
+        json!({
+            "textDocument": {
+                "uri": "file:///main.s",
+                "languageId": "zorglub33-assembly",
+                "version": 1,
+                "text": main_src,
+            }
+        }),
+    );
+    h.notify(
+        super::WORKSPACE_FILES_METHOD,
+        json!({ "files": { "my util.s": "target:\n    reset\n" } }),
+    );
+
+    // The include resolved, so `main.s` has no diagnostics...
+    let out = h.notify(
+        "textDocument/didChange",
+        json!({
+            "textDocument": { "uri": "file:///main.s", "version": 2 },
+            "contentChanges": [{ "text": main_src }],
+        }),
+    );
+    let diags = find_diagnostics(&out, "file:///main.s").expect("publish for main.s");
+    assert_eq!(diags["params"]["diagnostics"], json!([]));
+
+    // ...and go-to-definition crosses into the spaced file. With no root to
+    // resolve against, the definition echoes the requesting document's URI
+    // only when the target is open; here the target is a base file, so no
+    // location can be produced for it -- open it and try again.
+    h.notify(
+        "textDocument/didOpen",
+        json!({
+            "textDocument": {
+                "uri": "file:///my%20util.s",
+                "languageId": "zorglub33-assembly",
+                "version": 1,
+                "text": "target:\n    reset\n",
+            }
+        }),
+    );
+    let out = h.request(
+        "textDocument/definition",
+        json!({
+            "textDocument": { "uri": "file:///main.s" },
+            "position": { "line": 1, "character": 8 },
+        }),
+    );
+    // The URI echoes the client's encoded form exactly.
+    assert_eq!(out[0]["result"]["uri"], "file:///my%20util.s");
+}
+
+#[test]
 fn duplicate_initialize_is_rejected_and_preserves_state() {
     let mut h = Harness::new();
     h.initialize();

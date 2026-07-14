@@ -17,14 +17,15 @@
 //! Each open document is analyzed as its own preprocessing root. Because a root
 //! can `#include` other files, spans, occurrences, and diagnostics carry the
 //! [`FileId`] of the file they belong to; the manager maps those back to the
-//! right [`Url`].
+//! right [`Uri`].
 
 use std::collections::{HashMap, HashSet};
+use std::str::FromStr;
 use std::sync::Arc;
 
 use camino::{Utf8Path, Utf8PathBuf};
 use lsp_types::{
-    Diagnostic, DocumentHighlight, DocumentHighlightKind, Location, TextEdit, Url, WorkspaceEdit,
+    Diagnostic, DocumentHighlight, DocumentHighlightKind, Location, TextEdit, Uri, WorkspaceEdit,
 };
 
 use super::document::DocumentState;
@@ -76,17 +77,17 @@ struct Document {
 #[derive(Default)]
 pub(crate) struct WorkspaceManager {
     /// Workspace root as a URI, if the client provided one.
-    root_uri: Option<Url>,
+    root_uri: Option<Uri>,
     /// Workspace root as a native path, if the root URI was a `file://` URI.
     native_root: Option<Utf8PathBuf>,
     /// Host-pushed base files (see `zorglub33/workspaceFiles`), keyed by
     /// relative path.
     base_files: HashMap<Utf8PathBuf, String>,
     /// Currently open documents, keyed by URI.
-    documents: HashMap<Url, Document>,
+    documents: HashMap<Uri, Document>,
     /// URIs we last published *non-empty* diagnostics for, so we can clear
     /// them.
-    published: HashSet<Url>,
+    published: HashSet<Uri>,
     /// Client-side commands the client declared it can execute (from the
     /// `experimental.commands` client capability). Server-produced commands
     /// (e.g. the run code lens) are only emitted when advertised here.
@@ -99,8 +100,8 @@ impl WorkspaceManager {
     }
 
     /// Record the workspace root captured from `initialize`.
-    pub(crate) fn set_root(&mut self, root_uri: Option<Url>) {
-        self.native_root = root_uri.as_ref().and_then(url_to_native_path);
+    pub(crate) fn set_root(&mut self, root_uri: Option<Uri>) {
+        self.native_root = root_uri.as_ref().and_then(uri_to_native_path);
         self.root_uri = root_uri;
     }
 
@@ -118,13 +119,13 @@ impl WorkspaceManager {
     pub(crate) fn set_base_files(
         &mut self,
         files: HashMap<Utf8PathBuf, String>,
-    ) -> Vec<(Url, Vec<Diagnostic>)> {
+    ) -> Vec<(Uri, Vec<Diagnostic>)> {
         self.base_files = files;
         self.recompute()
     }
 
     /// Handle `didOpen` / `didChange` for a document.
-    pub(crate) fn upsert(&mut self, uri: Url, text: String) -> Vec<(Url, Vec<Diagnostic>)> {
+    pub(crate) fn upsert(&mut self, uri: Uri, text: String) -> Vec<(Uri, Vec<Diagnostic>)> {
         let relative_path = self.relative_for_uri(&uri);
         self.documents.insert(
             uri,
@@ -138,18 +139,18 @@ impl WorkspaceManager {
     }
 
     /// Handle `didClose`.
-    pub(crate) fn close(&mut self, uri: &Url) -> Vec<(Url, Vec<Diagnostic>)> {
+    pub(crate) fn close(&mut self, uri: &Uri) -> Vec<(Uri, Vec<Diagnostic>)> {
         self.documents.remove(uri);
         self.recompute()
     }
 
     /// The current source of an open document.
-    pub(crate) fn source(&self, uri: &Url) -> Option<String> {
+    pub(crate) fn source(&self, uri: &Uri) -> Option<String> {
         self.documents.get(uri).map(|d| d.source.clone())
     }
 
     /// The latest analysis of an open document.
-    pub(crate) fn analysis(&self, uri: &Url) -> Option<Arc<DocumentState>> {
+    pub(crate) fn analysis(&self, uri: &Uri) -> Option<Arc<DocumentState>> {
         self.documents.get(uri).and_then(|d| d.analysis.clone())
     }
 
@@ -157,7 +158,7 @@ impl WorkspaceManager {
 
     /// Go-to-definition: resolve the symbol under the cursor to its definition,
     /// which may live in another file.
-    pub(crate) fn goto_definition(&self, uri: &Url, offset: usize) -> Option<Location> {
+    pub(crate) fn goto_definition(&self, uri: &Uri, offset: usize) -> Option<Location> {
         let doc = self.documents.get(uri)?;
         let analysis = doc.analysis.as_ref()?;
         let occ = analysis.occurrence_at(offset)?;
@@ -170,7 +171,7 @@ impl WorkspaceManager {
     /// Find references to the symbol under the cursor, across every file.
     pub(crate) fn references(
         &self,
-        uri: &Url,
+        uri: &Uri,
         offset: usize,
         include_declaration: bool,
     ) -> Option<Vec<Location>> {
@@ -190,7 +191,7 @@ impl WorkspaceManager {
     /// Highlight occurrences of the symbol under the cursor within this file.
     pub(crate) fn document_highlight(
         &self,
-        uri: &Url,
+        uri: &Uri,
         offset: usize,
     ) -> Option<Vec<DocumentHighlight>> {
         let doc = self.documents.get(uri)?;
@@ -220,12 +221,12 @@ impl WorkspaceManager {
 
     /// Rename the symbol under the cursor everywhere, producing edits that may
     /// span multiple files.
-    pub(crate) fn rename(&self, uri: &Url, offset: usize, new_name: &str) -> Option<WorkspaceEdit> {
+    pub(crate) fn rename(&self, uri: &Uri, offset: usize, new_name: &str) -> Option<WorkspaceEdit> {
         let doc = self.documents.get(uri)?;
         let analysis = doc.analysis.as_ref()?;
         let occ = analysis.occurrence_at(offset)?;
 
-        let mut changes: HashMap<Url, Vec<TextEdit>> = HashMap::new();
+        let mut changes: HashMap<Uri, Vec<TextEdit>> = HashMap::new();
         for o in analysis.occurrences_of(&occ.name) {
             let Some(target_uri) = self.file_uri(analysis, uri, o.file_id) else {
                 continue;
@@ -258,7 +259,7 @@ impl WorkspaceManager {
     fn occurrence_location(
         &self,
         analysis: &DocumentState,
-        request_uri: &Url,
+        request_uri: &Uri,
         occ: &SymbolOccurrence,
     ) -> Option<Location> {
         let source = analysis.file_source(occ.file_id)?;
@@ -271,9 +272,9 @@ impl WorkspaceManager {
     fn file_uri(
         &self,
         analysis: &DocumentState,
-        request_uri: &Url,
+        request_uri: &Uri,
         file_id: FileId,
-    ) -> Option<Url> {
+    ) -> Option<Uri> {
         // The root file of the analysis is the requested document.
         if file_id == analysis.root_file_id() {
             return Some(request_uri.clone());
@@ -293,7 +294,7 @@ impl WorkspaceManager {
 
     /// Re-analyze every open document and compute the diagnostics to publish
     /// (including empty lists to clear files that no longer have diagnostics).
-    fn recompute(&mut self) -> Vec<(Url, Vec<Diagnostic>)> {
+    fn recompute(&mut self) -> Vec<(Uri, Vec<Diagnostic>)> {
         let overlay = self.overlay();
         let fs = OverlayFilesystem {
             native_root: self.native_root.clone(),
@@ -310,8 +311,8 @@ impl WorkspaceManager {
     /// Aggregate diagnostics from every open root, keyed by target URI, and
     /// reconcile with the previously published set so stale entries are
     /// cleared.
-    fn collect_diagnostics(&mut self) -> Vec<(Url, Vec<Diagnostic>)> {
-        let mut per_uri: HashMap<Url, Vec<Diagnostic>> = HashMap::new();
+    fn collect_diagnostics(&mut self) -> Vec<(Uri, Vec<Diagnostic>)> {
+        let mut per_uri: HashMap<Uri, Vec<Diagnostic>> = HashMap::new();
 
         for (uri, doc) in &self.documents {
             // Ensure every open document ends up in the map (so it is cleared
@@ -350,9 +351,14 @@ impl WorkspaceManager {
     }
 
     /// Compute the workspace-relative path for a document URI.
-    pub(crate) fn relative_for_uri(&self, uri: &Url) -> Utf8PathBuf {
+    ///
+    /// Relative paths live in *decoded* space (they are matched against
+    /// `#include` arguments and `zorglub33/workspaceFiles` keys, which are
+    /// plain strings), so any percent-encoding in the URI is undone here;
+    /// [`Self::uri_for_relative`] re-encodes on the way out.
+    pub(crate) fn relative_for_uri(&self, uri: &Uri) -> Utf8PathBuf {
         // Prefer stripping the native root off the file path.
-        if let (Some(root), Some(path)) = (&self.native_root, url_to_native_path(uri)) {
+        if let (Some(root), Some(path)) = (&self.native_root, uri_to_native_path(uri)) {
             if let Ok(rel) = path.strip_prefix(root) {
                 return rel.to_owned();
             }
@@ -362,22 +368,24 @@ impl WorkspaceManager {
             if let Some(rest) = uri.as_str().strip_prefix(root_uri.as_str()) {
                 let rest = rest.trim_start_matches('/');
                 if !rest.is_empty() {
-                    return Utf8PathBuf::from(rest);
+                    return decode_path(rest);
                 }
             }
         }
         // Fall back to the bare file name.
         let name = uri
-            .path_segments()
-            .and_then(std::iter::Iterator::last)
+            .path()
+            .as_str()
+            .rsplit('/')
+            .next()
             .filter(|s| !s.is_empty())
             .unwrap_or("main.S");
-        Utf8PathBuf::from(name)
+        decode_path(name)
     }
 
     /// Map a workspace-relative path to a URI, preferring an already-open
     /// document with that path.
-    fn uri_for_relative(&self, rel: &Utf8Path) -> Option<Url> {
+    fn uri_for_relative(&self, rel: &Utf8Path) -> Option<Uri> {
         for (uri, doc) in &self.documents {
             if doc.relative_path == rel {
                 return Some(uri.clone());
@@ -385,16 +393,14 @@ impl WorkspaceManager {
         }
 
         if let Some(root) = &self.native_root {
-            return native_path_to_url(&root.join(rel));
+            return native_path_to_uri(&root.join(rel));
         }
 
         if let Some(root_uri) = &self.root_uri {
-            let mut base = root_uri.clone();
-            let path = base.path().to_string();
-            if !path.ends_with('/') {
-                base.set_path(&format!("{path}/"));
-            }
-            return base.join(rel.as_str()).ok();
+            let base = root_uri.as_str();
+            let slash = if base.ends_with('/') { "" } else { "/" };
+            let encoded = encode_path(rel.as_str());
+            return Uri::from_str(&format!("{base}{slash}{encoded}")).ok();
         }
 
         None
@@ -402,43 +408,71 @@ impl WorkspaceManager {
 }
 
 /// The set of characters percent-encoded in the path component of a `file://`
-/// URL. Mirrors the `url` crate's default path encode set so URLs built here
-/// match those produced natively.
+/// URI.
+///
+/// Unlike the old `url` crate — which escaped whatever it had to at parse
+/// time — the fluent-uri parser behind [`lsp_types::Uri`] rejects invalid
+/// characters outright, so this set must cover every ASCII character RFC 3986
+/// forbids in a path (non-ASCII bytes are always encoded by
+/// `percent-encoding`). `%` is included so raw path input round-trips instead
+/// of being misread as an escape sequence.
 const PATH_ENCODE_SET: &percent_encoding::AsciiSet = &percent_encoding::CONTROLS
     .add(b' ')
     .add(b'"')
     .add(b'#')
+    .add(b'%')
     .add(b'<')
     .add(b'>')
     .add(b'?')
+    .add(b'[')
+    .add(b'\\')
+    .add(b']')
+    .add(b'^')
     .add(b'`')
     .add(b'{')
+    .add(b'|')
     .add(b'}');
+
+/// Percent-encode a (workspace-relative or absolute POSIX) path for use as the
+/// path component of a URI. `/` separators are left as-is.
+fn encode_path(path: &str) -> percent_encoding::PercentEncode<'_> {
+    percent_encoding::utf8_percent_encode(path, PATH_ENCODE_SET)
+}
+
+/// Percent-decode one or more URI path segments into a relative path. Falls
+/// back to the raw string when the decoded bytes are not valid UTF-8.
+fn decode_path(s: &str) -> Utf8PathBuf {
+    match percent_encoding::percent_decode_str(s).decode_utf8() {
+        Ok(decoded) => Utf8PathBuf::from(decoded.as_ref()),
+        Err(_) => Utf8PathBuf::from(s),
+    }
+}
 
 /// Convert a `file://` URI to a native path, if applicable.
 ///
-/// `Url::to_file_path` is unavailable on some targets (notably
-/// `wasm32-unknown-unknown`), so the path component is percent-decoded
-/// manually. This handles the common POSIX case used by the native CLI host;
-/// WASM hosts never set a native root so this only matters natively.
-fn url_to_native_path(uri: &Url) -> Option<Utf8PathBuf> {
-    if uri.scheme() != "file" {
+/// `lsp_types::Uri` has no `to_file_path` (the fluent-uri type is
+/// scheme-agnostic), so the path component is percent-decoded manually. This
+/// handles the common POSIX case used by the native CLI host; WASM hosts never
+/// set a native root so this only matters natively.
+fn uri_to_native_path(uri: &Uri) -> Option<Utf8PathBuf> {
+    if !uri.scheme().is_some_and(|s| s.eq_lowercase("file")) {
         return None;
     }
-    let decoded = percent_encoding::percent_decode_str(uri.path())
+    let decoded = percent_encoding::percent_decode_str(uri.path().as_str())
         .decode_utf8()
         .ok()?;
     Some(Utf8PathBuf::from(decoded.as_ref()))
 }
 
-/// Convert a native (absolute, POSIX) path to a `file://` URL.
+/// Convert a native (absolute, POSIX) path to a `file://` URI.
 ///
-/// Manual counterpart to `Url::from_file_path`, which is unavailable on some
-/// targets. Only exercised by the native CLI host (WASM hosts have no root).
-fn native_path_to_url(path: &Utf8Path) -> Option<Url> {
-    let encoded = percent_encoding::utf8_percent_encode(path.as_str(), PATH_ENCODE_SET).to_string();
+/// Manual counterpart to the `url` crate's `Url::from_file_path`, which
+/// `lsp_types::Uri` does not provide. Only exercised by the native CLI host
+/// (WASM hosts have no root).
+fn native_path_to_uri(path: &Utf8Path) -> Option<Uri> {
+    let encoded = encode_path(path.as_str());
     // POSIX absolute paths begin with '/', yielding `file:///abs/path`.
-    Url::parse(&format!("file://{encoded}")).ok()
+    Uri::from_str(&format!("file://{encoded}")).ok()
 }
 
 /// Remove duplicate diagnostics (same range / severity / message) in place.
@@ -478,13 +512,13 @@ mod tests {
 
     const ROOT: &str = "file:///ws/";
 
-    fn uri(rel: &str) -> Url {
-        Url::parse(&format!("file:///ws/{rel}")).unwrap()
+    fn uri(rel: &str) -> Uri {
+        Uri::from_str(&format!("file:///ws/{rel}")).unwrap()
     }
 
     fn manager() -> WorkspaceManager {
         let mut m = WorkspaceManager::new();
-        m.set_root(Some(Url::parse(ROOT).unwrap()));
+        m.set_root(Some(Uri::from_str(ROOT).unwrap()));
         m
     }
 
@@ -555,6 +589,68 @@ mod tests {
         // Points at `target:` in util.s (line 0).
         assert_eq!(location.range.start.line, 0);
         assert_eq!(location.range.start.character, 0);
+    }
+
+    #[test]
+    fn space_in_filename_is_percent_encoded_and_decoded() {
+        let mut m = manager();
+        let main = uri("main.s");
+        let main_src = "#include \"my util.s\"\n    jmp target\n";
+        // The included file (with a space in its name) is a base file, so the
+        // returned URI must be *built* from the relative path, percent-encoded.
+        m.set_base_files(base(&[("my util.s", "target:\n    reset\n")]));
+        m.upsert(main.clone(), main_src.to_string());
+
+        assert!(m.analysis(&main).unwrap().preprocessor_error().is_none());
+
+        let offset = offset_of(main_src, "target");
+        let location = m.goto_definition(&main, offset).expect("definition");
+        assert_eq!(location.uri.as_str(), "file:///ws/my%20util.s");
+
+        // The client's (encoded) URI for that file maps back to the decoded
+        // relative path, so opening it shadows the base file.
+        let util = uri("my%20util.s");
+        assert_eq!(m.relative_for_uri(&util), Utf8PathBuf::from("my util.s"));
+        m.upsert(util.clone(), "target:\n    .word 1\nother:\n".to_string());
+        let analysis = m.analysis(&main).unwrap();
+        assert!(analysis.labels().contains_key("other"));
+
+        // Once the document is open, its own URI is echoed back verbatim.
+        let offset = offset_of(main_src, "target");
+        let location = m.goto_definition(&main, offset).expect("definition");
+        assert_eq!(location.uri, util);
+    }
+
+    #[test]
+    fn non_file_root_builds_encoded_uris_textually() {
+        // A non-`file://` root (e.g. vscode-test-web's virtual scheme) has no
+        // native path; URIs are built by appending the encoded relative path
+        // to the root URI.
+        let mut m = WorkspaceManager::new();
+        m.set_root(Some(
+            Uri::from_str("vscode-test-web://mount/project").unwrap(),
+        ));
+
+        let main = Uri::from_str("vscode-test-web://mount/project/main.s").unwrap();
+        let main_src = "#include \"lib/my util.s\"\n    jmp target\n";
+        m.set_base_files(base(&[("lib/my util.s", "target:\n    reset\n")]));
+        m.upsert(main.clone(), main_src.to_string());
+
+        let offset = offset_of(main_src, "target");
+        let location = m.goto_definition(&main, offset).expect("definition");
+        assert_eq!(
+            location.uri.as_str(),
+            "vscode-test-web://mount/project/lib/my%20util.s"
+        );
+    }
+
+    #[test]
+    fn relative_for_uri_decodes_bare_file_name() {
+        // With no root at all (`rootUri: null`), the fallback is the last path
+        // segment, percent-decoded.
+        let m = WorkspaceManager::new();
+        let doc = Uri::from_str("file:///my%20file.s").unwrap();
+        assert_eq!(m.relative_for_uri(&doc), Utf8PathBuf::from("my file.s"));
     }
 
     #[test]

@@ -1,0 +1,5 @@
+# `lsp_types::Uri` (fluent-uri) caches parser state in a `Cell`, tripping
+# clippy's `mutable_key_type` when used as a HashMap/HashSet key. Its `Hash`
+# and `Eq` are based on the stable string representation, so this is a false
+# positive.
+ignore-interior-mutability = ["lsp_types::Uri"]
