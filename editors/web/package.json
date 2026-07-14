@@ -3,7 +3,11 @@
   "private": true,
   "type": "module",
   "imports": {
-    "#*": ["./*", "./*.ts", "./*.tsx"]
+    "#*": [
+      "./*",
+      "./*.ts",
+      "./*.tsx"
+    ]
   },
   "scripts": {
     "build:wasm": "wasm-pack build ../../crates/wasm --target web --out-dir ../../editors/web/pkg --out-name z33_web",
@@ -55,6 +59,7 @@
     "@base-ui/react": "^1.6.0",
     "@fontsource-variable/inter": "^5.2.8",
     "@monaco-editor/react": "^4.7.0",
+    "@tanstack/react-hotkeys": "0.10.0",
     "@tanstack/react-pacer": "^0.22.1",
     "@tanstack/react-virtual": "^3.14.5",
     "@xterm/addon-fit": "^0.11.0",
