@@ -27,33 +27,38 @@ const LABELS: Record<DisplayFormat, string> = {
   binary: "Binary",
 };
 
+/** Pure display-format toggle group; no store or context coupling. */
+export const FormatToggle: React.FC<{
+  value: DisplayFormat;
+  onValueChange: (format: DisplayFormat) => void;
+}> = ({ value, onValueChange }) => (
+  <ToggleGroup
+    value={[value]}
+    onValueChange={(values) => {
+      const next = values[0];
+      if (next && isDisplayFormat(next)) onValueChange(next);
+    }}
+    size="xs"
+    variant="outline"
+  >
+    {FORMATS.map((f) => {
+      const Icon = ICONS[f];
+      return (
+        <Tooltip key={f}>
+          <TooltipTrigger
+            render={<ToggleGroupItem value={f} aria-label={LABELS[f]} />}
+          >
+            <Icon />
+          </TooltipTrigger>
+          <TooltipContent>{LABELS[f]}</TooltipContent>
+        </Tooltip>
+      );
+    })}
+  </ToggleGroup>
+);
+
 export const FormatSwitcher: React.FC = () => {
   const format = useDisplayStore((s) => s.format);
   const setFormat = useDisplayStore((s) => s.setFormat);
-
-  return (
-    <ToggleGroup
-      value={[format]}
-      onValueChange={(values) => {
-        const value = values[0];
-        if (value && isDisplayFormat(value)) setFormat(value);
-      }}
-      size="xs"
-      variant="outline"
-    >
-      {FORMATS.map((f) => {
-        const Icon = ICONS[f];
-        return (
-          <Tooltip key={f}>
-            <TooltipTrigger
-              render={<ToggleGroupItem value={f} aria-label={LABELS[f]} />}
-            >
-              <Icon />
-            </TooltipTrigger>
-            <TooltipContent>{LABELS[f]}</TooltipContent>
-          </Tooltip>
-        );
-      })}
-    </ToggleGroup>
-  );
+  return <FormatToggle value={format} onValueChange={setFormat} />;
 };

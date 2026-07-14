@@ -64,47 +64,48 @@ const InlineFileInput: React.FC<{
   );
 };
 
-export const FileSidebar: React.FC = () => {
-  const files = useFileStore((s) => s.files);
-  const activeFile = useFileStore((s) => s.activeFile);
-  const setActiveFile = useFileStore((s) => s.setActiveFile);
-  const createFile = useFileStore((s) => s.createFile);
-  const deleteFile = useFileStore((s) => s.deleteFile);
-  const resetFiles = useFileStore((s) => s.resetFiles);
-  const setContent = useFileStore((s) => s.setContent);
+type FileSidebarViewProps = Pick<
+  ReturnType<typeof useFileDrop>,
+  "isWindowDragging" | "isOverDropZone" | "dropZoneRef" | "dropZoneProps"
+> & {
+  /** File names to show (already filtered to the current mode). */
+  files: string[];
+  activeFile: string;
+  isCreatingFile: boolean;
+  onSelect: (name: string) => void;
+  onStartCreate: () => void;
+  onCreate: (name: string) => void;
+  onCancelCreate: () => void;
+  onDelete: (name: string) => void;
+  onDownload: (name: string) => void;
+  onUpload: (files: readonly File[]) => void;
+  onReset: () => void;
+};
 
-  const mode = useAppStore((s) => s.mode);
-  const isDebugging = mode.type === "debug";
-
-  const [isCreatingFile, setIsCreatingFile] = useState(false);
+/**
+ * Pure presentational file sidebar: all data and actions arrive as props, so it
+ * has no store coupling and can be rendered standalone (stories/tests). The
+ * reset-confirmation dialog's open state is ephemeral UI, kept local here.
+ */
+export const FileSidebarView: React.FC<FileSidebarViewProps> = ({
+  files,
+  activeFile,
+  isCreatingFile,
+  isWindowDragging,
+  isOverDropZone,
+  dropZoneRef,
+  dropZoneProps,
+  onSelect,
+  onStartCreate,
+  onCreate,
+  onCancelCreate,
+  onDelete,
+  onDownload,
+  onUpload,
+  onReset,
+}) => {
   const uploadInputRef = useRef<HTMLInputElement>(null);
-
-  const processFiles = useCallback(
-    (fileList: readonly File[]) => {
-      for (const file of fileList) {
-        void file.text().then((text) => {
-          setContent(file.name, text);
-          setActiveFile(file.name);
-        });
-      }
-    },
-    [setContent, setActiveFile],
-  );
-
-  const { isWindowDragging, isOverDropZone, dropZoneRef, dropZoneProps } =
-    useFileDrop(processFiles);
-
-  // Filter to touched files during debug, show all during edit
-  const displayedFiles = useMemo(() => {
-    const allFiles = Object.keys(files);
-    if (mode.type !== "debug") return allFiles;
-    const touched = new Set(mode.touchedFiles);
-    return allFiles.filter((name) => touched.has(name));
-  }, [mode, files]);
-
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
-
-  if (isDebugging) return null;
 
   return (
     <div
@@ -138,9 +139,7 @@ export const FileSidebar: React.FC = () => {
                   variant="ghost"
                   size="icon-xs"
                   aria-label="New file"
-                  onClick={() => {
-                    setIsCreatingFile(true);
-                  }}
+                  onClick={onStartCreate}
                 />
               }
             >
@@ -195,7 +194,7 @@ export const FileSidebar: React.FC = () => {
                 <AlertDialogAction
                   variant="destructive"
                   onClick={() => {
-                    resetFiles();
+                    onReset();
                     setResetDialogOpen(false);
                   }}
                 >
@@ -208,7 +207,7 @@ export const FileSidebar: React.FC = () => {
       </div>
 
       <div className="flex-1 flex flex-col gap-1 overflow-auto">
-        {displayedFiles.map((name) => (
+        {files.map((name) => (
           <div
             className="group flex items-center rounded-sm hover:bg-muted/50 data-[state=selected]:bg-muted"
             key={name}
@@ -218,7 +217,7 @@ export const FileSidebar: React.FC = () => {
               type="button"
               className="flex-1 px-3 py-1.5 text-left text-sm font-mono truncate"
               onClick={() => {
-                setActiveFile(name);
+                onSelect(name);
               }}
             >
               {name}
@@ -232,17 +231,7 @@ export const FileSidebar: React.FC = () => {
                     aria-label="Download"
                     className="opacity-0 group-hover:opacity-100"
                     onClick={() => {
-                      const content = files[name];
-                      if (content === undefined) return;
-                      const blob = new Blob([content], {
-                        type: "text/plain",
-                      });
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement("a");
-                      a.href = url;
-                      a.download = name;
-                      a.click();
-                      URL.revokeObjectURL(url);
+                      onDownload(name);
                     }}
                   />
                 }
@@ -260,7 +249,7 @@ export const FileSidebar: React.FC = () => {
                     aria-label="Delete"
                     className="opacity-0 group-hover:opacity-100 mr-1"
                     onClick={() => {
-                      deleteFile(name);
+                      onDelete(name);
                     }}
                   />
                 }
@@ -273,15 +262,7 @@ export const FileSidebar: React.FC = () => {
         ))}
 
         {isCreatingFile && (
-          <InlineFileInput
-            onSubmit={(filename) => {
-              createFile(filename, "");
-              setIsCreatingFile(false);
-            }}
-            onCancel={() => {
-              setIsCreatingFile(false);
-            }}
-          />
+          <InlineFileInput onSubmit={onCreate} onCancel={onCancelCreate} />
         )}
       </div>
 
@@ -291,10 +272,92 @@ export const FileSidebar: React.FC = () => {
         multiple
         className="sr-only"
         onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-          if (e.target.files) processFiles(Array.from(e.target.files));
+          if (e.target.files) onUpload(Array.from(e.target.files));
           e.target.value = "";
         }}
       />
     </div>
+  );
+};
+
+export const FileSidebar: React.FC = () => {
+  const files = useFileStore((s) => s.files);
+  const activeFile = useFileStore((s) => s.activeFile);
+  const setActiveFile = useFileStore((s) => s.setActiveFile);
+  const createFile = useFileStore((s) => s.createFile);
+  const deleteFile = useFileStore((s) => s.deleteFile);
+  const resetFiles = useFileStore((s) => s.resetFiles);
+  const setContent = useFileStore((s) => s.setContent);
+
+  const mode = useAppStore((s) => s.mode);
+  const isDebugging = mode.type === "debug";
+
+  const [isCreatingFile, setIsCreatingFile] = useState(false);
+
+  const processFiles = useCallback(
+    (fileList: readonly File[]) => {
+      for (const file of fileList) {
+        void file.text().then((text) => {
+          setContent(file.name, text);
+          setActiveFile(file.name);
+        });
+      }
+    },
+    [setContent, setActiveFile],
+  );
+
+  const { isWindowDragging, isOverDropZone, dropZoneRef, dropZoneProps } =
+    useFileDrop(processFiles);
+
+  // Filter to touched files during debug, show all during edit
+  const displayedFiles = useMemo(() => {
+    const allFiles = Object.keys(files);
+    if (mode.type !== "debug") return allFiles;
+    const touched = new Set(mode.touchedFiles);
+    return allFiles.filter((name) => touched.has(name));
+  }, [mode, files]);
+
+  const handleDownload = useCallback(
+    (name: string) => {
+      const content = files[name];
+      if (content === undefined) return;
+      const blob = new Blob([content], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = name;
+      a.click();
+      URL.revokeObjectURL(url);
+    },
+    [files],
+  );
+
+  if (isDebugging) return null;
+
+  return (
+    <FileSidebarView
+      files={displayedFiles}
+      activeFile={activeFile}
+      isCreatingFile={isCreatingFile}
+      isWindowDragging={isWindowDragging}
+      isOverDropZone={isOverDropZone}
+      dropZoneRef={dropZoneRef}
+      dropZoneProps={dropZoneProps}
+      onSelect={setActiveFile}
+      onStartCreate={() => {
+        setIsCreatingFile(true);
+      }}
+      onCreate={(filename) => {
+        createFile(filename, "");
+        setIsCreatingFile(false);
+      }}
+      onCancelCreate={() => {
+        setIsCreatingFile(false);
+      }}
+      onDelete={deleteFile}
+      onDownload={handleDownload}
+      onUpload={processFiles}
+      onReset={resetFiles}
+    />
   );
 };

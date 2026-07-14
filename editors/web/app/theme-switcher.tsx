@@ -22,31 +22,36 @@ const ICONS = {
 
 const LABELS = { light: "Light", system: "System", dark: "Dark" } as const;
 
+/** Pure theme toggle group; no store coupling. */
+export const ThemeToggle: React.FC<{
+  value: ThemeValue;
+  onValueChange: (theme: ThemeValue) => void;
+}> = ({ value, onValueChange }) => (
+  <ToggleGroup
+    value={[value]}
+    onValueChange={(values) => {
+      const next = values[0];
+      if (next && isThemeValue(next)) onValueChange(next);
+    }}
+    size="xs"
+    variant="outline"
+  >
+    {THEMES.map((t) => {
+      const Icon = ICONS[t];
+      return (
+        <Tooltip key={t}>
+          <TooltipTrigger render={<ToggleGroupItem value={t} />}>
+            <Icon />
+          </TooltipTrigger>
+          <TooltipContent>{LABELS[t]}</TooltipContent>
+        </Tooltip>
+      );
+    })}
+  </ToggleGroup>
+);
+
 export const ThemeSwitcher: React.FC = () => {
   const theme = useThemeStore((s) => s.theme);
   const setTheme = useThemeStore((s) => s.setTheme);
-
-  return (
-    <ToggleGroup
-      value={[theme]}
-      onValueChange={(values) => {
-        const value = values[0];
-        if (value && isThemeValue(value)) setTheme(value);
-      }}
-      size="xs"
-      variant="outline"
-    >
-      {THEMES.map((t) => {
-        const Icon = ICONS[t];
-        return (
-          <Tooltip key={t}>
-            <TooltipTrigger render={<ToggleGroupItem value={t} />}>
-              <Icon />
-            </TooltipTrigger>
-            <TooltipContent>{LABELS[t]}</TooltipContent>
-          </Tooltip>
-        );
-      })}
-    </ToggleGroup>
-  );
+  return <ThemeToggle value={theme} onValueChange={setTheme} />;
 };

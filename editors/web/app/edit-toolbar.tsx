@@ -4,7 +4,7 @@ import {
   PlayIcon,
   XCircleIcon,
 } from "lucide-react";
-import { memo, useEffect, useState } from "react";
+import { memo } from "react";
 import { Button } from "./components/ui/button";
 import {
   Select,
@@ -17,6 +17,22 @@ import { DocsButton } from "./docs-button";
 import { ThemeSwitcher } from "./theme-switcher";
 
 const DEFAULT_ENTRYPOINT_NAMES = ["main", "start", "run", "entry"];
+
+/**
+ * Choose the entrypoint to preselect: the preferred label if still present,
+ * else the first well-known entrypoint name that exists, else the first label,
+ * else the empty string.
+ */
+export function pickEntrypoint(
+  labels: string[],
+  preferred: string | undefined,
+): string {
+  if (preferred && labels.includes(preferred)) return preferred;
+  for (const candidate of DEFAULT_ENTRYPOINT_NAMES) {
+    if (labels.includes(candidate)) return candidate;
+  }
+  return labels[0] ?? "";
+}
 
 type EditToolbarProps = {
   onRun: (entrypoint: string) => void;
@@ -34,22 +50,6 @@ export const EditToolbar: React.FC<EditToolbarProps> = memo(
     labels,
     defaultEntrypoint,
   }) => {
-    const [selectedEntrypoint, setSelectedEntrypoint] = useState<string>("");
-
-    useEffect(() => {
-      if (defaultEntrypoint && labels.includes(defaultEntrypoint)) {
-        setSelectedEntrypoint(defaultEntrypoint);
-        return;
-      }
-      for (const candidate of DEFAULT_ENTRYPOINT_NAMES) {
-        if (labels.includes(candidate)) {
-          setSelectedEntrypoint(candidate);
-          return;
-        }
-      }
-      setSelectedEntrypoint(labels[0] ?? "");
-    }, [labels, defaultEntrypoint]);
-
     const canRun = compilationStatus === "success" && labels.length > 0;
 
     return (
@@ -85,13 +85,21 @@ export const EditToolbar: React.FC<EditToolbarProps> = memo(
 
         <div className="ml-auto flex items-center gap-1">
           {canRun && (
-            <>
+            // Remount on a changed label set so the uncontrolled Select picks
+            // up the fresh default entrypoint.
+            <form
+              key={labels.join(" ")}
+              className="flex items-center gap-1"
+              onSubmit={(e: React.SubmitEvent<HTMLFormElement>) => {
+                e.preventDefault();
+                const value = new FormData(e.currentTarget).get("entrypoint");
+                if (typeof value === "string" && value) onRun(value);
+              }}
+            >
               <span className="text-xs text-muted-foreground">Start at</span>
               <Select
-                value={selectedEntrypoint}
-                onValueChange={(v) => {
-                  if (v !== null) setSelectedEntrypoint(v);
-                }}
+                name="entrypoint"
+                defaultValue={pickEntrypoint(labels, defaultEntrypoint)}
               >
                 <SelectTrigger
                   size="xs"
@@ -112,18 +120,11 @@ export const EditToolbar: React.FC<EditToolbarProps> = memo(
                   ))}
                 </SelectContent>
               </Select>
-              <Button
-                type="button"
-                size="xs"
-                disabled={!selectedEntrypoint}
-                onClick={() => {
-                  if (selectedEntrypoint) onRun(selectedEntrypoint);
-                }}
-              >
+              <Button type="submit" size="xs">
                 <PlayIcon data-icon="inline-start" />
                 Run
               </Button>
-            </>
+            </form>
           )}
           <DocsButton />
           <ThemeSwitcher />

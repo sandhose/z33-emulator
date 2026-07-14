@@ -20,7 +20,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "./components/ui/tooltip";
-import type { ComputerProxy } from "./lib/computer-proxy";
+import type { ComputerInterface, ExecutionControls } from "./computer-types";
 import { DocsButton } from "./docs-button";
 import { useCycles } from "./hooks/use-computer";
 import { useStepRunner } from "./hooks/use-step-runner";
@@ -66,7 +66,7 @@ export const DebugToolbar: React.FC<DebugToolbarProps> = memo(
 DebugToolbar.displayName = "DebugToolbar";
 
 const DebugToolbarInner: React.FC<{
-  computer: ComputerProxy;
+  computer: ComputerInterface & ExecutionControls;
   touchedFiles: string[];
   activeFile: string;
   onFileChange: (name: string) => void;

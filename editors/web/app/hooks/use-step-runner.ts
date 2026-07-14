@@ -1,12 +1,12 @@
 import { useCallback, useSyncExternalStore } from "react";
-import type { ComputerProxy } from "../lib/computer-proxy";
+import type { ExecutionControls } from "../computer-types";
 
 /**
  * Drives execution through the emulator worker. Status (idle / running /
  * halted / panicked) is reflected from worker-pushed snapshots; there is no
  * main-thread stepping loop.
  */
-export function useStepRunner(computer: ComputerProxy) {
+export function useStepRunner(computer: ExecutionControls) {
   const status = useSyncExternalStore(
     useCallback((cb) => computer.subscribeStatus(cb), [computer]),
     () => computer.getStatus(),

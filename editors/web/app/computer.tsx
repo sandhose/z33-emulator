@@ -22,8 +22,8 @@ import {
   formatWord,
 } from "./computer-types";
 import { useMemoryCell } from "./hooks/use-computer";
-import { cn } from "./lib/utils";
 import { useDisplayStore } from "./stores/display-store";
+import { cn } from "./lib/utils";
 
 const MEMORY_SIZE = 10_000;
 const ROW_HEIGHT = 28;
