@@ -145,9 +145,9 @@ monaco.languages.setMonarchTokensProvider("z33", {
     constants: [[/[0-9]+/u, "constant"]],
     comments: [[/\/\/.*/u, "comment"]],
     registers: [
-      [/%(a|b|sp|pc)\b/u, "tag"],
+      [/%(a|b|sp|pc|sr)\b/u, "tag"],
       [/%[^ab]\b/u, "invalid"],
-      [/%s[^p]/u, "invalid"],
+      [/%s[^pr]/u, "invalid"],
       [/%p[^c]/u, "invalid"],
       [/%[^absp]/u, "invalid"],
     ],

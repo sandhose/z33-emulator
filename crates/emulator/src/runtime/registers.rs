@@ -129,6 +129,22 @@ pub enum Reg {
 
 // r[impl addr.register]
 impl Reg {
+    /// Every register variant, in canonical order. Single source of truth for
+    /// iterating over the register set (e.g. the keyword-sync tests).
+    ///
+    /// Exhaustiveness tripwire: the match below stops compiling if a variant is
+    /// added, and its `[Self; N]` length must then be bumped too — so `ALL`
+    /// can't silently miss a register (which would blind the keyword-sync
+    /// tests).
+    pub const ALL: [Self; 5] = {
+        // Exhaustiveness tripwire (compile-time only): a new variant makes this
+        // match non-exhaustive.
+        match Self::A {
+            Reg::A | Reg::B | Reg::PC | Reg::SP | Reg::SR => {}
+        }
+        [Self::A, Self::B, Self::PC, Self::SP, Self::SR]
+    };
+
     /// CPU cycles count to use this value
     pub(crate) const fn cost() -> usize {
         // Accessing a register does not take any CPU cycle
