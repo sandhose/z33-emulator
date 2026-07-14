@@ -5,10 +5,14 @@ packages:
   - editors/vscode
   - tree-sitter-z33
 
+catalog:
+  wasm-pack: ^0.15.0
+  oxlint: ^1.72.0
+  oxfmt: ^0.57.0
+  typescript: 6.0.3
+
 ignoredBuiltDependencies:
-  - "@playwright/browser-chromium"
   - esbuild
-  - msw
 
 onlyBuiltDependencies:
   - "@vscode/vsce-sign"

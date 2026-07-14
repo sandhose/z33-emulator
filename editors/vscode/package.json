@@ -139,9 +139,9 @@
     "@vscode/vsce": "^3.9.2",
     "esbuild": "^0.28.0",
     "ovsx": "^1.0.2",
-    "oxfmt": "^0.57.0",
-    "oxlint": "^1.72.0",
-    "typescript": "6.0.3",
-    "wasm-pack": "^0.15.0"
+    "oxfmt": "catalog:",
+    "oxlint": "catalog:",
+    "typescript": "catalog:",
+    "wasm-pack": "catalog:"
   }
 }
