@@ -155,6 +155,30 @@ jobs:
             editors/web/test-results/
           retention-days: 7
 
+  storybook:
+    name: "Storybook tests"
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: editors/web
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Node and pnpm
+        uses: ./.github/actions/setup-node-pnpm
+
+      - name: Install dependencies
+        run: pnpm i
+
+      - name: Install Playwright browsers
+        run: npx playwright install chromium --with-deps
+
+      - name: Run Storybook tests
+        run: pnpm run test-storybook
+
   tree-sitter:
     name: Tree-sitter grammar
     runs-on: ubuntu-24.04

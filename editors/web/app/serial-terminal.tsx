@@ -2,7 +2,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { type ITheme, Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { useEffect, useImperativeHandle, useRef } from "react";
-import type { ComputerProxy } from "./lib/computer-proxy";
+import type { SerialPort } from "./computer-types";
 import { useThemeStore } from "./stores/theme-store";
 
 /** Imperative handle exposed to the header (clear button). */
@@ -11,7 +11,7 @@ export type SerialTerminalHandle = {
 };
 
 type SerialTerminalProps = {
-  computer: ComputerProxy;
+  computer: SerialPort;
   ref?: React.Ref<SerialTerminalHandle>;
 };
 

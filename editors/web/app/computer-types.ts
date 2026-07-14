@@ -1,8 +1,14 @@
 import type { Cell, Cycles, Registers } from "./lib/wasm";
+import type { RunStatus } from "./lib/emulator-protocol";
 import type { DisplayFormat } from "./stores/display-store";
 import { assertNever } from "./lib/utils";
 
+/** Single import point for the execution state enum used across the UI. */
+export type { RunStatus };
+
 export type Labels = Map<number, string[]>;
+
+type Unsubscribe = () => void;
 
 /** Narrow type for actual CPU registers */
 export type RegisterId = "%pc" | "%sp" | "%a" | "%b";
@@ -26,6 +32,30 @@ export interface ComputerInterface {
   subscribe_memory(address: number, cb: (c: Cell) => void): () => void;
   subscribe_cycles(cb: (c: Cycles) => void): () => void;
   readonly labels: Iterable<[string, number]>;
+}
+
+/**
+ * Execution controls used by the step runner and debug toolbar. Implemented by
+ * the concrete `ComputerProxy`; typed as an interface here so UI props and test
+ * fakes can stand in for it (`ComputerProxy` has `#private` fields, making it a
+ * nominal type that a plain object could never satisfy).
+ */
+export interface ExecutionControls {
+  step(n?: number): void;
+  run(): void;
+  pause(): void;
+  setSpeed(speed: number | null): void;
+  getStatus(): RunStatus;
+  getError(): string | null;
+  subscribeStatus(cb: (s: RunStatus) => void): Unsubscribe;
+}
+
+/** Serial-console I/O surface (ports 110-111), as seen by the terminal UI. */
+export interface SerialPort {
+  /** Subscribe to serial output; fires with each non-empty byte batch. */
+  onOutput(cb: (bytes: number[]) => void): Unsubscribe;
+  /** Send receive bytes to the serial console; one IRQ edge per call. */
+  sendInput(bytes: number[]): void;
 }
 
 export const REGISTER_COLORS: Record<RegisterId, string> = {

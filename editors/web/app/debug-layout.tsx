@@ -1,8 +1,10 @@
 import type * as monaco from "monaco-editor";
 import { useCallback, useState } from "react";
+import { ErrorBoundary } from "./components/error-boundary";
 import type { Following, Labels } from "./computer-types";
 import type { ComputerProxy } from "./lib/computer-proxy";
 import { RegisterPanel } from "./debug-sidebar";
+import { SectionHeader } from "./section-header";
 import { DebugToolbar } from "./debug-toolbar";
 import { useBreakpointSync } from "./hooks/use-breakpoints";
 import { useSourceHighlight } from "./hooks/use-source-highlight";
@@ -18,6 +20,16 @@ import { Group, Panel } from "react-resizable-panels";
 type DebugLayoutProps = {
   onEditorMount: (editor: monaco.editor.IStandaloneCodeEditor) => void;
 };
+
+/** Small inline fallback so one crashing panel doesn't blank the debugger. */
+const PanelError: React.FC<{ label: string }> = ({ label }) => (
+  <div className="flex h-full flex-col border-l">
+    <SectionHeader>Error</SectionHeader>
+    <div className="flex flex-1 items-center justify-center p-4 text-center text-xs text-muted-foreground">
+      The {label} crashed.
+    </div>
+  </div>
+);
 
 /** Outer shell: reads mode from store and passes concrete values to DebugLayoutInner */
 export const DebugLayout: React.FC<DebugLayoutProps> = ({ onEditorMount }) => {
@@ -104,30 +116,34 @@ const DebugLayoutInner: React.FC<DebugLayoutInnerProps> = ({
             </Panel>
             <ResizeHandle />
             <Panel defaultSize="35%" minSize="20%" maxSize="50%" id="z33-right">
-              <div className="flex flex-col h-full border-l">
-                <div className="shrink-0 border-b">
-                  <RegisterPanel
-                    computer={computer}
-                    labels={labels}
-                    following={following}
-                    onFollow={setFollowing}
-                  />
+              <ErrorBoundary fallback={<PanelError label="registers panel" />}>
+                <div className="flex flex-col h-full border-l">
+                  <div className="shrink-0 border-b">
+                    <RegisterPanel
+                      computer={computer}
+                      labels={labels}
+                      following={following}
+                      onFollow={setFollowing}
+                    />
+                  </div>
+                  <div className="flex-1 min-h-0">
+                    <MemoryPanel
+                      computer={computer}
+                      labels={labels}
+                      following={following}
+                      onFollow={setFollowing}
+                    />
+                  </div>
                 </div>
-                <div className="flex-1 min-h-0">
-                  <MemoryPanel
-                    computer={computer}
-                    labels={labels}
-                    following={following}
-                    onFollow={setFollowing}
-                  />
-                </div>
-              </div>
+              </ErrorBoundary>
             </Panel>
           </Group>
         </Panel>
         <ResizeHandle orientation="vertical" />
         <Panel defaultSize="25%" minSize="10%" collapsible id="z33-console">
-          <SerialConsole computer={computer} />
+          <ErrorBoundary fallback={<PanelError label="serial console" />}>
+            <SerialConsole computer={computer} />
+          </ErrorBoundary>
         </Panel>
       </Group>
     </div>

@@ -14,7 +14,11 @@ import type {
   ResolvedBreakpoint,
   SourcePosition,
 } from "./wasm";
-import type { ComputerInterface } from "../computer-types";
+import type {
+  ComputerInterface,
+  ExecutionControls,
+  SerialPort,
+} from "../computer-types";
 import type {
   RunStatus,
   Snapshot,
@@ -178,7 +182,9 @@ export function startSession(
 
 type Unsubscribe = () => void;
 
-export class ComputerProxy implements ComputerInterface {
+export class ComputerProxy
+  implements ComputerInterface, ExecutionControls, SerialPort
+{
   readonly labels: [string, number][];
 
   #client: EmulatorWorkerClient;
