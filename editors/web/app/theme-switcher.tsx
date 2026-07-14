@@ -22,6 +22,12 @@ const ICONS = {
 
 const LABELS = { light: "Light", system: "System", dark: "Dark" } as const;
 
+const ARIA_LABELS = {
+  light: "Light theme",
+  system: "System theme",
+  dark: "Dark theme",
+} as const;
+
 /** Pure theme toggle group; no store coupling. */
 export const ThemeToggle: React.FC<{
   value: ThemeValue;
@@ -40,7 +46,9 @@ export const ThemeToggle: React.FC<{
       const Icon = ICONS[t];
       return (
         <Tooltip key={t}>
-          <TooltipTrigger render={<ToggleGroupItem value={t} />}>
+          <TooltipTrigger
+            render={<ToggleGroupItem value={t} aria-label={ARIA_LABELS[t]} />}
+          >
             <Icon />
           </TooltipTrigger>
           <TooltipContent>{LABELS[t]}</TooltipContent>

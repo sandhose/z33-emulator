@@ -20,7 +20,7 @@ const meta = preview.meta({
 export const Default = meta.story({
   render: () => (
     <Select defaultValue="Apple">
-      <SelectTrigger className="w-48">
+      <SelectTrigger className="w-48" aria-label="Fruit">
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
@@ -37,7 +37,7 @@ export const Default = meta.story({
 export const Placeholder = meta.story({
   render: () => (
     <Select>
-      <SelectTrigger className="w-48">
+      <SelectTrigger className="w-48" aria-label="Fruit">
         <SelectValue placeholder="Pick a fruit…" />
       </SelectTrigger>
       <SelectContent>
@@ -52,12 +52,29 @@ export const Placeholder = meta.story({
 });
 
 export const SelectsAnItem = meta.story({
+  // The play function opens the base-ui select. Two axe rules fire on base-ui's
+  // own popup internals, both upstream behaviour we don't control:
+  //  - `aria-input-field-name`: base-ui doesn't propagate the trigger's
+  //    accessible name to its `role="listbox"` element.
+  //  - `aria-hidden-focus`: base-ui's aria-hidden focus-guard spans are
+  //    focusable while the popup is open.
+  // Disable just those two rules for this open-popup story.
+  parameters: {
+    a11y: {
+      config: {
+        rules: [
+          { id: "aria-input-field-name", enabled: false },
+          { id: "aria-hidden-focus", enabled: false },
+        ],
+      },
+    },
+  },
   render: () => {
     const ControlledSelect = () => {
       const [value, setValue] = useState<string | null>(null);
       return (
         <Select value={value} onValueChange={setValue}>
-          <SelectTrigger className="w-48">
+          <SelectTrigger className="w-48" aria-label="Fruit">
             <SelectValue placeholder="Pick a fruit…" />
           </SelectTrigger>
           <SelectContent>

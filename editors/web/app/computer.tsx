@@ -109,7 +109,7 @@ const Label: React.FC<{ label: string }> = ({ label }) => (
 );
 
 const RegisterBadge: React.FC<{ register: RegisterId }> = ({ register }) => (
-  <Badge className={`font-semibold ${REGISTER_COLORS[register]} text-white`}>
+  <Badge className={`font-semibold ${REGISTER_COLORS[register]} text-black`}>
     {register}
   </Badge>
 );
@@ -236,7 +236,11 @@ export const MemoryViewer = memo(
       );
 
       return (
-        <div className="overflow-auto flex-1 min-h-0" ref={parentRef}>
+        <div
+          className="overflow-auto flex-1 min-h-0"
+          ref={parentRef}
+          tabIndex={0}
+        >
           <div
             className="font-mono text-xs w-full relative"
             style={{ height: `${rowVirtualizer.getTotalSize()}px` }}
