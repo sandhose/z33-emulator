@@ -129,6 +129,10 @@ pub enum Reg {
 
 // r[impl addr.register]
 impl Reg {
+    /// Every register variant, in canonical order. Single source of truth for
+    /// iterating over the register set (e.g. the keyword-sync tests).
+    pub const ALL: [Self; 5] = [Self::A, Self::B, Self::PC, Self::SP, Self::SR];
+
     /// CPU cycles count to use this value
     pub(crate) const fn cost() -> usize {
         // Accessing a register does not take any CPU cycle

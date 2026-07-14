@@ -349,6 +349,7 @@ pub(super) fn directive_meta(kind: DirectiveKind) -> DirectiveMeta {
 mod tests {
     use super::{directive_meta, meta, DIRECTIVE_KINDS, INSTRUCTION_KINDS};
     use crate::parser::value::{DirectiveKind, InstructionKind};
+    use crate::runtime::Reg;
 
     #[test]
     fn every_instruction_kind_is_populated_and_roundtrips() {
@@ -391,5 +392,104 @@ mod tests {
             );
         }
         assert_eq!(DIRECTIVE_KINDS.len(), 4);
+    }
+
+    // --- Keyword-sync guards ------------------------------------------------
+    //
+    // The Z33 keyword set (33 instructions, 4 directives, 5 registers) is
+    // hand-duplicated across every editor-highlighting file. These tests read
+    // those committed files (repo-relative to the workspace, which is where
+    // `cargo test --workspace` runs) and assert that each keyword derived from
+    // the Rust enums still appears, so future drift — like Monaco once dropping
+    // `%sr` — fails CI instead of silently mis-highlighting.
+
+    /// Whole-word (ASCII `\b…\b`) containment. Case-sensitive: every keyword is
+    /// lowercase in every file. Word boundaries stop short mnemonics such as
+    /// `in`/`or`/`ld` from false-passing as substrings (e.g. `in` in
+    /// `invalid`).
+    fn contains_word(haystack: &str, needle: &str) -> bool {
+        let bytes = haystack.as_bytes();
+        let is_word = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+        haystack.match_indices(needle).any(|(i, _)| {
+            let end = i + needle.len();
+            let before = i == 0 || !is_word(bytes[i - 1]);
+            let after = end >= bytes.len() || !is_word(bytes[end]);
+            before && after
+        })
+    }
+
+    fn read_repo_file(rel: &str) -> String {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join(rel);
+        std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()))
+    }
+
+    /// Assert every `keyword` occurs as a whole word in the file at `rel`.
+    fn assert_all_present(rel: &str, keywords: &[String]) {
+        let content = read_repo_file(rel);
+        for kw in keywords {
+            assert!(
+                contains_word(&content, kw),
+                "{rel} is missing keyword `{kw}` — it drifted from the Rust enums; \
+                 update the highlighting file to match crates/emulator",
+            );
+        }
+    }
+
+    fn instruction_keywords() -> Vec<String> {
+        INSTRUCTION_KINDS.iter().map(ToString::to_string).collect()
+    }
+
+    fn directive_keywords() -> Vec<String> {
+        DIRECTIVE_KINDS.iter().map(ToString::to_string).collect()
+    }
+
+    /// Register names without the leading `%` (the highlighting files list the
+    /// bare names in alternations, e.g. Monaco's `%(a|b|sp|pc|sr)`).
+    fn register_keywords() -> Vec<String> {
+        Reg::ALL
+            .iter()
+            .map(|r| r.to_string().trim_start_matches('%').to_string())
+            .collect()
+    }
+
+    #[test]
+    fn monaco_has_all_instructions_and_registers() {
+        // Directives are not enumerated in Monaco (it colours any `.\w+`), so
+        // only instructions and registers are checked. This is the check that
+        // would have caught the `%sr` bug.
+        let file = "editors/web/app/monaco.ts";
+        assert_all_present(file, &instruction_keywords());
+        assert_all_present(file, &register_keywords());
+    }
+
+    #[test]
+    fn vim_syntax_has_all_keywords() {
+        let file = "editors/vim/syntax/z33.vim";
+        assert_all_present(file, &instruction_keywords());
+        assert_all_present(file, &directive_keywords());
+        assert_all_present(file, &register_keywords());
+    }
+
+    #[test]
+    fn zed_highlights_has_all_instructions() {
+        // Directives and registers reach Zed through grammar nodes
+        // (`directive_name`, `register`), so only the hand-copied 33-mnemonic
+        // list lives in the query file and is checked here.
+        assert_all_present(
+            "editors/zed/languages/zorglub33/highlights.scm",
+            &instruction_keywords(),
+        );
+    }
+
+    #[test]
+    fn tree_sitter_grammar_has_all_directives_and_registers() {
+        // Instruction mnemonics lex as identifiers in the grammar (deliberately
+        // not enumerated); only the DIRECTIVES/REGISTERS arrays are checked.
+        let file = "tree-sitter-z33/grammar.js";
+        assert_all_present(file, &directive_keywords());
+        assert_all_present(file, &register_keywords());
     }
 }
