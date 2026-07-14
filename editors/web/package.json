@@ -56,6 +56,7 @@
     "@base-ui/react": "^1.7.0",
     "@fontsource-variable/inter": "^5.3.0",
     "@monaco-editor/react": "^4.7.0",
+    "@tanstack/react-hotkeys": "0.10.0",
     "@tanstack/react-pacer": "^0.23.0",
     "@tanstack/react-virtual": "^3.14.10",
     "@xterm/addon-fit": "^0.11.0",
