@@ -1,0 +1,26 @@
+name: "Set up Node and pnpm"
+description: "Install pnpm and Node.js 24, with optional pnpm caching."
+
+inputs:
+  cache:
+    description: >-
+      Package manager to cache, forwarded to actions/setup-node's `cache`
+      input. Pass an empty string to disable caching entirely — required for
+      jobs that produce or publish release artifacts (zizmor cache-poisoning).
+    required: false
+    default: "pnpm"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install pnpm
+      uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+      with:
+        package_json_file: package.json
+
+    - name: Install Node
+      uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+      with:
+        node-version: "24"
+        cache: ${{ inputs.cache }}
+        cache-dependency-path: pnpm-lock.yaml
