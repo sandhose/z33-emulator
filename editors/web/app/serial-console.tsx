@@ -24,7 +24,11 @@ export const SerialConsoleShell: React.FC<{
   onClear: () => void;
   children: React.ReactNode;
 }> = ({ onClear, children }) => (
-  <div className="flex flex-col h-full border-t bg-background">
+  <div
+    role="region"
+    aria-label="Serial console"
+    className="flex flex-col h-full border-t bg-background"
+  >
     <div className="flex shrink-0 items-center gap-1.5 border-b px-2.5 py-1">
       <TerminalIcon className="size-3.5 text-muted-foreground" />
       <span className="text-xs font-medium text-muted-foreground">
