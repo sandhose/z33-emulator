@@ -1,4 +1,5 @@
 // Ready-made scenes for the `FakeComputer`, used by stories and tests.
+import type { Labels } from "../computer-types";
 import type { Cell } from "../lib/wasm";
 import type { Scene } from "./fake-computer";
 
@@ -75,4 +76,19 @@ export function panickedScene(msg: string): Scene {
     status: "panicked",
     error: msg,
   };
+}
+
+/**
+ * Build the address→names `Labels` map (as the UI panels consume it) from a
+ * scene's name→address label list. The panels take this shape separately from
+ * `computer.labels`, so stories derive it here.
+ */
+export function sceneLabels(scene: Scene): Labels {
+  const map: Labels = new Map();
+  for (const [name, address] of scene.labels ?? []) {
+    const names = map.get(address) ?? [];
+    names.push(name);
+    map.set(address, names);
+  }
+  return map;
 }

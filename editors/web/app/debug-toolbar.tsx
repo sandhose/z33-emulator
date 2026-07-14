@@ -65,7 +65,7 @@ export const DebugToolbar: React.FC<DebugToolbarProps> = memo(
 );
 DebugToolbar.displayName = "DebugToolbar";
 
-const DebugToolbarInner: React.FC<{
+export const DebugToolbarInner: React.FC<{
   computer: ComputerInterface & ExecutionControls;
   touchedFiles: string[];
   activeFile: string;
