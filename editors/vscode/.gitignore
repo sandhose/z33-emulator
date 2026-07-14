@@ -1,6 +1,5 @@
 dist/
 node_modules/
-out/
 *.vsix
 .vscode-test-web/
 .vscode-test/

@@ -13,8 +13,9 @@ pub enum Steps {
     RunToCompletion,
 }
 
-#[must_use]
-pub fn run_program(source: &str, entrypoint: &str, steps: Steps) -> String {
+/// Preprocess, parse and compile `source`, asserting there are no diagnostics
+/// along the way. Shared setup for [`run_program`] and [`compile_program`].
+fn compile_source(source: &str, entrypoint: &str) -> (Computer, DebugInfo) {
     let fs = InMemoryFilesystem::new([("/main.S".into(), source.into())]);
     let mut workspace = Workspace::new(&fs, "/main.S");
     let preprocess_result = workspace.preprocess().expect("preprocess failed");
@@ -44,7 +45,13 @@ pub fn run_program(source: &str, entrypoint: &str, steps: Steps) -> String {
             .map(|d| &d.message)
             .collect::<Vec<_>>()
     );
-    let mut computer = compile_result.computer.expect("no errors but no computer");
+    let computer = compile_result.computer.expect("no errors but no computer");
+    (computer, compile_result.debug_info)
+}
+
+#[must_use]
+pub fn run_program(source: &str, entrypoint: &str, steps: Steps) -> String {
+    let (mut computer, _debug_info) = compile_source(source, entrypoint);
 
     let halt_reason = match steps {
         Steps::Count(n) => {
@@ -139,38 +146,8 @@ fn format_state(computer: &Computer, halt_reason: Option<&str>) -> String {
 /// compilation output.
 #[must_use]
 pub fn compile_program(source: &str, entrypoint: &str) -> String {
-    let fs = InMemoryFilesystem::new([("/main.S".into(), source.into())]);
-    let mut workspace = Workspace::new(&fs, "/main.S");
-    let preprocess_result = workspace.preprocess().expect("preprocess failed");
-    let preprocessed = preprocess_result.source;
-    let result = parse(&preprocessed);
-    assert!(
-        result.diagnostics.is_empty(),
-        "parse errors: {:?}",
-        result
-            .diagnostics
-            .iter()
-            .map(|d| &d.message)
-            .collect::<Vec<_>>()
-    );
-    let compile_result = compile(
-        &result.program.inner,
-        &result.diagnostics,
-        Some(entrypoint),
-        0,
-    );
-    assert!(
-        compile_result.diagnostics.is_empty(),
-        "compilation errors: {:?}",
-        compile_result
-            .diagnostics
-            .iter()
-            .map(|d| &d.message)
-            .collect::<Vec<_>>()
-    );
-    let computer = compile_result.computer.expect("no errors but no computer");
-
-    format_compilation(&computer, &compile_result.debug_info)
+    let (computer, debug_info) = compile_source(source, entrypoint);
+    format_compilation(&computer, &debug_info)
 }
 
 fn format_compilation(computer: &Computer, debug_info: &DebugInfo) -> String {

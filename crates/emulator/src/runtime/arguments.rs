@@ -356,7 +356,7 @@ mod conversions {
 
     /// Valid argument kinds
     #[derive(PartialEq, Eq, Clone, Debug, Display)]
-    pub enum ArgKind {
+    pub(crate) enum ArgKind {
         #[display("immediate value")]
         Imm,
         #[display("register")]

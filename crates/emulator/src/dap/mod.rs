@@ -39,7 +39,7 @@
 //! giving the caller a chance to poll for an incoming `pause`.
 
 mod index;
-pub mod protocol;
+mod protocol;
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::str::FromStr;
@@ -65,7 +65,7 @@ use crate::runtime::registers::StatusRegister;
 use crate::runtime::{Cell, Computer, Instruction, ProcessorError, Reg};
 
 /// Maximum number of instructions executed per [`DebugSession::run_chunk`].
-pub const CHUNK_SIZE: usize = 10_000;
+pub(crate) const CHUNK_SIZE: usize = 10_000;
 
 /// The single thread exposed to the client.
 const THREAD_ID: i64 = 1;
@@ -289,7 +289,7 @@ impl DebugSession {
     /// push one line at a time. Used by the `zorglub33/serialInput` custom
     /// request and by REPL console input while the program is running; a no-op
     /// if no program is loaded.
-    pub fn enqueue_serial_input(&mut self, bytes: &[u8]) {
+    pub(crate) fn enqueue_serial_input(&mut self, bytes: &[u8]) {
         if let Some(program) = self.program.as_mut() {
             program.computer.io.serial.push_input(bytes);
         }
@@ -1172,7 +1172,7 @@ impl DebugSession {
                     id,
                     name,
                     source: Some(Source {
-                        name: Some(base_name(&path).to_owned()),
+                        name: Some(index::base_name(&path).to_owned()),
                         path: Some(path),
                     }),
                     line: loc.line,
@@ -1958,10 +1958,6 @@ fn parse_int(input: &str) -> Option<i64> {
     } else {
         input.parse::<i64>().ok()
     }
-}
-
-fn base_name(path: &str) -> &str {
-    path.rsplit(['/', '\\']).next().unwrap_or(path)
 }
 
 fn choose_entrypoint(

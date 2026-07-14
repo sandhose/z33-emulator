@@ -19,7 +19,6 @@ type MemoryPanelProps = {
   labels: Labels;
   following: Following | null;
   onFollow: (reg: Following | null) => void;
-  className?: string;
 };
 
 /** A single label row showing name, address, and live memory cell value */
@@ -94,7 +93,7 @@ const LabelList: React.FC<{
 };
 
 export const MemoryPanel: React.FC<MemoryPanelProps> = memo(
-  ({ computer, labels, following, onFollow, className }) => {
+  ({ computer, labels, following, onFollow }) => {
     const viewerRef = useRef<MemoryViewerRef>(null);
     const registers = useRegisters(computer);
 
@@ -147,7 +146,7 @@ export const MemoryPanel: React.FC<MemoryPanelProps> = memo(
     }, [onFollow]);
 
     return (
-      <div className={cn("flex flex-col h-full", className)}>
+      <div className="flex flex-col h-full">
         <div className="shrink-0">
           <LabelList
             computer={computer}

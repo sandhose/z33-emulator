@@ -39,7 +39,6 @@ const SPEED_ITEMS = Object.fromEntries(
 );
 
 type DebugToolbarProps = {
-  className?: string;
   touchedFiles: string[];
   activeFile: string;
   onFileChange: (name: string) => void;
@@ -47,7 +46,7 @@ type DebugToolbarProps = {
 };
 
 export const DebugToolbar: React.FC<DebugToolbarProps> = memo(
-  ({ className, touchedFiles, activeFile, onFileChange, onStop }) => {
+  ({ touchedFiles, activeFile, onFileChange, onStop }) => {
     const mode = useAppStore((s) => s.mode);
 
     if (mode.type !== "debug") return null;
@@ -56,7 +55,6 @@ export const DebugToolbar: React.FC<DebugToolbarProps> = memo(
     return (
       <DebugToolbarInner
         computer={computer}
-        className={className}
         touchedFiles={touchedFiles}
         activeFile={activeFile}
         onFileChange={onFileChange}
@@ -69,19 +67,11 @@ DebugToolbar.displayName = "DebugToolbar";
 
 const DebugToolbarInner: React.FC<{
   computer: ComputerProxy;
-  className?: string | undefined;
   touchedFiles: string[];
   activeFile: string;
   onFileChange: (name: string) => void;
   onStop: () => void;
-}> = ({
-  computer,
-  className,
-  touchedFiles,
-  activeFile,
-  onFileChange,
-  onStop,
-}) => {
+}> = ({ computer, touchedFiles, activeFile, onFileChange, onStop }) => {
   const cycles = useCycles(computer);
   const { halt, panicked, running, stepOnce, run, pause } =
     useStepRunner(computer);
@@ -101,7 +91,6 @@ const DebugToolbarInner: React.FC<{
       aria-label="Debug"
       className={cn(
         "flex items-center gap-1 px-2 py-1 border-b border-border bg-muted/30",
-        className,
       )}
     >
       <Button

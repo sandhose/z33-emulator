@@ -180,7 +180,7 @@ fn resolve(pre_source_map: &SourceMap, range: &Range<usize>) -> Option<(usize, R
     crate::diagnostic::resolve_to_original(pre_source_map, range.clone())
 }
 
-fn base_name(path: &str) -> &str {
+pub(super) fn base_name(path: &str) -> &str {
     path.rsplit(['/', '\\']).next().unwrap_or(path)
 }
 

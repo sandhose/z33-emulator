@@ -21,9 +21,10 @@ use std::ops::Range;
 use chumsky::prelude::*;
 use thiserror::Error;
 
+#[cfg(test)]
+use super::expression::EmptyContext as EmptyExpressionContext;
 use super::expression::{
-    Context as ExpressionContext, EmptyContext as EmptyExpressionContext,
-    EvaluationError as ExpressionEvaluationError, Node as ENode,
+    Context as ExpressionContext, EvaluationError as ExpressionEvaluationError, Node as ENode,
 };
 use super::location::{Locatable, Located};
 use super::precedence::Precedence;
@@ -157,8 +158,9 @@ pub trait Context {
 }
 
 /// An empty context that has no variable defined
-#[allow(unused)]
-pub(crate) struct EmptyContext;
+#[cfg(test)]
+struct EmptyContext;
+#[cfg(test)]
 impl Context for EmptyContext {
     type ExpressionContext = EmptyExpressionContext;
 
