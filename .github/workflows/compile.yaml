@@ -13,7 +13,6 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  CARGO_NET_GIT_FETCH_WITH_CLI: "true"
 
 permissions:
   contents: read
@@ -163,16 +162,11 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+      # No pnpm cache here: this job produces a release artifact (zizmor: cache-poisoning)
+      - name: Set up Node and pnpm
+        uses: ./.github/actions/setup-node-pnpm
         with:
-          package_json_file: package.json
-
-      # No build cache here: this job produces a release artifact (zizmor: cache-poisoning)
-      - name: Install Node
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0 # zizmor: ignore[cache-poisoning]
-        with:
-          node-version: "24"
+          cache: ""
 
       # wasm-pack comes from the `z33-assembly` (vscode) package's devDependency
       # — that is the one `pnpm --filter z33-assembly run build` resolves via its
@@ -210,16 +204,11 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+      # No pnpm cache here: this job publishes a release artifact (zizmor: cache-poisoning)
+      - name: Set up Node and pnpm
+        uses: ./.github/actions/setup-node-pnpm
         with:
-          package_json_file: package.json
-
-      # No build cache here: this job publishes a release artifact (zizmor: cache-poisoning)
-      - name: Install Node
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0 # zizmor: ignore[cache-poisoning]
-        with:
-          node-version: "24"
+          cache: ""
 
       # Only needed for the pinned vsce/ovsx CLIs in editors/vscode/'s devDependencies;
       # the extension itself is taken prebuilt from the vsix job's artifact.
@@ -296,20 +285,12 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
-        with:
-          package_json_file: package.json
-
       # This workflow publishes release artifacts in other jobs, which trips
       # zizmor's cache-poisoning audit on setup-node's cache; the Pages deploy
-      # itself is gated to pushes to main and ships no release artifact.
-      - name: Install Node
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0 # zizmor: ignore[cache-poisoning]
-        with:
-          node-version: "24"
-          cache: "pnpm"
-          cache-dependency-path: pnpm-lock.yaml
+      # itself is gated to pushes to main and ships no release artifact, so it
+      # keeps the pnpm cache (the composite's default).
+      - name: Set up Node and pnpm
+        uses: ./.github/actions/setup-node-pnpm
 
       - name: Install Node dependencies
         run: pnpm i
