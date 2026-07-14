@@ -158,6 +158,7 @@ export const MemoryPanel: React.FC<MemoryPanelProps> = memo(
         <div
           role="region"
           aria-label="Memory"
+          tabIndex={-1}
           className="flex-1 overflow-hidden flex flex-col"
         >
           <SectionHeader className="border-b shrink-0">Memory</SectionHeader>
