@@ -26,7 +26,7 @@ use lsp_types::{
     RenameOptions, RenameParams, SemanticTokensFullOptions, SemanticTokensOptions,
     SemanticTokensParams, SemanticTokensResult, SemanticTokensServerCapabilities,
     ServerCapabilities, ServerInfo, TextDocumentPositionParams, TextDocumentSyncCapability,
-    TextDocumentSyncKind, Url, WorkDoneProgressOptions,
+    TextDocumentSyncKind, Uri, WorkDoneProgressOptions,
 };
 use serde_json::{json, Map, Value};
 
@@ -546,7 +546,7 @@ fn notification(method: &str, params: Value) -> Value {
 
 /// Turn a batch of per-URI diagnostics into `textDocument/publishDiagnostics`
 /// notifications.
-fn publish(batches: Vec<(Url, Vec<Diagnostic>)>) -> Vec<Value> {
+fn publish(batches: Vec<(Uri, Vec<Diagnostic>)>) -> Vec<Value> {
     batches
         .into_iter()
         .map(|(uri, diagnostics)| {
