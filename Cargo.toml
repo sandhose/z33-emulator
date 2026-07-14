@@ -33,10 +33,10 @@ clap = { version = "4.6.0", features = ["derive"] }
 codespan-reporting = "0.13.1"
 clap_complete = "4.6.0"
 console_error_panic_hook = "0.1.7"
-futures = "0.3"
 indoc = "2.0.7"
 insta = "1.47.1"
 js-sys = "0.3.92"
+lsp-types = "0.94"
 parse-display = "0.11.0"
 percent-encoding = "2.3.2"
 pretty_assertions = "1.4.1"
@@ -54,10 +54,6 @@ tracing-wasm = "0.2.1"
 tsify = { version = "0.5.6", features = ["js"], default-features = false }
 unicode-segmentation = "1.13.2"
 wasm-bindgen = "0.2.111"
-wasm-bindgen-futures = "0.4"
-tokio = { version = "1", features = ["io-std", "rt"] }
-tower = "0.4"
-tower-lsp = "0.20"
 z33-emulator = { path = "crates/emulator" }
 
 [profile.release]

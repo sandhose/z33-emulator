@@ -1,5 +1,3 @@
-use tower_lsp::lsp_types;
-
 use super::document::DocumentState;
 use super::position;
 use crate::compiler::layout::MemoryLayoutError;

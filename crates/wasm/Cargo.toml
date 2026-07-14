@@ -31,10 +31,3 @@ tracing.workspace = true
 tracing-wasm.workspace = true
 wasm-bindgen.workspace = true
 z33-emulator.workspace = true
-
-# WASM LSP/DAP bridge deps (wasm-only in practice, but their versions live in
-# the workspace table like every other dependency).
-futures.workspace = true
-tower.workspace = true
-tower-lsp.workspace = true
-wasm-bindgen-futures.workspace = true

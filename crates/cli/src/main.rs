@@ -7,6 +7,7 @@ use tracing_subscriber::filter::EnvFilter;
 use tracing_subscriber::prelude::*;
 
 mod commands;
+mod framing;
 mod interactive;
 
 use crate::commands::Subcommand;

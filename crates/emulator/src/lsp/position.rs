@@ -1,7 +1,5 @@
 use std::ops::Range;
 
-use tower_lsp::lsp_types;
-
 /// Convert an LSP `Position` (line, UTF-16 character offset) to a byte offset
 /// in `source`.
 ///

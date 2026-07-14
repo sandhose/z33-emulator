@@ -1,4 +1,4 @@
-use tower_lsp::lsp_types::{DocumentSymbol, SymbolKind};
+use lsp_types::{DocumentSymbol, SymbolKind};
 
 use super::document::DocumentState;
 use super::position;

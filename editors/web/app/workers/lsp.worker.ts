@@ -22,18 +22,17 @@ const writer = new BrowserMessageWriter(self);
 
 let server: WasmLspServer | null = null;
 const inbox: Message[] = [];
-// Serialize `send` calls so the wasm service processes one message at a time.
-let pump: Promise<void> = Promise.resolve();
 
+// `server.send` is synchronous: it fully processes the message (emitting any
+// responses via `on_message`) before returning, so calls are naturally
+// serialized without any queueing.
 function forwardToServer(message: Message): void {
-  pump = pump.then(async () => {
-    if (!server) return;
-    try {
-      await server.send(JSON.stringify(message));
-    } catch (error) {
-      console.error("[lsp.worker] server.send failed", error);
-    }
-  });
+  if (!server) return;
+  try {
+    server.send(JSON.stringify(message));
+  } catch (error) {
+    console.error("[lsp.worker] server.send failed", error);
+  }
 }
 
 reader.listen((message) => {
