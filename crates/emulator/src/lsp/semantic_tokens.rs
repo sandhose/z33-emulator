@@ -20,9 +20,7 @@
 
 use std::collections::HashMap;
 
-use tower_lsp::lsp_types::{
-    SemanticToken, SemanticTokenType, SemanticTokens, SemanticTokensLegend,
-};
+use lsp_types::{SemanticToken, SemanticTokenType, SemanticTokens, SemanticTokensLegend};
 
 use super::document::{DocumentState, LabelKind};
 use super::position;

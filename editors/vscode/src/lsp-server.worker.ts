@@ -1,7 +1,7 @@
 // Z33 language server web worker.
 //
 // This is a *classic* (non-module) worker bundled as a self-contained IIFE. It
-// cannot use the VS Code API. It runs the wasm-compiled tower-lsp `Backend`
+// cannot use the VS Code API. It runs the wasm-compiled LSP session
 // (`WasmLspServer`) and bridges it to the extension host over `postMessage`.
 //
 // Handshake (must complete before the LanguageClient attaches its own reader):
@@ -43,7 +43,7 @@ async function handleInit(message: InitMessage): Promise<void> {
       return;
     }
     // The browser LanguageClient posts JSON-RPC message objects.
-    void server.send(JSON.stringify(event.data));
+    server.send(JSON.stringify(event.data));
   };
 
   postMessage({ type: "ready" });

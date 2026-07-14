@@ -1,11 +1,10 @@
 //! Multi-file workspace model for the LSP backend.
 //!
 //! The [`WorkspaceManager`] owns every piece of mutable state the language
-//! server needs *except* the [`Client`](tower_lsp::Client): the set of open
-//! documents, a base file map (pushed by the host, see
-//! [`crate::lsp::Backend`]), and the workspace root. Keeping it client-free
-//! makes the whole analysis and cross-file mapping logic unit-testable without
-//! a live LSP connection.
+//! server needs *except* the transport: the set of open documents, a base file
+//! map (pushed by the host, see [`crate::lsp::LspSession`]), and the workspace
+//! root. Keeping it transport-free makes the whole analysis and cross-file
+//! mapping logic unit-testable without a live LSP connection.
 //!
 //! # File model
 //!
@@ -24,7 +23,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use camino::{Utf8Path, Utf8PathBuf};
-use tower_lsp::lsp_types::{
+use lsp_types::{
     Diagnostic, DocumentHighlight, DocumentHighlightKind, Location, TextEdit, Url, WorkspaceEdit,
 };
 
@@ -460,8 +459,8 @@ fn dedupe_diagnostics(diags: &mut Vec<Diagnostic>) {
 }
 
 /// A stable integer code for a diagnostic severity (LSP wire values).
-fn severity_code(severity: tower_lsp::lsp_types::DiagnosticSeverity) -> i32 {
-    use tower_lsp::lsp_types::DiagnosticSeverity as S;
+fn severity_code(severity: lsp_types::DiagnosticSeverity) -> i32 {
+    use lsp_types::DiagnosticSeverity as S;
     match severity {
         S::ERROR => 1,
         S::WARNING => 2,

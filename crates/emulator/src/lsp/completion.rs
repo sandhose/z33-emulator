@@ -1,9 +1,7 @@
 use std::collections::BTreeMap;
 use std::sync::LazyLock;
 
-use tower_lsp::lsp_types::{
-    CompletionItem, CompletionItemKind, CompletionItemLabelDetails, InsertTextFormat,
-};
+use lsp_types::{CompletionItem, CompletionItemKind, CompletionItemLabelDetails, InsertTextFormat};
 
 use super::document::DocumentState;
 use super::instructions::{directive_meta, meta, ArgType, DIRECTIVE_KINDS, INSTRUCTION_KINDS};
