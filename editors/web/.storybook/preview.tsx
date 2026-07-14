@@ -75,12 +75,15 @@ export default definePreview({
   parameters: {
     layout: "centered",
     a11y: {
-      // "todo" surfaces a11y violations in the UI without failing the test run.
-      // Promotion to "error" is blocked on app-wide color-contrast issues in the
-      // design tokens (muted-foreground text ~4.34:1, default badge ~3.76:1),
-      // which also trip the pre-existing UI stories — an app/theme refactor, not
-      // a story-level fix. Flip to "error" once those tokens are audited.
-      test: "todo",
+      // a11y violations FAIL the test run (every story is checked by axe via
+      // @storybook/addon-vitest). The design-token contrast audit is done
+      // (globals.css light-theme muted-foreground/destructive were darkened)
+      // and app landmarks/accessible-names were added. The escape hatch for
+      // genuine upstream issues we don't control (e.g. base-ui focus guards
+      // tripping `aria-hidden-focus` on open popups) is a per-story
+      // `parameters.a11y.config.rules` disable with a comment — never a global
+      // one.
+      test: "error",
     },
   },
   tags: ["autodocs"],

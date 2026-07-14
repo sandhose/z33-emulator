@@ -78,25 +78,30 @@ const App = () => {
   const isDebugging = mode.type === "debug";
 
   return (
-    <main className="flex flex-col h-screen bg-background">
+    <div className="flex flex-col h-screen bg-background">
       {!isDebugging && (
-        <EditToolbar
-          onRun={handleRun}
-          compilationStatus={compilationStatus}
-          compilationError={
-            compilationResult.type === "error"
-              ? compilationResult.message
-              : undefined
-          }
-          labels={
-            compilationResult.type === "idle" ? [] : compilationResult.labels
-          }
-          defaultEntrypoint={entrypoints[activeFile]}
-        />
+        <header>
+          <EditToolbar
+            onRun={handleRun}
+            compilationStatus={compilationStatus}
+            compilationError={
+              compilationResult.type === "error"
+                ? compilationResult.message
+                : undefined
+            }
+            labels={
+              compilationResult.type === "idle" ? [] : compilationResult.labels
+            }
+            defaultEntrypoint={entrypoints[activeFile]}
+          />
+        </header>
       )}
       <div className="flex flex-1 min-h-0">
         <FileSidebar />
-        <div className="flex-1 min-w-0 flex flex-col min-h-0">
+        <main
+          className="flex-1 min-w-0 flex flex-col min-h-0"
+          aria-label="Program editor"
+        >
           {isDebugging ? (
             <DebugLayout onEditorMount={handleEditorMount} />
           ) : (
@@ -107,9 +112,9 @@ const App = () => {
               />
             </div>
           )}
-        </div>
+        </main>
       </div>
-    </main>
+    </div>
   );
 };
 

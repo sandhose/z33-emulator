@@ -9,8 +9,15 @@ const meta = preview.meta({
   parameters: { layout: "fullscreen" },
 });
 
+// react-resizable-panels marks a panel's content as a scrollable region; in the
+// vertical demo axe then wants keyboard access to it (`scrollable-region-
+// focusable`). tabIndex makes this story fixture focusable; it is harmless in
+// the horizontal demo where the region isn't flagged.
 const PanelBody = ({ label }: { label: string }) => (
-  <div className="flex h-full items-center justify-center bg-muted/30 text-sm text-muted-foreground">
+  <div
+    tabIndex={0}
+    className="flex h-full items-center justify-center bg-muted/30 text-sm text-muted-foreground"
+  >
     {label}
   </div>
 );

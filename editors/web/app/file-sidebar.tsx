@@ -270,6 +270,7 @@ export const FileSidebarView: React.FC<FileSidebarViewProps> = ({
         ref={uploadInputRef}
         type="file"
         multiple
+        aria-label="Upload files"
         className="sr-only"
         onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
           if (e.target.files) onUpload(Array.from(e.target.files));

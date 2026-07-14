@@ -125,7 +125,13 @@ export const DebugToolbarInner: React.FC<{
       >
         <Tooltip>
           <TooltipTrigger
-            render={<SelectTrigger size="xs" className="w-24 font-mono" />}
+            render={
+              <SelectTrigger
+                size="xs"
+                className="w-24 font-mono"
+                aria-label="Clock speed"
+              />
+            }
           >
             <GaugeIcon data-icon="inline-start" />
             <SelectValue />
@@ -197,7 +203,11 @@ export const DebugToolbarInner: React.FC<{
               if (v !== null) onFileChange(v);
             }}
           >
-            <SelectTrigger size="xs" className="font-mono w-36">
+            <SelectTrigger
+              size="xs"
+              className="font-mono w-36"
+              aria-label="Active file"
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent align="end">

@@ -54,6 +54,15 @@ export const Success = meta.story({
     compilationStatus: "success",
     labels: ["main", "loop", "end"],
   },
+  // The play function leaves the base-ui entrypoint listbox popup open. base-ui
+  // does not propagate the trigger's accessible name to its `role="listbox"`
+  // element, so axe's `aria-input-field-name` rule fires on the popup — upstream
+  // base-ui behaviour we don't control. Disable just that rule for this story.
+  parameters: {
+    a11y: {
+      config: { rules: [{ id: "aria-input-field-name", enabled: false }] },
+    },
+  },
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement);
     // Open the entrypoint select (portal-rendered on document.body).
