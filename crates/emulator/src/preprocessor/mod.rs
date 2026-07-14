@@ -135,12 +135,6 @@ impl Workspace {
         &self.file_db
     }
 
-    /// Consume the workspace and return the file database.
-    #[must_use]
-    pub fn into_file_db(self) -> FileDatabase {
-        self.file_db
-    }
-
     /// Iterate over the ([`FileId`], path) pairs of every source file that was
     /// successfully loaded into this workspace.
     ///

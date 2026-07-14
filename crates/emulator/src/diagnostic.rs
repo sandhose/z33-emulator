@@ -340,18 +340,6 @@ fn memory_fill_error_to_diagnostic(
     }
 }
 
-/// Create a simple error diagnostic with a primary label at the given range.
-#[must_use]
-pub fn simple_error(
-    message: impl Into<String> + std::fmt::Display,
-    file_id: FileId,
-    range: Range<usize>,
-) -> Diagnostic<FileId> {
-    Diagnostic::error()
-        .with_message(message)
-        .with_labels(vec![Label::primary(file_id, range)])
-}
-
 // ---------------------------------------------------------------------------
 // Source map resolution
 // ---------------------------------------------------------------------------
@@ -406,7 +394,10 @@ pub fn resolve_diagnostic_spans(
 /// Serialize a codespan diagnostic to JSON matching the web app's report
 /// schema.
 #[must_use]
-pub fn diagnostic_to_json(diag: &Diagnostic<FileId>, db: &FileDatabase) -> serde_json::Value {
+pub(crate) fn diagnostic_to_json(
+    diag: &Diagnostic<FileId>,
+    db: &FileDatabase,
+) -> serde_json::Value {
     let severity = match diag.severity {
         Severity::Bug | Severity::Error => "error",
         Severity::Warning => "warning",

@@ -398,17 +398,6 @@ pub fn parse_expression_str(input: &str) -> Result<ExpressionNode, String> {
     })
 }
 
-/// Parse a register name (e.g. `%a`, `%sp`), returning the register.
-pub fn parse_register_str(input: &str) -> Result<Reg, String> {
-    let result = register().then_ignore(end()).parse(input);
-    result.into_result().map_err(|errs| {
-        errs.into_iter()
-            .map(|e| e.to_string())
-            .collect::<Vec<_>>()
-            .join("; ")
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use pretty_assertions::assert_eq;

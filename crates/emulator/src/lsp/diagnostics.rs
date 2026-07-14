@@ -6,7 +6,7 @@ use crate::diagnostic::{preprocessor_error_to_diagnostics, FileId};
 use crate::parser::shared::{DiagnosticSeverity, ParseDiagnostic};
 
 /// A diagnostic together with the file it belongs to.
-pub type FileDiagnostic = (FileId, lsp_types::Diagnostic);
+pub(crate) type FileDiagnostic = (FileId, lsp_types::Diagnostic);
 
 fn convert_severity(severity: DiagnosticSeverity) -> lsp_types::DiagnosticSeverity {
     match severity {

@@ -31,7 +31,7 @@ use crate::parser::value::DirectiveArgument;
 use crate::preprocessor::SourceAnnotations;
 
 /// The token types we use, in the order they appear in the legend.
-pub const TOKEN_TYPES: &[SemanticTokenType] = &[
+const TOKEN_TYPES: &[SemanticTokenType] = &[
     SemanticTokenType::FUNCTION, // 0: label reference pointing at code
     SemanticTokenType::VARIABLE, // 1: label reference pointing at data
     SemanticTokenType::MACRO,    // 2: reference to a `#define`d macro

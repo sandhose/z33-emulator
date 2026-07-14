@@ -40,7 +40,7 @@ pub const WORKSPACE_FILES_METHOD: &str = "zorglub33/workspaceFiles";
 
 /// Client-side command carried by the run code lens. Only emitted when the
 /// client advertised it in the `experimental.commands` capability.
-pub const RUN_COMMAND: &str = "zorglub33.run";
+const RUN_COMMAND: &str = "zorglub33.run";
 
 // Standard JSON-RPC / LSP error codes.
 const INVALID_REQUEST: i64 = -32600;
