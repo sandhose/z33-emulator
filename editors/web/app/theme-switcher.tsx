@@ -40,7 +40,11 @@ export const ThemeToggle: React.FC<{
       const Icon = ICONS[t];
       return (
         <Tooltip key={t}>
-          <TooltipTrigger render={<ToggleGroupItem value={t} />}>
+          <TooltipTrigger
+            render={
+              <ToggleGroupItem value={t} aria-label={`${LABELS[t]} theme`} />
+            }
+          >
             <Icon />
           </TooltipTrigger>
           <TooltipContent>{LABELS[t]}</TooltipContent>

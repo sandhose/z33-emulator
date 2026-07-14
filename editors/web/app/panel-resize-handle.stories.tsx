@@ -9,8 +9,13 @@ const meta = preview.meta({
   parameters: { layout: "fullscreen" },
 });
 
+// react-resizable-panels makes a panel's content a scroll container, so axe's
+// `scrollable-region-focusable` requires it to be keyboard reachable.
 const PanelBody = ({ label }: { label: string }) => (
-  <div className="flex h-full items-center justify-center bg-muted/30 text-sm text-muted-foreground">
+  <div
+    tabIndex={0}
+    className="flex h-full items-center justify-center bg-muted/30 text-sm text-muted-foreground"
+  >
     {label}
   </div>
 );

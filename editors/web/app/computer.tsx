@@ -109,7 +109,7 @@ const Label: React.FC<{ label: string }> = ({ label }) => (
 );
 
 const RegisterBadge: React.FC<{ register: RegisterId }> = ({ register }) => (
-  <Badge className={`font-semibold ${REGISTER_COLORS[register]} text-white`}>
+  <Badge className={`font-semibold ${REGISTER_COLORS[register]} text-black`}>
     {register}
   </Badge>
 );
@@ -135,11 +135,20 @@ type MemoryViewerProps = {
   pointers?: Pointers;
   /** Called when user scrolls highlight address out of the visible range */
   onUserScroll?: () => void;
+  /**
+   * Names the scroll container. axe's `scrollable-region-focusable` requires
+   * the container to be keyboard focusable, which puts it in the tab order,
+   * where it needs a name.
+   */
+  labelledBy?: string;
 };
 
 export const MemoryViewer = memo(
   forwardRef<MemoryViewerRef, MemoryViewerProps>(
-    ({ computer, highlight, labels, pointers, onUserScroll }, ref) => {
+    (
+      { computer, highlight, labels, pointers, onUserScroll, labelledBy },
+      ref,
+    ) => {
       // TanStack Virtual relies on re-renders; a memoized virtualizer serves stale rows.
       "use no memo";
       const displayFormat = useDisplayStore((s) => s.format);
@@ -238,7 +247,13 @@ export const MemoryViewer = memo(
       );
 
       return (
-        <div className="overflow-auto flex-1 min-h-0" ref={parentRef}>
+        <div
+          className="overflow-auto flex-1 min-h-0"
+          ref={parentRef}
+          role="group"
+          aria-labelledby={labelledBy}
+          tabIndex={0}
+        >
           <div
             className="font-mono text-xs w-full relative"
             style={{ height: `${rowVirtualizer.getTotalSize()}px` }}

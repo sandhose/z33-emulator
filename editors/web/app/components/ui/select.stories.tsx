@@ -20,7 +20,7 @@ const meta = preview.meta({
 export const Default = meta.story({
   render: () => (
     <Select defaultValue="Apple">
-      <SelectTrigger className="w-48">
+      <SelectTrigger className="w-48" aria-label="Fruit">
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
@@ -37,7 +37,7 @@ export const Default = meta.story({
 export const Placeholder = meta.story({
   render: () => (
     <Select>
-      <SelectTrigger className="w-48">
+      <SelectTrigger className="w-48" aria-label="Fruit">
         <SelectValue placeholder="Pick a fruit…" />
       </SelectTrigger>
       <SelectContent>
@@ -52,12 +52,28 @@ export const Placeholder = meta.story({
 });
 
 export const SelectsAnItem = meta.story({
+  // The play function ends on the click that closes the select, and
+  // SelectContent's exit transition (`data-closed:animate-out … duration-100`)
+  // keeps the popup and base-ui's focus guards in the DOM while axe runs. On
+  // @base-ui/react 1.7.0 `SelectList` carries `role="listbox"` without an
+  // accessible name (it drops the trigger's) and `FocusGuard` renders
+  // `tabIndex=0` `aria-hidden` spans.
+  parameters: {
+    a11y: {
+      config: {
+        rules: [
+          { id: "aria-input-field-name", enabled: false },
+          { id: "aria-hidden-focus", enabled: false },
+        ],
+      },
+    },
+  },
   render: () => {
     const ControlledSelect = () => {
       const [value, setValue] = useState<string | null>(null);
       return (
         <Select value={value} onValueChange={setValue}>
-          <SelectTrigger className="w-48">
+          <SelectTrigger className="w-48" aria-label="Fruit">
             <SelectValue placeholder="Pick a fruit…" />
           </SelectTrigger>
           <SelectContent>

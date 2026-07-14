@@ -75,12 +75,11 @@ export default definePreview({
   parameters: {
     layout: "centered",
     a11y: {
-      // "todo" surfaces a11y violations in the UI without failing the test run.
-      // Promotion to "error" is blocked on app-wide color-contrast issues in the
-      // design tokens (muted-foreground text ~4.34:1, default badge ~3.76:1),
-      // which also trip the pre-existing UI stories — an app/theme refactor, not
-      // a story-level fix. Flip to "error" once those tokens are audited.
-      test: "todo",
+      // axe runs on every story through @storybook/addon-vitest and a violation
+      // fails the test run. Disable a rule an upstream library owns in that
+      // story's `parameters.a11y.config.rules`, with a comment naming the
+      // cause, rather than here.
+      test: "error",
     },
   },
   tags: ["autodocs"],

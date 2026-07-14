@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useRef } from "react";
+import { memo, useCallback, useId, useMemo, useRef } from "react";
 import {
   ADDRESS_WIDTH,
   type ComputerInterface,
@@ -95,6 +95,7 @@ const LabelList: React.FC<{
 export const MemoryPanel: React.FC<MemoryPanelProps> = memo(
   ({ computer, labels, following, onFollow }) => {
     const viewerRef = useRef<MemoryViewerRef>(null);
+    const headingId = useId();
     const registers = useRegisters(computer);
 
     // Derive the address to follow in the viewer (null = not following, no highlight)
@@ -161,9 +162,12 @@ export const MemoryPanel: React.FC<MemoryPanelProps> = memo(
           tabIndex={-1}
           className="flex-1 overflow-hidden flex flex-col"
         >
-          <SectionHeader className="border-b shrink-0">Memory</SectionHeader>
+          <SectionHeader id={headingId} className="border-b shrink-0">
+            Memory
+          </SectionHeader>
           <MemoryViewer
             ref={viewerRef}
+            labelledBy={headingId}
             computer={computer}
             highlight={highlight}
             labels={labels}
