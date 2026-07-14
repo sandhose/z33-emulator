@@ -71,7 +71,7 @@ xattr -r -d com.apple.quarantine [path to]/z33-cli
 
 ### Compiling
 
-Alternatively, it can be compiled from source with a recent enough Rust compiler (>= 1.40).
+Alternatively, it can be compiled from source with the Rust toolchain pinned in `rust-toolchain.toml` (rustup installs it automatically).
 Check the official documentation on [how to install Rust](https://www.rust-lang.org/tools/install).
 
 ```sh

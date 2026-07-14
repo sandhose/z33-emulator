@@ -1,7 +1,6 @@
 target
 .vim
 node_modules
-editors/vscode/out
 *.vsix
 editors/zed/extension.wasm
 # Zed's dev-extension grammar-fetch cache (a full clone of this repo)
