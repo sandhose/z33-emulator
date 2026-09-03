@@ -53,3 +53,16 @@ fn list_warns_once_the_cursor_is_at_the_end_of_memory() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("Nothing to list"), "{stdout}");
 }
+
+#[test]
+fn quit_and_q_leave_the_debugger() {
+    for command in ["quit\n", "q\n"] {
+        let output = run_interactive("fact.s", command);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(output.status.success(), "{command:?}: stderr: {stderr}");
+        // Interactive log lines go to stdout, clap's parse errors included.
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(!stdout.contains("WARN"), "{command:?}: {stdout}");
+        assert!(stdout.contains("End of program"), "{command:?}: {stdout}");
+    }
+}

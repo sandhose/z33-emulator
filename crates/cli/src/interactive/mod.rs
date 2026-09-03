@@ -45,6 +45,7 @@ enum Command {
     },
 
     /// Exit the emulator
+    #[command(alias = "quit", alias = "q")]
     Exit,
 
     /// Show the state of registers
