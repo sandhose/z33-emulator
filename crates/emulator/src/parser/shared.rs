@@ -450,9 +450,11 @@ mod tests {
     }
 
     #[test]
-    fn binary_not_still_parses_in_parens() {
-        // `~` parses fine (its *evaluation* is a deliberate `todo!()`), so only
-        // check that a parenthesized bitwise-not produces the expected node.
+    fn binary_not_evaluates_as_bitwise_not() {
+        // r[verify asm.expressions]
+        assert_eq!(eval("~0"), -1);
+        assert_eq!(eval("~1"), -2);
+        assert_eq!(eval("(~1)"), -2);
         assert!(matches!(
             parse_expression_str("(~1)"),
             Ok(Node::BinaryNot(_))

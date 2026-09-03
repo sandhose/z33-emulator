@@ -1,0 +1,9 @@
+---
+source: crates/emulator/tests/diagnostics.rs
+expression: "check_full_pipeline_errors(\"main:\\n    reset\\nx: .word ~0xffffffffffffffff\")"
+---
+error: value out of range
+  ┌─ <preprocessed>:3:10
+  │
+3 │ x: .word ~0xffffffffffffffff
+  │          ^^^^^^^^^^^^^^^^^^^ could not convert value

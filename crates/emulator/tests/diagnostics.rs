@@ -176,3 +176,12 @@ fn compilation_undefined_label() {
 fn compilation_unknown_entrypoint() {
     insta::assert_snapshot!(check_full_pipeline_errors("start:\n    nop"));
 }
+
+#[test]
+fn compilation_binary_not_out_of_range() {
+    // `~` inverts all 128 bits of the evaluated value, so inverting a value
+    // that already needs 64 bits leaves a result no word can hold.
+    insta::assert_snapshot!(check_full_pipeline_errors(
+        "main:\n    reset\nx: .word ~0xffffffffffffffff"
+    ));
+}
