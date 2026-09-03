@@ -11,14 +11,12 @@ catalog:
   oxfmt: ^0.57.0
   typescript: 6.0.3
 
-ignoredBuiltDependencies:
-  - esbuild
-
-onlyBuiltDependencies:
-  - "@vscode/vsce-sign"
-  - keytar
-  - tree-sitter-cli
-  - wasm-pack
+allowBuilds:
+  "@vscode/vsce-sign": true
+  keytar: true
+  tree-sitter-cli: true
+  wasm-pack: true
+  esbuild: false
 
 strictDepBuilds: true
 
