@@ -94,6 +94,8 @@ impl RunOpt {
             run_with_io(&mut computer)?;
         }
 
+        info!(registers = %computer.registers, "End of program");
+
         Ok(())
     }
 }
