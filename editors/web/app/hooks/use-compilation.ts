@@ -29,8 +29,8 @@ export function useCompilation(activeFile: string, monacoInstance: Monaco) {
 
   // Keep the Zustand file store and Monaco models in sync.
   useEffect(() => {
-    if (!monacoInstance) return;
-    initMonacoSync(monacoInstance, {
+    if (!monacoInstance) return () => {};
+    return initMonacoSync(monacoInstance, {
       onEdit: (name, content) => {
         useFileStore.getState().onMonacoEdit(name, content);
       },
