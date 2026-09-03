@@ -48,7 +48,10 @@ export const useFileStore = create<FileState & FileActions>()(
 
       createFile: (name, content = "") => {
         set((state) => ({
-          files: { ...state.files, [name]: content },
+          files:
+            name in state.files
+              ? state.files
+              : { ...state.files, [name]: content },
           activeFile: name,
         }));
       },
