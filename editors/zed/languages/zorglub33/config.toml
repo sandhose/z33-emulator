@@ -3,3 +3,13 @@ grammar = "z33"
 path_suffixes = ["s", "S"]
 line_comments = ["// "]
 tab_size = 4
+word_characters = ["%"]
+# Zed autocloses a pair only before whitespace or one of these characters, and
+# `ld [%sp+2],%b` closes a bracket right before a comma.
+autoclose_before = ",]"
+debuggers = ["zorglub33"]
+brackets = [
+  { start = "[", end = "]", close = true, newline = false },
+  { start = "(", end = ")", close = true, newline = false },
+  { start = "\"", end = "\"", close = true, newline = false, not_in = ["comment", "string"] },
+]
