@@ -4,6 +4,11 @@ import { persist } from "zustand/middleware";
 type EffectiveTheme = "dark" | "light";
 type Theme = EffectiveTheme | "system";
 
+const THEMES: readonly Theme[] = ["dark", "light", "system"];
+
+const isTheme = (value: unknown): value is Theme =>
+  typeof value === "string" && (THEMES as readonly string[]).includes(value);
+
 const darkMediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
 
 function resolveEffective(theme: Theme): EffectiveTheme {
@@ -29,10 +34,13 @@ export const useThemeStore = create<ThemeState>()(
     {
       name: "z33:theme",
       partialize: (state) => ({ theme: state.theme }),
-      onRehydrateStorage: () => (state) => {
-        if (state) {
-          state.effective = resolveEffective(state.theme);
-        }
+      merge: (persisted, current) => {
+        const stored =
+          persisted && typeof persisted === "object" && "theme" in persisted
+            ? persisted.theme
+            : undefined;
+        const theme = isTheme(stored) ? stored : "system";
+        return { ...current, theme, effective: resolveEffective(theme) };
       },
     },
   ),
