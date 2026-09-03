@@ -108,7 +108,8 @@ pub fn preprocessor_error_to_diagnostics(error: &PreprocessorError) -> Vec<Diagn
             inner,
         } => {
             let mut diagnostics = preprocessor_error_to_diagnostics(inner);
-            // Add a secondary label at the #include site to the first diagnostic
+            // Add a secondary label at the #include site to the first
+            // diagnostic
             if let Some(first) = diagnostics.first_mut() {
                 first.labels.push(
                     Label::secondary(*file_id, span.clone()).with_message("included from here"),

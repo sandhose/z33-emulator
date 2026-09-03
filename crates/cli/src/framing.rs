@@ -87,7 +87,8 @@ mod tests {
 
     #[test]
     fn invalid_length_yields_none() {
-        // A non-numeric value fails to parse and the headers end with no length.
+        // A non-numeric value fails to parse and the headers end with no
+        // length.
         assert_eq!(read(b"Content-Length: abc\r\n\r\n"), None);
     }
 

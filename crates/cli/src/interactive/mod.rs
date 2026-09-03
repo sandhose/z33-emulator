@@ -197,8 +197,8 @@ impl Session {
             x => info!("{} breakpoints:", x),
         }
 
-        // This might be an unnecessary copy, but we want them to be sorted by address
-        // for readability
+        // This might be an unnecessary copy, but we want them to be sorted by
+        // address for readability
         let mut bp: Vec<_> = self.breakpoints.iter().copied().collect();
         bp.sort_unstable();
         for addr in bp {
@@ -225,8 +225,8 @@ impl Session {
             (false, false) => "  ",
         };
 
-        // Find the instruction in memory. This will be `None` if the address is to high
-        // or if the cell is not an instruction.
+        // Find the instruction in memory. This will be `None` if the address is
+        // to high or if the cell is not an instruction.
         let instruction = computer
             .memory
             .get(address)
@@ -473,7 +473,8 @@ pub(crate) fn run_interactive(computer: &mut Computer, debug_info: DebugInfo) {
             },
 
             (_, true) => {
-                // Computer is halted but the user asked to continue, we just warn
+                // Computer is halted but the user asked to continue, we just
+                // warn
                 warn!("Computer is halted. Use \"exit\" to quit");
             }
         }

@@ -102,14 +102,16 @@ fn in_reads_bytes_from_serial() {
     run(&mut computer);
     assert_eq!(word_at(&computer, 10), 90); // 'Z'
     assert_eq!(word_at(&computer, 11), 120); // 'x'
-                                             // The queue is now empty; a further read would yield 0.
+                                             // The queue is now empty; a
+                                             // further read would yield 0.
     assert!(!computer.io.serial.input_ready());
 }
 
 #[test]
 fn in_never_blocks_on_empty_queue() {
     // r[verify inst.in]
-    // Reading an empty serial console returns 0 immediately instead of blocking.
+    // Reading an empty serial console returns 0 immediately instead of
+    // blocking.
     let (mut computer, _) = build(
         indoc! {"
             .addr 1000
@@ -153,8 +155,8 @@ fn hardware_interrupt_is_delivered_between_instructions() {
     // %sr.IE is not set yet so nothing is delivered.
     computer.step().unwrap();
     assert_eq!(computer.registers.pc, 1001);
-    // Step 2: `or 1 << 8, %sr` enables interrupts; the pending interrupt is then
-    // delivered between this instruction and the next.
+    // Step 2: `or 1 << 8, %sr` enables interrupts; the pending interrupt is
+    // then delivered between this instruction and the next.
     computer.step().unwrap();
 
     // We jumped to the handler at 200.

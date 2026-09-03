@@ -576,7 +576,8 @@ impl MemoryObserver {
             if let Some(address_subscribers) = subscribers.get_mut(&address) {
                 address_subscribers.remove(&index);
 
-                // If there are no more subscribers for the address, remove the address
+                // If there are no more subscribers for the address, remove the
+                // address
                 if address_subscribers.is_empty() {
                     subscribers.remove(&address);
                 }

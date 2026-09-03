@@ -330,7 +330,8 @@ mod tests {
 
     #[test]
     fn version_key_orders_numerically() {
-        // Lexicographic ordering would rank v0.9.0 above v0.10.0; the key must not.
+        // Lexicographic ordering would rank v0.9.0 above v0.10.0; the key must
+        // not.
         let v0_9 = version_key("z33-cli-v0.9.0").expect("v0.9.0 parses");
         let v0_10 = version_key("z33-cli-v0.10.0").expect("v0.10.0 parses");
         assert_eq!(v0_9, (0, 9, 0));

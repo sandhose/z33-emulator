@@ -102,8 +102,8 @@ impl LineIndex {
             });
             let (line, column) = files[file_index].line_col(original_range.start);
 
-            // Record the first (lowest) address seen on each line so breakpoints
-            // resolve deterministically.
+            // Record the first (lowest) address seen on each line so
+            // breakpoints resolve deterministically.
             files[file_index]
                 .lines_with_code
                 .entry(line)

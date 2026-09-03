@@ -291,8 +291,9 @@ impl Node {
 
                 Node::BinaryNot(operand) => {
                     let _operand: Value = operand.inner.evaluate(context)?;
-                    // TODO: bit inversion is tricky because we're not supposed to know the word
-                    // length here. It's a bit opiniated, but for now it tries
+                    // TODO: bit inversion is tricky because we're not supposed
+                    // to know the word length here. It's a
+                    // bit opiniated, but for now it tries
                     // casting down to u16 before negating.
 
                     /*

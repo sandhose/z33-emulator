@@ -488,16 +488,19 @@ impl Instruction {
                 let value = arg.extract_cell(computer)?;
                 let value2 = reg.extract_cell(computer)?;
 
-                // And set the value of the register specified by the second argument
+                // And set the value of the register specified by the second
+                // argument
                 computer.set_register(*reg, value)?;
 
-                // Then handle the two kind of cases: a register and a memory address
+                // Then handle the two kind of cases: a register and a memory
+                // address
                 if let RegDirIndIdx::Reg(arg) = arg {
                     // Set the value of the register by the first argument
                     computer.set_register(*arg, value2)?;
                 } else {
-                    // Convert the reg/dir/ind/idx arg to only dir/ind/idx, since we already
-                    // handled the reg case. Despite the unwrap, this should never fail.
+                    // Convert the reg/dir/ind/idx arg to only dir/ind/idx,
+                    // since we already handled the reg
+                    // case. Despite the unwrap, this should never fail.
                     let arg: DirIndIdx = arg.clone().try_into().unwrap();
 
                     // Resolve the address and write the second value
@@ -530,8 +533,8 @@ impl Instruction {
     /// Get the total cost of an instruction in terms of CPU cycles
     // r[impl exec.cycles]
     pub(crate) const fn cost(&self) -> usize {
-        // All instruction cost one CPU cycle itself, plus the cost of each of its
-        // arguments
+        // All instruction cost one CPU cycle itself, plus the cost of each of
+        // its arguments
         match self {
             // imm|reg|dir|ind|idx, reg
             Self::Div(a, _)

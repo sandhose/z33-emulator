@@ -357,7 +357,8 @@ mod tests {
             let m = meta(kind);
             assert!(!m.summary.is_empty(), "empty summary for {kind}");
             assert!(!m.hover.is_empty(), "empty hover for {kind}");
-            // Display / FromStr round-trip through the derived parse_display impls.
+            // Display / FromStr round-trip through the derived parse_display
+            // impls.
             assert_eq!(
                 format!("{kind}").parse::<InstructionKind>().ok(),
                 Some(kind),
@@ -371,7 +372,8 @@ mod tests {
 
     #[test]
     fn error_kind_does_not_parse_from_a_mnemonic() {
-        // `Error` displays as `<error>`, so a real mnemonic never resolves to it.
+        // `Error` displays as `<error>`, so a real mnemonic never resolves to
+        // it.
         assert!("error".parse::<InstructionKind>().is_err());
         assert_eq!(
             "<error>".parse::<InstructionKind>().ok(),

@@ -265,9 +265,9 @@ impl LspSession {
         });
         // Client-side commands the client can execute, advertised through the
         // open-ended `experimental` capability (same convention as
-        // rust-analyzer): `{"experimental": {"commands": ["zorglub33.run", ...]}}`.
-        // Server-produced `Command`s (e.g. the run code lens) are only
-        // emitted when the client declared it can handle them.
+        // rust-analyzer): `{"experimental": {"commands": ["zorglub33.run",
+        // ...]}}`. Server-produced `Command`s (e.g. the run code lens)
+        // are only emitted when the client declared it can handle them.
         let client_commands = parse_client_commands(params.capabilities.experimental.as_ref());
 
         self.manager.set_root(root_uri);

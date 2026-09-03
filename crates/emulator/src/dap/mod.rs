@@ -540,7 +540,8 @@ impl DebugSession {
                 ..Default::default()
             });
         } else if let Some((start, end)) = self.frame_stack_range(args.frame_id) {
-            // Synthesized caller frame: best-effort view of the words it pushed.
+            // Synthesized caller frame: best-effort view of the words it
+            // pushed.
             let handle = self.alloc_dyn(DynRef::FrameStack { start, end });
             scopes.push(Scope {
                 name: "Frame stack".to_owned(),
@@ -843,10 +844,11 @@ impl DebugSession {
 
         // REPL console input while the program is running: treat the typed line
         // as serial input (Enter is `\n`) rather than an expression. Only while
-        // `Running` — when stopped at a breakpoint the user is inspecting state,
-        // so `evaluate` keeps its expression-evaluation behavior there. The
-        // response `result` is empty because the Debug Console already renders
-        // the line the user typed; any device echo streams back as `stdout`.
+        // `Running` — when stopped at a breakpoint the user is inspecting
+        // state, so `evaluate` keeps its expression-evaluation behavior
+        // there. The response `result` is empty because the Debug
+        // Console already renders the line the user typed; any device
+        // echo streams back as `stdout`.
         if self.state == State::Running && args.context.as_deref() == Some("repl") {
             let mut line = args.expression;
             line.push('\n');
@@ -1055,14 +1057,15 @@ impl DebugSession {
         // Flush any serial output first so program output (category "stdout")
         // always precedes the stopped/terminated/exception events, and — on the
         // `Pending` path — streams to the Debug Console during long print loops
-        // instead of buffering until the next stop. The halt/exception summaries
-        // below use category "console", so they stay visually distinct.
+        // instead of buffering until the next stop. The halt/exception
+        // summaries below use category "console", so they stay visually
+        // distinct.
         //
         // On terminal outcomes (halt/exception) no more serial bytes will come,
         // so any incomplete UTF-8 sequence held back from a previous drain must
         // be flushed now (lossily) rather than silently dropped. On a plain
-        // `Stopped` the program will resume, so the held-back bytes are kept and
-        // completed by the next drain.
+        // `Stopped` the program will resume, so the held-back bytes are kept
+        // and completed by the next drain.
         let flush = matches!(outcome, Outcome::Terminated(_) | Outcome::Exception(_));
         let mut out = self.serial_output_events(flush);
         match outcome {
@@ -1332,9 +1335,10 @@ fn execution_variables(computer: &Computer) -> Vec<Variable> {
 fn flags_variables(computer: &Computer) -> Vec<Variable> {
     let sr = computer.registers.sr;
     // Derive the child variables straight from `StatusRegister` so the list can
-    // never drift from the bitflags definition. `iter_names` yields the flags in
-    // declaration order with their uppercase identifiers; lowercase them to keep
-    // the historical variable names (`carry`, `interrupt_enable`, ...).
+    // never drift from the bitflags definition. `iter_names` yields the flags
+    // in declaration order with their uppercase identifiers; lowercase them
+    // to keep the historical variable names (`carry`, `interrupt_enable`,
+    // ...).
     StatusRegister::all()
         .iter_names()
         .map(|(name, flag)| Variable {
