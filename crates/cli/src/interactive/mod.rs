@@ -8,6 +8,7 @@
 //! to have it working but works nonetheless.
 
 use std::collections::{BTreeMap, HashSet};
+use std::ops::Range;
 
 use clap::Parser;
 use rustyline::{Behavior, CompletionType, Config, EditMode, Editor};
@@ -182,11 +183,13 @@ impl Session {
         self.list_address = None;
     }
 
-    /// Offset the `list` command, returns the address to show
-    fn offset_list(&mut self, computer: &Computer, offset: C::Address) -> C::Address {
-        let addr = self.list_address.unwrap_or(computer.registers.pc);
-        self.list_address = Some(addr + offset);
-        addr
+    /// Advance the `list` cursor by `count` addresses and return the range to
+    /// show, which is empty once the cursor reached the end of memory.
+    fn offset_list(&mut self, computer: &Computer, count: C::Address) -> Range<C::Address> {
+        let start = self.list_address.unwrap_or(computer.registers.pc);
+        let end = start.saturating_add(count).min(C::MEMORY_SIZE);
+        self.list_address = Some(end);
+        start..end
     }
 
     /// Display the list of breakpoints
@@ -414,9 +417,11 @@ pub(crate) fn run_interactive(computer: &mut Computer, debug_info: DebugInfo) {
             }
 
             (Command::List { number }, _) => {
-                let addr = session.offset_list(computer, number);
-                for i in 0..number {
-                    let addr = addr + i;
+                let range = session.offset_list(computer, number);
+                if range.is_empty() {
+                    warn!(address = range.start, "Nothing to list");
+                }
+                for addr in range {
                     session.display_instruction(computer, addr);
                 }
             }
