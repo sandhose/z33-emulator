@@ -1,9 +1,12 @@
-use std::io::IsTerminal;
+use std::fs::{File, OpenOptions};
+use std::io::{self, IsTerminal, Write};
 use std::process::exit;
 
-use clap::{ArgAction, ArgGroup, Parser};
+use camino::Utf8PathBuf;
+use clap::{ArgAction, ArgGroup, Parser, ValueHint};
 use tracing::error;
 use tracing_subscriber::filter::EnvFilter;
+use tracing_subscriber::fmt::MakeWriter;
 use tracing_subscriber::prelude::*;
 
 mod commands;
@@ -31,6 +34,10 @@ struct Opt {
     #[clap(short, long, action = ArgAction::SetTrue, global(true), group = "format")]
     json: bool,
 
+    /// Append the logs to this file instead of printing them
+    #[clap(long, global(true), value_hint = ValueHint::FilePath)]
+    log: Option<Utf8PathBuf>,
+
     #[clap(subcommand)]
     command: Subcommand,
 }
@@ -46,13 +53,19 @@ impl Opt {
         }
     }
 
-    fn should_use_colors(&self) -> bool {
+    /// `--color` and `--no-color` win. Without them, colors are on when the
+    /// target stream is a terminal, and off for a file.
+    fn should_use_colors(&self, target: &LogTarget) -> bool {
         if self.color {
-            true
-        } else if self.no_color {
-            false
-        } else {
-            std::io::stdout().is_terminal()
+            return true;
+        }
+        if self.no_color {
+            return false;
+        }
+        match target {
+            LogTarget::Stdout => io::stdout().is_terminal(),
+            LogTarget::Stderr => io::stderr().is_terminal(),
+            LogTarget::File(_) => false,
         }
     }
 
@@ -63,6 +76,67 @@ impl Opt {
             .or_else(|_| EnvFilter::try_new(self.log_filter()))
             .unwrap()
     }
+
+    /// Where log lines go: the file from `--log` if given; otherwise stdout,
+    /// except for LSP and DAP, which use stdout for their own protocol and so
+    /// log to stderr.
+    fn log_target(&self) -> LogTarget {
+        if let Some(path) = &self.log {
+            let file = OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path)
+                .unwrap_or_else(|e| {
+                    eprintln!("error: could not open log file {path}: {e}");
+                    exit(1);
+                });
+            LogTarget::File(file)
+        } else if matches!(self.command, Subcommand::Lsp(_) | Subcommand::Dap(_)) {
+            LogTarget::Stderr
+        } else {
+            LogTarget::Stdout
+        }
+    }
+}
+
+/// Where the tracing subscriber writes formatted log lines.
+enum LogTarget {
+    Stdout,
+    Stderr,
+    File(File),
+}
+
+impl<'a> MakeWriter<'a> for LogTarget {
+    type Writer = Box<dyn Write + Send + 'a>;
+
+    fn make_writer(&'a self) -> Self::Writer {
+        match self {
+            Self::Stdout => Box::new(io::stdout()),
+            Self::Stderr => Box::new(io::stderr()),
+            Self::File(file) => Box::new(file),
+        }
+    }
+}
+
+/// Build and install the global tracing subscriber, writing to `target` in
+/// either the plain or JSON format.
+fn init_tracing(filter: EnvFilter, json: bool, target: LogTarget, ansi: bool) {
+    let registry = tracing_subscriber::Registry::default().with(filter);
+    if json {
+        registry
+            .with(tracing_subscriber::fmt::layer().json().with_writer(target))
+            .init();
+    } else {
+        registry
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .without_time()
+                    .with_ansi(ansi)
+                    .with_target(false)
+                    .with_writer(target),
+            )
+            .init();
+    }
 }
 
 fn main() {
@@ -70,31 +144,9 @@ fn main() {
     let opt = Opt::parse();
 
     // Then, setup the tracing formatter for logging and instrumentation
-    let registry = tracing_subscriber::Registry::default().with(opt.filter_layer());
-
-    // LSP and DAP use stdout for their own protocol, so their logs go to
-    // stderr. `run` logs to stdout, interleaved with the program's serial
-    // output.
-    let use_stderr = matches!(opt.command, Subcommand::Lsp(_) | Subcommand::Dap(_));
-
-    if opt.json {
-        let fmt_layer = tracing_subscriber::fmt::layer().json();
-        if use_stderr {
-            registry.with(fmt_layer.with_writer(std::io::stderr)).init();
-        } else {
-            registry.with(fmt_layer.with_writer(std::io::stdout)).init();
-        }
-    } else {
-        let fmt_layer = tracing_subscriber::fmt::layer()
-            .without_time()
-            .with_ansi(opt.should_use_colors())
-            .with_target(false);
-        if use_stderr {
-            registry.with(fmt_layer.with_writer(std::io::stderr)).init();
-        } else {
-            registry.with(fmt_layer.with_writer(std::io::stdout)).init();
-        }
-    }
+    let target = opt.log_target();
+    let ansi = opt.should_use_colors(&target);
+    init_tracing(opt.filter_layer(), opt.json, target, ansi);
 
     // And run the command
     let res = opt.command.exec();

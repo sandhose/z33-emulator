@@ -87,6 +87,15 @@ cargo build --release
 [path to]/z33-cli run samples/fact.s main
 ```
 
+The emulator's logs, including the final register dump, print on stdout
+together with anything the program writes to the serial console. Pass
+`--log <file>` to append the logs to a file instead and keep stdout for the
+program's output:
+
+```sh
+[path to]/z33-cli run --log z33.log samples/fact.s main
+```
+
 ## Interactive mode
 
 ```sh
