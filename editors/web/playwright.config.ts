@@ -11,7 +11,9 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   workers: process.env.CI ? 1 : undefined,
-  reporter: process.env.CI ? "github" : "html",
+  // The `github` reporter emits annotations and nothing on disk, so the
+  // workflow's report upload needs `html` too.
+  reporter: process.env.CI ? [["github"], ["html", { open: "never" }]] : "html",
   timeout: 60_000,
   expect: { timeout: 10_000 },
   use: {
