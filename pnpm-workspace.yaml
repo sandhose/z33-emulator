@@ -27,3 +27,8 @@ trustPolicy: no-downgrade
 trustPolicyExclude:
   - semver
   - reselect@5.1.1
+
+# monaco-editor 0.56 maps "./*" to "./esm/vs/*.js", so the esm/vs deep path
+# monaco-types re-exports its types from no longer resolves.
+patchedDependencies:
+  monaco-types@0.1.2: patches/monaco-types@0.1.2.patch

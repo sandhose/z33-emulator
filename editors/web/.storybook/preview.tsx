@@ -19,7 +19,7 @@ export default definePreview({
       description: "Number display format for memory & registers",
       toolbar: {
         title: "Format",
-        icon: "hash",
+        icon: "listordered",
         items: [
           { value: "decimal", title: "Decimal" },
           { value: "hex", title: "Hexadecimal" },

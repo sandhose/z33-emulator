@@ -1,23 +1,23 @@
 import { loader } from "@monaco-editor/react";
-import * as monaco from "monaco-editor/esm/vs/editor/editor.api.js";
+import * as monaco from "monaco-editor/editor/editor.api.js";
 
 // Import editor contributions that aren't included in the minimal editor.api.js
 // bundle. Each registers the UI/controller for a language feature; the actual
 // providers are wired to the WASM language server in ./lib/lsp-monaco.
-import "monaco-editor/esm/vs/editor/contrib/hover/browser/hoverContribution.js";
-import "monaco-editor/esm/vs/editor/contrib/suggest/browser/suggestController.js";
-import "monaco-editor/esm/vs/editor/contrib/parameterHints/browser/parameterHints.js";
-import "monaco-editor/esm/vs/editor/contrib/gotoSymbol/browser/goToCommands.js";
-import "monaco-editor/esm/vs/editor/contrib/gotoSymbol/browser/link/goToDefinitionAtPosition.js";
-import "monaco-editor/esm/vs/editor/contrib/gotoSymbol/browser/peek/referencesController.js";
-import "monaco-editor/esm/vs/editor/contrib/gotoError/browser/gotoError.js";
-import "monaco-editor/esm/vs/editor/contrib/rename/browser/rename.js";
-import "monaco-editor/esm/vs/editor/contrib/wordHighlighter/browser/wordHighlighter.js";
-import "monaco-editor/esm/vs/editor/contrib/documentSymbols/browser/documentSymbols.js";
-import "monaco-editor/esm/vs/editor/contrib/codelens/browser/codelensController.js";
-import "monaco-editor/esm/vs/editor/contrib/semanticTokens/browser/documentSemanticTokens.js";
+import "monaco-editor/editor/contrib/hover/browser/hoverContribution.js";
+import "monaco-editor/editor/contrib/suggest/browser/suggestController.js";
+import "monaco-editor/editor/contrib/parameterHints/browser/parameterHints.js";
+import "monaco-editor/editor/contrib/gotoSymbol/browser/goToCommands.js";
+import "monaco-editor/editor/contrib/gotoSymbol/browser/link/goToDefinitionAtPosition.js";
+import "monaco-editor/editor/contrib/gotoSymbol/browser/peek/referencesController.js";
+import "monaco-editor/editor/contrib/gotoError/browser/gotoError.js";
+import "monaco-editor/editor/contrib/rename/browser/rename.js";
+import "monaco-editor/editor/contrib/wordHighlighter/browser/wordHighlighter.js";
+import "monaco-editor/editor/contrib/documentSymbols/browser/documentSymbols.js";
+import "monaco-editor/editor/contrib/codelens/browser/codelensController.js";
+import "monaco-editor/editor/contrib/semanticTokens/browser/documentSemanticTokens.js";
 
-import editorWorker from "monaco-editor/esm/vs/editor/editor.worker?worker";
+import editorWorker from "monaco-editor/editor/editor.worker.js?worker";
 import { setupLsp } from "./lib/lsp-monaco";
 
 self.MonacoEnvironment = {
