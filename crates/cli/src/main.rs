@@ -53,13 +53,17 @@ impl Opt {
         }
     }
 
-    /// `--color` and `--no-color` win. Without them, colors are on when the
-    /// target stream is a terminal, and off for a file.
+    /// `--color` and `--no-color` win, then a non-empty `NO_COLOR` turns
+    /// colors off. Otherwise colors are on when the target stream is a
+    /// terminal, and off for a file.
     fn should_use_colors(&self, target: &LogTarget) -> bool {
         if self.color {
             return true;
         }
         if self.no_color {
+            return false;
+        }
+        if std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty()) {
             return false;
         }
         match target {
