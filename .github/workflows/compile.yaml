@@ -135,15 +135,11 @@ jobs:
       - name: Add the Rust target
         run: rustup target add ${{ matrix.arch }}-pc-windows-msvc
 
+      # `cargo xwin` spends ~11 minutes fetching the CRT and Windows SDK from
+      # Microsoft's package servers, so this caches XWIN_CACHE_DIR between runs.
       - name: Restore cargo-xwin cache
+        id: xwin-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: cargo-xwin
-          key: cargo-xwin-${{ matrix.arch }}
-
-      - name: Save cargo-xwin cache
-        if: github.ref == 'refs/heads/main'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: cargo-xwin
           key: cargo-xwin-${{ matrix.arch }}
@@ -153,6 +149,15 @@ jobs:
 
       - name: Build the binary
         run: cargo xwin build --release --target=${{ matrix.arch }}-pc-windows-msvc -p z33-cli
+
+      # The save must follow the build that populates the directory. Only main
+      # writes the cache (zizmor: cache-poisoning); other refs read it.
+      - name: Save cargo-xwin cache
+        if: github.ref == 'refs/heads/main' && steps.xwin-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: cargo-xwin
+          key: cargo-xwin-${{ matrix.arch }}
 
       - name: Move the binary
         run: mv target/${{ matrix.arch }}-pc-windows-msvc/release/z33-cli.exe ./z33-cli-${{ matrix.arch }}-windows.exe
