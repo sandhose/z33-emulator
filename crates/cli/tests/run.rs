@@ -53,3 +53,21 @@ fn a_fault_names_the_faulting_address_and_the_reason() {
     assert!(stdout.contains("address 1001"), "{stdout}");
     assert!(stdout.contains("invalid address 99999"), "{stdout}");
 }
+
+#[test]
+fn json_can_be_combined_with_the_colour_flags() {
+    for flag in ["--color", "--no-color"] {
+        let output = run_fact(&["--json", flag]);
+        assert!(
+            output.status.success(),
+            "{flag}: stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(!stdout.contains('\u{1b}'), "{flag}: {stdout}");
+        for line in stdout.lines().filter(|l| !l.trim().is_empty()) {
+            serde_json::from_str::<serde_json::Value>(line)
+                .unwrap_or_else(|e| panic!("{flag}: {line:?} is not JSON: {e}"));
+        }
+    }
+}

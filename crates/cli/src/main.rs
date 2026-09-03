@@ -16,22 +16,24 @@ mod interactive;
 use crate::commands::Subcommand;
 
 #[derive(Parser)]
-#[clap(version, author, about, group = ArgGroup::new("format"))]
+#[clap(version, author, about, group = ArgGroup::new("colors"))]
 struct Opt {
     /// Increase the level of verbosity. Can be used multiple times.
     #[clap(short, long, action = ArgAction::Count, global(true))]
     verbose: u8,
 
-    /// Force colored output. Default is to check if the output is a tty
-    #[clap(short = 'c', long, action = ArgAction::SetTrue, global(true), group = "format")]
+    /// Force colored output of the logs. Default is to check if the output is
+    /// a tty
+    #[clap(short = 'c', long, action = ArgAction::SetTrue, global(true), group = "colors")]
     color: bool,
 
-    /// Force non-colored output. Default is to check if the output is a tty
-    #[clap(short = 'C', long, action = ArgAction::SetTrue, global(true), group = "format")]
+    /// Force non-colored output of the logs. Default is to check if the output
+    /// is a tty
+    #[clap(short = 'C', long, action = ArgAction::SetTrue, global(true), group = "colors")]
     no_color: bool,
 
     /// Use JSON output for log messages
-    #[clap(short, long, action = ArgAction::SetTrue, global(true), group = "format")]
+    #[clap(short, long, action = ArgAction::SetTrue, global(true))]
     json: bool,
 
     /// Append the logs to this file instead of printing them
