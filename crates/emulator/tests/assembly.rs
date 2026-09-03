@@ -372,7 +372,8 @@ fn directive_string() {
         "#},
         "main",
     );
-    // Should be: [500] = 'H' (72), [501] = 'i' (105), [502] = 0 (null terminator)
+    // Should be: [500] = 'H' (72), [501] = 'i' (105), [502] = 0 (null
+    // terminator)
     insta::assert_snapshot!(state, @r"
     Labels:
       msg = 500

@@ -121,8 +121,8 @@ impl Computer {
             tracing::Span::current().record("cost", cost);
             info!("Executing instruction \"{}\"", inst);
             // This clone is necessary as `inst` is borrowed from `self`.
-            // The computer might modify the cell where the instruction is stored when
-            // executing it.
+            // The computer might modify the cell where the instruction is
+            // stored when executing it.
             inst.clone().execute(c)?;
             Ok(cost)
         }
@@ -164,7 +164,8 @@ impl Computer {
         exception: &Exception,
     ) -> std::result::Result<(), Exception> {
         // r[impl exc.handling.check-handler]
-        // We don't want to recover from the exception if there is no handler setup
+        // We don't want to recover from the exception if there is no handler
+        // setup
         let handler = self.memory.get(C::INTERRUPT_HANDLER)?;
         if handler.extract_instruction().is_err() {
             tracing::warn!(

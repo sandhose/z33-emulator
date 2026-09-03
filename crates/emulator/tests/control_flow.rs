@@ -40,7 +40,8 @@ fn call_basic() {
 #[test]
 fn call_pushes_return_address() {
     // r[verify inst.call]
-    // After call, SP should be decremented and stack should contain return address
+    // After call, SP should be decremented and stack should contain return
+    // address
     let state = run_program(
         indoc! {"
             main:
@@ -419,7 +420,8 @@ fn rti_returns_from_exception() {
 #[test]
 fn rti_restores_sr() {
     // r[verify inst.rti]
-    // rti should restore the saved SR, clearing SUPERVISOR if it was not set before
+    // rti should restore the saved SR, clearing SUPERVISOR if it was not set
+    // before
     let state = run_program(
         indoc! {"
             .addr 200
@@ -519,8 +521,8 @@ fn reset_halts_computer() {
 #[test]
 fn reset_pc_points_at_reset_instruction() {
     // r[verify inst.reset]
-    // After reset, PC should point at the reset instruction itself (decremented by
-    // 1)
+    // After reset, PC should point at the reset instruction itself (decremented
+    // by 1)
     let state = run_program(
         indoc! {"
             main:
@@ -602,7 +604,8 @@ fn nop_does_nothing() {
 #[test]
 fn nop_costs_one_cycle() {
     // r[verify inst.nop]
-    // Compare cycle count with and without nop to verify it costs exactly 1 cycle
+    // Compare cycle count with and without nop to verify it costs exactly 1
+    // cycle
     let without_nop = run_program(
         indoc! {"
             main:

@@ -43,7 +43,8 @@ fn suggest(command: &Command, input: &[String]) -> (usize, HashSet<String>) {
 
     let index = input.len().saturating_sub(1);
 
-    // Find the curresponding positional arg if it exists and add suggestions for it
+    // Find the curresponding positional arg if it exists and add suggestions
+    // for it
     if let Some(arg) = command.get_positionals().nth(index) {
         let additional: Vec<&str> = match arg.get_id().as_str() {
             "register" | "address" => vec!["%a", "%b", "%sp", "%sr"],
@@ -85,12 +86,13 @@ impl<T: CommandFactory> Completer for RunHelper<T> {
             .bytes()
             .last()
             .filter(|&c| c == b' ' || c == b'\t')
-            .is_some(); // Line is considered "complete" if the last char is a space
+            .is_some(); // Line is considered "complete" if the last char is a
+                        // space
         if let Ok(mut words) = shell_words::split(line) {
             let app = T::command();
 
-            // If the last char was a space, insert an empty word to autocomplete the next
-            // word
+            // If the last char was a space, insert an empty word to
+            // autocomplete the next word
             if complete {
                 words.push(String::new());
             }
@@ -136,11 +138,12 @@ impl<T: CommandFactory> Hinter for RunHelper<T> {
             .bytes()
             .last()
             .filter(|&c| c == b' ' || c == b'\t')
-            .is_some(); // Line is considered "complete" if the last char is a space
+            .is_some(); // Line is considered "complete" if the last char is a
+                        // space
         let mut words = shell_words::split(line).ok()?;
 
-        // If the last char was a space, insert an empty word to autocomplete the next
-        // word
+        // If the last char was a space, insert an empty word to autocomplete
+        // the next word
         if complete {
             words.push(String::new());
         }

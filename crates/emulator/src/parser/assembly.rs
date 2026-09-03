@@ -82,8 +82,8 @@ fn instruction_argument<'a>() -> impl Parser<'a, &'a str, InstructionArgument, E
                 .map(|_| InstructionArgument::Error),
         ));
 
-    // Order: try bracketed first (starts with [), then register (starts with %),
-    // then value
+    // Order: try bracketed first (starts with [), then register (starts with
+    // %), then value
     bracketed.or(reg).or(value)
 }
 
@@ -103,7 +103,8 @@ fn instruction_kind<'a>() -> impl Parser<'a, &'a str, InstructionKind, Extra<'a>
         .validate(|s: &str, e, emitter| {
             // Resolve through the derived `FromStr`. The `<error>` placeholder
             // displays as `<error>`, so it can never be produced from an
-            // alphabetic mnemonic — an unknown mnemonic falls into the arm below.
+            // alphabetic mnemonic — an unknown mnemonic falls into the arm
+            // below.
             match s.to_ascii_lowercase().parse::<K>() {
                 Ok(kind) if kind != K::Error => kind,
                 _ => {

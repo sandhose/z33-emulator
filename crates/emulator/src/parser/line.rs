@@ -70,7 +70,8 @@ impl std::fmt::Display for LineContent {
                 write!(f, "{:4}", kind.inner)?;
 
                 // then the list of arguments
-                let mut first = true; // This is to properly show comma between arguments
+                let mut first = true; // This is to properly show comma between
+                                      // arguments
                 for arg in arguments {
                     if !first {
                         write!(f, ",")?;

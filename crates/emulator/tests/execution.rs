@@ -39,9 +39,9 @@ fn fetch_from_pc() {
 #[test]
 fn pc_incremented_after_fetch() {
     // r[verify exec.pc-increment]
-    // After fetching at 1000, %pc should be 1001 before the instruction executes.
-    // We run 1 step (ld 42, %a) and check that %pc has advanced past the
-    // instruction.
+    // After fetching at 1000, %pc should be 1001 before the instruction
+    // executes. We run 1 step (ld 42, %a) and check that %pc has advanced
+    // past the instruction.
     let state = run_program(
         indoc! {"
             main:
@@ -69,8 +69,9 @@ fn pc_incremented_after_fetch() {
 #[test]
 fn decode_word_as_instruction_raises_exception() {
     // r[verify exec.decode]
-    // Place a .word where %pc will try to fetch — should raise invalid instruction
-    // exception (code 2). The exception handler at 200 does a reset.
+    // Place a .word where %pc will try to fetch — should raise invalid
+    // instruction exception (code 2). The exception handler at 200 does a
+    // reset.
     let state = run_program(
         indoc! {"
             .addr 200
@@ -190,8 +191,8 @@ fn cycles_register_operand() {
 #[test]
 fn cycles_exception_recovery() {
     // r[verify exec.cycles.exception]
-    // Division by zero triggers an exception. The exception recovery costs 1 cycle
-    // (replacing the instruction's normal cost).
+    // Division by zero triggers an exception. The exception recovery costs 1
+    // cycle (replacing the instruction's normal cost).
     // ld 42, %a = 1 cycle, div 0, %a triggers exception = 1 cycle (recovery).
     // Reset doesn't count (returns before adding cost). Total = 2 cycles.
     let state = run_program(
@@ -293,8 +294,8 @@ fn rti_enters_user_mode() {
 #[test]
 fn exception_enters_supervisor_mode() {
     // r[verify exec.privilege.transition-up]
-    // Enter user mode via rti, then trigger an exception (e.g., division by zero).
-    // The exception handler should run in supervisor mode.
+    // Enter user mode via rti, then trigger an exception (e.g., division by
+    // zero). The exception handler should run in supervisor mode.
     let state = run_program(
         indoc! {"
             .addr 100

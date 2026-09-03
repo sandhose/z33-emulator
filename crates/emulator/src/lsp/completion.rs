@@ -123,7 +123,8 @@ fn macro_completions(analysis: Option<&DocumentState>) -> Vec<CompletionItem> {
         return Vec::new();
     };
 
-    // Deduplicate: later #defines override earlier ones, show only the last value
+    // Deduplicate: later #defines override earlier ones, show only the last
+    // value
     let mut seen = std::collections::HashSet::new();
     annotations
         .definitions
@@ -229,7 +230,8 @@ fn detect_context_from_text(line_text: &str, pos_in_line: usize) -> CursorContex
     if mnemonic_text.is_empty() {
         // Check if it starts with '.' (directive)
         if let Some(after_dot) = trimmed.strip_prefix('.') {
-            // If there's content after the directive name, we're in its argument
+            // If there's content after the directive name, we're in its
+            // argument
             let directive_end = after_dot
                 .find(|c: char| !c.is_ascii_alphabetic())
                 .unwrap_or(after_dot.len());
@@ -240,9 +242,9 @@ fn detect_context_from_text(line_text: &str, pos_in_line: usize) -> CursorContex
         return CursorContext::Mnemonic;
     }
 
-    // Resolve the mnemonic through the derived `FromStr`. Unknown mnemonics (and
-    // the `<error>` placeholder, which never matches an alphabetic word) fall
-    // back to offering mnemonic completions.
+    // Resolve the mnemonic through the derived `FromStr`. Unknown mnemonics
+    // (and the `<error>` placeholder, which never matches an alphabetic
+    // word) fall back to offering mnemonic completions.
     let Ok(kind) = mnemonic_text
         .to_ascii_lowercase()
         .parse::<InstructionKind>()
@@ -369,7 +371,8 @@ mod tests {
     fn second_arg_must_be_register() {
         let src = "    add 1, ";
         let items = completions(None, src, 11); // after ", "
-                                                // Second arg of ADD is Reg — should only offer registers
+                                                // Second arg of ADD is Reg —
+                                                // should only offer registers
         assert!(items.iter().any(|i| i.label == "%a"));
         assert!(!items.iter().any(|i| i.label == "[...]"));
     }
@@ -378,7 +381,8 @@ mod tests {
     fn label_completion_in_arg() {
         let src = "foo:\n    jmp ";
         let analysis = DocumentState::new(src.to_string());
-        let items = completions(Some(&analysis), src, src.len()); // after "jmp "
+        let items = completions(Some(&analysis), src, src.len()); // after "jmp
+                                                                  // "
                                                                   // JMP arg 0 is ImmRegDirIndIdx — should offer labels
         assert!(items.iter().any(|i| i.label == "foo"));
         assert!(items.iter().any(|i| i.label == "%a"));

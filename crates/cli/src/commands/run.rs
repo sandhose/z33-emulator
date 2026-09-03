@@ -74,7 +74,8 @@ impl RunOpt {
             preprocess_result.preprocessed_file_id,
         );
 
-        // Show all diagnostics (parse + compilation), resolved to original files
+        // Show all diagnostics (parse + compilation), resolved to original
+        // files
         if !compile_result.diagnostics.is_empty() {
             for diag in &compile_result.diagnostics {
                 let resolved = resolve_diagnostic_spans(diag, &source_map);

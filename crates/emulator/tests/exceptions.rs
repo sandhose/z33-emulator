@@ -30,8 +30,8 @@ fn exception_saves_state() {
         "main",
         Steps::RunToCompletion,
     );
-    // mem[100] = saved PC, mem[101] = saved SR, mem[102] = exception code (1 = div
-    // by zero) SR should have SUPERVISOR bit set when handler runs
+    // mem[100] = saved PC, mem[101] = saved SR, mem[102] = exception code (1 =
+    // div by zero) SR should have SUPERVISOR bit set when handler runs
     insta::assert_snapshot!(state, @r"
     Registers:
       %a  = 42
@@ -79,7 +79,8 @@ fn exception_no_handler_is_fatal() {
 #[test]
 fn exception_handler_at_200_must_be_instruction() {
     // r[verify exc.handling.check-handler]
-    // Address 200 contains a word, not an instruction — handler check should fail.
+    // Address 200 contains a word, not an instruction — handler check should
+    // fail.
     let state = run_program(
         indoc! {"
             .addr 200
@@ -191,7 +192,8 @@ fn invalid_instruction_exception() {
 fn privileged_instruction_exception() {
     // r[verify exc.code.privileged-instruction]
     // r[verify exc.handling.save-state]
-    // Enter user mode via rti trick, then attempt to write %sr which is privileged.
+    // Enter user mode via rti trick, then attempt to write %sr which is
+    // privileged.
     let state = run_program(
         indoc! {"
             .addr 100
@@ -333,7 +335,8 @@ fn trap_preserves_interrupt_enable() {
         "main",
         Steps::RunToCompletion,
     );
-    // SR should still have INTERRUPT_ENABLE set (256) along with SUPERVISOR (512)
+    // SR should still have INTERRUPT_ENABLE set (256) along with SUPERVISOR
+    // (512)
     insta::assert_snapshot!(state, @r"
     Registers:
       %a  = 0
@@ -376,8 +379,8 @@ fn rti_restores_state() {
         "main",
         Steps::RunToCompletion,
     );
-    // After rti, execution resumes after trap. %a should be 99 (set by handler),
-    // %b should be 7 (set after returning from handler).
+    // After rti, execution resumes after trap. %a should be 99 (set by
+    // handler), %b should be 7 (set after returning from handler).
     insta::assert_snapshot!(state, @r"
     Registers:
       %a  = 99
@@ -545,8 +548,8 @@ fn exception_step_count_check() {
         "main",
         Steps::Count(3),
     );
-    // After 3 steps: (1) ld 0,%b (2) div triggers exception + jump to 200 (3) ld
-    // 77,%a
+    // After 3 steps: (1) ld 0,%b (2) div triggers exception + jump to 200 (3)
+    // ld 77,%a
     insta::assert_snapshot!(state, @r"
     Registers:
       %a  = 77
