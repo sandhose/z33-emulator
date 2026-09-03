@@ -525,6 +525,48 @@ fn set_variable_updates_register() {
 }
 
 #[test]
+fn set_variable_on_stack_scope_rejects_overflowing_offset() {
+    let mut h = Harness::new();
+    h.launch(true);
+
+    // `sp + 4294967295` overflows the u32 address the offset is added to.
+    let resp = h.send(
+        "setVariable",
+        json!({ "variablesReference": 4, "name": "sp+4294967295", "value": "1" }),
+    );
+    let resp = find_response(&resp, "setVariable").expect("setVariable response");
+    assert_eq!(resp["success"], json!(false));
+}
+
+#[test]
+fn set_variable_on_a_region_handle_rejects_an_address_outside_it() {
+    let mut h = Harness::new();
+    launch_globals(&mut h);
+
+    let globals = scope_ref(&mut h, 0, "Globals");
+    let array = var(&variables(&mut h, globals, json!({})), "array")["variablesReference"]
+        .as_i64()
+        .unwrap();
+
+    // A child variable is written through the address encoded in its name, so
+    // a name the adapter never produced must not reach a cell outside the
+    // region the handle covers.
+    let resp = h.send(
+        "setVariable",
+        json!({ "variablesReference": array, "name": "whatever (0)", "value": "777" }),
+    );
+    let resp = find_response(&resp, "setVariable").expect("setVariable response");
+    assert_eq!(resp["success"], json!(false));
+
+    let out = h.send(
+        "readMemory",
+        json!({ "memoryReference": "0", "offset": 0, "count": 8 }),
+    );
+    let resp = find_response(&out, "readMemory").expect("readMemory response");
+    assert_eq!(resp["body"]["data"], json!("AAAAAAAAAAA="));
+}
+
+#[test]
 fn evaluate_resolves_a_label() {
     let mut h = Harness::new();
     h.launch(true);

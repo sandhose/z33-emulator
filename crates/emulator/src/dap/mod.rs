@@ -866,8 +866,10 @@ impl DebugSession {
         let program = self.program.as_ref()?;
         match reference {
             STACK_REF => {
+                // `set_cell` rejects an address past the end of memory with a
+                // message naming it; only the overflow has to be caught here.
                 let n = name.strip_prefix("sp+")?.trim().parse::<u32>().ok()?;
-                Some(program.computer.registers.sp + n)
+                program.computer.registers.sp.checked_add(n)
             }
             GLOBALS_REF => {
                 // Only single-cell labels are settable at the scope level.
@@ -879,10 +881,17 @@ impl DebugSession {
                     .map_or(1, |&(_, _, len)| len);
                 (len <= 1).then_some(base)
             }
-            r if r >= DYN_BASE => match self.dyn_handles.get(&r)? {
-                // Both children encode the absolute address in `name (addr)`.
-                DynRef::GlobalLabel { .. } | DynRef::FrameStack { .. } => parse_addr_suffix(name),
-            },
+            r if r >= DYN_BASE => {
+                // Both children encode the absolute address in `name (addr)`,
+                // but the name comes from the client, so it only names a cell
+                // the handle actually covers.
+                let (start, end) = match self.dyn_handles.get(&r)? {
+                    DynRef::GlobalLabel { base, len, .. } => (*base, base.saturating_add(*len)),
+                    DynRef::FrameStack { start, end } => (*start, *end),
+                };
+                let addr = parse_addr_suffix(name)?;
+                (start..end).contains(&addr).then_some(addr)
+            }
             _ => None,
         }
     }
