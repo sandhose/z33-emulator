@@ -30,11 +30,7 @@ pub fn word_at(
     while end < bytes.len() && is_part(bytes[end] as char) {
         end += 1;
     }
-    if start == end {
-        None
-    } else {
-        Some(start..end)
-    }
+    if start == end { None } else { Some(start..end) }
 }
 
 /// Skip leading whitespace and any `label:` definitions at the start of a line,

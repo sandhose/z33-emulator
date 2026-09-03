@@ -2,7 +2,7 @@ use super::document::DocumentState;
 use super::position;
 use crate::compiler::layout::MemoryLayoutError;
 use crate::compiler::memory::{InstructionCompilationError, MemoryFillError};
-use crate::diagnostic::{preprocessor_error_to_diagnostics, FileId};
+use crate::diagnostic::{FileId, preprocessor_error_to_diagnostics};
 use crate::parser::shared::{DiagnosticSeverity, ParseDiagnostic};
 
 /// A diagnostic together with the file it belongs to.
@@ -149,15 +149,15 @@ fn convert_fill_error(
             } => {
                 // Primary diagnostic on the argument with the detailed type
                 // error
-                if let Some(arg_span) = argument_spans.get(*argument_index) {
-                    if let Some(d) = make_resolved_diagnostic(
+                if let Some(arg_span) = argument_spans.get(*argument_index)
+                    && let Some(d) = make_resolved_diagnostic(
                         state,
                         arg_span.clone(),
                         conversion_error.to_string(),
                         severity,
-                    ) {
-                        out.push(d);
-                    }
+                    )
+                {
+                    out.push(d);
                 }
 
                 // Secondary diagnostic on the instruction name for context
@@ -202,16 +202,16 @@ pub fn diagnostics_by_file(state: &DocumentState) -> Vec<FileDiagnostic> {
                 }
             }
             // If no labels, still emit the diagnostic on the root file.
-            if !had_label {
-                if let Some(d) = make_diagnostic(
+            if !had_label
+                && let Some(d) = make_diagnostic(
                     state,
                     state.root_file_id(),
                     0..0,
                     diag.message.clone(),
                     lsp_types::DiagnosticSeverity::ERROR,
-                ) {
-                    result.push(d);
-                }
+                )
+            {
+                result.push(d);
             }
         }
         return result;
@@ -244,15 +244,15 @@ pub fn diagnostics_by_file(state: &DocumentState) -> Vec<FileDiagnostic> {
                     push_inactive(state, block.file_id, branch.body_span.clone(), &mut result);
                 }
             }
-            if let Some(fallback) = &block.fallback {
-                if !fallback.active {
-                    push_inactive(
-                        state,
-                        block.file_id,
-                        fallback.body_span.clone(),
-                        &mut result,
-                    );
-                }
+            if let Some(fallback) = &block.fallback
+                && !fallback.active
+            {
+                push_inactive(
+                    state,
+                    block.file_id,
+                    fallback.body_span.clone(),
+                    &mut result,
+                );
             }
         }
     }

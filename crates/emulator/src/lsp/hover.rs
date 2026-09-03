@@ -167,7 +167,7 @@ fn register_doc(reg: &str) -> Option<&'static str> {
 
 #[cfg(test)]
 mod tests {
-    use super::{hover, DocumentState};
+    use super::{DocumentState, hover};
 
     #[test]
     fn register_hover() {

@@ -238,19 +238,17 @@ fn collect_macro_references(state: &DocumentState, out: &mut Vec<RawToken>) {
     // Comments and string literals from the parsed program.
     if let Some(program) = state.program() {
         for line in &program.lines {
-            if let Some(comment) = &line.inner.comment {
-                if let Some(span) = state.resolve_span(comment.location.clone()) {
-                    protected.push((span.start.saturating_sub(2), span.end));
-                }
+            if let Some(comment) = &line.inner.comment
+                && let Some(span) = state.resolve_span(comment.location.clone())
+            {
+                protected.push((span.start.saturating_sub(2), span.end));
             }
-            if let Some(content) = &line.inner.content {
-                if let LineContent::Directive { argument, .. } = &content.inner {
-                    if matches!(argument.inner, DirectiveArgument::StringLiteral(_)) {
-                        if let Some(span) = state.resolve_span(argument.location.clone()) {
-                            protected.push((span.start, span.end));
-                        }
-                    }
-                }
+            if let Some(content) = &line.inner.content
+                && let LineContent::Directive { argument, .. } = &content.inner
+                && matches!(argument.inner, DirectiveArgument::StringLiteral(_))
+                && let Some(span) = state.resolve_span(argument.location.clone())
+            {
+                protected.push((span.start, span.end));
             }
         }
     }

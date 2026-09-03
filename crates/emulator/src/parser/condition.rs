@@ -28,7 +28,7 @@ use super::expression::{
 };
 use super::location::{Locatable, Located};
 use super::precedence::Precedence;
-use super::shared::{bool_literal, expression, hspace, identifier, span_to_range, Extra};
+use super::shared::{Extra, bool_literal, expression, hspace, identifier, span_to_range};
 
 type ChildNode = Located<Box<Node>>;
 type ExpressionNode = Located<ENode>;

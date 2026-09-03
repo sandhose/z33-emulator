@@ -9,14 +9,14 @@ use std::rc::Rc;
 
 use camino::Utf8PathBuf;
 use serde::{Deserialize, Serialize};
-use tsify::Tsify;
+use tsify::{Ts, Tsify};
 use wasm_bindgen::prelude::*;
 use z33_emulator::compile;
 use z33_emulator::constants::Address;
 use z33_emulator::dap::LineIndex;
 use z33_emulator::diagnostic::{
-    diagnostics_to_json, preprocessor_error_to_diagnostics, resolve_diagnostic_spans,
-    resolve_to_original, FileDatabase, FileId,
+    FileDatabase, FileId, diagnostics_to_json, preprocessor_error_to_diagnostics,
+    resolve_diagnostic_spans, resolve_to_original,
 };
 use z33_emulator::preprocessor::{
     InMemoryFilesystem, PreprocessorError, SourceMap as PreSourceMap, Workspace,
@@ -41,7 +41,6 @@ pub struct InMemoryPreprocessor {
 }
 
 #[derive(Default, Deserialize, Tsify)]
-#[tsify(from_wasm_abi)]
 pub struct InputFiles(HashMap<Utf8PathBuf, String>);
 
 #[wasm_bindgen]
@@ -80,12 +79,12 @@ impl CompilationResult {
 #[wasm_bindgen]
 impl InMemoryPreprocessor {
     #[wasm_bindgen(constructor)]
-    #[must_use]
-    pub fn new(files: InputFiles, entrypoint: String) -> Self {
+    pub fn new(files: &Ts<InputFiles>, entrypoint: String) -> Result<Self, JsError> {
+        let files = files.to_rust()?;
         let fs = InMemoryFilesystem::new(files.0);
         let entrypoint = Utf8PathBuf::from(entrypoint);
         let preprocessor = Workspace::new(&fs, &entrypoint);
-        Self { preprocessor }
+        Ok(Self { preprocessor })
     }
 
     /// Compile the given file
@@ -144,7 +143,6 @@ impl InMemoryPreprocessor {
 }
 
 #[derive(Serialize, Tsify, Clone)]
-#[tsify(into_wasm_abi)]
 pub struct SourceLocation {
     pub file: String,
     pub span: (usize, usize),
@@ -188,9 +186,8 @@ pub struct Program {
 #[wasm_bindgen]
 impl Program {
     #[wasm_bindgen(getter)]
-    #[must_use]
-    pub fn labels(&self) -> Labels {
-        Labels(
+    pub fn labels(&self) -> Result<Ts<Labels>, JsError> {
+        Ok(Labels(
             self.program
                 .inner
                 .labels()
@@ -198,6 +195,7 @@ impl Program {
                 .map(ToOwned::to_owned)
                 .collect(),
         )
+        .into_ts()?)
     }
 
     /// Compile the program at the given entrypoint
@@ -272,13 +270,11 @@ impl Program {
 }
 
 #[derive(Serialize, Tsify, Clone, Copy, PartialEq, Eq)]
-#[tsify(into_wasm_abi)]
 pub struct Cycles(usize);
 
 /// The reason a [`Computer::run_batch`] call returned.
 #[derive(Serialize, Tsify, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
-#[tsify(into_wasm_abi)]
 pub enum BatchStatus {
     /// Hit the step budget; more steps remain.
     Running,
@@ -292,7 +288,6 @@ pub enum BatchStatus {
 
 /// The outcome of a [`Computer::run_batch`] call.
 #[derive(Serialize, Tsify, Clone)]
-#[tsify(into_wasm_abi)]
 pub struct BatchResult {
     pub status: BatchStatus,
     pub steps: u32,
@@ -303,11 +298,9 @@ pub struct BatchResult {
 }
 
 #[derive(Serialize, Tsify)]
-#[tsify(into_wasm_abi)]
 pub struct Labels(Vec<String>);
 
 #[derive(Serialize, Tsify)]
-#[tsify(into_wasm_abi)]
 pub struct SourceMap(BTreeMap<u32, SourceLocation>);
 
 #[wasm_bindgen]
@@ -323,7 +316,6 @@ pub struct Computer {
 
 #[derive(Serialize, Tsify, PartialEq, Clone)]
 #[serde(tag = "type", rename_all = "lowercase")]
-#[tsify(into_wasm_abi)]
 pub enum Cell {
     Instruction { instruction: String },
     Word { word: i64 },
@@ -344,7 +336,6 @@ impl Cell {
 }
 
 #[derive(Serialize, Tsify, PartialEq, Clone)]
-#[tsify(into_wasm_abi)]
 pub struct Registers {
     a: Cell,
     b: Cell,
@@ -363,7 +354,6 @@ extern "C" {
 }
 
 #[derive(Serialize, Tsify)]
-#[tsify(into_wasm_abi)]
 pub struct LabelsWithAddresses(BTreeMap<String, u32>);
 
 #[wasm_bindgen]
@@ -395,7 +385,11 @@ impl Computer {
     /// breakpoint check itself is cheap (a `HashSet` lookup on `%pc`).
     ///
     /// Returns the batch outcome (status + number of steps actually run).
-    pub fn run_batch(&mut self, max_steps: u32, breakpoints: Vec<u32>) -> BatchResult {
+    pub fn run_batch(
+        &mut self,
+        max_steps: u32,
+        breakpoints: Vec<u32>,
+    ) -> Result<Ts<BatchResult>, JsError> {
         let breakpoints: std::collections::HashSet<u32> = breakpoints.into_iter().collect();
         let mut steps: u32 = 0;
         let mut status = BatchStatus::Running;
@@ -426,12 +420,13 @@ impl Computer {
 
         self.sync_observers();
 
-        BatchResult {
+        Ok(BatchResult {
             status,
             steps,
             cycles: self.inner.cycles - cycles_before,
             error,
         }
+        .into_ts()?)
     }
 
     /// Synchronize the reactive observers with the current CPU state.
@@ -449,15 +444,13 @@ impl Computer {
     }
 
     #[wasm_bindgen(getter)]
-    #[must_use]
-    pub fn labels(&self) -> LabelsWithAddresses {
-        LabelsWithAddresses(self.debug_info.labels.clone())
+    pub fn labels(&self) -> Result<Ts<LabelsWithAddresses>, JsError> {
+        Ok(LabelsWithAddresses(self.debug_info.labels.clone()).into_ts()?)
     }
 
     #[wasm_bindgen(getter)]
-    #[must_use]
-    pub fn source_map(&self) -> SourceMap {
-        SourceMap(self.source_map.clone())
+    pub fn source_map(&self) -> Result<Ts<SourceMap>, JsError> {
+        Ok(SourceMap(self.source_map.clone()).into_ts()?)
     }
 
     /// A bidirectional line ↔ address index for gutter breakpoints and
@@ -468,21 +461,16 @@ impl Computer {
         source_index::SourceIndex::new(self.line_index.clone())
     }
 
-    #[must_use]
-    pub fn cycles(&self) -> <Cycles as Tsify>::JsType {
-        let value = JsValue::from(self.cycles.get());
-        value.into()
+    pub fn cycles(&self) -> Result<Ts<Cycles>, JsError> {
+        Ok(self.cycles.get())
     }
 
-    #[must_use]
-    pub fn registers(&self) -> <Registers as Tsify>::JsType {
-        let value = JsValue::from(self.registers.get());
-        value.into()
+    pub fn registers(&self) -> Result<Ts<Registers>, JsError> {
+        Ok(self.registers.get())
     }
 
-    pub fn memory(&mut self, address: u32) -> <Cell as Tsify>::JsType {
-        let value = JsValue::from(self.memory.get_js_value(address));
-        value.into()
+    pub fn memory(&mut self, address: u32) -> Result<Ts<Cell>, JsError> {
+        Ok(self.memory.get_js_value(address))
     }
 
     pub fn subscribe_memory(&mut self, address: u32, callback: MemoryCallback) -> Unsubscribe {
@@ -510,7 +498,7 @@ impl Computer {
 struct MemoryObserver {
     index: usize,
     snapshot: Memory,
-    js_values: HashMap<Address, (z33_emulator::runtime::Cell, <Cell as Tsify>::JsType)>,
+    js_values: HashMap<Address, (z33_emulator::runtime::Cell, Ts<Cell>)>,
     subscribers: Rc<RefCell<HashMap<Address, HashMap<usize, js_sys::Function>>>>,
 }
 
@@ -525,16 +513,16 @@ impl MemoryObserver {
         }
     }
 
-    fn get_js_value(&mut self, address: Address) -> &<Cell as Tsify>::JsType {
-        &self
-            .js_values
+    fn get_js_value(&mut self, address: Address) -> Ts<Cell> {
+        self.js_values
             .entry(address)
             .or_insert_with(|| {
                 let cell = self.snapshot.get(address).unwrap_throw();
-                let js_value = Cell::from_runtime_cell(cell).into_js().unwrap_throw();
+                let js_value = Cell::from_runtime_cell(cell).into_ts().unwrap_throw();
                 (cell.clone(), js_value)
             })
             .1
+            .clone()
     }
 
     fn set(&mut self, memory: Memory) {
@@ -590,7 +578,7 @@ impl MemoryObserver {
 /// only re-serializes when the value actually changes.
 struct Observable<T: Tsify> {
     value: T,
-    js_value: T::JsType,
+    js_value: Ts<T>,
 }
 
 impl<T: Tsify> Observable<T> {
@@ -598,7 +586,7 @@ impl<T: Tsify> Observable<T> {
     where
         T: Serialize + Clone,
     {
-        let js_value = value.into_js().unwrap_throw();
+        let js_value = value.into_ts().unwrap_throw();
         Observable { value, js_value }
     }
 
@@ -611,10 +599,13 @@ impl<T: Tsify> Observable<T> {
         }
 
         self.value = value;
-        self.js_value = self.value.into_js().unwrap_throw();
+        self.js_value = self.value.into_ts().unwrap_throw();
     }
 
-    fn get(&self) -> &T::JsType {
-        &self.js_value
+    fn get(&self) -> Ts<T>
+    where
+        T::JsType: Clone,
+    {
+        self.js_value.clone()
     }
 }

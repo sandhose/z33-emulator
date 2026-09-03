@@ -136,11 +136,13 @@ pub fn preprocessor_error_to_diagnostics(error: &PreprocessorError) -> Vec<Diagn
             span,
             message,
         } => {
-            vec![Diagnostic::error()
-                .with_message(format!("#error: {message}"))
-                .with_labels(vec![
-                    Label::primary(*file_id, span.clone()).with_message(message)
-                ])]
+            vec![
+                Diagnostic::error()
+                    .with_message(format!("#error: {message}"))
+                    .with_labels(vec![
+                        Label::primary(*file_id, span.clone()).with_message(message),
+                    ]),
+            ]
         }
 
         PreprocessorError::ConditionParse {
@@ -148,9 +150,11 @@ pub fn preprocessor_error_to_diagnostics(error: &PreprocessorError) -> Vec<Diagn
             span,
             inner,
         } => {
-            vec![Diagnostic::error()
-                .with_message(format!("invalid condition syntax: {inner}"))
-                .with_labels(vec![Label::primary(*file_id, span.clone())])]
+            vec![
+                Diagnostic::error()
+                    .with_message(format!("invalid condition syntax: {inner}"))
+                    .with_labels(vec![Label::primary(*file_id, span.clone())]),
+            ]
         }
 
         PreprocessorError::ConditionEvaluation {
@@ -158,9 +162,11 @@ pub fn preprocessor_error_to_diagnostics(error: &PreprocessorError) -> Vec<Diagn
             span,
             inner,
         } => {
-            vec![Diagnostic::error()
-                .with_message(format!("condition evaluation failed: {inner}"))
-                .with_labels(vec![Label::primary(*file_id, span.clone())])]
+            vec![
+                Diagnostic::error()
+                    .with_message(format!("condition evaluation failed: {inner}"))
+                    .with_labels(vec![Label::primary(*file_id, span.clone())]),
+            ]
         }
     }
 }
@@ -197,8 +203,10 @@ fn layout_error_to_diagnostic(
     match error {
         MLE::DuplicateLabel { label, location } => Diagnostic::error()
             .with_message(format!("duplicate label '{label}'"))
-            .with_labels(vec![Label::primary(file_id, location.clone())
-                .with_message("defined a second time here")]),
+            .with_labels(vec![
+                Label::primary(file_id, location.clone())
+                    .with_message("defined a second time here"),
+            ]),
 
         MLE::InvalidDirectiveArgument { kind, location } => Diagnostic::error()
             .with_message(format!("invalid argument for directive '.{kind}'"))
@@ -234,13 +242,13 @@ fn evaluation_error_to_diagnostic(
         EE::UndefinedVariable { variable } => Diagnostic::error()
             .with_message(format!("undefined label or macro '{variable}'"))
             .with_labels(vec![
-                Label::primary(file_id, location).with_message("not defined")
+                Label::primary(file_id, location).with_message("not defined"),
             ]),
 
         EE::Downcast => Diagnostic::error()
             .with_message("value out of range")
             .with_labels(vec![
-                Label::primary(file_id, location).with_message("could not convert value")
+                Label::primary(file_id, location).with_message("could not convert value"),
             ]),
 
         EE::Overflow => Diagnostic::error()
@@ -309,8 +317,10 @@ fn memory_fill_error_to_diagnostic(
                 .with_message(format!(
                     "'{instruction}' takes {expected} argument(s), got {got}"
                 ))
-                .with_labels(vec![Label::primary(file_id, instruction_span.clone())
-                    .with_message(format!("expected {expected} argument(s)"))]),
+                .with_labels(vec![
+                    Label::primary(file_id, instruction_span.clone())
+                        .with_message(format!("expected {expected} argument(s)")),
+                ]),
 
             ICE::InvalidArgumentType {
                 instruction,

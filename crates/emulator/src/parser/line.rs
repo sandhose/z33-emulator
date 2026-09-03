@@ -71,7 +71,7 @@ impl std::fmt::Display for LineContent {
 
                 // then the list of arguments
                 let mut first = true; // This is to properly show comma between
-                                      // arguments
+                // arguments
                 for arg in arguments {
                     if !first {
                         write!(f, ",")?;

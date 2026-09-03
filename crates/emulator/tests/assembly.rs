@@ -1,6 +1,6 @@
 mod helpers;
 
-use helpers::{compile_program, run_program, Steps};
+use helpers::{Steps, compile_program, run_program};
 use indoc::indoc;
 
 // =============================================================================

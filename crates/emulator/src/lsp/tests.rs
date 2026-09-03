@@ -2,7 +2,7 @@
 //! messages, mirroring the style of [`crate::dap::tests`].
 
 use pretty_assertions::assert_eq;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use super::LspSession;
 
@@ -104,9 +104,11 @@ fn initialize_advertises_capabilities() {
     assert!(caps["codeLensProvider"].is_object());
     assert_eq!(caps["renameProvider"]["prepareProvider"], true);
     assert_eq!(caps["semanticTokensProvider"]["full"], true);
-    assert!(caps["semanticTokensProvider"]["legend"]["tokenTypes"]
-        .as_array()
-        .is_some_and(|t| !t.is_empty()));
+    assert!(
+        caps["semanticTokensProvider"]["legend"]["tokenTypes"]
+            .as_array()
+            .is_some_and(|t| !t.is_empty())
+    );
 
     assert_eq!(result["serverInfo"]["name"], "zorglub33-lsp");
 }
@@ -362,9 +364,11 @@ fn hover_returns_markdown_contents() {
     assert_eq!(out.len(), 1);
     let result = &out[0]["result"];
     assert_eq!(result["contents"]["kind"], "markdown");
-    assert!(result["contents"]["value"]
-        .as_str()
-        .is_some_and(|v| !v.is_empty()));
+    assert!(
+        result["contents"]["value"]
+            .as_str()
+            .is_some_and(|v| !v.is_empty())
+    );
     assert!(result["range"].is_object());
 
     // Hovering a document the server does not know yields a null result, not

@@ -3,7 +3,7 @@ use std::ops::Range;
 
 use smallvec::SmallVec;
 use thiserror::Error;
-use tracing::{debug, span, trace, Level};
+use tracing::{Level, debug, span, trace};
 
 use super::layout::{Labels, Layout, Placement};
 use crate::parser::expression::EvaluationError as ExpressionEvaluationError;

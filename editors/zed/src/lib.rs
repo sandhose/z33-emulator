@@ -1,6 +1,6 @@
 use std::fs;
 
-use zed_extension_api::serde_json::{json, Value};
+use zed_extension_api::serde_json::{Value, json};
 use zed_extension_api::{
     self as zed, Architecture, DebugAdapterBinary, DebugConfig, DebugRequest, DebugScenario,
     DebugTaskDefinition, DownloadedFileType, GithubReleaseOptions, LanguageServerId,
@@ -198,10 +198,10 @@ impl Z33Extension {
             return Ok(path);
         }
 
-        if let Some(path) = &self.cached_cli_path {
-            if is_file(path) {
-                return Ok(path.clone());
-            }
+        if let Some(path) = &self.cached_cli_path
+            && is_file(path)
+        {
+            return Ok(path.clone());
         }
 
         let status = |status: LanguageServerInstallationStatus| {
@@ -326,7 +326,7 @@ mod tests {
     use zed_extension_api::serde_json::{self, Value};
     use zed_extension_api::{AttachRequest, DebugConfig, DebugRequest, Extension, LaunchRequest};
 
-    use super::{version_key, Z33Extension};
+    use super::{Z33Extension, version_key};
 
     #[test]
     fn version_key_orders_numerically() {

@@ -8,7 +8,7 @@ use tracing::debug;
 use self::layout::MemoryLayoutError;
 use self::memory::MemoryFillError;
 use crate::constants as C;
-use crate::diagnostic::{compilation_error_to_diagnostic, parse_diagnostic_to_codespan, FileId};
+use crate::diagnostic::{FileId, compilation_error_to_diagnostic, parse_diagnostic_to_codespan};
 use crate::parser::line::Program;
 use crate::parser::shared::ParseDiagnostic;
 use crate::runtime::{Computer, Memory, Registers};

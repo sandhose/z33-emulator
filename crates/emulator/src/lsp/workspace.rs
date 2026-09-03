@@ -358,18 +358,18 @@ impl WorkspaceManager {
     /// [`Self::uri_for_relative`] re-encodes on the way out.
     pub(crate) fn relative_for_uri(&self, uri: &Uri) -> Utf8PathBuf {
         // Prefer stripping the native root off the file path.
-        if let (Some(root), Some(path)) = (&self.native_root, uri_to_native_path(uri)) {
-            if let Ok(rel) = path.strip_prefix(root) {
-                return rel.to_owned();
-            }
+        if let (Some(root), Some(path)) = (&self.native_root, uri_to_native_path(uri))
+            && let Ok(rel) = path.strip_prefix(root)
+        {
+            return rel.to_owned();
         }
         // Otherwise strip the root URI textually.
-        if let Some(root_uri) = &self.root_uri {
-            if let Some(rest) = uri.as_str().strip_prefix(root_uri.as_str()) {
-                let rest = rest.trim_start_matches('/');
-                if !rest.is_empty() {
-                    return decode_path(rest);
-                }
+        if let Some(root_uri) = &self.root_uri
+            && let Some(rest) = uri.as_str().strip_prefix(root_uri.as_str())
+        {
+            let rest = rest.trim_start_matches('/');
+            if !rest.is_empty() {
+                return decode_path(rest);
             }
         }
         // Fall back to the bare file name.

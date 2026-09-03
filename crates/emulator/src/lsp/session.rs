@@ -28,7 +28,7 @@ use lsp_types::{
     ServerCapabilities, ServerInfo, TextDocumentPositionParams, TextDocumentSyncCapability,
     TextDocumentSyncKind, Uri, WorkDoneProgressOptions,
 };
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 
 use super::document::LabelKind;
 use super::references::OccurrenceKind;
@@ -623,21 +623,21 @@ fn build_code_lenses(
 
         // Executable labels get a run lens (start execution with this label
         // as the entrypoint), when the client can handle it.
-        if let Some(path) = run_lens_path {
-            if analysis.label_kind(name) == Some(LabelKind::Code) {
-                lenses.push(CodeLens {
-                    range,
-                    command: Some(Command {
-                        title: format!("\u{25b6} Run {name}"),
-                        command: RUN_COMMAND.to_string(),
-                        arguments: Some(vec![serde_json::json!({
-                            "path": path,
-                            "label": name,
-                        })]),
-                    }),
-                    data: None,
-                });
-            }
+        if let Some(path) = run_lens_path
+            && analysis.label_kind(name) == Some(LabelKind::Code)
+        {
+            lenses.push(CodeLens {
+                range,
+                command: Some(Command {
+                    title: format!("\u{25b6} Run {name}"),
+                    command: RUN_COMMAND.to_string(),
+                    arguments: Some(vec![serde_json::json!({
+                        "path": path,
+                        "label": name,
+                    })]),
+                }),
+                data: None,
+            });
         }
 
         let ref_count = analysis
@@ -685,7 +685,7 @@ mod tests {
     use camino::Utf8PathBuf;
     use serde_json::json;
 
-    use super::{build_code_lenses, parse_client_commands, parse_workspace_files, RUN_COMMAND};
+    use super::{RUN_COMMAND, build_code_lenses, parse_client_commands, parse_workspace_files};
     use crate::lsp::document::DocumentState;
 
     #[test]
@@ -740,9 +740,11 @@ mod tests {
         // Client did not advertise zorglub33.run: informational lenses only.
         let lenses = build_code_lenses(src, &analysis, None);
         assert_eq!(lenses.len(), 2);
-        assert!(lenses
-            .iter()
-            .all(|l| l.command.as_ref().unwrap().command.is_empty()));
+        assert!(
+            lenses
+                .iter()
+                .all(|l| l.command.as_ref().unwrap().command.is_empty())
+        );
 
         // Client advertised it: the code label gains a run lens, the data
         // label does not.

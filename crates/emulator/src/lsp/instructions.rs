@@ -347,7 +347,7 @@ pub(super) fn directive_meta(kind: DirectiveKind) -> DirectiveMeta {
 
 #[cfg(test)]
 mod tests {
-    use super::{directive_meta, meta, DIRECTIVE_KINDS, INSTRUCTION_KINDS};
+    use super::{DIRECTIVE_KINDS, INSTRUCTION_KINDS, directive_meta, meta};
     use crate::parser::value::{DirectiveKind, InstructionKind};
     use crate::runtime::Reg;
 

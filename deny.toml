@@ -27,6 +27,9 @@ skip = [
     { name = "bitflags", version = "1" },
     # Multiple transitive deps pull different hashbrown versions
     { name = "hashbrown", version = "0.15" },
+    # Proc-macro crates are migrating to syn 3 one at a time (clap_derive,
+    # displaydoc, futures-macro are on 3; most others still pull 2)
+    { name = "syn", version = "2" },
 ]
 
 [sources]
