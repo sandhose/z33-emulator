@@ -44,11 +44,7 @@ mv "$TMP" tree-sitter-z33/tree-sitter.json
 
 # The generated parser embeds the tree-sitter.json version, and CI asserts
 # that the committed src/ matches a fresh `tree-sitter generate`.
-(
-  cd tree-sitter-z33 &&
-    npm install --no-audit --no-fund >/dev/null &&
-    npx tree-sitter generate
-)
+pnpm --filter tree-sitter-z33 run generate
 
 cargo update --workspace --quiet
 

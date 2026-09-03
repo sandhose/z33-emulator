@@ -37,7 +37,8 @@
     "max-lines-per-function": "off",
     "max-lines": "off",
     "max-depth": "off",
-    "typescript/prefer-readonly-parameter-types": "off"
+    "typescript/prefer-readonly-parameter-types": "off",
+    "react/incompatible-library": "off"
   },
   "ignorePatterns": ["types/**"]
 }

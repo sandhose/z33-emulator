@@ -7,18 +7,16 @@ packages:
 
 catalog:
   wasm-pack: ^0.15.0
-  oxlint: ^1.73.0
-  oxfmt: ^0.57.0
-  typescript: 6.0.3
+  oxlint: ^1.81.0
+  oxfmt: ^0.66.0
+  typescript: 7.0.2
 
-ignoredBuiltDependencies:
-  - esbuild
-
-onlyBuiltDependencies:
-  - "@vscode/vsce-sign"
-  - keytar
-  - tree-sitter-cli
-  - wasm-pack
+allowBuilds:
+  "@vscode/vsce-sign": true
+  keytar: true
+  tree-sitter-cli: true
+  wasm-pack: true
+  esbuild: false
 
 strictDepBuilds: true
 
@@ -29,3 +27,8 @@ trustPolicy: no-downgrade
 trustPolicyExclude:
   - semver
   - reselect@5.1.1
+
+# monaco-editor 0.56 maps "./*" to "./esm/vs/*.js", so the esm/vs deep path
+# monaco-types re-exports its types from no longer resolves.
+patchedDependencies:
+  monaco-types@0.1.2: patches/monaco-types@0.1.2.patch

@@ -162,18 +162,15 @@ jobs:
         with:
           persist-credentials: false
 
-      # No pnpm cache here: this job produces a release artifact (zizmor: cache-poisoning)
       - name: Set up Node and pnpm
-        uses: ./.github/actions/setup-node-pnpm
+        uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2.1.0
         with:
-          cache: ""
+          runtime: node@24
+          require-lockfile: true
 
       # wasm-pack comes from the `z33-assembly` (vscode) package's devDependency
       # — that is the one `pnpm --filter z33-assembly run build` resolves via its
       # `build:wasm` script — so no separate install action is needed.
-      - name: Install dependencies
-        run: pnpm i
-
       - name: Build the extension
         run: pnpm --filter z33-assembly run build
 
@@ -204,16 +201,14 @@ jobs:
         with:
           persist-credentials: false
 
-      # No pnpm cache here: this job publishes a release artifact (zizmor: cache-poisoning)
+      # The install is only needed for the pinned vsce/ovsx CLIs in
+      # editors/vscode/'s devDependencies; the extension itself is taken
+      # prebuilt from the vsix job's artifact.
       - name: Set up Node and pnpm
-        uses: ./.github/actions/setup-node-pnpm
+        uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2.1.0
         with:
-          cache: ""
-
-      # Only needed for the pinned vsce/ovsx CLIs in editors/vscode/'s devDependencies;
-      # the extension itself is taken prebuilt from the vsix job's artifact.
-      - name: Install dependencies
-        run: pnpm i
+          runtime: node@24
+          require-lockfile: true
 
       - name: Download the packaged extension
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -285,16 +280,11 @@ jobs:
         with:
           persist-credentials: false
 
-      # This workflow publishes release artifacts in other jobs, which trips
-      # zizmor's cache-poisoning audit on setup-node's cache; the Pages deploy
-      # itself is gated to pushes to main and ships no release artifact, so it
-      # keeps the pnpm cache (the composite's default).
       - name: Set up Node and pnpm
-        uses: ./.github/actions/setup-node-pnpm
-
-      - name: Install Node dependencies
-        run: pnpm i
-        working-directory: editors/web
+        uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2.1.0
+        with:
+          runtime: node@24
+          require-lockfile: true
 
       - name: Build the app
         run: pnpm run build

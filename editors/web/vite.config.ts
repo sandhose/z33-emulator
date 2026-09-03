@@ -16,5 +16,5 @@ export default defineConfig({
       "@": fileURLToPath(new URL("./app", import.meta.url)),
     },
   },
-  plugins: [tailwindcss(), react()],
+  plugins: [tailwindcss(), react({ compiler: true })],
 });

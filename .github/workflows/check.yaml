@@ -92,13 +92,13 @@ jobs:
           persist-credentials: false
 
       - name: Set up Node and pnpm
-        uses: ./.github/actions/setup-node-pnpm
+        uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2.1.0
+        with:
+          runtime: node@24
+          require-lockfile: true
 
       - name: Setup Rust build cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-
-      - name: Install dependencies
-        run: pnpm i
 
       # Build the wasm once and reuse it for the vscode check: the web and
       # vscode `build:wasm` scripts differ only in `--out-dir`, so the output is
@@ -131,13 +131,13 @@ jobs:
           persist-credentials: false
 
       - name: Set up Node and pnpm
-        uses: ./.github/actions/setup-node-pnpm
+        uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2.1.0
+        with:
+          runtime: node@24
+          require-lockfile: true
 
       - name: Setup Rust build cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-
-      - name: Install dependencies
-        run: pnpm i
 
       - name: Install Playwright browsers
         run: npx playwright install chromium --with-deps
@@ -168,10 +168,10 @@ jobs:
           persist-credentials: false
 
       - name: Set up Node and pnpm
-        uses: ./.github/actions/setup-node-pnpm
-
-      - name: Install dependencies
-        run: pnpm i
+        uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2.1.0
+        with:
+          runtime: node@24
+          require-lockfile: true
 
       - name: Install Playwright browsers
         run: npx playwright install chromium --with-deps
@@ -189,10 +189,10 @@ jobs:
           persist-credentials: false
 
       - name: Set up Node and pnpm
-        uses: ./.github/actions/setup-node-pnpm
-
-      - name: Install dependencies
-        run: pnpm i
+        uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2.1.0
+        with:
+          runtime: node@24
+          require-lockfile: true
 
       - name: Regenerate the parser
         run: pnpm --filter tree-sitter-z33 run generate

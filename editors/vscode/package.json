@@ -132,13 +132,13 @@
     "package": "vsce package --no-dependencies"
   },
   "dependencies": {
-    "vscode-languageclient": "^10.1.0"
+    "vscode-languageclient": "^10.1.1"
   },
   "devDependencies": {
     "@types/vscode": "~1.100.0",
     "@vscode/vsce": "^3.9.2",
-    "esbuild": "^0.28.0",
-    "ovsx": "^1.0.2",
+    "esbuild": "^0.28.2",
+    "ovsx": "^1.1.1",
     "oxfmt": "catalog:",
     "oxlint": "catalog:",
     "typescript": "catalog:",
