@@ -245,6 +245,13 @@ pub struct DebugSession {
     /// replacements (see [`DebugSession::serial_output_events`]). At most 3
     /// bytes; reset whenever the computer is (re)loaded.
     serial_utf8_carry: Vec<u8>,
+    /// `pc` at the instant an unhandled exception was raised, i.e. before
+    /// `computer.step()` advanced it. Only [`DebugSession::stack_frames`] reads
+    /// it, so that the top frame points at the faulting instruction rather than
+    /// the one after it; the Registers scope, `evaluate "%pc"` and every other
+    /// view keep reporting the live `pc`, which is the machine's real state and
+    /// what an exception handler would have saved. Cleared on the next resume.
+    exception_pc: Option<Address>,
 }
 
 impl Default for DebugSession {
@@ -273,6 +280,7 @@ impl DebugSession {
             dyn_handles: HashMap::new(),
             next_dyn: 0,
             serial_utf8_carry: Vec::new(),
+            exception_pc: None,
         }
     }
 
@@ -483,6 +491,7 @@ impl DebugSession {
         self.program = Some(program);
         self.entered = false;
         self.exception_pending = false;
+        self.exception_pc = None;
         self.pause_requested = false;
         self.serial_utf8_carry.clear();
         self.stop_on_entry = stop_on_entry;
@@ -899,8 +908,10 @@ impl DebugSession {
             out.extend(self.terminate_now(EXIT_EXCEPTION));
             return Some(out);
         }
-        // Resuming: any handle handed out during the last stop is now stale.
+        // Only reached once the resume is accepted: any handle handed out
+        // during the last stop is now stale, and so is the faulting pc.
         self.invalidate_handles();
+        self.exception_pc = None;
         None
     }
 
@@ -1137,6 +1148,7 @@ impl DebugSession {
         };
 
         for _ in 0..CHUNK_SIZE {
+            let pc_before = program.computer.registers.pc;
             match program.computer.step() {
                 Ok(()) => {
                     let pc = program.computer.registers.pc;
@@ -1160,7 +1172,10 @@ impl DebugSession {
                     }
                 }
                 Err(ProcessorError::Reset) => return Outcome::Terminated(EXIT_OK),
-                Err(e) => return Outcome::Exception(e.to_string()),
+                Err(e) => {
+                    self.exception_pc = Some(pc_before);
+                    return Outcome::Exception(e.to_string());
+                }
             }
         }
         Outcome::Pending
@@ -1197,6 +1212,13 @@ impl DebugSession {
                 self.state = State::Stopped;
                 self.exception_pending = true;
                 self.invalidate_handles();
+                // The live `pc` a client reads from the Registers scope has
+                // already moved past the fault, so name the faulting address
+                // here.
+                let msg = match self.exception_pc {
+                    Some(pc) => format!("{msg} (at address {pc})"),
+                    None => msg,
+                };
                 out.push(self.make_event(
                     "output",
                     json!({ "category": "console", "output": format!("Exception: {msg}\n") }),
@@ -1268,7 +1290,7 @@ impl DebugSession {
             return Vec::new();
         };
         let mut frames = Vec::new();
-        let pc = program.computer.registers.pc;
+        let pc = self.exception_pc.unwrap_or(program.computer.registers.pc);
         frames.push(self.frame(0, pc));
 
         // Best-effort synthesis of caller frames from the return-address scan.

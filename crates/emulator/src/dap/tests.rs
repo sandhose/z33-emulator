@@ -661,6 +661,56 @@ fn resume_after_unhandled_exception_terminates() {
 }
 
 #[test]
+fn exception_stack_trace_reports_the_faulting_line() {
+    const BAD_ADDRESS_SOURCE: &str = indoc::indoc! {r"
+        main:
+            ld [99999], %a
+            reset
+    "};
+
+    let mut h = Harness::new();
+    h.send("initialize", json!({}));
+    h.send(
+        "launch",
+        json!({
+            "program": "/boom.s",
+            "entrypoint": "main",
+            "stopOnEntry": false,
+            "files": { "/boom.s": BAD_ADDRESS_SOURCE },
+        }),
+    );
+    let mut out = h.send("configurationDone", json!({}));
+    out.extend(h.drive());
+    let stopped = find_event(&out, "stopped").expect("stopped event");
+    assert_eq!(stopped["body"]["reason"], json!("exception"));
+
+    // The faulting `ld [99999], %a` is line 2 (1-based); pc has already
+    // advanced past it by the time the exception is reported, so the frame
+    // must not report line 3 (the `reset`).
+    let st = h.send("stackTrace", json!({ "threadId": 1 }));
+    let resp = find_response(&st, "stackTrace").expect("stackTrace response");
+    assert_eq!(resp["body"]["stackFrames"][0]["line"], json!(2));
+
+    // The stopped event names the faulting address, which the live pc in the
+    // Registers scope no longer matches.
+    let text = stopped["body"]["text"].as_str().unwrap();
+    assert!(text.contains("at address 100"), "text = {text}");
+
+    // A resume that is rejected must not drop the faulting pc: `continue`
+    // after the exception terminates the session, and `stepIn` is then
+    // refused, so the frame still points at line 2.
+    h.send("continue", json!({ "threadId": 1 }));
+    let resp = h.send("stepIn", json!({ "threadId": 1 }));
+    assert_eq!(
+        find_response(&resp, "stepIn").expect("stepIn response")["success"],
+        json!(false)
+    );
+    let st = h.send("stackTrace", json!({ "threadId": 1 }));
+    let resp = find_response(&st, "stackTrace").expect("stackTrace response");
+    assert_eq!(resp["body"]["stackFrames"][0]["line"], json!(2));
+}
+
+#[test]
 fn continue_after_termination_is_rejected() {
     let mut h = Harness::new();
     // Runs straight to `reset` and terminates.
