@@ -451,15 +451,8 @@ impl DebugSession {
         };
 
         match load_program(&args) {
-            Ok(mut program) => {
-                self.stop_on_entry = args.stop_on_entry;
-                self.serial_utf8_carry.clear();
-                let pending = std::mem::take(&mut self.pending_breakpoints);
-                if !pending.is_empty() {
-                    program.requested_lines = pending;
-                    program.reresolve_breakpoints();
-                }
-                self.program = Some(program);
+            Ok(program) => {
+                self.install_program(program, args.stop_on_entry);
                 self.launch_args = Some(args);
                 let resp = self.response(req, Value::Null);
                 let mut out = vec![resp];
@@ -469,6 +462,34 @@ impl DebugSession {
             }
             Err(msg) => vec![self.response_err(req, msg)],
         }
+    }
+
+    /// Make a freshly loaded program the session's program, carrying the
+    /// requested breakpoint lines over and clearing everything that described
+    /// the program it replaces. Shared by `launch` and `restart`, which differ
+    /// only in where the launch arguments come from.
+    ///
+    /// The client does not re-send `setBreakpoints` (no second `initialized`
+    /// event), so the requested source lines are re-resolved against the new
+    /// line index; addresses may have shifted.
+    fn install_program(&mut self, mut program: LoadedProgram, stop_on_entry: bool) {
+        let mut requested = self
+            .program
+            .take()
+            .map_or_else(HashMap::new, |old| old.requested_lines);
+        requested.extend(std::mem::take(&mut self.pending_breakpoints));
+        program.requested_lines = requested;
+        program.reresolve_breakpoints();
+        self.program = Some(program);
+        self.entered = false;
+        self.exception_pending = false;
+        self.pause_requested = false;
+        self.serial_utf8_carry.clear();
+        self.stop_on_entry = stop_on_entry;
+        self.state = State::Initialized;
+        // A `variablesReference` from the previous program would otherwise
+        // read the new program's memory.
+        self.invalidate_handles();
     }
 
     /// A `changed` `breakpoint` event for every source line the client has
@@ -1062,22 +1083,8 @@ impl DebugSession {
             return vec![self.response_err(req, "nothing to restart")];
         };
         match load_program(&args) {
-            Ok(mut program) => {
-                // Carry breakpoints across the restart: the client will not
-                // re-send `setBreakpoints` (no `initialized` is re-emitted), so
-                // re-resolve the previously requested source lines against the
-                // freshly built line index (addresses may have shifted).
-                if let Some(old) = self.program.take() {
-                    program.requested_lines = old.requested_lines;
-                    program.reresolve_breakpoints();
-                }
-                self.program = Some(program);
-                self.entered = false;
-                self.exception_pending = false;
-                self.pause_requested = false;
-                self.serial_utf8_carry.clear();
-                self.stop_on_entry = args.stop_on_entry;
-                self.state = State::Initialized;
+            Ok(program) => {
+                self.install_program(program, args.stop_on_entry);
                 let resp = self.response(req, Value::Null);
                 let mut out = vec![resp];
                 out.extend(self.maybe_enter());

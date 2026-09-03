@@ -180,6 +180,72 @@ fn a_pending_breakpoint_with_no_code_after_it_is_reported_unverified() {
     assert_eq!(bp["message"], json!("no code at or after this line"));
 }
 
+#[test]
+fn second_launch_replaces_the_program_and_stops_on_entry() {
+    let mut h = Harness::new();
+    let out = h.launch(true);
+    assert!(find_event(&out, "stopped").is_some());
+
+    let mut out = h.send(
+        "launch",
+        json!({
+            "program": "/other.s",
+            "entrypoint": "main",
+            "stopOnEntry": true,
+            "files": { "/other.s": "main:\n    ld 1, %a\n    reset\n" },
+        }),
+    );
+    out.extend(h.drive());
+    let stopped = find_event(&out, "stopped").expect("second launch stops on entry");
+    assert_eq!(stopped["body"]["reason"], json!("entry"));
+
+    let frames = h.send("stackTrace", json!({ "threadId": 1 }));
+    assert_eq!(frames[0]["body"]["stackFrames"][0]["line"], json!(2));
+}
+
+#[test]
+fn second_launch_keeps_the_breakpoints_of_the_first() {
+    let mut h = Harness::new();
+    h.launch(true);
+    let out = h.send(
+        "setBreakpoints",
+        json!({ "source": { "path": "/fact.s" }, "breakpoints": [{ "line": 7 }] }),
+    );
+    assert_eq!(out[0]["body"]["breakpoints"][0]["verified"], json!(true));
+
+    let mut out = h.send(
+        "launch",
+        json!({
+            "program": "/fact.s",
+            "entrypoint": "main",
+            "stopOnEntry": false,
+            "files": { "/fact.s": FACT_SOURCE },
+        }),
+    );
+    out.extend(h.drive());
+    let stopped = find_event(&out, "stopped").expect("stopped event");
+    assert_eq!(stopped["body"]["reason"], json!("breakpoint"));
+
+    let st = h.send("stackTrace", json!({ "threadId": 1 }));
+    let resp = find_response(&st, "stackTrace").expect("stackTrace response");
+    assert_eq!(resp["body"]["stackFrames"][0]["line"], json!(7));
+}
+
+#[test]
+fn restart_invalidates_handles_from_the_previous_program() {
+    let mut h = Harness::new();
+    launch_globals(&mut h);
+
+    let globals = scope_ref(&mut h, 0, "Globals");
+    let handle = var(&variables(&mut h, globals, json!({})), "array")["variablesReference"]
+        .as_i64()
+        .unwrap();
+    assert!(!variables(&mut h, handle, json!({})).is_empty());
+
+    h.send("restart", json!({}));
+    assert_eq!(variables(&mut h, handle, json!({})), Vec::<Value>::new());
+}
+
 /// Find the first event with the given name in a list of messages.
 fn find_event<'a>(messages: &'a [Value], name: &str) -> Option<&'a Value> {
     messages
