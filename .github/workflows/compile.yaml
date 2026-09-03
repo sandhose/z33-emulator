@@ -43,7 +43,12 @@ jobs:
         run: rustup target add ${{ matrix.arch }}-apple-darwin
 
       - name: Install zig
-        uses: goto-bus-stop/setup-zig@abea47f85e598557f500fa1fd2ab7464fcb39406 # v2.2.1
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          # cargo-zigbuild uses zig only as a linker, so the zig cache holds
+          # little worth restoring, and this job publishes release binaries
+          # (zizmor: cache-poisoning).
+          use-cache: false
 
       - name: Install cargo-zigbuild
         run: pipx install cargo-zigbuild
@@ -84,7 +89,12 @@ jobs:
         run: rustup target add ${{ matrix.arch }}-unknown-linux-musl
 
       - name: Install zig
-        uses: goto-bus-stop/setup-zig@abea47f85e598557f500fa1fd2ab7464fcb39406 # v2.2.1
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          # cargo-zigbuild uses zig only as a linker, so the zig cache holds
+          # little worth restoring, and this job publishes release binaries
+          # (zizmor: cache-poisoning).
+          use-cache: false
 
       - name: Install cargo-zigbuild
         run: pipx install cargo-zigbuild
