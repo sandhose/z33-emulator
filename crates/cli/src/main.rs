@@ -72,32 +72,28 @@ fn main() {
     // Then, setup the tracing formatter for logging and instrumentation
     let registry = tracing_subscriber::Registry::default().with(opt.filter_layer());
 
-    // LSP and DAP use stdout for their protocols, and `run` streams the guest's
-    // serial output on stdout, so for all three logging must go to stderr to
-    // keep stdout clean.
-    let use_stderr = matches!(
-        opt.command,
-        Subcommand::Run(_) | Subcommand::Lsp(_) | Subcommand::Dap(_)
-    );
+    // LSP and DAP use stdout for their own protocol, so their logs go to
+    // stderr. `run` logs to stdout, interleaved with the program's serial
+    // output.
+    let use_stderr = matches!(opt.command, Subcommand::Lsp(_) | Subcommand::Dap(_));
 
     if opt.json {
-        let json_layer = tracing_subscriber::fmt::layer()
-            .json()
-            .with_writer(std::io::stderr);
-        registry.with(json_layer).init();
-    } else if use_stderr {
-        let fmt_layer = tracing_subscriber::fmt::layer()
-            .without_time()
-            .with_ansi(opt.should_use_colors())
-            .with_target(false)
-            .with_writer(std::io::stderr);
-        registry.with(fmt_layer).init();
+        let fmt_layer = tracing_subscriber::fmt::layer().json();
+        if use_stderr {
+            registry.with(fmt_layer.with_writer(std::io::stderr)).init();
+        } else {
+            registry.with(fmt_layer.with_writer(std::io::stdout)).init();
+        }
     } else {
         let fmt_layer = tracing_subscriber::fmt::layer()
             .without_time()
             .with_ansi(opt.should_use_colors())
             .with_target(false);
-        registry.with(fmt_layer).init();
+        if use_stderr {
+            registry.with(fmt_layer.with_writer(std::io::stderr)).init();
+        } else {
+            registry.with(fmt_layer.with_writer(std::io::stdout)).init();
+        }
     }
 
     // And run the command

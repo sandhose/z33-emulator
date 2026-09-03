@@ -15,9 +15,9 @@ fn run_fact(extra_args: &[&str]) -> Output {
 }
 
 #[test]
-fn dumps_registers_at_end_of_program() {
+fn dumps_registers_on_stdout() {
     let output = run_fact(&[]);
     assert!(output.status.success());
-    let logs = [output.stdout, output.stderr].concat();
-    assert!(String::from_utf8_lossy(&logs).contains("End of program registers=%a = 120"));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("End of program registers=%a = 120"));
 }

@@ -21,10 +21,8 @@ fn sample(name: &str) -> PathBuf {
 /// Run `z33-cli run <sample> main`, feed `input` to stdin, and return the raw
 /// stdout bytes.
 ///
-/// Logs go to stderr (routed there for the `run` subcommand precisely so they
-/// never garble the guest's serial output on stdout), which we discard.
-/// `RUST_LOG=warn` additionally quiets the per-instruction info logging so the
-/// discarded stderr stays cheap; it is no longer needed for stdout cleanliness.
+/// Logs share stdout with the guest's serial output, so `RUST_LOG=warn` keeps
+/// stdout down to the echoed bytes: none of these runs log at warn or above.
 fn run_echo_raw(sample_name: &str, input: &[u8]) -> Vec<u8> {
     let mut child = Command::new(env!("CARGO_BIN_EXE_z33-cli"))
         .args(["run", sample(sample_name).to_str().unwrap(), "main"])
