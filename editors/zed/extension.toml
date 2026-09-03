@@ -1,6 +1,6 @@
 id = "zorglub33"
 name = "Zorglub33"
-version = "0.8.4"
+version = "0.8.5"
 schema_version = 1
 authors = ["Quentin Gliech <gliech@unistra.fr>"]
 description = "Zorglub33 (Z33) assembly language support"
@@ -19,5 +19,5 @@ languages = ["Zorglub33 Assembly"]
 # each release.
 [grammars.z33]
 repository = "https://github.com/sandhose/z33-emulator"
-rev = "d31811d363897ce09fa8477b1cfacbb635400b8b"
+rev = "53c8d1ccd133c0bdb80d150504a7cec8227670cf"
 path = "tree-sitter-z33"
