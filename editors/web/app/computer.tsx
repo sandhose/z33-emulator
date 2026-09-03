@@ -140,6 +140,8 @@ type MemoryViewerProps = {
 export const MemoryViewer = memo(
   forwardRef<MemoryViewerRef, MemoryViewerProps>(
     ({ computer, highlight, labels, pointers, onUserScroll }, ref) => {
+      // TanStack Virtual relies on re-renders; a memoized virtualizer serves stale rows.
+      "use no memo";
       const displayFormat = useDisplayStore((s) => s.format);
       const parentRef = useRef<HTMLDivElement>(null);
       const onUserScrollRef = useRef(onUserScroll);

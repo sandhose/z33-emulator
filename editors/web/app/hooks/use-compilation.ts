@@ -82,11 +82,16 @@ export function useCompilation(activeFile: string, monacoInstance: Monaco) {
     (state) => ({ isPending: state.isPending }),
   );
 
+  // The effects below depend on these stable methods rather than on
+  // `compileDebouncer`: its identity changes whenever isPending flips, which
+  // maybeExecute() itself does, so the effects would re-trigger themselves.
+  const { maybeExecute, flush } = compileDebouncer;
+
   // Attach Monaco content-change listeners and trigger the initial compile.
   useEffect(() => {
     if (!monacoInstance) return () => {};
 
-    compileDebouncer.maybeExecute();
+    maybeExecute();
 
     type Disposable = { dispose(): void };
     const disposables: Disposable[] = [];
@@ -94,7 +99,7 @@ export function useCompilation(activeFile: string, monacoInstance: Monaco) {
     for (const model of monacoInstance.editor.getModels()) {
       disposables.push(
         model.onDidChangeContent(() => {
-          compileDebouncer.maybeExecute();
+          maybeExecute();
         }),
       );
     }
@@ -104,7 +109,7 @@ export function useCompilation(activeFile: string, monacoInstance: Monaco) {
         (model: MonacoEditor.ITextModel) => {
           disposables.push(
             model.onDidChangeContent(() => {
-              compileDebouncer.maybeExecute();
+              maybeExecute();
             }),
           );
         },
@@ -114,13 +119,13 @@ export function useCompilation(activeFile: string, monacoInstance: Monaco) {
     return () => {
       for (const d of disposables) d.dispose();
     };
-  }, [monacoInstance, compileDebouncer]);
+  }, [monacoInstance, maybeExecute]);
 
   // Re-trigger on activeFile change (new preprocessor entrypoint).
   useEffect(() => {
-    compileDebouncer.maybeExecute();
-    compileDebouncer.flush();
-  }, [activeFile, compileDebouncer]);
+    maybeExecute();
+    flush();
+  }, [activeFile, maybeExecute, flush]);
 
   const compilationStatus: UICompilationStatus = compileDebouncer.state
     .isPending
