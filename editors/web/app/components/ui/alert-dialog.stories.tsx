@@ -51,9 +51,10 @@ export const OpenAndCancel = meta.story({
     await userEvent.click(
       canvas.getByRole("button", { name: "Delete project" }),
     );
-    // base-ui renders the dialog in a portal on document.body.
+    // base-ui renders the dialog in a portal on document.body. It mounts at
+    // opacity 0 and fades in, so visibility has to be polled.
     const dialog = await screen.findByRole("alertdialog");
-    await expect(dialog).toBeVisible();
+    await waitFor(() => expect(dialog).toBeVisible());
     await expect(
       within(dialog).getByText("Are you absolutely sure?"),
     ).toBeVisible();
