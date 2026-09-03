@@ -50,7 +50,8 @@ export const EditToolbar: React.FC<EditToolbarProps> = memo(
     labels,
     defaultEntrypoint,
   }) => {
-    const canRun = compilationStatus === "success" && labels.length > 0;
+    const hasLabels = labels.length > 0;
+    const canRun = compilationStatus === "success" && hasLabels;
     const [chosen, setChosen] = useState<string | null>(null);
     const entrypoint =
       chosen !== null && labels.includes(chosen)
@@ -89,12 +90,12 @@ export const EditToolbar: React.FC<EditToolbarProps> = memo(
         )}
 
         <div className="ml-auto flex items-center gap-1">
-          {canRun && (
+          {hasLabels && (
             <form
               className="flex items-center gap-1"
               onSubmit={(e: React.SubmitEvent<HTMLFormElement>) => {
                 e.preventDefault();
-                if (entrypoint) onRun(entrypoint);
+                if (canRun && entrypoint) onRun(entrypoint);
               }}
             >
               <span className="text-xs text-muted-foreground">Start at</span>
@@ -124,7 +125,7 @@ export const EditToolbar: React.FC<EditToolbarProps> = memo(
                   ))}
                 </SelectContent>
               </Select>
-              <Button type="submit" size="xs">
+              <Button type="submit" size="xs" disabled={!canRun}>
                 <PlayIcon data-icon="inline-start" />
                 Run
               </Button>
