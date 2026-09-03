@@ -5,7 +5,7 @@ This chapter describes the Z33 assembly language syntax as accepted by the emula
 ## Line Format
 
 r[asm.line-format]
-Each line of a Z33 assembly program has the form: `[label:] [label:] ... [instruction | directive] [// comment]`. Labels, content, and comments are all optional. Blank lines and comment-only lines are permitted.
+Each line of a Z33 assembly program has the form: `[label:] [label:] ... [instruction | directive] [// comment]`. Labels, content, and comments are all optional, and each may be preceded by any amount of leading whitespace. Blank lines and comment-only lines are permitted.
 
 ### Examples
 
@@ -14,6 +14,7 @@ start:                      // label only
     ld 1, %a                // instruction only
 loop: sub 1, %a             // label + instruction
 end: done: reset            // multiple labels + instruction
+    data: .word 42          // indented label + directive
 ```
 
 ## Labels

@@ -269,10 +269,8 @@ fn inline_comment<'a>() -> impl Parser<'a, &'a str, Located<String>, Extra<'a>> 
 /// Parse a single line: optional labels, then optional content, then
 /// optional inline comment.
 fn line<'a>() -> impl Parser<'a, &'a str, Line, Extra<'a>> + Clone {
-    label()
-        .then_ignore(hspace())
-        .repeated()
-        .collect::<Vec<_>>()
+    hspace()
+        .ignore_then(label().then_ignore(hspace()).repeated().collect::<Vec<_>>())
         .map(SmallVec::from_vec)
         .then_ignore(hspace())
         .then(line_content().or_not())

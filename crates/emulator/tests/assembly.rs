@@ -54,6 +54,39 @@ fn line_format_label_only() {
 }
 
 #[test]
+fn line_format_indented_labels() {
+    // r[verify asm.line-format]
+    let state = compile_program(
+        indoc! {"
+            main:
+                push _str2
+                push _str1
+                reset
+                _str1: .string \"abc\"
+                _str2: .string \"abc\"
+        "},
+        "main",
+    );
+    insta::assert_snapshot!(state, @"
+    Labels:
+      main = 1000
+      _str1 = 1003
+      _str2 = 1007
+    Entrypoint: %pc = 1000
+    Memory:
+      [1000] = <push 1007>
+      [1001] = <push 1003>
+      [1002] = <reset>
+      [1003] = 97
+      [1004] = 98
+      [1005] = 99
+      [1007] = 97
+      [1008] = 98
+      [1009] = 99
+    ");
+}
+
+#[test]
 fn line_format_multiple_labels_on_line() {
     // r[verify asm.line-format]
     // r[verify asm.labels]
