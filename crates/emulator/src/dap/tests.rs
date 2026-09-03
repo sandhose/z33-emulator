@@ -102,6 +102,84 @@ impl Harness {
     }
 }
 
+#[test]
+fn breakpoints_set_before_launch_are_kept_and_verified_on_launch() {
+    let mut h = Harness::new();
+    h.send("initialize", json!({}));
+
+    // The `initialized` event ships with the initialize response, so
+    // `setBreakpoints` can reach the adapter before `launch`. Line 7 is
+    // `ld [%sp+1],%a` and line 3 is `call factorielle`.
+    let out = h.send(
+        "setBreakpoints",
+        json!({ "source": { "path": "/fact.s" }, "breakpoints": [{ "line": 7 }, { "line": 3 }] }),
+    );
+    assert_eq!(out[0]["success"], json!(true));
+    let requested = out[0]["body"]["breakpoints"].as_array().unwrap().clone();
+    assert_eq!(requested[0]["verified"], json!(false));
+    assert_eq!(requested[0]["reason"], json!("pending"));
+    let ids: Vec<&Value> = requested.iter().map(|bp| &bp["id"]).collect();
+    assert!(ids.iter().all(|id| id.is_i64()), "ids assigned: {ids:?}");
+
+    let out = h.send(
+        "launch",
+        json!({
+            "program": "/fact.s",
+            "entrypoint": "main",
+            "stopOnEntry": false,
+            "files": { "/fact.s": FACT_SOURCE },
+        }),
+    );
+    let events: Vec<&Value> = out.iter().filter(|m| m["event"] == "breakpoint").collect();
+    assert_eq!(events.len(), 2, "one event per requested line");
+    let event_ids: Vec<&Value> = events
+        .iter()
+        .map(|e| &e["body"]["breakpoint"]["id"])
+        .collect();
+    assert_eq!(event_ids, ids, "events carry the response ids");
+
+    let seven = events
+        .iter()
+        .find(|e| e["body"]["breakpoint"]["id"] == requested[0]["id"])
+        .expect("event for line 7");
+    assert_eq!(seven["body"]["breakpoint"]["verified"], json!(true));
+    assert_eq!(seven["body"]["breakpoint"]["line"], json!(7));
+
+    let mut out = h.send("configurationDone", json!({}));
+    out.extend(h.drive());
+    let stopped = find_event(&out, "stopped").expect("stops at the breakpoint");
+    assert_eq!(stopped["body"]["reason"], json!("breakpoint"));
+}
+
+#[test]
+fn a_pending_breakpoint_with_no_code_after_it_is_reported_unverified() {
+    let mut h = Harness::new();
+    h.send("initialize", json!({}));
+
+    // Line 100 is past the end of the source, so it never resolves; without an
+    // event of its own the client would show it as pending for the whole
+    // session.
+    h.send(
+        "setBreakpoints",
+        json!({ "source": { "path": "/fact.s" }, "breakpoints": [{ "line": 100 }] }),
+    );
+    let out = h.send(
+        "launch",
+        json!({
+            "program": "/fact.s",
+            "entrypoint": "main",
+            "stopOnEntry": true,
+            "files": { "/fact.s": FACT_SOURCE },
+        }),
+    );
+    let events: Vec<&Value> = out.iter().filter(|m| m["event"] == "breakpoint").collect();
+    assert_eq!(events.len(), 1);
+    let bp = &events[0]["body"]["breakpoint"];
+    assert_eq!(bp["verified"], json!(false));
+    assert_eq!(bp["reason"], json!("failed"));
+    assert_eq!(bp["message"], json!("no code at or after this line"));
+}
+
 /// Find the first event with the given name in a list of messages.
 fn find_event<'a>(messages: &'a [Value], name: &str) -> Option<&'a Value> {
     messages

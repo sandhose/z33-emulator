@@ -92,6 +92,10 @@ const DEFAULT_PAGE: u32 = 256;
 const MAX_FRAMES: usize = 64;
 /// Bytes on the wire for a single Z33 cell (one `i64` word, little-endian).
 const CELL_BYTES: i64 = 8;
+/// Rejection message for a requested breakpoint line the line index cannot map
+/// to an instruction. Shared so the `setBreakpoints` response and the
+/// `breakpoint` events that re-report the same line agree.
+const NO_CODE_AT_LINE: &str = "no code at or after this line";
 
 /// What a dynamically allocated `variablesReference` expands to. Rebuilt on
 /// every stop; see [`DynRef`] allocation in [`DebugSession::alloc_dyn`].
@@ -161,15 +165,24 @@ enum Outcome {
     Exception(String),
 }
 
+/// One source line from a `setBreakpoints` request and the id reported for it,
+/// which every later `breakpoint` event for that line repeats.
+#[derive(Debug, Clone, Copy)]
+struct RequestedLine {
+    line: u32,
+    id: i64,
+}
+
 /// A compiled, runnable program plus everything needed to debug it.
 struct LoadedProgram {
     computer: Computer,
     index: LineIndex,
     labels: BTreeMap<String, Address>,
-    /// Requested breakpoint source lines per path (last `setBreakpoints` wins).
+    /// Requested breakpoint source lines per path, each paired with the id
+    /// handed to the client, in request order (last `setBreakpoints` wins).
     /// Kept as the raw client request so they can be re-resolved against a
     /// fresh [`LineIndex`] after a `restart` (addresses may shift).
-    requested_lines: HashMap<String, Vec<u32>>,
+    requested_lines: HashMap<String, Vec<RequestedLine>>,
     /// Breakpoint addresses per source path (last `setBreakpoints` wins).
     bp_by_file: HashMap<String, Vec<Address>>,
     /// Union of all breakpoint addresses.
@@ -192,7 +205,7 @@ impl LoadedProgram {
             .map(|(path, lines)| {
                 let addrs = lines
                     .iter()
-                    .filter_map(|&line| self.index.resolve_breakpoint(path, line).map(|(_, a)| a))
+                    .filter_map(|r| self.index.resolve_breakpoint(path, r.line).map(|(_, a)| a))
                     .collect();
                 (path.clone(), addrs)
             })
@@ -215,6 +228,12 @@ pub struct DebugSession {
     run_mode: RunMode,
     program: Option<LoadedProgram>,
     launch_args: Option<LaunchArguments>,
+    /// Source lines from `setBreakpoints` requests that arrived before a
+    /// program was launched, keyed by path; resolved on launch.
+    pending_breakpoints: HashMap<String, Vec<RequestedLine>>,
+    /// Monotonic allocator for breakpoint ids. Never reset, so an id is never
+    /// reused for a different requested line within a session.
+    next_bp_id: i64,
     /// Live dynamic `variablesReference` handles for the current stop.
     dyn_handles: HashMap<i64, DynRef>,
     /// Monotonic allocator for dynamic handles (never reset, so stale handles
@@ -249,10 +268,19 @@ impl DebugSession {
             run_mode: RunMode::Continue,
             program: None,
             launch_args: None,
+            pending_breakpoints: HashMap::new(),
+            next_bp_id: 1,
             dyn_handles: HashMap::new(),
             next_dyn: 0,
             serial_utf8_carry: Vec::new(),
         }
+    }
+
+    /// Allocate a fresh breakpoint id for a requested source line.
+    fn alloc_bp_id(&mut self) -> i64 {
+        let id = self.next_bp_id;
+        self.next_bp_id += 1;
+        id
     }
 
     /// Allocate a fresh dynamic `variablesReference` for the current stop.
@@ -423,18 +451,67 @@ impl DebugSession {
         };
 
         match load_program(&args) {
-            Ok(program) => {
+            Ok(mut program) => {
                 self.stop_on_entry = args.stop_on_entry;
                 self.serial_utf8_carry.clear();
+                let pending = std::mem::take(&mut self.pending_breakpoints);
+                if !pending.is_empty() {
+                    program.requested_lines = pending;
+                    program.reresolve_breakpoints();
+                }
                 self.program = Some(program);
                 self.launch_args = Some(args);
                 let resp = self.response(req, Value::Null);
                 let mut out = vec![resp];
+                out.extend(self.pending_breakpoint_events());
                 out.extend(self.maybe_enter());
                 out
             }
             Err(msg) => vec![self.response_err(req, msg)],
         }
+    }
+
+    /// A `changed` `breakpoint` event for every source line the client has
+    /// requested, re-resolved against the loaded program's line index. Lines
+    /// answered as unverified before launch need an event even when they still
+    /// do not resolve, otherwise the client shows them as pending forever.
+    fn pending_breakpoint_events(&mut self) -> Vec<Value> {
+        let requested: Vec<(String, RequestedLine, Option<u32>)> = match self.program.as_ref() {
+            Some(program) => program
+                .requested_lines
+                .iter()
+                .flat_map(|(path, lines)| {
+                    lines.iter().map(|&r| {
+                        let resolved = program
+                            .index
+                            .resolve_breakpoint(path, r.line)
+                            .map(|(line, _)| line);
+                        (path.clone(), r, resolved)
+                    })
+                })
+                .collect(),
+            None => Vec::new(),
+        };
+        requested
+            .into_iter()
+            .map(|(path, r, resolved)| {
+                let breakpoint = Breakpoint {
+                    id: Some(r.id),
+                    verified: resolved.is_some(),
+                    line: Some(resolved.unwrap_or(r.line)),
+                    source: Some(Source {
+                        name: None,
+                        path: Some(path),
+                    }),
+                    message: resolved.is_none().then(|| NO_CODE_AT_LINE.to_owned()),
+                    reason: resolved.is_none().then(|| "failed".to_owned()),
+                };
+                self.make_event(
+                    "breakpoint",
+                    json!({ "reason": "changed", "breakpoint": breakpoint }),
+                )
+            })
+            .collect()
     }
 
     fn on_set_breakpoints(&mut self, req: &IncomingRequest) -> Vec<Value> {
@@ -443,36 +520,65 @@ impl DebugSession {
             Err(e) => return vec![self.response_err(req, format!("invalid arguments: {e}"))],
         };
 
+        let source = args.source;
+        let path = source
+            .path
+            .clone()
+            .or_else(|| source.name.clone())
+            .unwrap_or_default();
+        // Ids are allocated per requested line, before resolution, so the
+        // pending and the resolved branch report the same id for the same
+        // entry of this request.
+        let requested: Vec<RequestedLine> = args
+            .breakpoints
+            .iter()
+            .map(|bp| RequestedLine {
+                line: bp.line,
+                id: self.alloc_bp_id(),
+            })
+            .collect();
+
         let body = {
             let Some(program) = self.program.as_mut() else {
-                return vec![self.response_err(req, "no program launched")];
+                // Before launch there is no line index to resolve against;
+                // keep the request and answer once the program is loaded.
+                let result: Vec<Breakpoint> = requested
+                    .iter()
+                    .map(|r| Breakpoint {
+                        id: Some(r.id),
+                        verified: false,
+                        line: Some(r.line),
+                        source: Some(source.clone()),
+                        message: Some("pending launch".to_owned()),
+                        reason: Some("pending".to_owned()),
+                    })
+                    .collect();
+                self.pending_breakpoints.insert(path, requested);
+                return vec![self.response(req, json!({ "breakpoints": result }))];
             };
-            let source = args.source;
-            let path = source
-                .path
-                .clone()
-                .or_else(|| source.name.clone())
-                .unwrap_or_default();
 
             let mut result: Vec<Breakpoint> = Vec::new();
             let mut addrs: Vec<Address> = Vec::new();
-            let requested: Vec<u32> = args.breakpoints.iter().map(|bp| bp.line).collect();
-            for bp in args.breakpoints {
-                match program.index.resolve_breakpoint(&path, bp.line) {
+            for r in &requested {
+                match program.index.resolve_breakpoint(&path, r.line) {
                     Some((line, address)) => {
                         addrs.push(address);
                         result.push(Breakpoint {
+                            id: Some(r.id),
                             verified: true,
                             line: Some(line),
                             source: Some(source.clone()),
                             message: None,
+                            reason: None,
                         });
                     }
                     None => result.push(Breakpoint {
+                        id: Some(r.id),
                         verified: false,
-                        line: Some(bp.line),
+                        line: Some(r.line),
                         source: Some(source.clone()),
-                        message: Some("no code at or after this line".to_owned()),
+                        message: Some(NO_CODE_AT_LINE.to_owned()),
+                        reason: Some("failed".to_owned()),
                     }),
                 }
             }
