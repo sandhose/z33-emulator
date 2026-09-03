@@ -59,6 +59,14 @@ jobs:
             exit 1
           fi
 
+      # set-version.sh regenerates the tree-sitter parser through the pnpm
+      # workspace, and the runner image ships npm but not pnpm.
+      - name: Set up Node and pnpm
+        uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2.1.0
+        with:
+          runtime: node@24
+          require-lockfile: true
+
       - name: Bump the versions
         run: scripts/set-version.sh "$VERSION"
 
