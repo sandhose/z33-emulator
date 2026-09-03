@@ -269,14 +269,17 @@ impl Workspace {
             })?;
 
         let mut buf = Vec::new();
-        self.process_chunks(
+        ctx.include_stack.push(path.to_owned());
+        let result = self.process_chunks(
             &mut buf,
             &content.chunks,
             &content.references,
             ctx,
             &stack,
             annotations,
-        )?;
+        );
+        ctx.include_stack.pop();
+        result?;
         Ok(buf)
     }
 
@@ -372,6 +375,31 @@ impl Workspace {
                     let Some(resolved) = references.get(path) else {
                         unreachable!("Referenced file wasn't resolved")
                     };
+
+                    if ctx.include_stack.len() >= MAX_INCLUDE_DEPTH {
+                        return Err(PreprocessorError::UserError {
+                            file_id: inc_stack.file_id,
+                            span: inc_stack.range.clone(),
+                            message: format!(
+                                "#include nested more than {MAX_INCLUDE_DEPTH} levels deep"
+                            ),
+                        });
+                    }
+
+                    if ctx.include_stack.contains(resolved) {
+                        let chain = ctx
+                            .include_stack
+                            .iter()
+                            .map(|p| p.as_str())
+                            .chain(std::iter::once(resolved.as_str()))
+                            .collect::<Vec<_>>()
+                            .join(" -> ");
+                        return Err(PreprocessorError::UserError {
+                            file_id: inc_stack.file_id,
+                            span: inc_stack.range.clone(),
+                            message: format!("#include cycle: {chain}"),
+                        });
+                    }
 
                     let content =
                         self.preprocess_path(resolved, ctx, annotations)
@@ -522,9 +550,17 @@ pub enum PreprocessorError {
     },
 }
 
+/// Deepest chain of `#include`s that will be expanded. Each level recurses
+/// through `preprocess_path` and `process_chunks`, and lexical normalization
+/// cannot make every spelling of a file compare equal (a symlink, say), so
+/// this backs up the cycle check.
+const MAX_INCLUDE_DEPTH: usize = 32;
+
 #[derive(Default)]
 struct Context {
     definitions: HashMap<String, Option<String>>,
+    /// Files currently being expanded, outermost first, to detect cycles.
+    include_stack: Vec<Utf8PathBuf>,
 }
 
 impl ConditionContext for Context {
@@ -851,6 +887,72 @@ mod tests {
             assert_eq!(message, "custom".to_string());
         } else {
             panic!("not a UserError");
+        }
+    }
+
+    #[test]
+    fn include_cycle_error_test() {
+        let fs = InMemoryFilesystem::new([
+            ("/a.S".into(), "#include \"b.S\"\nmain:\n".into()),
+            ("/b.S".into(), "#include \"a.S\"\n".into()),
+        ]);
+        let mut workspace = Workspace::new(&fs, "/a.S");
+        let err = workspace.preprocess().expect_err("cycle must be an error");
+        match innermost(&err) {
+            PreprocessorError::UserError { message, .. } => {
+                assert!(message.contains("#include cycle"), "{message}");
+                assert!(message.contains("/a.S -> /b.S -> /a.S"), "{message}");
+            }
+            other => panic!("expected a UserError, got {other:?}"),
+        }
+    }
+
+    /// Walk to the innermost error of a chain of `InInclude` wrappers.
+    fn innermost(error: &PreprocessorError) -> &PreprocessorError {
+        let mut inner = error;
+        while let PreprocessorError::InInclude { inner: next, .. } = inner {
+            inner = next;
+        }
+        inner
+    }
+
+    #[test]
+    fn include_cycle_through_a_relative_path_error_test() {
+        // `b/../c.S` and `c.S` name the same file, so the include stack only
+        // matches them once resolution has normalized the `..`.
+        let fs = InMemoryFilesystem::new([("/c.S".into(), "#include \"b/../c.S\"\n".into())]);
+        let mut workspace = Workspace::new(&fs, "/c.S");
+        let err = workspace.preprocess().expect_err("cycle must be an error");
+        match innermost(&err) {
+            PreprocessorError::UserError { message, .. } => {
+                assert!(message.contains("#include cycle"), "{message}");
+                assert!(message.contains("/c.S -> /c.S"), "{message}");
+            }
+            other => panic!("expected a UserError, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn include_depth_cap_error_test() {
+        // A chain of distinct files never repeats a path, so only the depth
+        // cap stops it.
+        let depth = MAX_INCLUDE_DEPTH + 4;
+        let files: HashMap<Utf8PathBuf, String> = (0..depth)
+            .map(|i| {
+                (
+                    format!("/f{i}.S").into(),
+                    format!("#include \"f{}.S\"\n", i + 1),
+                )
+            })
+            .collect();
+        let fs = InMemoryFilesystem::new(files);
+        let mut workspace = Workspace::new(&fs, "/f0.S");
+        let err = workspace.preprocess().expect_err("depth cap must be hit");
+        match innermost(&err) {
+            PreprocessorError::UserError { message, .. } => {
+                assert!(message.contains("nested more than"), "{message}");
+            }
+            other => panic!("expected a UserError, got {other:?}"),
         }
     }
 
