@@ -12,6 +12,11 @@
 
 vim.opt.rtp:prepend(vim.fn.getcwd() .. "/editors/vim")
 
+-- The first z33 buffer triggers the z33-cli download consent prompt when no
+-- binary is on PATH. Headless with stdin at EOF, that prompt makes Neovim exit
+-- with status 0 before any assertion below runs, so forbid downloads up front.
+vim.g.z33_auto_download = false
+
 local z33 = require("z33")
 
 -- setup() is documented as idempotent and safe to call more than once (see
