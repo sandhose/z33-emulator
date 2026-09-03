@@ -1,11 +1,5 @@
 import type * as monaco from "monaco-editor";
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from "react";
+import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
 import type { ComputerProxy } from "../lib/computer-proxy";
 import { stripLeadingSlash } from "../lib/file-paths";
 
@@ -42,17 +36,19 @@ export function useSourceHighlight({
   const lastRevealRef = useRef(0);
 
   // Track the active model URI so the highlight re-applies after a file switch.
-  const [currentModelUri, setCurrentModelUri] = useState<string | null>(null);
-  useEffect(() => {
-    if (!editor) return () => {};
-    setCurrentModelUri(editor.getModel()?.uri.toString() ?? null);
-    const disposable = editor.onDidChangeModel((e) => {
-      setCurrentModelUri(e.newModelUrl?.toString() ?? null);
-    });
-    return () => {
-      disposable.dispose();
-    };
-  }, [editor]);
+  const currentModelUri = useSyncExternalStore(
+    useCallback(
+      (cb) => {
+        if (!editor) return () => {};
+        const disposable = editor.onDidChangeModel(cb);
+        return () => {
+          disposable.dispose();
+        };
+      },
+      [editor],
+    ),
+    () => editor?.getModel()?.uri.toString() ?? null,
+  );
 
   // Follow execution into other files when the PC's file differs from the one
   // currently shown.

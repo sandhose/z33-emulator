@@ -77,7 +77,9 @@ export const MultiFileEditor: React.FC<Props> = ({
   const decorationsRef =
     useRef<monaco.editor.IEditorDecorationsCollection | null>(null);
   const filePathRef = useRef(filePath);
-  filePathRef.current = filePath;
+  useEffect(() => {
+    filePathRef.current = filePath;
+  }, [filePath]);
 
   const lines = breakpoints[filePath];
   const resolvedForFile = resolved[filePath];
