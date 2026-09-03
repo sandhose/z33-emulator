@@ -877,6 +877,12 @@ fn globals_scope_single_and_multi_cell() {
     // Single-cell code label renders the instruction.
     assert_eq!(var(&vars, "main")["type"], json!("instruction"));
 
+    // `last` is the final label and holds a single `.word`, so its region is
+    // one cell.
+    let last = var(&vars, "last");
+    assert_eq!(last["value"], json!("7"));
+    assert_eq!(last["variablesReference"], json!(0));
+
     // Multi-cell region expands and reports its length.
     let array = var(&vars, "array");
     assert_eq!(array["indexedVariables"], json!(3));
@@ -904,6 +910,36 @@ fn globals_scope_single_and_multi_cell() {
         256,
         "default page size caps the response"
     );
+}
+
+#[test]
+fn a_trailing_space_label_reports_its_full_length() {
+    // `.space` compiles to reserved cells that read back as empty, so the
+    // program's extent has to come from the layout rather than from memory.
+    const TRAILING_SPACE_SOURCE: &str = indoc::indoc! {r"
+        main:
+            reset
+
+        buf:
+            .space 100
+    "};
+
+    let mut h = Harness::new();
+    h.send("initialize", json!({}));
+    h.send(
+        "launch",
+        json!({
+            "program": "/s.s",
+            "entrypoint": "main",
+            "stopOnEntry": true,
+            "files": { "/s.s": TRAILING_SPACE_SOURCE },
+        }),
+    );
+    h.send("configurationDone", json!({}));
+
+    let globals = scope_ref(&mut h, 0, "Globals");
+    let vars = variables(&mut h, globals, json!({}));
+    assert_eq!(var(&vars, "buf")["indexedVariables"], json!(100));
 }
 
 #[test]

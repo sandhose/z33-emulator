@@ -178,6 +178,10 @@ struct LoadedProgram {
     computer: Computer,
     index: LineIndex,
     labels: BTreeMap<String, Address>,
+    /// One past the highest cell the assembled program occupies, `.space`
+    /// reservations included even though those read back as `Cell::Empty`.
+    /// Bounds the last label's region in [`label_regions`].
+    program_end: Address,
     /// Requested breakpoint source lines per path, each paired with the id
     /// handed to the client, in request order (last `setBreakpoints` wins).
     /// Kept as the raw client request so they can be re-resolved against a
@@ -788,7 +792,7 @@ impl DebugSession {
     fn globals_variables(&mut self, start: u32, count: Option<u32>, hex: bool) -> Vec<Variable> {
         let regions = {
             let program = self.program.as_ref().expect("program loaded");
-            label_regions(&program.labels)
+            label_regions(&program.labels, program.program_end)
         };
         let count = count.map_or(usize::MAX, |c| c as usize);
         let mut out = Vec::new();
@@ -868,7 +872,7 @@ impl DebugSession {
             GLOBALS_REF => {
                 // Only single-cell labels are settable at the scope level.
                 let &base = program.labels.get(name)?;
-                let regions = label_regions(&program.labels);
+                let regions = label_regions(&program.labels, program.program_end);
                 let len = regions
                     .iter()
                     .find(|(l, _, _)| l == name)
@@ -1799,10 +1803,13 @@ fn frame_stack_variables(
 }
 
 /// The label regions `(name, base, len)`, sorted by address, each bounded by
-/// the next label's address and the memory size (at least one cell). The full
-/// `len` is reported as `indexedVariables`; per-request paging (see
+/// the next label's address and the end of the program (at least one cell).
+/// The full `len` is reported as `indexedVariables`; per-request paging (see
 /// [`DEFAULT_PAGE`]) keeps large regions like a 5000-word `.space` responsive.
-fn label_regions(labels: &BTreeMap<String, Address>) -> Vec<(String, Address, u32)> {
+fn label_regions(
+    labels: &BTreeMap<String, Address>,
+    program_end: Address,
+) -> Vec<(String, Address, u32)> {
     let mut by_addr: Vec<(Address, String)> = labels.iter().map(|(n, &a)| (a, n.clone())).collect();
     by_addr.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
 
@@ -1811,7 +1818,7 @@ fn label_regions(labels: &BTreeMap<String, Address>) -> Vec<(String, Address, u3
         let (addr, name) = &by_addr[i];
         let next = by_addr
             .get(i + 1)
-            .map_or(C::MEMORY_SIZE, |(a, _)| *a)
+            .map_or(program_end, |(a, _)| *a)
             .max(*addr);
         let len = (next - addr).max(1);
         out.push((name.clone(), *addr, len));
@@ -2168,6 +2175,16 @@ fn compile_program<FS: Filesystem>(
 
     let index = LineIndex::build(&assembled.debug_info, &ref_map, workspace.file_db());
     let labels = assembled.debug_info.labels.clone();
+    // The source map has an entry for every placement the layout made, so its
+    // last address is the last cell the program occupies. The memory itself
+    // cannot answer this: a `.space` reservation is a `Cell::Empty`,
+    // indistinguishable from never-written memory.
+    let program_end = assembled
+        .debug_info
+        .source_map
+        .keys()
+        .next_back()
+        .map_or(0, |&a| a.saturating_add(1));
 
     let computer = match assembled.into_computer(&entrypoint) {
         Ok(computer) => computer,
@@ -2185,6 +2202,7 @@ fn compile_program<FS: Filesystem>(
         computer,
         index,
         labels,
+        program_end,
         requested_lines: HashMap::new(),
         bp_by_file: HashMap::new(),
         breakpoints: HashSet::new(),
