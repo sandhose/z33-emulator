@@ -83,7 +83,7 @@ const SerialTerminal: React.FC<SerialTerminalProps> = ({ computer, ref }) => {
   // Create the terminal once and wire up resize handling.
   useEffect(() => {
     const container = containerRef.current;
-    if (!container) return undefined;
+    if (!container) return () => {};
 
     const { effective } = useThemeStore.getState();
     const terminal = new Terminal({
@@ -146,7 +146,7 @@ const SerialTerminal: React.FC<SerialTerminalProps> = ({ computer, ref }) => {
   // Reset scrollback and (re)wire I/O whenever the debug session changes.
   useEffect(() => {
     const terminal = terminalRef.current;
-    if (!terminal) return undefined;
+    if (!terminal) return () => {};
 
     terminal.reset();
 

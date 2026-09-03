@@ -64,7 +64,7 @@ const LabelList: React.FC<{
   onLabelClick: (name: string, address: number) => void;
 }> = ({ computer, labels, following, onLabelClick }) => {
   const sorted = useMemo(
-    () => Array.from(computer.labels).sort(([, a], [, b]) => a - b),
+    () => Array.from(computer.labels).toSorted(([, a], [, b]) => a - b),
     [computer.labels],
   );
 
