@@ -4,7 +4,7 @@ import {
   PlayIcon,
   XCircleIcon,
 } from "lucide-react";
-import { memo } from "react";
+import { memo, useState } from "react";
 import { Button } from "./components/ui/button";
 import {
   Select,
@@ -51,6 +51,11 @@ export const EditToolbar: React.FC<EditToolbarProps> = memo(
     defaultEntrypoint,
   }) => {
     const canRun = compilationStatus === "success" && labels.length > 0;
+    const [chosen, setChosen] = useState<string | null>(null);
+    const entrypoint =
+      chosen !== null && labels.includes(chosen)
+        ? chosen
+        : pickEntrypoint(labels, defaultEntrypoint);
 
     return (
       <div
@@ -85,21 +90,20 @@ export const EditToolbar: React.FC<EditToolbarProps> = memo(
 
         <div className="ml-auto flex items-center gap-1">
           {canRun && (
-            // Remount on a changed label set so the uncontrolled Select picks
-            // up the fresh default entrypoint.
             <form
-              key={labels.join(" ")}
               className="flex items-center gap-1"
               onSubmit={(e: React.SubmitEvent<HTMLFormElement>) => {
                 e.preventDefault();
-                const value = new FormData(e.currentTarget).get("entrypoint");
-                if (typeof value === "string" && value) onRun(value);
+                if (entrypoint) onRun(entrypoint);
               }}
             >
               <span className="text-xs text-muted-foreground">Start at</span>
               <Select
                 name="entrypoint"
-                defaultValue={pickEntrypoint(labels, defaultEntrypoint)}
+                value={entrypoint}
+                onValueChange={(value) => {
+                  if (typeof value === "string") setChosen(value);
+                }}
               >
                 <SelectTrigger
                   size="xs"

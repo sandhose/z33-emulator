@@ -48,6 +48,24 @@ test.describe("Core flows", () => {
     await waitForCompileSuccess(page);
   });
 
+  test("chosen entrypoint survives a change to the label set", async ({
+    cleanPage: page,
+  }) => {
+    await waitForCompileSuccess(page);
+    const entrypoint = page.getByRole("combobox", { name: "Entrypoint" });
+    await entrypoint.click();
+    await page.getByRole("option", { name: "casparticulier" }).click();
+    await expect(entrypoint).toContainText("casparticulier");
+
+    // Adding a label recompiles with a different label set.
+    await page.locator(".monaco-editor").click();
+    await page.keyboard.press("Control+End");
+    await page.keyboard.press("Enter");
+    await page.keyboard.type("newlabel:");
+    await waitForCompileSuccess(page);
+    await expect(entrypoint).toContainText("casparticulier");
+  });
+
   test("debug session lifecycle", async ({ cleanPage: page }) => {
     await enterDebugMode(page);
 
