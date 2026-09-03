@@ -18,8 +18,22 @@ updates:
       interval: "daily"
     cooldown:
       default-days: 7
+    groups:
+      typescript:
+        # tsgolint's patch version encodes the TypeScript version it is built
+        # against (e.g. 7.0.2001 ↔ TypeScript 7.0.2).
+        patterns:
+          - "typescript"
+          - "oxlint-tsgolint"
     ignore:
       # Must stay in sync with engines.vscode in editors/vscode/package.json:
       # vsce refuses to package when @types/vscode exceeds the engine floor.
       # Bump both together when raising the minimum VS Code version.
       - dependency-name: "@types/vscode"
+      # @storybook/addon-vitest peers on vitest ^3 || ^4, and
+      # strictPeerDependencies makes the install fail on a newer major; lift
+      # this once Storybook supports it.
+      - dependency-name: "vitest"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@vitest/*"
+        update-types: ["version-update:semver-major"]
