@@ -8,7 +8,7 @@
 use chumsky::prelude::*;
 
 use super::location::{Locatable, Located};
-use super::shared::{hspace, identifier, span_to_range, string_literal, Extra};
+use super::shared::{Extra, hspace, identifier, span_to_range, string_literal};
 
 pub(crate) type Children = Vec<Located<Node>>;
 

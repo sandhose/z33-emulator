@@ -9,7 +9,7 @@ homepage = "https://pdagog.gitlab.io/ens/z33refcard.pdf"
 repository = "https://github.com/sandhose/z33-emulator"
 version = "0.8.4"
 authors = ["Quentin Gliech <gliech@unistra.fr>"]
-edition = "2021"
+edition = "2024"
 readme = "README.md"
 license = "MIT"
 

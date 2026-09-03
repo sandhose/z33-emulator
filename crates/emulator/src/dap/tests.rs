@@ -2,7 +2,7 @@
 //! `samples/fact.s`.
 
 use pretty_assertions::assert_eq;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use super::DebugSession;
 
@@ -727,10 +727,12 @@ fn set_variable_writes_stack_and_global_cells() {
     assert_eq!(resp["body"]["value"], json!("1234"));
     // Verify via evaluate.
     let ev = h.send("evaluate", json!({ "expression": "[value]" }));
-    assert!(find_response(&ev, "evaluate").unwrap()["body"]["result"]
-        .as_str()
-        .unwrap()
-        .starts_with("1234"));
+    assert!(
+        find_response(&ev, "evaluate").unwrap()["body"]["result"]
+            .as_str()
+            .unwrap()
+            .starts_with("1234")
+    );
 
     // Stack cell.
     let mut h = Harness::new();
@@ -832,10 +834,12 @@ fn read_and_write_memory_roundtrip() {
         json!(8)
     );
     let ev = h.send("evaluate", json!({ "expression": "[value]" }));
-    assert!(find_response(&ev, "evaluate").unwrap()["body"]["result"]
-        .as_str()
-        .unwrap()
-        .starts_with("256"));
+    assert!(
+        find_response(&ev, "evaluate").unwrap()["body"]["result"]
+            .as_str()
+            .unwrap()
+            .starts_with("256")
+    );
 
     // Offset conversion: reading the next cell via a byte offset of 8 sees
     // `array`'s first word (1).
@@ -998,10 +1002,12 @@ fn write_memory_unaligned_requires_allow_partial() {
 
     // `value` holds 42; it must be untouched by the rejected write.
     let ev = h.send("evaluate", json!({ "expression": "[value]" }));
-    assert!(find_response(&ev, "evaluate").unwrap()["body"]["result"]
-        .as_str()
-        .unwrap()
-        .starts_with("42"));
+    assert!(
+        find_response(&ev, "evaluate").unwrap()["body"]["result"]
+            .as_str()
+            .unwrap()
+            .starts_with("42")
+    );
 
     // With allowPartial the same write succeeds via read-modify-write, setting
     // byte 1 of the cell to 0xff: 42 | (0xff << 8) == 65322.
@@ -1014,10 +1020,12 @@ fn write_memory_unaligned_requires_allow_partial() {
         json!(1)
     );
     let ev = h.send("evaluate", json!({ "expression": "[value]" }));
-    assert!(find_response(&ev, "evaluate").unwrap()["body"]["result"]
-        .as_str()
-        .unwrap()
-        .starts_with("65322"));
+    assert!(
+        find_response(&ev, "evaluate").unwrap()["body"]["result"]
+            .as_str()
+            .unwrap()
+            .starts_with("65322")
+    );
 }
 
 #[test]
@@ -1034,10 +1042,12 @@ fn set_variable_parses_negative_hex() {
     // -0x2a == -42.
     assert_eq!(resp["body"]["value"], json!("-42"));
     let ev = h.send("evaluate", json!({ "expression": "[value]" }));
-    assert!(find_response(&ev, "evaluate").unwrap()["body"]["result"]
-        .as_str()
-        .unwrap()
-        .starts_with("-42"));
+    assert!(
+        find_response(&ev, "evaluate").unwrap()["body"]["result"]
+            .as_str()
+            .unwrap()
+            .starts_with("-42")
+    );
 }
 
 #[test]

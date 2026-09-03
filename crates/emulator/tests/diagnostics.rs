@@ -5,7 +5,7 @@
 //! testing with `codespan_reporting::term` for rendering.
 
 use z33_emulator::diagnostic::{
-    parse_diagnostic_to_codespan, preprocessor_error_to_diagnostics, render_to_string, FileDatabase,
+    FileDatabase, parse_diagnostic_to_codespan, preprocessor_error_to_diagnostics, render_to_string,
 };
 use z33_emulator::preprocessor::{InMemoryFilesystem, Workspace};
 use z33_emulator::{compile, parse};

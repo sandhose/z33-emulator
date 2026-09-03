@@ -8,7 +8,7 @@ use tracing::warn;
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::diagnostic::{FileDatabase, FileId};
-use crate::parser::condition::{parse_condition, Context as ConditionContext};
+use crate::parser::condition::{Context as ConditionContext, parse_condition};
 
 /// Compute the byte offset of `substr` within `base`.
 /// Both must be slices of the same underlying string.
@@ -23,7 +23,7 @@ fn str_offset(base: &str, substr: &str) -> usize {
 }
 use crate::parser::expression::{EmptyContext as EmptyExpressionContext, EvaluationError};
 use crate::parser::location::{Locatable, Located};
-use crate::parser::preprocessor::{parse, Node};
+use crate::parser::preprocessor::{Node, parse};
 
 mod annotations;
 mod fs;
@@ -294,7 +294,7 @@ impl Workspace {
             let (stack, chunk) = stack.push(chunk);
 
             match chunk {
-                Node::Raw { ref content } => {
+                Node::Raw { content } => {
                     let replaced = ctx.replace(content);
                     buf.extend(replaced.into_iter().map(|l| {
                         let (stack, content) = stack.push(&l);
@@ -311,7 +311,7 @@ impl Workspace {
                 }
 
                 // r[impl asm.preprocessor.error]
-                Node::Error { ref message } => {
+                Node::Error { message } => {
                     let (stack, message) = stack.push(message);
 
                     return Err(PreprocessorError::UserError {
@@ -322,7 +322,7 @@ impl Workspace {
                 }
 
                 // r[impl asm.preprocessor.undefine]
-                Node::Undefine { ref key } => {
+                Node::Undefine { key } => {
                     let (_key_stack, key) = stack.push(key);
 
                     annotations
@@ -337,10 +337,7 @@ impl Workspace {
                 }
 
                 // r[impl asm.preprocessor.define]
-                Node::Definition {
-                    ref key,
-                    ref content,
-                } => {
+                Node::Definition { key, content } => {
                     let (_key_stack, key) = stack.push(key);
                     let value_str = content.as_ref().map(|i| i.inner.clone());
 
@@ -360,7 +357,7 @@ impl Workspace {
                 }
 
                 // r[impl asm.preprocessor.include]
-                Node::Inclusion { path: ref include } => {
+                Node::Inclusion { path: include } => {
                     let (inc_stack, include) = stack.push(include);
 
                     annotations
@@ -442,7 +439,7 @@ impl Workspace {
                         }
                     }
 
-                    let fallback_annotation = if let Some(ref body) = fallback {
+                    let fallback_annotation = if let Some(body) = fallback {
                         let (body_stack, body_content) = stack.push(body);
                         let active = !active_found;
 

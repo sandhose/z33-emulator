@@ -24,10 +24,10 @@ pub fn read_content_length<R: BufRead>(reader: &mut R) -> Option<usize> {
             return content_length;
         }
         // LSP/DAP (like HTTP) header names are case-insensitive.
-        if let Some((name, value)) = trimmed.split_once(':') {
-            if name.trim().eq_ignore_ascii_case("Content-Length") {
-                content_length = value.trim().parse::<usize>().ok();
-            }
+        if let Some((name, value)) = trimmed.split_once(':')
+            && name.trim().eq_ignore_ascii_case("Content-Length")
+        {
+            content_length = value.trim().parse::<usize>().ok();
         }
     }
 }

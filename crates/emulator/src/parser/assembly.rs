@@ -9,7 +9,7 @@ use smallvec::SmallVec;
 use super::line::{Line, LineContent, Program};
 use super::location::{Locatable, Located};
 use super::shared::{
-    expression, hspace, hspace1, register, span_to_range, string_literal, Extra, ParseDiagnostic,
+    Extra, ParseDiagnostic, expression, hspace, hspace1, register, span_to_range, string_literal,
 };
 use super::value::{DirectiveArgument, DirectiveKind, InstructionArgument, InstructionKind};
 use crate::parser::expression::Node as ExpressionNode;

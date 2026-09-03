@@ -3,7 +3,7 @@ use std::convert::TryInto;
 use thiserror::Error;
 
 use super::instructions::Instruction;
-use crate::constants::{Address, Word, MEMORY_SIZE};
+use crate::constants::{Address, MEMORY_SIZE, Word};
 
 /// Type of cells
 ///

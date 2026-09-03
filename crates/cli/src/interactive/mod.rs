@@ -211,7 +211,7 @@ impl Session {
         // First, display the labels on the line if any
         self.labels
             .iter()
-            .filter(|(_, &a)| a == address)
+            .filter(|&(_, &a)| a == address)
             .for_each(|(label, _)| info!("          {}:", label));
 
         // Then compute what is supposed to show in the gutter

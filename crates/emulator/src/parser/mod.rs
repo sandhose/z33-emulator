@@ -13,7 +13,7 @@ pub(crate) mod preprocessor;
 pub mod shared;
 pub(crate) mod value;
 
-pub use assembly::{parse, ParseResult};
+pub use assembly::{ParseResult, parse};
 pub use expression::{Context as ExpressionContext, Node as ExpressionNode};
 pub use line::Program;
 pub use shared::{DiagnosticSeverity, ParseDiagnostic};

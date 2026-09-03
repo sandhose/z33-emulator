@@ -4,11 +4,11 @@ use std::marker::PhantomData;
 
 use anstyle::Style;
 use clap::{Command, CommandFactory};
+use rustyline::Context;
 use rustyline::completion::Completer;
 use rustyline::highlight::Highlighter;
 use rustyline::hint::Hinter;
 use rustyline::validate::{ValidationContext, ValidationResult, Validator};
-use rustyline::Context;
 use rustyline_derive::Helper;
 
 /// Rustyline helper, that handles interactive completion, highlighting and

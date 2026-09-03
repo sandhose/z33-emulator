@@ -15,8 +15,8 @@ use z33_emulator::compile;
 use z33_emulator::constants::Address;
 use z33_emulator::dap::LineIndex;
 use z33_emulator::diagnostic::{
-    diagnostics_to_json, preprocessor_error_to_diagnostics, resolve_diagnostic_spans,
-    resolve_to_original, FileDatabase, FileId,
+    FileDatabase, FileId, diagnostics_to_json, preprocessor_error_to_diagnostics,
+    resolve_diagnostic_spans, resolve_to_original,
 };
 use z33_emulator::preprocessor::{
     InMemoryFilesystem, PreprocessorError, SourceMap as PreSourceMap, Workspace,

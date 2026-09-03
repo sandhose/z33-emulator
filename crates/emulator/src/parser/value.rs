@@ -4,8 +4,8 @@ use thiserror::Error;
 use super::expression::{Context, EvaluationError, Node};
 use super::location::Located;
 use crate::ast::{AstNode, NodeKind};
-use crate::runtime::arguments::{Dir, Idx, Imm, ImmRegDirIndIdx, Ind};
 use crate::runtime::Reg;
+use crate::runtime::arguments::{Dir, Idx, Imm, ImmRegDirIndIdx, Ind};
 
 #[derive(Display, FromStr, Clone, Copy, Debug, PartialEq)]
 #[display(style = "lowercase")]

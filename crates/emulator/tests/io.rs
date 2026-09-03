@@ -102,8 +102,8 @@ fn in_reads_bytes_from_serial() {
     run(&mut computer);
     assert_eq!(word_at(&computer, 10), 90); // 'Z'
     assert_eq!(word_at(&computer, 11), 120); // 'x'
-                                             // The queue is now empty; a
-                                             // further read would yield 0.
+    // The queue is now empty; a
+    // further read would yield 0.
     assert!(!computer.io.serial.input_ready());
 }
 
@@ -164,10 +164,12 @@ fn hardware_interrupt_is_delivered_between_instructions() {
     // The exception code (address 102) is 0: a hardware interrupt.
     assert_eq!(word_at(&computer, C::INTERRUPT_EXCEPTION), 0);
     // Interrupts were disabled on hardware-interrupt entry.
-    assert!(!computer
-        .registers
-        .sr
-        .contains(StatusRegister::INTERRUPT_ENABLE));
+    assert!(
+        !computer
+            .registers
+            .sr
+            .contains(StatusRegister::INTERRUPT_ENABLE)
+    );
     // ...but we are still (and now definitely) in supervisor mode.
     assert!(computer.registers.sr.contains(StatusRegister::SUPERVISOR));
 }
@@ -263,10 +265,12 @@ fn hardware_interrupt_is_not_delivered_on_the_exception_recovery_step() {
 
     // Step 1: enable interrupts. No pending edge yet, so nothing is delivered.
     computer.step().unwrap();
-    assert!(computer
-        .registers
-        .sr
-        .contains(StatusRegister::INTERRUPT_ENABLE));
+    assert!(
+        computer
+            .registers
+            .sr
+            .contains(StatusRegister::INTERRUPT_ENABLE)
+    );
 
     // Arm a pending serial interrupt edge *after* IE was enabled, so it
     // cannot be delivered as a side effect of the previous step.

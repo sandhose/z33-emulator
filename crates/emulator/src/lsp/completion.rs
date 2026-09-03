@@ -4,7 +4,7 @@ use std::sync::LazyLock;
 use lsp_types::{CompletionItem, CompletionItemKind, CompletionItemLabelDetails, InsertTextFormat};
 
 use super::document::DocumentState;
-use super::instructions::{directive_meta, meta, ArgType, DIRECTIVE_KINDS, INSTRUCTION_KINDS};
+use super::instructions::{ArgType, DIRECTIVE_KINDS, INSTRUCTION_KINDS, directive_meta, meta};
 use super::text::{skip_labels, strip_inline_comment};
 use crate::parser::value::InstructionKind;
 
@@ -371,8 +371,7 @@ mod tests {
     fn second_arg_must_be_register() {
         let src = "    add 1, ";
         let items = completions(None, src, 11); // after ", "
-                                                // Second arg of ADD is Reg —
-                                                // should only offer registers
+        // Second arg of ADD is Reg, so only registers should be offered
         assert!(items.iter().any(|i| i.label == "%a"));
         assert!(!items.iter().any(|i| i.label == "[...]"));
     }
@@ -381,9 +380,8 @@ mod tests {
     fn label_completion_in_arg() {
         let src = "foo:\n    jmp ";
         let analysis = DocumentState::new(src.to_string());
-        let items = completions(Some(&analysis), src, src.len()); // after "jmp
-                                                                  // "
-                                                                  // JMP arg 0 is ImmRegDirIndIdx — should offer labels
+        let items = completions(Some(&analysis), src, src.len()); // after "jmp "
+        // JMP arg 0 is ImmRegDirIndIdx, so labels should be offered
         assert!(items.iter().any(|i| i.label == "foo"));
         assert!(items.iter().any(|i| i.label == "%a"));
     }

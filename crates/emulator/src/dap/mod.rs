@@ -45,7 +45,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::str::FromStr;
 
 use camino::{Utf8Path, Utf8PathBuf};
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 
 pub use self::index::LineIndex;
 use self::protocol::{
@@ -1100,21 +1100,21 @@ impl DebugSession {
         // A clean halt would otherwise be invisible (the session opens and
         // closes in milliseconds when there are no breakpoints): leave the
         // run's result in the debug console.
-        if code == EXIT_OK {
-            if let Some(program) = self.program.as_ref() {
-                let computer = &program.computer;
-                let regs = &computer.registers;
-                let summary = format!(
-                    "Program halted after {} cycles\n  %a = {}\n  %b = {}\n",
-                    computer.cycles,
-                    format_cell(&regs.a, false),
-                    format_cell(&regs.b, false),
-                );
-                out.push(self.make_event(
-                    "output",
-                    json!({ "category": "console", "output": summary }),
-                ));
-            }
+        if code == EXIT_OK
+            && let Some(program) = self.program.as_ref()
+        {
+            let computer = &program.computer;
+            let regs = &computer.registers;
+            let summary = format!(
+                "Program halted after {} cycles\n  %a = {}\n  %b = {}\n",
+                computer.cycles,
+                format_cell(&regs.a, false),
+                format_cell(&regs.b, false),
+            );
+            out.push(self.make_event(
+                "output",
+                json!({ "category": "console", "output": summary }),
+            ));
         }
         out.push(self.make_event("terminated", Value::Null));
         out.push(self.make_event("exited", json!({ "exitCode": code })));
@@ -1462,8 +1462,8 @@ fn eval_address(program: &LoadedProgram, input: &str) -> Result<Address, String>
 fn enclosing_label(labels: &BTreeMap<String, Address>, address: Address) -> String {
     labels
         .iter()
-        .filter(|(_, &a)| a <= address)
-        .max_by_key(|(_, &a)| a)
+        .filter(|&(_, &a)| a <= address)
+        .max_by_key(|&(_, &a)| a)
         .map_or_else(|| format!("@{address}"), |(name, _)| name.clone())
 }
 
