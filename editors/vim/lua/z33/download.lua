@@ -15,6 +15,17 @@ local M = {}
 
 local REPO = "sandhose/z33-emulator"
 
+--- Wraps `vim.system`, which throws when the command is missing from PATH, so
+--- that failure reaches `on_exit` as exit code 127 like any other.
+local function spawn(cmd, opts, on_exit)
+  local ok, err = pcall(vim.system, cmd, opts, on_exit)
+  if not ok then
+    vim.schedule(function()
+      on_exit({ code = 127, stderr = tostring(err) })
+    end)
+  end
+end
+
 --- Base cache directory: `stdpath('data')/z33/`.
 local function base_dir()
   return vim.fs.joinpath(vim.fn.stdpath("data"), "z33")
@@ -157,7 +168,7 @@ local function run_download(url, version_dir, platform, done)
 
   -- Bare .exe: download straight to the final binary path.
   if platform.archive == "exe" then
-    vim.system(
+    spawn(
       { "curl", "-fSL", "-o", binary_path, url },
       { text = true },
       vim.schedule_wrap(function(out)
@@ -175,14 +186,14 @@ local function run_download(url, version_dir, platform, done)
 
   -- tar.gz: download to a temp file, then extract into version_dir.
   local tmp = vim.fs.joinpath(version_dir, platform.asset)
-  vim.system(
+  spawn(
     { "curl", "-fSL", "-o", tmp, url },
     { text = true },
     vim.schedule_wrap(function(out)
       if out.code ~= 0 then
         return fail("curl failed: " .. (out.stderr or ("exit " .. out.code)))
       end
-      vim.system(
+      spawn(
         { "tar", "-xzf", tmp, "-C", version_dir },
         { text = true },
         vim.schedule_wrap(function(tout)
@@ -198,7 +209,7 @@ local function run_download(url, version_dir, platform, done)
           pcall(vim.uv.fs_chmod, binary_path, 493) -- 0755
           -- macOS: strip the quarantine xattr, best effort.
           if vim.uv.os_uname().sysname == "Darwin" then
-            vim.system({ "xattr", "-d", "com.apple.quarantine", binary_path }, { text = true }, function() end)
+            spawn({ "xattr", "-d", "com.apple.quarantine", binary_path }, { text = true }, function() end)
           end
           done(binary_path)
         end)
@@ -226,7 +237,7 @@ end
 --- API is unreachable but a platform is known. Calls `done(path, err)`.
 local function fetch_and_install(platform, done)
   local api = ("https://api.github.com/repos/%s/releases/latest"):format(REPO)
-  vim.system(
+  spawn(
     { "curl", "-fSL", "-H", "Accept: application/vnd.github+json", api },
     { text = true },
     vim.schedule_wrap(function(out)
