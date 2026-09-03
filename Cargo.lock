@@ -1612,7 +1612,7 @@ dependencies = [
 
 [[package]]
 name = "z33-cli"
-version = "0.8.4"
+version = "0.8.5"
 dependencies = [
  "anstyle",
  "anyhow",
@@ -1632,7 +1632,7 @@ dependencies = [
 
 [[package]]
 name = "z33-emulator"
-version = "0.8.4"
+version = "0.8.5"
 dependencies = [
  "bitflags 2.13.1",
  "camino",
@@ -1654,7 +1654,7 @@ dependencies = [
 
 [[package]]
 name = "z33-wasm"
-version = "0.8.4"
+version = "0.8.5"
 dependencies = [
  "camino",
  "console_error_panic_hook",
@@ -1671,7 +1671,7 @@ dependencies = [
 
 [[package]]
 name = "z33-zed"
-version = "0.8.4"
+version = "0.8.5"
 dependencies = [
  "zed_extension_api",
 ]
