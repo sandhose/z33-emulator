@@ -63,10 +63,7 @@ fn spawn_reader() -> Receiver<Value> {
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
         let mut reader = BufReader::new(std::io::stdin());
-        loop {
-            let Some(length) = read_content_length(&mut reader) else {
-                break;
-            };
+        while let Some(length) = read_content_length(&mut reader) {
             let mut body = vec![0u8; length];
             if reader.read_exact(&mut body).is_err() {
                 break;

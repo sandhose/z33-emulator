@@ -26,10 +26,7 @@ impl LspOpt {
         let mut reader = BufReader::new(std::io::stdin());
         let stdout = std::io::stdout();
 
-        loop {
-            let Some(length) = read_content_length(&mut reader) else {
-                break; // EOF
-            };
+        while let Some(length) = read_content_length(&mut reader) {
             let mut body = vec![0u8; length];
             if reader.read_exact(&mut body).is_err() {
                 break;

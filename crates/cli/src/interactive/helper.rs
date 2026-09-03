@@ -82,12 +82,8 @@ impl<T: CommandFactory> Completer for RunHelper<T> {
         _ctx: &Context<'_>,
     ) -> rustyline::Result<(usize, Vec<Self::Candidate>)> {
         let line = &line[..pos];
-        let complete = line
-            .bytes()
-            .last()
-            .filter(|&c| c == b' ' || c == b'\t')
-            .is_some(); // Line is considered "complete" if the last char is a
-                        // space
+        // Line is considered "complete" if the last char is a space
+        let complete = line.bytes().last().is_some_and(|c| c == b' ' || c == b'\t');
         if let Ok(mut words) = shell_words::split(line) {
             let app = T::command();
 
@@ -134,12 +130,8 @@ impl<T: CommandFactory> Hinter for RunHelper<T> {
     type Hint = String;
     fn hint(&self, line: &str, pos: usize, _ctx: &Context<'_>) -> Option<String> {
         let line = &line[..pos];
-        let complete = line
-            .bytes()
-            .last()
-            .filter(|&c| c == b' ' || c == b'\t')
-            .is_some(); // Line is considered "complete" if the last char is a
-                        // space
+        // Line is considered "complete" if the last char is a space
+        let complete = line.bytes().last().is_some_and(|c| c == b' ' || c == b'\t');
         let mut words = shell_words::split(line).ok()?;
 
         // If the last char was a space, insert an empty word to autocomplete
