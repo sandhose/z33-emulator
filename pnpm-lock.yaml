@@ -199,8 +199,8 @@ importers:
   tree-sitter-z33:
     devDependencies:
       tree-sitter-cli:
-        specifier: ^0.26.0
-        version: 0.26.10
+        specifier: ^0.27.0
+        version: 0.27.0
 
 packages:
 
@@ -4229,8 +4229,8 @@ packages:
     resolution: {integrity: sha512-sf4i37nQ2LBx4m3wB74y+ubopq6W/dIzXg0FDGjsYnZHVa1Da8FH853wlL2gtUhg+xJXjfk3kUZS3BRoQeoQBQ==}
     engines: {node: '>=6'}
 
-  tree-sitter-cli@0.26.10:
-    resolution: {integrity: sha512-RTse32x5YWOrEtH7wos8ODt3yyB7SKgmGN70jC7R+WcnDA64vrpYU98+LnwrwdXMlxgr0LGQdezZz85DN8Wv0w==}
+  tree-sitter-cli@0.27.0:
+    resolution: {integrity: sha512-E42kR0og1mFlZBxPj7K4fBXCTjxPTGe19U9RXGWNq0FQKzXOxIp8bhCYFMKhddiVZUsJwW35MYGU9Q1oVYtpbA==}
     engines: {node: '>=12.0.0'}
     hasBin: true
 
@@ -8389,7 +8389,7 @@ snapshots:
 
   totalist@3.0.1: {}
 
-  tree-sitter-cli@0.26.10: {}
+  tree-sitter-cli@0.27.0: {}
 
   ts-dedent@2.3.0: {}
 
