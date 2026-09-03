@@ -1,4 +1,4 @@
-use std::io::{BufRead, BufReader, Write};
+use std::io::{self, BufRead, BufReader, Write};
 use std::process::exit;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::thread;
@@ -18,7 +18,7 @@ use crate::interactive::run_interactive;
 /// The number of instructions to execute between servicing host I/O. Small
 /// enough that input latency stays imperceptible, large enough that the I/O
 /// bookkeeping is negligible.
-const IO_BATCH: usize = 10_000;
+pub(crate) const IO_BATCH: usize = 10_000;
 
 /// How a program stopped running.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -145,7 +145,7 @@ fn spawn_stdin_reader() -> Receiver<Input> {
 /// Drain whatever the program has written to the serial console and write it
 /// straight to stdout. Output bypasses `tracing` on purpose: it is raw program
 /// output and must not be mangled by log formatting.
-fn flush_serial_output(computer: &mut Computer) -> anyhow::Result<()> {
+pub(crate) fn flush_serial_output(computer: &mut Computer) -> io::Result<()> {
     let output = computer.io.serial.drain_output();
     if !output.is_empty() {
         let stdout = std::io::stdout();

@@ -127,3 +127,18 @@ fn a_reset_is_reported_as_a_normal_end() {
     assert!(stdout.contains("Program ended (reset)"), "{stdout}");
     assert!(!stdout.contains("Halted"), "{stdout}");
 }
+
+#[test]
+fn continue_writes_program_output_before_the_stop_message() {
+    // 1007 is the `jmp poll` that follows the `out` in echo.s, so the run
+    // stops right after the first input byte was echoed.
+    let output = run_interactive("echo.s", "break 1007\ninput Z\ncontinue\nexit\n");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "stderr: {stderr}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let echoed = stdout.find('Z').expect("the program echoed its input");
+    let stopped = stdout
+        .find("Stopped at a breakpoint")
+        .expect("the run stopped at the breakpoint");
+    assert!(echoed < stopped, "{stdout}");
+}

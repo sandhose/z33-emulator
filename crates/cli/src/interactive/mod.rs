@@ -20,7 +20,7 @@ use z33_emulator::runtime::{Cell, Computer, Exception, ProcessorError, Reg};
 mod helper;
 mod parse;
 use self::helper::RunHelper;
-use crate::commands::run::Halt;
+use crate::commands::run::{Halt, IO_BATCH, flush_serial_output};
 
 static HELP: &str = r#"
 Run "help [command]" for command-specific help.
@@ -263,21 +263,6 @@ impl Session {
     }
 }
 
-/// Drain serial output produced by the guest and write it raw to stdout.
-///
-/// Program output bypasses `tracing` on purpose: it must not be mangled by log
-/// formatting. Write errors are ignored — a broken stdout is not recoverable
-/// here and should not abort the debugging session.
-fn flush_serial_output(computer: &mut Computer) {
-    let output = computer.io.serial.drain_output();
-    if !output.is_empty() {
-        use std::io::Write;
-        let stdout = std::io::stdout();
-        let mut handle = stdout.lock();
-        let _ = handle.write_all(&output).and_then(|()| handle.flush());
-    }
-}
-
 /// Log a fault and the address of the instruction that caused it.
 fn report_fault(pc: C::Address, error: &dyn std::error::Error) -> Halt {
     warn!("Program faulted at address {pc}: {error}");
@@ -318,10 +303,20 @@ pub(crate) fn run_interactive(computer: &mut Computer, debug_info: DebugInfo) ->
     let mut halt = Halt::Reset;
 
     'read: loop {
-        // Flush any serial output produced by the previous command's execution
-        // before the next prompt renders (covers step / continue / interrupt,
-        // including paths that `continue 'read`).
-        flush_serial_output(computer);
+        // Write the program's pending output before logging anything about it,
+        // so the two streams stay in order on a shared stdout. A failed write
+        // leaves nowhere to send the output, so the session ends there.
+        macro_rules! flush_or_break {
+            () => {
+                if let Err(e) = flush_serial_output(computer) {
+                    warn!(
+                        error = &e as &dyn std::error::Error,
+                        "Could not write the program's output"
+                    );
+                    break 'read;
+                }
+            };
+        }
 
         // A macro to unwrap an error, log it and continue the loop
         macro_rules! warn_and_continue {
@@ -370,10 +365,13 @@ pub(crate) fn run_interactive(computer: &mut Computer, debug_info: DebugInfo) ->
                     let pc = computer.registers.pc;
                     if let Err(e) = computer.step() {
                         halted = true;
+                        flush_or_break!();
                         halt = report_halt(pc, &e);
                         continue 'read;
                     }
                 }
+
+                flush_or_break!();
             }
 
             (Command::Registers { register }, _) => {
@@ -461,19 +459,27 @@ pub(crate) fn run_interactive(computer: &mut Computer, debug_info: DebugInfo) ->
                 session.remove_breakpoint(address);
             }
 
-            (Command::Continue, false) => loop {
-                let pc = computer.registers.pc;
-                if let Err(e) = computer.step() {
-                    halted = true;
-                    halt = report_halt(pc, &e);
-                    continue 'read;
-                }
+            (Command::Continue, false) => {
+                for steps in 1.. {
+                    let pc = computer.registers.pc;
+                    if let Err(e) = computer.step() {
+                        halted = true;
+                        flush_or_break!();
+                        halt = report_halt(pc, &e);
+                        continue 'read;
+                    }
 
-                if session.has_breakpoint(computer.registers.pc) {
-                    info!(address = computer.registers.pc, "Stopped at a breakpoint");
-                    break;
+                    if session.has_breakpoint(computer.registers.pc) {
+                        flush_or_break!();
+                        info!(address = computer.registers.pc, "Stopped at a breakpoint");
+                        break;
+                    }
+
+                    if steps % IO_BATCH == 0 {
+                        flush_or_break!();
+                    }
                 }
-            },
+            }
 
             (Command::Input { text }, _) => {
                 // Reconstruct the line from the parsed words and append Enter.
