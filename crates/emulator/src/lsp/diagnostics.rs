@@ -93,6 +93,22 @@ fn convert_layout_error(
             format!("memory overlap at address {address}"),
             severity,
         ),
+        MemoryLayoutError::OutOfBounds { address, location } => make_resolved_diagnostic(
+            state,
+            location.clone(),
+            format!("address {address} is outside of memory"),
+            severity,
+        ),
+        MemoryLayoutError::SpaceDoesNotFit {
+            address,
+            size,
+            location,
+        } => make_resolved_diagnostic(
+            state,
+            location.clone(),
+            format!("reserving {size} cells from address {address} does not fit in memory"),
+            severity,
+        ),
     }
 }
 
@@ -171,6 +187,16 @@ fn convert_fill_error(
                 }
             }
         },
+        MemoryFillError::AddressOutOfBounds { address, location } => {
+            if let Some(d) = make_resolved_diagnostic(
+                state,
+                location.clone(),
+                format!("address {address} is out of bounds"),
+                severity,
+            ) {
+                out.push(d);
+            }
+        }
     }
 }
 

@@ -1,0 +1,9 @@
+---
+source: crates/emulator/tests/diagnostics.rs
+expression: "check_full_pipeline_errors(\"main:\\n    reset\\nx: .space 20000\")"
+---
+error: reserving 20000 cells from address 1001 does not fit in memory (0..10000)
+  ┌─ <preprocessed>:3:4
+  │
+3 │ x: .space 20000
+  │    ^^^^^^^^^^^^ reservation is too large

@@ -5,7 +5,7 @@ use parse_display::Display;
 use thiserror::Error;
 use tracing::{debug, trace};
 
-use crate::constants::{Address, PROGRAM_START};
+use crate::constants::{Address, MEMORY_SIZE, PROGRAM_START};
 use crate::parser::expression::{
     Context as ExpressionContext, EmptyContext as EmptyExpressionContext,
     EvaluationError as ExpressionEvaluationError,
@@ -69,6 +69,10 @@ impl Layout {
         placement: Placement,
         location: Range<usize>,
     ) -> Result<(), MemoryLayoutError> {
+        if address >= MEMORY_SIZE {
+            return Err(MemoryLayoutError::OutOfBounds { address, location });
+        }
+
         if let Some((_, original_location)) = self.memory.get(&address) {
             return Err(MemoryLayoutError::MemoryOverlap {
                 address,
@@ -127,6 +131,66 @@ pub enum MemoryLayoutError {
         /// Location of the directive that is trying to overwrite it.
         new_location: Range<usize>,
     },
+
+    #[error("address {address} is outside of memory (valid range is 0..{MEMORY_SIZE})")]
+    OutOfBounds {
+        address: Address,
+        location: Range<usize>,
+    },
+
+    #[error(
+        "reserving {size} cells from address {address} does not fit in memory (valid range is 0..{MEMORY_SIZE})"
+    )]
+    SpaceDoesNotFit {
+        address: Address,
+        size: Address,
+        location: Range<usize>,
+    },
+}
+
+/// Where the next placement goes, and whether the current run of placements
+/// already reported an out-of-bounds address. A run ends at the next `.addr`.
+struct Cursor {
+    position: Address,
+    reported_out_of_bounds: bool,
+}
+
+impl Cursor {
+    fn new() -> Self {
+        Cursor {
+            position: PROGRAM_START,
+            reported_out_of_bounds: false,
+        }
+    }
+
+    /// Continue laying out at `address`, starting a new run.
+    fn seek(&mut self, address: Address) {
+        self.position = address;
+        self.reported_out_of_bounds = false;
+    }
+
+    /// Place one cell at the cursor and advance past it. A run of placements
+    /// past the end of memory reports only its first address, and the cursor
+    /// saturates rather than wrapping past the last one.
+    fn place(
+        &mut self,
+        layout: &mut Layout,
+        placement: Placement,
+        location: &Range<usize>,
+        errors: &mut Vec<MemoryLayoutError>,
+    ) {
+        match layout.insert_placement(self.position, placement, location.clone()) {
+            Ok(()) => {}
+            Err(error @ MemoryLayoutError::OutOfBounds { .. }) => {
+                if !self.reported_out_of_bounds {
+                    self.reported_out_of_bounds = true;
+                    errors.push(error);
+                }
+            }
+            Err(error) => errors.push(error),
+        }
+        self.position = self.position.saturating_add(1);
+    }
 }
 
 /// Lays out the memory, collecting all errors instead of stopping at the first.
@@ -142,13 +206,13 @@ pub(crate) fn layout_memory(program: &[Located<Line>]) -> (Layout, Vec<MemoryLay
     debug!(lines = program.len(), "Laying out memory");
     let mut layout: Layout = Layout::default();
     let mut errors: Vec<MemoryLayoutError> = Vec::new();
-    let mut position = PROGRAM_START;
+    let mut cursor = Cursor::new();
 
     for line in program {
         let line = &line.inner;
         for key in line.symbols.clone() {
-            trace!(key = %key.inner, position, "Inserting label");
-            if let Err(e) = layout.insert_label(key, position) {
+            trace!(key = %key.inner, position = cursor.position, "Inserting label");
+            if let Err(e) = layout.insert_label(key, cursor.position) {
                 errors.push(e);
             }
         }
@@ -160,15 +224,13 @@ pub(crate) fn layout_memory(program: &[Located<Line>]) -> (Layout, Vec<MemoryLay
                     kind: Located { inner: Word, .. },
                     ..
                 } => {
-                    if let Err(e) = layout.insert_placement(
-                        position,
+                    trace!(position = cursor.position, content = %content.inner, "Inserting line");
+                    cursor.place(
+                        &mut layout,
                         Placement::Line(content.clone()),
-                        content.location.clone(),
-                    ) {
-                        errors.push(e);
-                    }
-                    trace!(position, content = %content.inner, "Inserting line");
-                    position += 1;
+                        &content.location,
+                        &mut errors,
+                    );
                 }
 
                 // Valid instructions (skip error placeholder instructions)
@@ -177,15 +239,13 @@ pub(crate) fn layout_memory(program: &[Located<Line>]) -> (Layout, Vec<MemoryLay
                         // Skip — the diagnostic was already emitted by the
                         // parser
                     } else {
-                        if let Err(e) = layout.insert_placement(
-                            position,
+                        trace!(position = cursor.position, content = %content.inner, "Inserting line");
+                        cursor.place(
+                            &mut layout,
                             Placement::Line(content.clone()),
-                            content.location.clone(),
-                        ) {
-                            errors.push(e);
-                        }
-                        trace!(position, content = %content.inner, "Inserting line");
-                        position += 1;
+                            &content.location,
+                            &mut errors,
+                        );
                     }
                 }
 
@@ -197,18 +257,30 @@ pub(crate) fn layout_memory(program: &[Located<Line>]) -> (Layout, Vec<MemoryLay
                             inner: DirectiveArgument::Expression(e),
                             ..
                         },
-                } => match e.evaluate(&EmptyExpressionContext) {
+                } => match e.evaluate::<_, Address>(&EmptyExpressionContext) {
                     Ok(size) => {
-                        trace!(size, position, "Reserving space");
-                        for _ in 0..size {
-                            if let Err(e) = layout.insert_placement(
-                                position,
-                                Placement::Reserved,
-                                content.location.clone(),
-                            ) {
-                                errors.push(e);
+                        trace!(size, position = cursor.position, "Reserving space");
+                        // The whole reservation is checked before the loop, so
+                        // a `.space` argument naming billions of cells costs
+                        // one diagnostic rather than that many insertions.
+                        match cursor.position.checked_add(size) {
+                            Some(end) if end <= MEMORY_SIZE => {
+                                for _ in 0..size {
+                                    cursor.place(
+                                        &mut layout,
+                                        Placement::Reserved,
+                                        &content.location,
+                                        &mut errors,
+                                    );
+                                }
                             }
-                            position += 1;
+                            _ => {
+                                errors.push(MemoryLayoutError::SpaceDoesNotFit {
+                                    address: cursor.position,
+                                    size,
+                                    location: content.location.clone(),
+                                });
+                            }
                         }
                     }
                     Err(source) => {
@@ -230,7 +302,7 @@ pub(crate) fn layout_memory(program: &[Located<Line>]) -> (Layout, Vec<MemoryLay
                 } => match e.evaluate(&EmptyExpressionContext) {
                     Ok(addr) => {
                         debug!(addr, "Changing address");
-                        position = addr;
+                        cursor.seek(addr);
                     }
                     Err(source) => {
                         errors.push(MemoryLayoutError::DirectiveArgumentEvaluation {
@@ -249,24 +321,21 @@ pub(crate) fn layout_memory(program: &[Located<Line>]) -> (Layout, Vec<MemoryLay
                             ..
                         },
                 } => {
-                    trace!(position, string = string.as_str(), "Inserting string");
+                    trace!(
+                        position = cursor.position,
+                        string = string.as_str(),
+                        "Inserting string"
+                    );
                     for c in string.chars() {
-                        if let Err(e) = layout.insert_placement(
-                            position,
+                        cursor.place(
+                            &mut layout,
                             Placement::Char(c),
-                            content.location.clone(),
-                        ) {
-                            errors.push(e);
-                        }
-                        position += 1;
+                            &content.location,
+                            &mut errors,
+                        );
                     }
 
-                    if let Err(e) =
-                        layout.insert_placement(position, Placement::Nul, content.location.clone())
-                    {
-                        errors.push(e);
-                    }
-                    position += 1;
+                    cursor.place(&mut layout, Placement::Nul, &content.location, &mut errors);
                 }
 
                 LineContent::Directive { kind, .. } => {
@@ -287,7 +356,7 @@ pub(crate) fn layout_memory(program: &[Located<Line>]) -> (Layout, Vec<MemoryLay
 
 #[cfg(test)]
 mod tests {
-    use InstructionKind::{Add, Jmp};
+    use InstructionKind::{Add, Jmp, Nop};
 
     use super::*;
     use crate::parser::expression::Node;
@@ -478,6 +547,95 @@ mod tests {
         match &errors[0] {
             MemoryLayoutError::MemoryOverlap { address, .. } => assert_eq!(*address, 14),
             other => panic!("expected MemoryOverlap, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn addr_directive_out_of_bounds_test() {
+        // .addr 9999 leaves only address 9999 valid; the second nop lands on
+        // address 10000.
+        let program: Vec<Located<Line>> = vec![
+            Line::empty().directive(DirectiveKind::Addr, 9999),
+            Line::empty().instruction(Nop, vec![]),
+            Line::empty().instruction(Nop, vec![]),
+        ];
+
+        let (_, errors) = layout_memory(&program);
+        assert_eq!(errors.len(), 1);
+        match &errors[0] {
+            MemoryLayoutError::OutOfBounds { address, .. } => assert_eq!(*address, 10000),
+            other => panic!("expected OutOfBounds, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn space_directive_out_of_bounds_test() {
+        let program: Vec<Located<Line>> = vec![
+            Line::empty().directive(DirectiveKind::Addr, 9990),
+            Line::empty().directive(DirectiveKind::Space, 20),
+        ];
+
+        let (_, errors) = layout_memory(&program);
+        assert_eq!(errors.len(), 1);
+        match &errors[0] {
+            MemoryLayoutError::SpaceDoesNotFit { address, size, .. } => {
+                assert_eq!(*address, 9990);
+                assert_eq!(*size, 20);
+            }
+            other => panic!("expected SpaceDoesNotFit, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn space_directive_huge_argument_does_not_loop_test() {
+        // The bounds check runs before the loop, so `layout.memory` stays
+        // empty for an argument this large.
+        let program: Vec<Located<Line>> =
+            vec![Line::empty().directive(DirectiveKind::Space, 50_000_000)];
+
+        let (layout, errors) = layout_memory(&program);
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(
+            errors[0],
+            MemoryLayoutError::SpaceDoesNotFit { .. }
+        ));
+        assert!(layout.memory.is_empty());
+    }
+
+    #[test]
+    fn addr_directive_at_the_last_address_test() {
+        // The cursor sits on the highest address an expression can name;
+        // advancing past it must not overflow.
+        let program: Vec<Located<Line>> = vec![
+            Line::empty().directive(DirectiveKind::Addr, i128::from(Address::MAX)),
+            Line::empty().instruction(Nop, vec![]),
+            Line::empty().instruction(Nop, vec![]),
+        ];
+
+        let (_, errors) = layout_memory(&program);
+        assert_eq!(errors.len(), 1);
+        match &errors[0] {
+            MemoryLayoutError::OutOfBounds { address, .. } => {
+                assert_eq!(*address, Address::MAX);
+            }
+            other => panic!("expected OutOfBounds, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn out_of_bounds_run_is_reported_once_test() {
+        // `.string` places one cell per character plus a NUL; only the first
+        // address past the end of memory is reported.
+        let program: Vec<Located<Line>> = vec![
+            Line::empty().directive(DirectiveKind::Addr, 9998),
+            Line::empty().directive(DirectiveKind::String, "hello"),
+        ];
+
+        let (_, errors) = layout_memory(&program);
+        assert_eq!(errors.len(), 1);
+        match &errors[0] {
+            MemoryLayoutError::OutOfBounds { address, .. } => assert_eq!(*address, 10000),
+            other => panic!("expected OutOfBounds, got {other:?}"),
         }
     }
 }

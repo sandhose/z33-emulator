@@ -1,0 +1,9 @@
+---
+source: crates/emulator/tests/diagnostics.rs
+expression: "check_full_pipeline_errors(\".addr 4294967295\\nnop\")"
+---
+error: address 4294967295 is outside of memory
+  ┌─ <preprocessed>:2:1
+  │
+2 │ nop
+  │ ^^^ does not fit in memory
