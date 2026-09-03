@@ -32,8 +32,21 @@ end
 -- passed `(path, bufnr)`.
 local function register_ftdetect()
   local ftdetect = require("z33.ftdetect")
-  local function matcher(_, bufnr)
-    return ftdetect.detect(bufnr)
+  -- Registering an extension callback replaces Neovim's builtin entry for
+  -- it, so a non-Z33 file must be handed back to the builtin asm detection.
+  local function matcher(path, bufnr)
+    local ft = ftdetect.detect(bufnr)
+    if ft then
+      return ft
+    end
+    -- `vim.filetype.detect` is not a documented API, and its `asm` returns a
+    -- second value (an `on_detect` callback setting `b:asmsyntax`) that `or`
+    -- would truncate away.
+    local ok, detect = pcall(require, "vim.filetype.detect")
+    if ok and detect.asm then
+      return detect.asm(path, bufnr)
+    end
+    return "asm"
   end
   vim.filetype.add({
     extension = {

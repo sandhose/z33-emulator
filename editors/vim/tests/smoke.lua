@@ -30,6 +30,18 @@ vim.fn.bufload(bufnr)
 local ft = vim.filetype.match({ buf = bufnr, filename = "fact.s" })
 assert(ft == "z33", "expected filetype z33 for samples/fact.s, got: " .. tostring(ft))
 
+-- A GNU assembly file must keep Neovim's builtin detection.
+local gnu = vim.api.nvim_create_buf(false, true)
+vim.api.nvim_buf_set_lines(gnu, 0, -1, false, {
+  "\t.text",
+  "\t.globl main",
+  "main:",
+  "\tmovq $1, %rax",
+  "\tret",
+})
+local gnu_ft = vim.filetype.match({ buf = gnu, filename = "gnu.s" })
+assert(gnu_ft == "asm", "expected filetype asm for a GNU file, got: " .. tostring(gnu_ft))
+
 -- Highlighting: with no tree-sitter parser installed (the CI case), a z33
 -- buffer must fall back to the bundled Vimscript syntax (syntax/z33.vim, shared
 -- with classic Vim), i.e. b:current_syntax == "z33". With a parser present,
