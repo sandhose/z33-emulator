@@ -37,7 +37,9 @@ function M.setup()
       name = "Launch Z33 program",
       program = "${file}",
       entrypoint = function()
-        return vim.fn.input("Entrypoint: ", "main")
+        local answer = vim.fn.input("Entrypoint: ", "main")
+        -- An omitted entrypoint lets the adapter pick main/start/run/entry.
+        return answer ~= "" and answer or nil
       end,
       stopOnEntry = true,
     },
