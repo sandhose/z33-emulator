@@ -33,6 +33,28 @@ Add a `zorglub33` entry to the project's `.zed/debug.json`, or fill the
 `entrypoint` defaults to whichever of `main`, `start`, `run` or `entry` the
 program defines.
 
+## Running a label from the gutter
+
+The extension marks every label as a runnable and exposes its name to tasks
+as `$ZED_CUSTOM_label`. Zed only shows the run button once a task carries the
+`zorglub33-label` tag, so add one to your `tasks.json`
+(`zed: open tasks` in the command palette):
+
+```json
+[
+  {
+    "label": "z33: run $ZED_CUSTOM_label",
+    "command": "z33-cli",
+    "args": ["run", "$ZED_FILE", "$ZED_CUSTOM_label"],
+    "tags": ["zorglub33-label"]
+  }
+]
+```
+
+This runs `z33-cli` from your `PATH`; the copy the extension downloads for
+the language server is not on it. Data labels get a button too, since the
+syntax query cannot tell them from code labels.
+
 ## Development
 
 The extension lives in `editors/zed/` of the main repository. Install it as a
