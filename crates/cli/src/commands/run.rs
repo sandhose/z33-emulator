@@ -7,7 +7,7 @@ use camino::Utf8PathBuf;
 use clap::{ArgAction, Parser, ValueHint};
 use tracing::{debug, info};
 use z33_emulator::diagnostic::{
-    preprocessor_error_to_diagnostics, render_to_string, resolve_diagnostic_spans,
+    has_errors, preprocessor_error_to_diagnostics, render_to_string, resolve_diagnostic_spans,
 };
 use z33_emulator::preprocessor::{NativeFilesystem, SourceMap, Workspace};
 use z33_emulator::runtime::{Computer, ProcessorError};
@@ -75,12 +75,12 @@ impl RunOpt {
         );
 
         // Show all diagnostics (parse + compilation), resolved to original
-        // files
-        if !compile_result.diagnostics.is_empty() {
-            for diag in &compile_result.diagnostics {
-                let resolved = resolve_diagnostic_spans(diag, &source_map);
-                eprint!("{}", render_to_string(&resolved, workspace.file_db()));
-            }
+        // files; only errors prevent the run.
+        for diag in &compile_result.diagnostics {
+            let resolved = resolve_diagnostic_spans(diag, &source_map);
+            eprint!("{}", render_to_string(&resolved, workspace.file_db()));
+        }
+        if has_errors(&compile_result.diagnostics) {
             exit(1);
         }
 

@@ -71,6 +71,12 @@ impl FileDatabase {
     }
 }
 
+/// Whether any of `diagnostics` is severe enough to stop the compilation.
+#[must_use]
+pub fn has_errors(diagnostics: &[Diagnostic<FileId>]) -> bool {
+    diagnostics.iter().any(|d| d.severity >= Severity::Error)
+}
+
 // ---------------------------------------------------------------------------
 // Conversion: ParseDiagnostic → codespan Diagnostic
 // ---------------------------------------------------------------------------
