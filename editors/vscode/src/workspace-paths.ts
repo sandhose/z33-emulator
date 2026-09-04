@@ -73,17 +73,27 @@ async function walkForSourceFiles(dir: vscode.Uri, out: vscode.Uri[]): Promise<v
 }
 
 /**
- * Resolve a server-side workspace-relative path (as carried by e.g. the run
- * code lens) back to a real workspace URI by joining it onto each workspace
- * folder and probing with `fs.stat`. Deliberately avoids `findFiles`, which is
- * unreliable on web hosts (see `findSourceFiles`). With multiple roots the
- * relative path may or may not carry the folder-name prefix (the LSP push
- * prefixes it, the server's own root-URI relativization doesn't), so both
- * spellings are probed.
+ * Resolve a key the server knows a file under (as carried by e.g. the run code
+ * lens) back to a real URI. An open document filed under that key answers
+ * directly — an unsaved buffer has no path to probe. Otherwise the key is a
+ * workspace-relative path: join it onto each workspace folder and probe with
+ * `fs.stat`. Deliberately avoids `findFiles`, which is unreliable on web hosts
+ * (see `findSourceFiles`). With multiple roots the relative path may or may not
+ * carry the folder-name prefix (the LSP push prefixes it, the server's own
+ * root-URI relativization doesn't), so both spellings are probed.
  */
 export async function uriForWorkspaceRelativePath(
   relativePath: string,
 ): Promise<vscode.Uri | undefined> {
+  const includeFolder = includeWorkspaceFolderInPaths();
+  const open = vscode.workspace.textDocuments.find(
+    (document) =>
+      document.languageId === LANGUAGE_ID && documentKey(document, includeFolder) === relativePath,
+  );
+  if (open !== undefined) {
+    return open.uri;
+  }
+
   const folders = vscode.workspace.workspaceFolders ?? [];
   // Probe the folder the leading path segment names first: with multiple
   // roots the pushed keys are folder-prefixed, and a verbatim probe against an
