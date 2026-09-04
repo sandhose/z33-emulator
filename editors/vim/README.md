@@ -222,10 +222,11 @@ Standard nvim-dap keymaps work as usual.
 ## Health check (Neovim)
 
 Run **`:checkhealth z33`** to verify your setup: Neovim version, whether
-`z33-cli` is on `PATH`/cached, platform download support, nvim-treesitter (+ the
-`z33` parser) and nvim-dap availability, and which highlighting mode
-(tree-sitter vs. regex fallback) is in effect. If highlighting looks basic when
-you wanted tree-sitter, run `:TSInstall z33`.
+`z33-cli` is on `PATH`/cached and what it prints when actually run
+(`z33-cli --version`), platform download support, nvim-treesitter (+ the `z33`
+parser) and nvim-dap availability, and which highlighting mode (tree-sitter vs.
+regex fallback) is in effect. If highlighting looks basic when you wanted
+tree-sitter, run `:TSInstall z33`.
 
 ## Troubleshooting
 

@@ -14,17 +14,31 @@ function M.check()
     health.warn("Neovim < 0.11: native LSP unavailable; use the nvim-lspconfig fallback (see README)")
   end
 
-  -- z33-cli availability.
+  -- z33-cli availability, and whether the file actually runs (a download
+  -- for the wrong platform or a quarantined binary is found but fails here).
   local on_path = vim.fn.exepath("z33-cli")
   local download = require("z33.download")
+  local bin
   if on_path ~= "" then
+    bin = on_path
     health.ok("z33-cli found on PATH: " .. on_path)
   else
-    local cached = download.cached_binary()
-    if cached then
-      health.ok("z33-cli found in cache: " .. cached)
+    bin = download.cached_binary()
+    if bin then
+      health.ok("z33-cli found in cache: " .. bin)
     else
       health.warn("z33-cli not found on PATH or in cache; run :Z33Download or add it to PATH")
+    end
+  end
+  if bin then
+    local ok, result = pcall(function()
+      return vim.system({ bin, "--version" }, { text = true, timeout = 5000 }):wait()
+    end)
+    if ok and result.code == 0 then
+      health.ok("z33-cli runs: " .. vim.trim(result.stdout or ""))
+    else
+      local detail = ok and vim.trim((result.stderr or "") .. (result.stdout or "")) or tostring(result)
+      health.error("z33-cli does not run: " .. (detail ~= "" and detail or ("exit code " .. tostring(ok and result.code))))
     end
   end
 
