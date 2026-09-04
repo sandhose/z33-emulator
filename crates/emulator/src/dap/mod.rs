@@ -92,6 +92,10 @@ const DEFAULT_PAGE: u32 = 256;
 const MAX_FRAMES: usize = 64;
 /// Bytes on the wire for a single Z33 cell (one `i64` word, little-endian).
 const CELL_BYTES: i64 = 8;
+/// Rejection message for a requested breakpoint line the line index cannot map
+/// to an instruction. Shared so the `setBreakpoints` response and the
+/// `breakpoint` events that re-report the same line agree.
+const NO_CODE_AT_LINE: &str = "no code at or after this line";
 
 /// What a dynamically allocated `variablesReference` expands to. Rebuilt on
 /// every stop; see [`DynRef`] allocation in [`DebugSession::alloc_dyn`].
@@ -161,15 +165,28 @@ enum Outcome {
     Exception(String),
 }
 
+/// One source line from a `setBreakpoints` request and the id reported for it,
+/// which every later `breakpoint` event for that line repeats.
+#[derive(Debug, Clone, Copy)]
+struct RequestedLine {
+    line: u32,
+    id: i64,
+}
+
 /// A compiled, runnable program plus everything needed to debug it.
 struct LoadedProgram {
     computer: Computer,
     index: LineIndex,
     labels: BTreeMap<String, Address>,
-    /// Requested breakpoint source lines per path (last `setBreakpoints` wins).
+    /// One past the highest cell the assembled program occupies, `.space`
+    /// reservations included even though those read back as `Cell::Empty`.
+    /// Bounds the last label's region in [`label_regions`].
+    program_end: Address,
+    /// Requested breakpoint source lines per path, each paired with the id
+    /// handed to the client, in request order (last `setBreakpoints` wins).
     /// Kept as the raw client request so they can be re-resolved against a
     /// fresh [`LineIndex`] after a `restart` (addresses may shift).
-    requested_lines: HashMap<String, Vec<u32>>,
+    requested_lines: HashMap<String, Vec<RequestedLine>>,
     /// Breakpoint addresses per source path (last `setBreakpoints` wins).
     bp_by_file: HashMap<String, Vec<Address>>,
     /// Union of all breakpoint addresses.
@@ -192,7 +209,7 @@ impl LoadedProgram {
             .map(|(path, lines)| {
                 let addrs = lines
                     .iter()
-                    .filter_map(|&line| self.index.resolve_breakpoint(path, line).map(|(_, a)| a))
+                    .filter_map(|r| self.index.resolve_breakpoint(path, r.line).map(|(_, a)| a))
                     .collect();
                 (path.clone(), addrs)
             })
@@ -215,6 +232,12 @@ pub struct DebugSession {
     run_mode: RunMode,
     program: Option<LoadedProgram>,
     launch_args: Option<LaunchArguments>,
+    /// Source lines from `setBreakpoints` requests that arrived before a
+    /// program was launched, keyed by path; resolved on launch.
+    pending_breakpoints: HashMap<String, Vec<RequestedLine>>,
+    /// Monotonic allocator for breakpoint ids. Never reset, so an id is never
+    /// reused for a different requested line within a session.
+    next_bp_id: i64,
     /// Live dynamic `variablesReference` handles for the current stop.
     dyn_handles: HashMap<i64, DynRef>,
     /// Monotonic allocator for dynamic handles (never reset, so stale handles
@@ -226,6 +249,13 @@ pub struct DebugSession {
     /// replacements (see [`DebugSession::serial_output_events`]). At most 3
     /// bytes; reset whenever the computer is (re)loaded.
     serial_utf8_carry: Vec<u8>,
+    /// `pc` at the instant an unhandled exception was raised, i.e. before
+    /// `computer.step()` advanced it. Only [`DebugSession::stack_frames`] reads
+    /// it, so that the top frame points at the faulting instruction rather than
+    /// the one after it; the Registers scope, `evaluate "%pc"` and every other
+    /// view keep reporting the live `pc`, which is the machine's real state and
+    /// what an exception handler would have saved. Cleared on the next resume.
+    exception_pc: Option<Address>,
 }
 
 impl Default for DebugSession {
@@ -249,10 +279,20 @@ impl DebugSession {
             run_mode: RunMode::Continue,
             program: None,
             launch_args: None,
+            pending_breakpoints: HashMap::new(),
+            next_bp_id: 1,
             dyn_handles: HashMap::new(),
             next_dyn: 0,
             serial_utf8_carry: Vec::new(),
+            exception_pc: None,
         }
+    }
+
+    /// Allocate a fresh breakpoint id for a requested source line.
+    fn alloc_bp_id(&mut self) -> i64 {
+        let id = self.next_bp_id;
+        self.next_bp_id += 1;
+        id
     }
 
     /// Allocate a fresh dynamic `variablesReference` for the current stop.
@@ -424,17 +464,88 @@ impl DebugSession {
 
         match load_program(&args) {
             Ok(program) => {
-                self.stop_on_entry = args.stop_on_entry;
-                self.serial_utf8_carry.clear();
-                self.program = Some(program);
+                self.install_program(program, args.stop_on_entry);
                 self.launch_args = Some(args);
                 let resp = self.response(req, Value::Null);
                 let mut out = vec![resp];
+                out.extend(self.pending_breakpoint_events());
                 out.extend(self.maybe_enter());
                 out
             }
             Err(msg) => vec![self.response_err(req, msg)],
         }
+    }
+
+    /// Make a freshly loaded program the session's program, carrying the
+    /// requested breakpoint lines over and clearing everything that described
+    /// the program it replaces. Shared by `launch` and `restart`, which differ
+    /// only in where the launch arguments come from.
+    ///
+    /// The client does not re-send `setBreakpoints` (no second `initialized`
+    /// event), so the requested source lines are re-resolved against the new
+    /// line index; addresses may have shifted.
+    fn install_program(&mut self, mut program: LoadedProgram, stop_on_entry: bool) {
+        let mut requested = self
+            .program
+            .take()
+            .map_or_else(HashMap::new, |old| old.requested_lines);
+        requested.extend(std::mem::take(&mut self.pending_breakpoints));
+        program.requested_lines = requested;
+        program.reresolve_breakpoints();
+        self.program = Some(program);
+        self.entered = false;
+        self.exception_pending = false;
+        self.exception_pc = None;
+        self.pause_requested = false;
+        self.serial_utf8_carry.clear();
+        self.stop_on_entry = stop_on_entry;
+        self.state = State::Initialized;
+        // A `variablesReference` from the previous program would otherwise
+        // read the new program's memory.
+        self.invalidate_handles();
+    }
+
+    /// A `changed` `breakpoint` event for every source line the client has
+    /// requested, re-resolved against the loaded program's line index. Lines
+    /// answered as unverified before launch need an event even when they still
+    /// do not resolve, otherwise the client shows them as pending forever.
+    fn pending_breakpoint_events(&mut self) -> Vec<Value> {
+        let requested: Vec<(String, RequestedLine, Option<u32>)> = match self.program.as_ref() {
+            Some(program) => program
+                .requested_lines
+                .iter()
+                .flat_map(|(path, lines)| {
+                    lines.iter().map(|&r| {
+                        let resolved = program
+                            .index
+                            .resolve_breakpoint(path, r.line)
+                            .map(|(line, _)| line);
+                        (path.clone(), r, resolved)
+                    })
+                })
+                .collect(),
+            None => Vec::new(),
+        };
+        requested
+            .into_iter()
+            .map(|(path, r, resolved)| {
+                let breakpoint = Breakpoint {
+                    id: Some(r.id),
+                    verified: resolved.is_some(),
+                    line: Some(resolved.unwrap_or(r.line)),
+                    source: Some(Source {
+                        name: None,
+                        path: Some(path),
+                    }),
+                    message: resolved.is_none().then(|| NO_CODE_AT_LINE.to_owned()),
+                    reason: resolved.is_none().then(|| "failed".to_owned()),
+                };
+                self.make_event(
+                    "breakpoint",
+                    json!({ "reason": "changed", "breakpoint": breakpoint }),
+                )
+            })
+            .collect()
     }
 
     fn on_set_breakpoints(&mut self, req: &IncomingRequest) -> Vec<Value> {
@@ -443,36 +554,65 @@ impl DebugSession {
             Err(e) => return vec![self.response_err(req, format!("invalid arguments: {e}"))],
         };
 
+        let source = args.source;
+        let path = source
+            .path
+            .clone()
+            .or_else(|| source.name.clone())
+            .unwrap_or_default();
+        // Ids are allocated per requested line, before resolution, so the
+        // pending and the resolved branch report the same id for the same
+        // entry of this request.
+        let requested: Vec<RequestedLine> = args
+            .breakpoints
+            .iter()
+            .map(|bp| RequestedLine {
+                line: bp.line,
+                id: self.alloc_bp_id(),
+            })
+            .collect();
+
         let body = {
             let Some(program) = self.program.as_mut() else {
-                return vec![self.response_err(req, "no program launched")];
+                // Before launch there is no line index to resolve against;
+                // keep the request and answer once the program is loaded.
+                let result: Vec<Breakpoint> = requested
+                    .iter()
+                    .map(|r| Breakpoint {
+                        id: Some(r.id),
+                        verified: false,
+                        line: Some(r.line),
+                        source: Some(source.clone()),
+                        message: Some("pending launch".to_owned()),
+                        reason: Some("pending".to_owned()),
+                    })
+                    .collect();
+                self.pending_breakpoints.insert(path, requested);
+                return vec![self.response(req, json!({ "breakpoints": result }))];
             };
-            let source = args.source;
-            let path = source
-                .path
-                .clone()
-                .or_else(|| source.name.clone())
-                .unwrap_or_default();
 
             let mut result: Vec<Breakpoint> = Vec::new();
             let mut addrs: Vec<Address> = Vec::new();
-            let requested: Vec<u32> = args.breakpoints.iter().map(|bp| bp.line).collect();
-            for bp in args.breakpoints {
-                match program.index.resolve_breakpoint(&path, bp.line) {
+            for r in &requested {
+                match program.index.resolve_breakpoint(&path, r.line) {
                     Some((line, address)) => {
                         addrs.push(address);
                         result.push(Breakpoint {
+                            id: Some(r.id),
                             verified: true,
                             line: Some(line),
                             source: Some(source.clone()),
                             message: None,
+                            reason: None,
                         });
                     }
                     None => result.push(Breakpoint {
+                        id: Some(r.id),
                         verified: false,
-                        line: Some(bp.line),
+                        line: Some(r.line),
                         source: Some(source.clone()),
-                        message: Some("no code at or after this line".to_owned()),
+                        message: Some(NO_CODE_AT_LINE.to_owned()),
+                        reason: Some("failed".to_owned()),
                     }),
                 }
             }
@@ -652,7 +792,7 @@ impl DebugSession {
     fn globals_variables(&mut self, start: u32, count: Option<u32>, hex: bool) -> Vec<Variable> {
         let regions = {
             let program = self.program.as_ref().expect("program loaded");
-            label_regions(&program.labels)
+            label_regions(&program.labels, program.program_end)
         };
         let count = count.map_or(usize::MAX, |c| c as usize);
         let mut out = Vec::new();
@@ -726,23 +866,32 @@ impl DebugSession {
         let program = self.program.as_ref()?;
         match reference {
             STACK_REF => {
+                // `set_cell` rejects an address past the end of memory with a
+                // message naming it; only the overflow has to be caught here.
                 let n = name.strip_prefix("sp+")?.trim().parse::<u32>().ok()?;
-                Some(program.computer.registers.sp + n)
+                program.computer.registers.sp.checked_add(n)
             }
             GLOBALS_REF => {
                 // Only single-cell labels are settable at the scope level.
                 let &base = program.labels.get(name)?;
-                let regions = label_regions(&program.labels);
+                let regions = label_regions(&program.labels, program.program_end);
                 let len = regions
                     .iter()
                     .find(|(l, _, _)| l == name)
                     .map_or(1, |&(_, _, len)| len);
                 (len <= 1).then_some(base)
             }
-            r if r >= DYN_BASE => match self.dyn_handles.get(&r)? {
-                // Both children encode the absolute address in `name (addr)`.
-                DynRef::GlobalLabel { .. } | DynRef::FrameStack { .. } => parse_addr_suffix(name),
-            },
+            r if r >= DYN_BASE => {
+                // Both children encode the absolute address in `name (addr)`,
+                // but the name comes from the client, so it only names a cell
+                // the handle actually covers.
+                let (start, end) = match self.dyn_handles.get(&r)? {
+                    DynRef::GlobalLabel { base, len, .. } => (*base, base.saturating_add(*len)),
+                    DynRef::FrameStack { start, end } => (*start, *end),
+                };
+                let addr = parse_addr_suffix(name)?;
+                (start..end).contains(&addr).then_some(addr)
+            }
             _ => None,
         }
     }
@@ -772,8 +921,10 @@ impl DebugSession {
             out.extend(self.terminate_now(EXIT_EXCEPTION));
             return Some(out);
         }
-        // Resuming: any handle handed out during the last stop is now stale.
+        // Only reached once the resume is accepted: any handle handed out
+        // during the last stop is now stale, and so is the faulting pc.
         self.invalidate_handles();
+        self.exception_pc = None;
         None
     }
 
@@ -956,22 +1107,8 @@ impl DebugSession {
             return vec![self.response_err(req, "nothing to restart")];
         };
         match load_program(&args) {
-            Ok(mut program) => {
-                // Carry breakpoints across the restart: the client will not
-                // re-send `setBreakpoints` (no `initialized` is re-emitted), so
-                // re-resolve the previously requested source lines against the
-                // freshly built line index (addresses may have shifted).
-                if let Some(old) = self.program.take() {
-                    program.requested_lines = old.requested_lines;
-                    program.reresolve_breakpoints();
-                }
-                self.program = Some(program);
-                self.entered = false;
-                self.exception_pending = false;
-                self.pause_requested = false;
-                self.serial_utf8_carry.clear();
-                self.stop_on_entry = args.stop_on_entry;
-                self.state = State::Initialized;
+            Ok(program) => {
+                self.install_program(program, args.stop_on_entry);
                 let resp = self.response(req, Value::Null);
                 let mut out = vec![resp];
                 out.extend(self.maybe_enter());
@@ -1024,6 +1161,7 @@ impl DebugSession {
         };
 
         for _ in 0..CHUNK_SIZE {
+            let pc_before = program.computer.registers.pc;
             match program.computer.step() {
                 Ok(()) => {
                     let pc = program.computer.registers.pc;
@@ -1047,7 +1185,10 @@ impl DebugSession {
                     }
                 }
                 Err(ProcessorError::Reset) => return Outcome::Terminated(EXIT_OK),
-                Err(e) => return Outcome::Exception(e.to_string()),
+                Err(e) => {
+                    self.exception_pc = Some(pc_before);
+                    return Outcome::Exception(e.to_string());
+                }
             }
         }
         Outcome::Pending
@@ -1084,6 +1225,13 @@ impl DebugSession {
                 self.state = State::Stopped;
                 self.exception_pending = true;
                 self.invalidate_handles();
+                // The live `pc` a client reads from the Registers scope has
+                // already moved past the fault, so name the faulting address
+                // here.
+                let msg = match self.exception_pc {
+                    Some(pc) => format!("{msg} (at address {pc})"),
+                    None => msg,
+                };
                 out.push(self.make_event(
                     "output",
                     json!({ "category": "console", "output": format!("Exception: {msg}\n") }),
@@ -1155,7 +1303,7 @@ impl DebugSession {
             return Vec::new();
         };
         let mut frames = Vec::new();
-        let pc = program.computer.registers.pc;
+        let pc = self.exception_pc.unwrap_or(program.computer.registers.pc);
         frames.push(self.frame(0, pc));
 
         // Best-effort synthesis of caller frames from the return-address scan.
@@ -1664,10 +1812,13 @@ fn frame_stack_variables(
 }
 
 /// The label regions `(name, base, len)`, sorted by address, each bounded by
-/// the next label's address and the memory size (at least one cell). The full
-/// `len` is reported as `indexedVariables`; per-request paging (see
+/// the next label's address and the end of the program (at least one cell).
+/// The full `len` is reported as `indexedVariables`; per-request paging (see
 /// [`DEFAULT_PAGE`]) keeps large regions like a 5000-word `.space` responsive.
-fn label_regions(labels: &BTreeMap<String, Address>) -> Vec<(String, Address, u32)> {
+fn label_regions(
+    labels: &BTreeMap<String, Address>,
+    program_end: Address,
+) -> Vec<(String, Address, u32)> {
     let mut by_addr: Vec<(Address, String)> = labels.iter().map(|(n, &a)| (a, n.clone())).collect();
     by_addr.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
 
@@ -1676,7 +1827,7 @@ fn label_regions(labels: &BTreeMap<String, Address>) -> Vec<(String, Address, u3
         let (addr, name) = &by_addr[i];
         let next = by_addr
             .get(i + 1)
-            .map_or(C::MEMORY_SIZE, |(a, _)| *a)
+            .map_or(program_end, |(a, _)| *a)
             .max(*addr);
         let len = (next - addr).max(1);
         out.push((name.clone(), *addr, len));
@@ -1755,6 +1906,11 @@ fn cell_word(cell: &Cell) -> i64 {
 /// Returns `(first_cell_address, data, unreadable_trailing_bytes)`, or an error
 /// if the client-supplied `base`/`offset` overflow when converted to a byte
 /// address.
+///
+/// A start below address 0 is clamped to 0 rather than rejected: a memory
+/// viewer scrolling up past the start of memory sends such offsets, and the
+/// returned first address tells it where the data really begins. A start past
+/// the end of memory is not clamped — it reads back as unreadable bytes.
 fn read_memory(
     computer: &Computer,
     base: i64,
@@ -1764,7 +1920,8 @@ fn read_memory(
     let start_byte = base
         .checked_mul(CELL_BYTES)
         .and_then(|b| b.checked_add(offset))
-        .ok_or_else(|| "memory address out of range".to_owned())?;
+        .ok_or_else(|| "memory address out of range".to_owned())?
+        .max(0);
     let mut data = Vec::new();
     let mut unreadable = 0;
     for i in 0..count {
@@ -1774,7 +1931,7 @@ fn read_memory(
         };
         let cell_index = p.div_euclid(CELL_BYTES);
         let byte_in = usize::try_from(p.rem_euclid(CELL_BYTES)).unwrap_or(0);
-        if p < 0 || cell_index >= i64::from(C::MEMORY_SIZE) {
+        if cell_index >= i64::from(C::MEMORY_SIZE) {
             unreadable = count - i;
             break;
         }
@@ -2033,6 +2190,16 @@ fn compile_program<FS: Filesystem>(
 
     let index = LineIndex::build(&assembled.debug_info, &ref_map, workspace.file_db());
     let labels = assembled.debug_info.labels.clone();
+    // The source map has an entry for every placement the layout made, so its
+    // last address is the last cell the program occupies. The memory itself
+    // cannot answer this: a `.space` reservation is a `Cell::Empty`,
+    // indistinguishable from never-written memory.
+    let program_end = assembled
+        .debug_info
+        .source_map
+        .keys()
+        .next_back()
+        .map_or(0, |&a| a.saturating_add(1));
 
     let computer = match assembled.into_computer(&entrypoint) {
         Ok(computer) => computer,
@@ -2050,6 +2217,7 @@ fn compile_program<FS: Filesystem>(
         computer,
         index,
         labels,
+        program_end,
         requested_lines: HashMap::new(),
         bp_by_file: HashMap::new(),
         breakpoints: HashSet::new(),

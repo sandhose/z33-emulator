@@ -102,6 +102,169 @@ impl Harness {
     }
 }
 
+#[test]
+fn breakpoints_set_before_launch_are_kept_and_verified_on_launch() {
+    let mut h = Harness::new();
+    h.send("initialize", json!({}));
+
+    // The `initialized` event ships with the initialize response, so
+    // `setBreakpoints` can reach the adapter before `launch`. Line 7 is
+    // `ld [%sp+1],%a` and line 3 is `call factorielle`.
+    let out = h.send(
+        "setBreakpoints",
+        json!({ "source": { "path": "/fact.s" }, "breakpoints": [{ "line": 7 }, { "line": 3 }] }),
+    );
+    assert_eq!(out[0]["success"], json!(true));
+    let requested = out[0]["body"]["breakpoints"].as_array().unwrap().clone();
+    assert_eq!(requested[0]["verified"], json!(false));
+    assert_eq!(requested[0]["reason"], json!("pending"));
+    let ids: Vec<&Value> = requested.iter().map(|bp| &bp["id"]).collect();
+    assert!(ids.iter().all(|id| id.is_i64()), "ids assigned: {ids:?}");
+
+    let out = h.send(
+        "launch",
+        json!({
+            "program": "/fact.s",
+            "entrypoint": "main",
+            "stopOnEntry": false,
+            "files": { "/fact.s": FACT_SOURCE },
+        }),
+    );
+    let events: Vec<&Value> = out.iter().filter(|m| m["event"] == "breakpoint").collect();
+    assert_eq!(events.len(), 2, "one event per requested line");
+    let event_ids: Vec<&Value> = events
+        .iter()
+        .map(|e| &e["body"]["breakpoint"]["id"])
+        .collect();
+    assert_eq!(event_ids, ids, "events carry the response ids");
+
+    let seven = events
+        .iter()
+        .find(|e| e["body"]["breakpoint"]["id"] == requested[0]["id"])
+        .expect("event for line 7");
+    assert_eq!(seven["body"]["breakpoint"]["verified"], json!(true));
+    assert_eq!(seven["body"]["breakpoint"]["line"], json!(7));
+
+    let mut out = h.send("configurationDone", json!({}));
+    out.extend(h.drive());
+    let stopped = find_event(&out, "stopped").expect("stops at the breakpoint");
+    assert_eq!(stopped["body"]["reason"], json!("breakpoint"));
+}
+
+#[test]
+fn a_pending_breakpoint_with_no_code_after_it_is_reported_unverified() {
+    let mut h = Harness::new();
+    h.send("initialize", json!({}));
+
+    // Line 100 is past the end of the source, so it never resolves; without an
+    // event of its own the client would show it as pending for the whole
+    // session.
+    h.send(
+        "setBreakpoints",
+        json!({ "source": { "path": "/fact.s" }, "breakpoints": [{ "line": 100 }] }),
+    );
+    let out = h.send(
+        "launch",
+        json!({
+            "program": "/fact.s",
+            "entrypoint": "main",
+            "stopOnEntry": true,
+            "files": { "/fact.s": FACT_SOURCE },
+        }),
+    );
+    let events: Vec<&Value> = out.iter().filter(|m| m["event"] == "breakpoint").collect();
+    assert_eq!(events.len(), 1);
+    let bp = &events[0]["body"]["breakpoint"];
+    assert_eq!(bp["verified"], json!(false));
+    assert_eq!(bp["reason"], json!("failed"));
+    assert_eq!(bp["message"], json!("no code at or after this line"));
+}
+
+#[test]
+fn second_launch_replaces_the_program_and_stops_on_entry() {
+    let mut h = Harness::new();
+    let out = h.launch(true);
+    assert!(find_event(&out, "stopped").is_some());
+
+    let mut out = h.send(
+        "launch",
+        json!({
+            "program": "/other.s",
+            "entrypoint": "main",
+            "stopOnEntry": true,
+            "files": { "/other.s": "main:\n    ld 1, %a\n    reset\n" },
+        }),
+    );
+    out.extend(h.drive());
+    let stopped = find_event(&out, "stopped").expect("second launch stops on entry");
+    assert_eq!(stopped["body"]["reason"], json!("entry"));
+
+    let frames = h.send("stackTrace", json!({ "threadId": 1 }));
+    assert_eq!(frames[0]["body"]["stackFrames"][0]["line"], json!(2));
+}
+
+#[test]
+fn second_launch_keeps_the_breakpoints_of_the_first() {
+    let mut h = Harness::new();
+    h.launch(true);
+    let out = h.send(
+        "setBreakpoints",
+        json!({ "source": { "path": "/fact.s" }, "breakpoints": [{ "line": 7 }] }),
+    );
+    assert_eq!(out[0]["body"]["breakpoints"][0]["verified"], json!(true));
+
+    let mut out = h.send(
+        "launch",
+        json!({
+            "program": "/fact.s",
+            "entrypoint": "main",
+            "stopOnEntry": false,
+            "files": { "/fact.s": FACT_SOURCE },
+        }),
+    );
+    out.extend(h.drive());
+    let stopped = find_event(&out, "stopped").expect("stopped event");
+    assert_eq!(stopped["body"]["reason"], json!("breakpoint"));
+
+    let st = h.send("stackTrace", json!({ "threadId": 1 }));
+    let resp = find_response(&st, "stackTrace").expect("stackTrace response");
+    assert_eq!(resp["body"]["stackFrames"][0]["line"], json!(7));
+}
+
+#[test]
+fn restart_invalidates_handles_from_the_previous_program() {
+    let mut h = Harness::new();
+    launch_globals(&mut h);
+
+    let globals = scope_ref(&mut h, 0, "Globals");
+    let handle = var(&variables(&mut h, globals, json!({})), "array")["variablesReference"]
+        .as_i64()
+        .unwrap();
+    assert!(!variables(&mut h, handle, json!({})).is_empty());
+
+    h.send("restart", json!({}));
+    assert_eq!(variables(&mut h, handle, json!({})), Vec::<Value>::new());
+}
+
+#[test]
+fn read_memory_before_address_zero_is_clamped_to_zero() {
+    let mut h = Harness::new();
+    h.launch(true);
+    // VS Code's memory viewer sends offsets that reach below address 0 when
+    // scrolling up. The response's `address` says where the data it returns
+    // actually starts.
+    let out = h.send(
+        "readMemory",
+        json!({ "memoryReference": "1015", "offset": -100_000, "count": 4 }),
+    );
+    let resp = find_response(&out, "readMemory").expect("readMemory response");
+    assert_eq!(resp["success"], json!(true));
+    assert_eq!(resp["body"]["address"], json!("0"));
+    // Cell 0 is empty, so it reads as a zero word.
+    assert_eq!(resp["body"]["data"], json!("AAAAAA=="));
+    assert_eq!(resp["body"]["unreadableBytes"], Value::Null);
+}
+
 /// Find the first event with the given name in a list of messages.
 fn find_event<'a>(messages: &'a [Value], name: &str) -> Option<&'a Value> {
     messages
@@ -362,6 +525,48 @@ fn set_variable_updates_register() {
 }
 
 #[test]
+fn set_variable_on_stack_scope_rejects_overflowing_offset() {
+    let mut h = Harness::new();
+    h.launch(true);
+
+    // `sp + 4294967295` overflows the u32 address the offset is added to.
+    let resp = h.send(
+        "setVariable",
+        json!({ "variablesReference": 4, "name": "sp+4294967295", "value": "1" }),
+    );
+    let resp = find_response(&resp, "setVariable").expect("setVariable response");
+    assert_eq!(resp["success"], json!(false));
+}
+
+#[test]
+fn set_variable_on_a_region_handle_rejects_an_address_outside_it() {
+    let mut h = Harness::new();
+    launch_globals(&mut h);
+
+    let globals = scope_ref(&mut h, 0, "Globals");
+    let array = var(&variables(&mut h, globals, json!({})), "array")["variablesReference"]
+        .as_i64()
+        .unwrap();
+
+    // A child variable is written through the address encoded in its name, so
+    // a name the adapter never produced must not reach a cell outside the
+    // region the handle covers.
+    let resp = h.send(
+        "setVariable",
+        json!({ "variablesReference": array, "name": "whatever (0)", "value": "777" }),
+    );
+    let resp = find_response(&resp, "setVariable").expect("setVariable response");
+    assert_eq!(resp["success"], json!(false));
+
+    let out = h.send(
+        "readMemory",
+        json!({ "memoryReference": "0", "offset": 0, "count": 8 }),
+    );
+    let resp = find_response(&out, "readMemory").expect("readMemory response");
+    assert_eq!(resp["body"]["data"], json!("AAAAAAAAAAA="));
+}
+
+#[test]
 fn evaluate_resolves_a_label() {
     let mut h = Harness::new();
     h.launch(true);
@@ -514,6 +719,56 @@ fn resume_after_unhandled_exception_terminates() {
     let again = h.send("continue", json!({ "threadId": 1 }));
     let resp = find_response(&again, "continue").expect("continue response");
     assert_eq!(resp["success"], json!(false));
+}
+
+#[test]
+fn exception_stack_trace_reports_the_faulting_line() {
+    const BAD_ADDRESS_SOURCE: &str = indoc::indoc! {r"
+        main:
+            ld [99999], %a
+            reset
+    "};
+
+    let mut h = Harness::new();
+    h.send("initialize", json!({}));
+    h.send(
+        "launch",
+        json!({
+            "program": "/boom.s",
+            "entrypoint": "main",
+            "stopOnEntry": false,
+            "files": { "/boom.s": BAD_ADDRESS_SOURCE },
+        }),
+    );
+    let mut out = h.send("configurationDone", json!({}));
+    out.extend(h.drive());
+    let stopped = find_event(&out, "stopped").expect("stopped event");
+    assert_eq!(stopped["body"]["reason"], json!("exception"));
+
+    // The faulting `ld [99999], %a` is line 2 (1-based); pc has already
+    // advanced past it by the time the exception is reported, so the frame
+    // must not report line 3 (the `reset`).
+    let st = h.send("stackTrace", json!({ "threadId": 1 }));
+    let resp = find_response(&st, "stackTrace").expect("stackTrace response");
+    assert_eq!(resp["body"]["stackFrames"][0]["line"], json!(2));
+
+    // The stopped event names the faulting address, which the live pc in the
+    // Registers scope no longer matches.
+    let text = stopped["body"]["text"].as_str().unwrap();
+    assert!(text.contains("at address 100"), "text = {text}");
+
+    // A resume that is rejected must not drop the faulting pc: `continue`
+    // after the exception terminates the session, and `stepIn` is then
+    // refused, so the frame still points at line 2.
+    h.send("continue", json!({ "threadId": 1 }));
+    let resp = h.send("stepIn", json!({ "threadId": 1 }));
+    assert_eq!(
+        find_response(&resp, "stepIn").expect("stepIn response")["success"],
+        json!(false)
+    );
+    let st = h.send("stackTrace", json!({ "threadId": 1 }));
+    let resp = find_response(&st, "stackTrace").expect("stackTrace response");
+    assert_eq!(resp["body"]["stackFrames"][0]["line"], json!(2));
 }
 
 #[test]
@@ -683,6 +938,12 @@ fn globals_scope_single_and_multi_cell() {
     // Single-cell code label renders the instruction.
     assert_eq!(var(&vars, "main")["type"], json!("instruction"));
 
+    // `last` is the final label and holds a single `.word`, so its region is
+    // one cell.
+    let last = var(&vars, "last");
+    assert_eq!(last["value"], json!("7"));
+    assert_eq!(last["variablesReference"], json!(0));
+
     // Multi-cell region expands and reports its length.
     let array = var(&vars, "array");
     assert_eq!(array["indexedVariables"], json!(3));
@@ -710,6 +971,36 @@ fn globals_scope_single_and_multi_cell() {
         256,
         "default page size caps the response"
     );
+}
+
+#[test]
+fn a_trailing_space_label_reports_its_full_length() {
+    // `.space` compiles to reserved cells that read back as empty, so the
+    // program's extent has to come from the layout rather than from memory.
+    const TRAILING_SPACE_SOURCE: &str = indoc::indoc! {r"
+        main:
+            reset
+
+        buf:
+            .space 100
+    "};
+
+    let mut h = Harness::new();
+    h.send("initialize", json!({}));
+    h.send(
+        "launch",
+        json!({
+            "program": "/s.s",
+            "entrypoint": "main",
+            "stopOnEntry": true,
+            "files": { "/s.s": TRAILING_SPACE_SOURCE },
+        }),
+    );
+    h.send("configurationDone", json!({}));
+
+    let globals = scope_ref(&mut h, 0, "Globals");
+    let vars = variables(&mut h, globals, json!({}));
+    assert_eq!(var(&vars, "buf")["indexedVariables"], json!(100));
 }
 
 #[test]

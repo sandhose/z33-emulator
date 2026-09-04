@@ -111,6 +111,11 @@ pub struct SetBreakpointsArguments {
 /// A breakpoint as reported back to the client.
 #[derive(Debug, Serialize)]
 pub struct Breakpoint {
+    /// Ties a later `breakpoint` event to an entry of the `setBreakpoints`
+    /// response that created it. Two breakpoints whose lines snap to the same
+    /// instruction are otherwise indistinguishable in an event.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<i64>,
     pub verified: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub line: Option<u32>,
@@ -118,6 +123,10 @@ pub struct Breakpoint {
     pub source: Option<Source>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
+    /// Machine-readable counterpart to `message`. The spec defines `"pending"`
+    /// (may still be verified later) and `"failed"` (will not be).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
 }
 
 /// A stack frame in a `stackTrace` response.
