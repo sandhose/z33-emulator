@@ -33,6 +33,8 @@ const WORKSPACE_FILES_METHOD = "zorglub33/workspaceFiles";
  * only emits the lens when it sees the advertisement.
  */
 const RUN_COMMAND = "zorglub33.run";
+/** Palette and editor-title command: debug the active file from a chosen label. */
+const RUN_FILE_COMMAND = "zorglub33.runFile";
 /** Give the wasm worker a generous window to instantiate before giving up. */
 const HANDSHAKE_TIMEOUT_MS = 30_000;
 /** Debounce window for coalescing rapid file-watcher events. */
@@ -216,6 +218,39 @@ async function activateInner(context: vscode.ExtensionContext): Promise<void> {
     ),
   );
 
+  context.subscriptions.push(
+    vscode.commands.registerCommand(RUN_FILE_COMMAND, async () => {
+      const document = activeZ33Document();
+      if (document === undefined) {
+        void vscode.window.showErrorMessage("Zorglub33: open a Zorglub33 assembly file to run it");
+        return;
+      }
+      // An unsaved buffer has no file to save to, so saving one opens a Save As
+      // dialog and disposes this document; `collectWorkspaceFiles` reads its
+      // text from the editor. A save that fails would leave the run reading
+      // stale bytes off disk.
+      if (document.isDirty && document.uri.scheme !== "untitled" && !(await document.save())) {
+        void vscode.window.showErrorMessage(
+          `Zorglub33: could not save ${documentName(document)}, so it was not run`,
+        );
+        return;
+      }
+      const entrypoint = await vscode.window.showInputBox({
+        title: "Zorglub33: entrypoint label",
+        value: "main",
+        validateInput: (value) =>
+          /^[A-Za-z_][A-Za-z0-9_]*$/u.test(value.trim())
+            ? undefined
+            : "A label name (letters, digits, underscores)",
+      });
+      if (entrypoint === undefined) return;
+      await vscode.debug.startDebugging(vscode.workspace.getWorkspaceFolder(document.uri), {
+        ...configurationFor(document),
+        entrypoint: entrypoint.trim(),
+      });
+    }),
+  );
+
   // Seed the server's include-resolution base map and keep it in sync. Watcher
   // events can arrive in bursts (multi-file save, branch switch); debounce and
   // serialize so pushes can't interleave and land stale (latest wins).
@@ -388,12 +423,15 @@ function isZ33Path(program: string): boolean {
   return /\.[sS]$/.test(program);
 }
 
+function documentName(document: vscode.TextDocument): string {
+  return document.uri.path.split("/").pop() ?? "program";
+}
+
 function configurationFor(document: vscode.TextDocument): vscode.DebugConfiguration {
-  const name = document.uri.path.split("/").pop() ?? "program";
   return {
     type: "zorglub33",
     request: "launch",
-    name: `Run ${name}`,
+    name: `Run ${documentName(document)}`,
     program: document.uri.toString(),
     stopOnEntry: true,
   };

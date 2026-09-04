@@ -28,6 +28,29 @@
     "onDebugDynamicConfigurations:zorglub33"
   ],
   "contributes": {
+    "commands": [
+      {
+        "command": "zorglub33.runFile",
+        "title": "Run Current File",
+        "category": "Zorglub33",
+        "icon": "$(debug-start)"
+      }
+    ],
+    "menus": {
+      "editor/title/run": [
+        {
+          "command": "zorglub33.runFile",
+          "when": "resourceLangId == zorglub33-assembly",
+          "group": "navigation"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "zorglub33.runFile",
+          "when": "resourceLangId == zorglub33-assembly"
+        }
+      ]
+    },
     "languages": [
       {
         "id": "zorglub33-assembly",
