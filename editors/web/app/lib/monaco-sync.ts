@@ -106,8 +106,21 @@ export function initMonacoSync(
   };
 }
 
-/** Returns all current Monaco model contents, keyed by URI path (with leading slash). */
-export function getMonacoFiles(): Record<string, string> {
+/**
+ * The current model contents keyed the way the emulator worker and the language
+ * server want them: a flat file name with no leading slash.
+ */
+export function getWorkerFiles(): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(getMonacoFiles()).map(([path, content]) => [
+      stripLeadingSlash(path),
+      content,
+    ]),
+  );
+}
+
+/** All current Monaco model contents, keyed by URI path (with leading slash). */
+function getMonacoFiles(): Record<string, string> {
   if (!monacoRef) return {};
   const files: Record<string, string> = {};
   for (const model of monacoRef.editor.getModels()) {

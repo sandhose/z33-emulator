@@ -11,6 +11,11 @@ import type {
   SourcePosition,
 } from "./wasm";
 
+/** Outcome of a `check` request. */
+export type CheckResult =
+  | { type: "success"; labels: string[] }
+  | { type: "error"; message: string; labels: string[] };
+
 /** High-level execution state of the emulator session. */
 export type RunStatus = "running" | "paused" | "halted" | "panicked";
 
@@ -45,6 +50,13 @@ export type WorkerRequest =
       rootFile: string;
       entrypoint: string;
     }
+  /** Assemble without starting a session, for the edit-mode toolbar. */
+  | {
+      id: number;
+      type: "check";
+      files: Record<string, string>;
+      rootFile: string;
+    }
   | { type: "step"; n: number }
   | { type: "run" }
   | { type: "pause" }
@@ -74,6 +86,7 @@ export type WorkerResponse =
       snapshot: Snapshot;
     }
   | { id: number; type: "startError"; error: string }
+  | { id: number; type: "checked"; result: CheckResult }
   | { id: number; type: "resolved"; resolved: ResolvedBreakpoint | null }
   /** Unsolicited push: cell values for freshly watched or changed addresses. */
   | { type: "cells"; cells: [number, Cell][] }

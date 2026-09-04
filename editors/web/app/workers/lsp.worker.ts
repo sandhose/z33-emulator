@@ -8,6 +8,7 @@
 //   - messages the server emits (`on_message`) -> posted back as parsed objects
 //
 // Messages received before the wasm has finished initializing are queued.
+import "../lib/dispose-polyfill";
 import {
   BrowserMessageReader,
   BrowserMessageWriter,

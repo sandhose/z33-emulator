@@ -36,7 +36,7 @@ export function pickEntrypoint(
 
 type EditToolbarProps = {
   onRun: (entrypoint: string) => void;
-  compilationStatus: "idle" | "pending" | "success" | "error";
+  compilationStatus: "pending" | "success" | "error" | "unavailable";
   compilationError: string | undefined;
   labels: string[];
   defaultEntrypoint: string | undefined;
@@ -81,6 +81,14 @@ export const EditToolbar: React.FC<EditToolbarProps> = memo(
                 {compilationError}
               </span>
             )}
+          </span>
+        )}
+        {compilationStatus === "unavailable" && (
+          <span role="status" className="flex items-center gap-2">
+            <XCircleIcon className="shrink-0 size-3.5 text-destructive" />
+            <span className="text-xs text-destructive truncate">
+              The emulator failed to load. Reload the page.
+            </span>
           </span>
         )}
         {compilationStatus === "success" && (
