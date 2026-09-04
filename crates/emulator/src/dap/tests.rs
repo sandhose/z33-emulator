@@ -246,6 +246,25 @@ fn restart_invalidates_handles_from_the_previous_program() {
     assert_eq!(variables(&mut h, handle, json!({})), Vec::<Value>::new());
 }
 
+#[test]
+fn read_memory_before_address_zero_is_clamped_to_zero() {
+    let mut h = Harness::new();
+    h.launch(true);
+    // VS Code's memory viewer sends offsets that reach below address 0 when
+    // scrolling up. The response's `address` says where the data it returns
+    // actually starts.
+    let out = h.send(
+        "readMemory",
+        json!({ "memoryReference": "1015", "offset": -100_000, "count": 4 }),
+    );
+    let resp = find_response(&out, "readMemory").expect("readMemory response");
+    assert_eq!(resp["success"], json!(true));
+    assert_eq!(resp["body"]["address"], json!("0"));
+    // Cell 0 is empty, so it reads as a zero word.
+    assert_eq!(resp["body"]["data"], json!("AAAAAA=="));
+    assert_eq!(resp["body"]["unreadableBytes"], Value::Null);
+}
+
 /// Find the first event with the given name in a list of messages.
 fn find_event<'a>(messages: &'a [Value], name: &str) -> Option<&'a Value> {
     messages

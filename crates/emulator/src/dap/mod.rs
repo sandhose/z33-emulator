@@ -1897,6 +1897,11 @@ fn cell_word(cell: &Cell) -> i64 {
 /// Returns `(first_cell_address, data, unreadable_trailing_bytes)`, or an error
 /// if the client-supplied `base`/`offset` overflow when converted to a byte
 /// address.
+///
+/// A start below address 0 is clamped to 0 rather than rejected: a memory
+/// viewer scrolling up past the start of memory sends such offsets, and the
+/// returned first address tells it where the data really begins. A start past
+/// the end of memory is not clamped — it reads back as unreadable bytes.
 fn read_memory(
     computer: &Computer,
     base: i64,
@@ -1906,7 +1911,8 @@ fn read_memory(
     let start_byte = base
         .checked_mul(CELL_BYTES)
         .and_then(|b| b.checked_add(offset))
-        .ok_or_else(|| "memory address out of range".to_owned())?;
+        .ok_or_else(|| "memory address out of range".to_owned())?
+        .max(0);
     let mut data = Vec::new();
     let mut unreadable = 0;
     for i in 0..count {
@@ -1916,7 +1922,7 @@ fn read_memory(
         };
         let cell_index = p.div_euclid(CELL_BYTES);
         let byte_in = usize::try_from(p.rem_euclid(CELL_BYTES)).unwrap_or(0);
-        if p < 0 || cell_index >= i64::from(C::MEMORY_SIZE) {
+        if cell_index >= i64::from(C::MEMORY_SIZE) {
             unreadable = count - i;
             break;
         }
