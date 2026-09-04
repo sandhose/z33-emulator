@@ -104,9 +104,6 @@ importers:
       react-resizable-panels:
         specifier: ^4.12.3
         version: 4.12.3(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      shadcn:
-        specifier: ^4.20.0
-        version: 4.20.0(supports-color@7.2.0)(typescript@7.0.2)
       tailwind-merge:
         specifier: ^3.6.0
         version: 3.6.0
@@ -183,6 +180,9 @@ importers:
       playwright:
         specifier: ^1.62.1
         version: 1.62.1
+      shadcn:
+        specifier: ^4.20.0
+        version: 4.20.0(supports-color@7.2.0)(typescript@7.0.2)
       storybook:
         specifier: ^10.6.0
         version: 10.6.0(@types/react@19.2.18)(react@19.2.8)
