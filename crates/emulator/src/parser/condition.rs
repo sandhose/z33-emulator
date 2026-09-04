@@ -28,7 +28,9 @@ use super::expression::{
 };
 use super::location::{Locatable, Located};
 use super::precedence::Precedence;
-use super::shared::{Extra, bool_literal, expression, hspace, identifier, span_to_range};
+use super::shared::{
+    Extra, bool_literal, expression, hspace, identifier, reject_deep_nesting, span_to_range,
+};
 
 type ChildNode = Located<Box<Node>>;
 type ExpressionNode = Located<ENode>;
@@ -315,13 +317,16 @@ fn number_comparison<'a>() -> impl Parser<'a, &'a str, Node, Extra<'a>> + Clone 
             Cmp::Le => Node::LesserOrEqual(a, b),
             Cmp::Lt => Node::LesserThan(a, b),
         })
+        .boxed()
 }
 
 /// Parse a condition expression.
 pub(crate) fn condition_parser<'a>() -> impl Parser<'a, &'a str, Node, Extra<'a>> + Clone {
     recursive(|condition| {
         // Atoms: parenthesized, defined(), bool literal, or number comparison
-        let paren = condition.delimited_by(just('(').then(hspace()), hspace().then(just(')')));
+        let paren = condition
+            .delimited_by(just('(').then(hspace()), hspace().then(just(')')))
+            .boxed();
 
         let atom = choice((
             paren,
@@ -329,46 +334,54 @@ pub(crate) fn condition_parser<'a>() -> impl Parser<'a, &'a str, Node, Extra<'a>
             bool_literal().map(Node::Literal),
             number_comparison(),
         ))
-        .padded_by(hspace());
+        .padded_by(hspace())
+        .boxed();
 
         // Logical NOT
         let logical_expr = just('!')
             .ignore_then(hspace())
             .ignore_then(atom.clone())
             .map_with(|node, e| Node::Not(Box::new(node).with_location(span_to_range(e.span()))))
-            .or(atom);
+            .or(atom)
+            .boxed();
 
         // Logical AND
-        let logical_and = logical_expr.clone().foldl_with(
-            hspace()
-                .ignore_then(just("&&"))
-                .then_ignore(hspace())
-                .ignore_then(logical_expr)
-                .repeated(),
-            |lhs, rhs, e| {
-                let span = e.span();
-                Node::And(
-                    Box::new(lhs).with_location(span.start..span.start),
-                    Box::new(rhs).with_location(span.end..span.end),
-                )
-            },
-        );
+        let logical_and = logical_expr
+            .clone()
+            .foldl_with(
+                hspace()
+                    .ignore_then(just("&&"))
+                    .then_ignore(hspace())
+                    .ignore_then(logical_expr)
+                    .repeated(),
+                |lhs, rhs, e| {
+                    let span = e.span();
+                    Node::And(
+                        Box::new(lhs).with_location(span.start..span.start),
+                        Box::new(rhs).with_location(span.end..span.end),
+                    )
+                },
+            )
+            .boxed();
 
         // Logical OR
-        logical_and.clone().foldl_with(
-            hspace()
-                .ignore_then(just("||"))
-                .then_ignore(hspace())
-                .ignore_then(logical_and)
-                .repeated(),
-            |lhs, rhs, e| {
-                let span = e.span();
-                Node::Or(
-                    Box::new(lhs).with_location(span.start..span.start),
-                    Box::new(rhs).with_location(span.end..span.end),
-                )
-            },
-        )
+        logical_and
+            .clone()
+            .foldl_with(
+                hspace()
+                    .ignore_then(just("||"))
+                    .then_ignore(hspace())
+                    .ignore_then(logical_and)
+                    .repeated(),
+                |lhs, rhs, e| {
+                    let span = e.span();
+                    Node::Or(
+                        Box::new(lhs).with_location(span.start..span.start),
+                        Box::new(rhs).with_location(span.end..span.end),
+                    )
+                },
+            )
+            .boxed()
     })
     .boxed()
 }
@@ -377,6 +390,7 @@ pub(crate) fn condition_parser<'a>() -> impl Parser<'a, &'a str, Node, Extra<'a>
 ///
 /// Returns the condition AST node, or an error string on parse failure.
 pub(crate) fn parse_condition(input: &str) -> Result<Node, String> {
+    reject_deep_nesting(input)?;
     let result = condition_parser().then_ignore(end()).parse(input);
     result.into_result().map_err(|errs| {
         errs.into_iter()
@@ -391,6 +405,33 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
+
+    #[test]
+    fn nesting_at_the_limit_parses_and_one_more_is_rejected() {
+        use crate::parser::shared::MAX_EXPRESSION_DEPTH;
+
+        std::thread::Builder::new()
+            .stack_size(2 << 20)
+            .spawn(|| {
+                let at_limit = format!(
+                    "{}1{} > 0",
+                    "(".repeat(MAX_EXPRESSION_DEPTH),
+                    ")".repeat(MAX_EXPRESSION_DEPTH)
+                );
+                parse_condition(&at_limit).expect("must parse at the limit");
+
+                let over_limit = format!(
+                    "{}1{} > 0",
+                    "(".repeat(MAX_EXPRESSION_DEPTH + 1),
+                    ")".repeat(MAX_EXPRESSION_DEPTH + 1)
+                );
+                let err = parse_condition(&over_limit).expect_err("must be rejected");
+                assert!(err.contains("nesting"), "{err}");
+            })
+            .expect("spawn")
+            .join()
+            .expect("the parser must not overflow a 2 MiB stack");
+    }
 
     #[track_caller]
     fn evaluate(input: &str) -> bool {
