@@ -170,6 +170,7 @@ fn run_with_io(computer: &mut Computer) -> anyhow::Result<()> {
         // Advance the program by a bounded burst so input latency stays low.
         let mut reset = false;
         for _ in 0..IO_BATCH {
+            let pc = computer.registers.pc;
             match computer.step() {
                 Ok(()) => {}
                 Err(ProcessorError::Reset) => {
@@ -179,7 +180,8 @@ fn run_with_io(computer: &mut Computer) -> anyhow::Result<()> {
                 Err(e) => {
                     // Flush any final output before surfacing the error.
                     flush_serial_output(computer)?;
-                    return Err(e.into());
+                    return Err(anyhow::Error::from(e)
+                        .context(format!("while executing the instruction at address {pc}")));
                 }
             }
         }

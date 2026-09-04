@@ -151,7 +151,9 @@ fn main() {
     // And run the command
     let res = opt.command.exec();
     if let Err(e) = res {
-        error!("{}", e);
+        // `{:#}` prints the whole anyhow chain on one line: the outermost
+        // context alone rarely says what went wrong.
+        error!("{e:#}");
         exit(1);
     }
 }

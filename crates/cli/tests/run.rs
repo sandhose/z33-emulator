@@ -37,3 +37,19 @@ fn log_flag_appends_to_file() {
     let logs = std::fs::read_to_string(path).unwrap();
     assert_eq!(logs.matches("End of program registers=%a = 120").count(), 2);
 }
+
+#[test]
+fn a_fault_names_the_faulting_address_and_the_reason() {
+    let path = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("run-fault.s");
+    std::fs::write(&path, "main:\n    nop\n    ld [99999], %a\n    reset\n").unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_z33-cli"))
+        .args(["run", path.to_str().unwrap(), "main"])
+        .env("RUST_LOG", "warn")
+        .stdin(Stdio::null())
+        .output()
+        .expect("failed to run z33-cli");
+    assert!(!output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("address 1001"), "{stdout}");
+    assert!(stdout.contains("invalid address 99999"), "{stdout}");
+}
