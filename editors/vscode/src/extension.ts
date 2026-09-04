@@ -288,6 +288,36 @@ async function activateInner(context: vscode.ExtensionContext): Promise<void> {
     }),
   );
 
+  // Debug hover: evaluate the enclosing memory operand (`[%sp+2]`) or the
+  // register under the cursor, rather than the bare word VS Code would pick.
+  context.subscriptions.push(
+    vscode.languages.registerEvaluatableExpressionProvider(
+      { language: LANGUAGE_ID },
+      {
+        provideEvaluatableExpression(document, position) {
+          const line = document.lineAt(position.line).text;
+          const operand = enclosingOperand(line, position.character);
+          if (operand) {
+            const range = new vscode.Range(
+              position.line,
+              operand.start,
+              position.line,
+              operand.end,
+            );
+            return new vscode.EvaluatableExpression(range, operand.text);
+          }
+          // Mirrors `wordPattern` in language-configuration.json: without the
+          // numeric alternatives a hover over `0x1f` evaluates `x1f`.
+          const word = document.getWordRangeAtPosition(
+            position,
+            /%[a-zA-Z]+|-?0[xX][0-9a-fA-F]+|-?0[bB][01]+|-?\d+|[A-Za-z_][A-Za-z0-9_]*/u,
+          );
+          return word ? new vscode.EvaluatableExpression(word) : undefined;
+        },
+      },
+    ),
+  );
+
   const factory: vscode.DebugAdapterDescriptorFactory = {
     createDebugAdapterDescriptor(session) {
       return new vscode.DebugAdapterInlineImplementation(
@@ -330,4 +360,20 @@ function configurationFor(document: vscode.TextDocument): vscode.DebugConfigurat
     program: document.uri.toString(),
     stopOnEntry: true,
   };
+}
+
+/**
+ * The `[...]` operand containing `column` on `line`, if any. The adapter's
+ * address parser takes no whitespace between the register, the sign and the
+ * offset, so `[%sp + 2]` is evaluated as `[%sp+2]`.
+ */
+function enclosingOperand(
+  line: string,
+  column: number,
+): { start: number; end: number; text: string } | undefined {
+  const open = line.lastIndexOf("[", column);
+  if (open === -1) return undefined;
+  const close = line.indexOf("]", open);
+  if (close === -1 || column > close) return undefined;
+  return { start: open, end: close + 1, text: line.slice(open, close + 1).replace(/\s+/gu, "") };
 }
