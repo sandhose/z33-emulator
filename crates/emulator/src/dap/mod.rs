@@ -505,12 +505,11 @@ impl DebugSession {
         self.invalidate_handles();
     }
 
-    /// A `changed` `breakpoint` event for every source line the client has
-    /// requested, re-resolved against the loaded program's line index. Lines
-    /// answered as unverified before launch need an event even when they still
-    /// do not resolve, otherwise the client shows them as pending forever.
-    fn pending_breakpoint_events(&mut self) -> Vec<Value> {
-        let requested: Vec<(String, RequestedLine, Option<u32>)> = match self.program.as_ref() {
+    /// Every source line the client has requested a breakpoint on, paired with
+    /// the line it resolves to against the loaded program's line index, or
+    /// `None` when it maps to no instruction.
+    fn resolved_breakpoints(&self) -> Vec<(String, RequestedLine, Option<u32>)> {
+        match self.program.as_ref() {
             Some(program) => program
                 .requested_lines
                 .iter()
@@ -525,26 +524,36 @@ impl DebugSession {
                 })
                 .collect(),
             None => Vec::new(),
+        }
+    }
+
+    /// A `changed` `breakpoint` event re-reporting one requested line.
+    fn breakpoint_event(&mut self, path: String, r: RequestedLine, resolved: Option<u32>) -> Value {
+        let breakpoint = Breakpoint {
+            id: Some(r.id),
+            verified: resolved.is_some(),
+            line: Some(resolved.unwrap_or(r.line)),
+            source: Some(Source {
+                name: None,
+                path: Some(path),
+            }),
+            message: resolved.is_none().then(|| NO_CODE_AT_LINE.to_owned()),
+            reason: resolved.is_none().then(|| "failed".to_owned()),
         };
-        requested
+        self.make_event(
+            "breakpoint",
+            json!({ "reason": "changed", "breakpoint": breakpoint }),
+        )
+    }
+
+    /// A `changed` `breakpoint` event for every source line the client has
+    /// requested, re-resolved against the loaded program's line index. Lines
+    /// answered as unverified before launch need an event even when they still
+    /// do not resolve, otherwise the client shows them as pending forever.
+    fn pending_breakpoint_events(&mut self) -> Vec<Value> {
+        self.resolved_breakpoints()
             .into_iter()
-            .map(|(path, r, resolved)| {
-                let breakpoint = Breakpoint {
-                    id: Some(r.id),
-                    verified: resolved.is_some(),
-                    line: Some(resolved.unwrap_or(r.line)),
-                    source: Some(Source {
-                        name: None,
-                        path: Some(path),
-                    }),
-                    message: resolved.is_none().then(|| NO_CODE_AT_LINE.to_owned()),
-                    reason: resolved.is_none().then(|| "failed".to_owned()),
-                };
-                self.make_event(
-                    "breakpoint",
-                    json!({ "reason": "changed", "breakpoint": breakpoint }),
-                )
-            })
+            .map(|(path, r, resolved)| self.breakpoint_event(path, r, resolved))
             .collect()
     }
 
@@ -1102,15 +1111,47 @@ impl DebugSession {
         }
     }
 
+    /// `restart` reloads the program. DAP nests the relaunch configuration
+    /// under `arguments.arguments`; it supersedes the launch arguments when
+    /// present, so a `files` map refreshed since launch is what gets compiled.
+    /// Absent it, the launch arguments are reused as-is.
     fn on_restart(&mut self, req: &IncomingRequest) -> Vec<Value> {
-        let Some(args) = self.launch_args.clone() else {
-            return vec![self.response_err(req, "nothing to restart")];
+        let args = match req.arguments.get("arguments") {
+            Some(nested) if !nested.is_null() => {
+                match serde_json::from_value::<LaunchArguments>(nested.clone()) {
+                    Ok(a) => a,
+                    Err(e) => {
+                        return vec![
+                            self.response_err(req, format!("invalid restart arguments: {e}")),
+                        ];
+                    }
+                }
+            }
+            _ => match self.launch_args.clone() {
+                Some(a) => a,
+                None => return vec![self.response_err(req, "nothing to restart")],
+            },
         };
+
+        // Which lines the breakpoints resolved to before the reload, so only
+        // the ones the new layout moved or (un)verified are re-reported.
+        let before: HashMap<i64, Option<u32>> = self
+            .resolved_breakpoints()
+            .into_iter()
+            .map(|(_, r, resolved)| (r.id, resolved))
+            .collect();
+
         match load_program(&args) {
             Ok(program) => {
                 self.install_program(program, args.stop_on_entry);
+                self.launch_args = Some(args);
                 let resp = self.response(req, Value::Null);
                 let mut out = vec![resp];
+                for (path, r, resolved) in self.resolved_breakpoints() {
+                    if before.get(&r.id) != Some(&resolved) {
+                        out.push(self.breakpoint_event(path, r, resolved));
+                    }
+                }
                 out.extend(self.maybe_enter());
                 out
             }

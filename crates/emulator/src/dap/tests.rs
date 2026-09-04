@@ -378,6 +378,101 @@ fn breakpoints_survive_restart() {
 }
 
 #[test]
+fn restart_arguments_replace_the_launch_program() {
+    // `main` starts on line 2 and line 4 holds an instruction.
+    const BEFORE: &str = indoc::indoc! {r"
+        main:
+            ld 1,%a
+            ld 2,%b
+            reset
+    "};
+    // A comment shifts `main` down a line and the body shrinks, so line 4 no
+    // longer maps to an instruction.
+    const AFTER: &str = indoc::indoc! {r"
+        // edited
+        main:
+            reset
+    "};
+
+    let mut h = Harness::new();
+    h.send("initialize", json!({}));
+    h.send(
+        "launch",
+        json!({
+            "program": "/edit.s",
+            "entrypoint": "main",
+            "stopOnEntry": true,
+            "files": { "/edit.s": BEFORE },
+        }),
+    );
+    h.send("configurationDone", json!({}));
+
+    let bp = h.send(
+        "setBreakpoints",
+        json!({ "source": { "path": "/edit.s" }, "breakpoints": [{ "line": 4 }] }),
+    );
+    let resp = find_response(&bp, "setBreakpoints").expect("setBreakpoints response");
+    assert_eq!(resp["body"]["breakpoints"][0]["verified"], json!(true));
+    let bp_id = resp["body"]["breakpoints"][0]["id"].clone();
+
+    let st = h.send("stackTrace", json!({ "threadId": 1 }));
+    let resp = find_response(&st, "stackTrace").expect("stackTrace response");
+    assert_eq!(resp["body"]["stackFrames"][0]["line"], json!(2));
+
+    // VS Code re-resolves the launch configuration and nests it under
+    // `arguments.arguments`; its `files` map carries the edited source.
+    let restart = h.send(
+        "restart",
+        json!({
+            "arguments": {
+                "program": "/edit.s",
+                "entrypoint": "main",
+                "stopOnEntry": true,
+                "files": { "/edit.s": AFTER },
+            },
+        }),
+    );
+    assert_eq!(
+        find_response(&restart, "restart").expect("restart response")["success"],
+        json!(true)
+    );
+
+    // The entry stop must land on the edited file's `main`, now line 3.
+    let stopped = find_event(&restart, "stopped").expect("stopped on entry after restart");
+    assert_eq!(stopped["body"]["reason"], json!("entry"));
+    let st = h.send("stackTrace", json!({ "threadId": 1 }));
+    let resp = find_response(&st, "stackTrace").expect("stackTrace response");
+    assert_eq!(resp["body"]["stackFrames"][0]["line"], json!(3));
+
+    // Line 4 has no instruction after the edit, so the breakpoint's verified
+    // state flips and must be reported.
+    let event = restart
+        .iter()
+        .find(|m| m["event"] == "breakpoint")
+        .expect("breakpoint event for the line whose verification changed");
+    let breakpoint = &event["body"]["breakpoint"];
+    assert_eq!(breakpoint["id"], bp_id);
+    assert_eq!(breakpoint["verified"], json!(false));
+    assert_eq!(breakpoint["reason"], json!("failed"));
+}
+
+#[test]
+fn restart_without_arguments_reuses_the_launch_program() {
+    let mut h = Harness::new();
+    h.launch(true);
+    let restart = h.send("restart", json!({}));
+    assert_eq!(
+        find_response(&restart, "restart").expect("restart response")["success"],
+        json!(true)
+    );
+    // Nothing moved, so no breakpoint event is due.
+    assert!(find_event(&restart, "breakpoint").is_none());
+    let st = h.send("stackTrace", json!({ "threadId": 1 }));
+    let resp = find_response(&st, "stackTrace").expect("stackTrace response");
+    assert_eq!(resp["body"]["stackFrames"][0]["name"], json!("main"));
+}
+
+#[test]
 fn breakpoint_on_comment_line_adjusts_forward() {
     let mut h = Harness::new();
     h.launch(true);
