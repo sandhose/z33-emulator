@@ -18,7 +18,8 @@
   ],
   "browser": "./dist/extension.js",
   "activationEvents": [
-    "onLanguage:zorglub33-assembly"
+    "onDebugResolve:zorglub33",
+    "onDebugDynamicConfigurations:zorglub33"
   ],
   "contributes": {
     "languages": [

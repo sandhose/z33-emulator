@@ -21,6 +21,8 @@ import { SerialTerminalManager } from "./serial-terminal.js";
 import {
   collectWorkspaceFiles,
   FILE_GLOB,
+  FILE_LIKE_SCHEMES,
+  LANGUAGE_ID,
   uriForWorkspaceRelativePath,
 } from "./workspace-paths.js";
 
@@ -118,15 +120,11 @@ async function activateInner(context: vscode.ExtensionContext): Promise<void> {
   context.subscriptions.push({ dispose: () => worker.terminate() });
 
   const clientOptions: LanguageClientOptions = {
-    // Manage on-disk, virtual (vscode.dev / github.dev) and unsaved documents;
-    // deliberately exclude read-only virtual schemes (git/diff views).
+    // The same schemes the file map collects (see FILE_LIKE_SCHEMES), plus
+    // unsaved buffers.
     documentSelector: [
-      { language: "zorglub33-assembly", scheme: "file" },
-      { language: "zorglub33-assembly", scheme: "vscode-vfs" },
-      { language: "zorglub33-assembly", scheme: "untitled" },
-      // @vscode/test-web mounts the workspace under this scheme; without it
-      // the extension is untestable in a dev web host.
-      { language: "zorglub33-assembly", scheme: "vscode-test-web" },
+      ...FILE_LIKE_SCHEMES.map((scheme) => ({ language: LANGUAGE_ID, scheme })),
+      { language: LANGUAGE_ID, scheme: "untitled" },
     ],
   };
 
@@ -239,6 +237,57 @@ async function activateInner(context: vscode.ExtensionContext): Promise<void> {
     }),
   );
 
+  context.subscriptions.push(
+    // Dynamic only: the configurations this provider makes name the active
+    // editor by URI, and an initial provider's output is what VS Code writes
+    // into a generated launch.json, where a machine-specific URI would stick.
+    vscode.debug.registerDebugConfigurationProvider(
+      "zorglub33",
+      {
+        provideDebugConfigurations() {
+          const document = activeZ33Document();
+          return document === undefined ? [] : [configurationFor(document)];
+        },
+      },
+      vscode.DebugConfigurationProviderTriggerKind.Dynamic,
+    ),
+    vscode.debug.registerDebugConfigurationProvider("zorglub33", {
+      // F5 with no launch.json hands over an empty configuration, which carries
+      // neither a type nor a program: debug the active Z33 editor instead.
+      resolveDebugConfiguration(_folder, config) {
+        const program = typeof config.program === "string" ? config.program : "";
+        if (config.type !== undefined && program.length > 0) {
+          return config;
+        }
+        const document = activeZ33Document();
+        if (document === undefined) {
+          void vscode.window.showErrorMessage(
+            'Zorglub33: open a .s file to debug, or set "program" in launch.json',
+          );
+          return undefined;
+        }
+        return { ...configurationFor(document), ...config, program: document.uri.toString() };
+      },
+      // `program` is only final here: a launch.json may spell it with any
+      // variable (`${file}`, `${command:...}`, `${config:...}`), and VS Code
+      // substitutes those between this hook and the one above.
+      resolveDebugConfigurationWithSubstitutedVariables(_folder, config) {
+        const program = typeof config.program === "string" ? config.program : "";
+        if (isZ33Path(program)) {
+          return config;
+        }
+        const document = activeZ33Document();
+        if (document === undefined) {
+          void vscode.window.showErrorMessage(
+            `Zorglub33: "${program}" is not a .s file, and no .s file is open to debug instead`,
+          );
+          return undefined;
+        }
+        return { ...config, program: document.uri.toString() };
+      },
+    }),
+  );
+
   const factory: vscode.DebugAdapterDescriptorFactory = {
     createDebugAdapterDescriptor(session) {
       return new vscode.DebugAdapterInlineImplementation(
@@ -253,4 +302,32 @@ async function activateInner(context: vscode.ExtensionContext): Promise<void> {
 
 export function deactivate(): Promise<void> | undefined {
   return client?.stop();
+}
+
+function activeZ33Document(): vscode.TextDocument | undefined {
+  const active = vscode.window.activeTextEditor;
+  if (active !== undefined) {
+    return active.document.languageId === LANGUAGE_ID ? active.document : undefined;
+  }
+  // The focused editor may not be a text editor at all (a webview, the settings
+  // UI, a notebook), which leaves `activeTextEditor` undefined even though a .s
+  // editor is open in another group.
+  return vscode.window.visibleTextEditors.find(
+    (editor) => editor.document.languageId === LANGUAGE_ID,
+  )?.document;
+}
+
+function isZ33Path(program: string): boolean {
+  return /\.[sS]$/.test(program);
+}
+
+function configurationFor(document: vscode.TextDocument): vscode.DebugConfiguration {
+  const name = document.uri.path.split("/").pop() ?? "program";
+  return {
+    type: "zorglub33",
+    request: "launch",
+    name: `Run ${name}`,
+    program: document.uri.toString(),
+    stopOnEntry: true,
+  };
 }

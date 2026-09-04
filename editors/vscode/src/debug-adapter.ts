@@ -30,6 +30,12 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** The last segment of a URI's path, as VS Code labels the document's tab. */
+function fileName(uri: vscode.Uri): string {
+  const last = uri.path.split("/").pop();
+  return last === undefined || last.length === 0 ? uri.toString() : last;
+}
+
 function isLaunchRequest(message: unknown): message is LaunchRequest {
   return (
     typeof message === "object" &&
@@ -77,8 +83,10 @@ export class Z33DebugAdapter implements vscode.DebugAdapter {
   // URIs, otherwise `uri.toString()` — VS Code opens both). `clientToRel`:
   // client representation → relative key (`fsPath` and URI string for `file:`,
   // URI string only for virtual schemes — keying `fsPath` there would collide
-  // across authorities).
+  // across authorities). `relToName`: relative key → the name VS Code labels
+  // the document with.
   private readonly relToClient = new Map<string, string>();
+  private readonly relToName = new Map<string, string>();
   private readonly clientToRel = new Map<string, string>();
 
   // While `handleLaunch` is in flight, incoming non-launch messages are queued
@@ -146,8 +154,10 @@ export class Z33DebugAdapter implements vscode.DebugAdapter {
   /** (Re)build the client↔relative-key path maps from the collected URIs. */
   private buildPathMaps(uris: Map<string, vscode.Uri>): void {
     this.relToClient.clear();
+    this.relToName.clear();
     this.clientToRel.clear();
     for (const [relative, uri] of uris) {
+      this.relToName.set(relative, fileName(uri));
       // Prefer a filesystem path for `file:` URIs; fall back to the URI string
       // for virtual schemes (e.g. `vscode-vfs://` on vscode.dev), which VS Code
       // also accepts in `Source.path`.
@@ -281,11 +291,14 @@ export class Z33DebugAdapter implements vscode.DebugAdapter {
   /**
    * Rewrite server-side relative `Source.path` values to real client paths so
    * VS Code opens the actual workspace file instead of a read-only `debug:`
-   * virtual document. Walks the whole message and rewrites any object under a
-   * `source` key carrying a string `path` — stack frames (`stackTrace`),
-   * `Breakpoint.source` (`setBreakpoints` responses / `breakpoint` events) and
-   * `output` events. Paths with no known key are left untouched so the DAP
-   * `source`-request fallback still applies (e.g. `#include`d files).
+   * virtual document, and replace `Source.name` — which the server sets to the
+   * relative key, an `untitled:` URI for an unsaved buffer — with the file name
+   * VS Code shows everywhere else. Walks the whole message and rewrites any
+   * object under a `source` key carrying a string `path` — stack frames
+   * (`stackTrace`), `Breakpoint.source` (`setBreakpoints` responses /
+   * `breakpoint` events) and `output` events. Paths with no known key are left
+   * untouched so the DAP `source`-request fallback still applies (e.g.
+   * `#include`d files).
    */
   private rewriteOutgoingSources(value: unknown): void {
     if (Array.isArray(value)) {
@@ -299,11 +312,15 @@ export class Z33DebugAdapter implements vscode.DebugAdapter {
     }
     for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
       if (key === "source" && typeof child === "object" && child !== null) {
-        const source = child as { path?: unknown };
+        const source = child as { path?: unknown; name?: unknown };
         if (typeof source.path === "string") {
+          const name = this.relToName.get(source.path);
           const mapped = this.relToClient.get(source.path);
           if (mapped !== undefined) {
             source.path = mapped;
+          }
+          if (name !== undefined) {
+            source.name = name;
           }
         }
       }
