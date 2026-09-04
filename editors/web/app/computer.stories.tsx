@@ -4,6 +4,7 @@ import { expect, within } from "storybook/test";
 import { MemoryViewer } from "./computer";
 import type { Pointers } from "./computer-types";
 import { emptyScene, factorialScene, sceneLabels } from "./testing/fixtures";
+import { useDisplayStore } from "./stores/display-store";
 import { FakeComputer } from "./testing/fake-computer";
 
 const meta = preview.meta({
@@ -73,8 +74,12 @@ export const EmptyMemory = meta.story({
   ),
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    // Empty cells render as a muted zero word.
-    const zeros = await canvas.findAllByText("00000000");
+    // Empty cells render as a muted zero in the selected format.
+    const zeros = await canvas.findAllByText("0");
     await expect(zeros.length).toBeGreaterThan(0);
+    useDisplayStore.setState({ format: "hex" });
+    const hexZeros = await canvas.findAllByText("0x0");
+    await expect(hexZeros.length).toBeGreaterThan(0);
+    useDisplayStore.setState({ format: "decimal" });
   },
 });
