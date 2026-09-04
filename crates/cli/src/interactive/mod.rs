@@ -66,7 +66,7 @@ enum Command {
         number: i32,
     },
 
-    /// Set a value in memory
+    /// Set a value in a register or in memory
     Set {
         /// The address or register to set.
         #[clap(value_parser)]
@@ -412,21 +412,25 @@ pub(crate) fn run_interactive(computer: &mut Computer, debug_info: DebugInfo) ->
                 }
             }
 
-            (Command::Set { target, value }, false) => match &target {
-                parse::AssignmentTarget::Address(node) => {
-                    let address = warn_and_continue!(node.evaluate(&session.labels));
-                    let value = warn_and_continue!(value.evaluate(computer, &session.labels));
-                    info!("Setting memory at address {address} to {value}");
-                    let cell = warn_and_continue!(computer.memory.get_mut(address));
-                    *cell = Cell::Word(value);
+            (Command::Set { target, value }, false) => {
+                match &target {
+                    parse::AssignmentTarget::Address(node) => {
+                        let address = warn_and_continue!(node.evaluate(&session.labels));
+                        let value = warn_and_continue!(value.evaluate(computer, &session.labels));
+                        let cell = warn_and_continue!(computer.memory.get_mut(address));
+                        *cell = Cell::Word(value);
+                        info!("Set memory at address {address} to {value}");
+                    }
+
+                    parse::AssignmentTarget::Register(reg) => {
+                        let value = warn_and_continue!(value.evaluate(computer, &session.labels));
+                        warn_and_continue!(computer.registers.set(*reg, Cell::Word(value)));
+                        info!("Set register {reg} to {value}");
+                    }
                 }
 
-                parse::AssignmentTarget::Register(reg) => {
-                    let value = warn_and_continue!(value.evaluate(computer, &session.labels));
-                    info!("Setting register {reg} to {value}");
-                    warn_and_continue!(computer.registers.set(*reg, Cell::Word(value)));
-                }
-            },
+                session.reset_list();
+            }
 
             (Command::Interrupt, false) => {
                 let pc = computer.registers.pc;
@@ -460,6 +464,8 @@ pub(crate) fn run_interactive(computer: &mut Computer, debug_info: DebugInfo) ->
             }
 
             (Command::Continue, false) => {
+                session.reset_list();
+
                 for steps in 1.. {
                     let pc = computer.registers.pc;
                     if let Err(e) = computer.step() {

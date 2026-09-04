@@ -142,3 +142,24 @@ fn continue_writes_program_output_before_the_stop_message() {
         .expect("the run stopped at the breakpoint");
     assert!(echoed < stopped, "{stdout}");
 }
+
+#[test]
+fn a_failed_set_is_not_announced() {
+    let output = run_interactive("fact.s", "set 99999 1\nexit\n");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "stderr: {stderr}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(!stdout.contains("Set memory"), "{stdout}");
+    assert!(stdout.contains("invalid address 99999"), "{stdout}");
+}
+
+#[test]
+fn set_moves_where_list_starts() {
+    // The first list leaves the cursor past %pc; the second one must start
+    // from the new %pc, and " >" marks it as the current instruction.
+    let output = run_interactive("fact.s", "list 2\nset %pc 2000\nlist 2\nexit\n");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "stderr: {stderr}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains(">  2000"), "{stdout}");
+}
