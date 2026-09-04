@@ -161,6 +161,107 @@ jobs:
             editors/web/test-results/
           retention-days: 7
 
+  vscode-e2e:
+    name: "VS Code extension E2E tests"
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node and pnpm
+        uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2.1.0
+        with:
+          runtime: node@24
+          require-lockfile: true
+
+      - name: Setup Rust build cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      # Jobs share no filesystem, so the wasm build of the lint job is
+      # repeated here.
+      - name: Build the wasm bindings
+        run: pnpm --filter z33-web run build:wasm
+
+      - name: Reuse the wasm bindings for the vscode extension
+        run: |
+          mkdir -p editors/vscode/dist
+          cp -r editors/web/pkg editors/vscode/dist/pkg
+
+      - name: Build the extension bundle
+        run: pnpm --filter z33-assembly run build:bundle
+
+      - name: Install Playwright browsers
+        working-directory: editors/vscode
+        run: npx playwright install chromium --with-deps
+
+      # The VS Code web build is resolved at run time from --quality stable,
+      # so playwright.config.ts pins it to a fixed commit instead; read that
+      # pin here so the cache key tracks it.
+      - name: Read the pinned VS Code build commit
+        id: vscode-commit
+        run: |
+          sha=$(grep -o 'VSCODE_WEB_COMMIT = "[0-9a-f]*"' editors/vscode/playwright.config.ts | grep -o '[0-9a-f]\{40\}')
+          if [ -z "$sha" ]; then
+            echo "::error::VSCODE_WEB_COMMIT not found in editors/vscode/playwright.config.ts" >&2
+            exit 1
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      # The VS Code web build (about 55 MB) is downloaded by @vscode/test-web
+      # on first run; keying on the pinned commit means the cache is only
+      # invalidated when that pin moves, not on every new stable release.
+      - name: Restore VS Code web build cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: editors/vscode/.vscode-test-web
+          key: vscode-test-web-${{ steps.vscode-commit.outputs.sha }}
+          restore-keys: vscode-test-web-
+
+      # The three Playwright webServers in playwright.config.ts each have their
+      # own data directory and would all try to download the VS Code web build
+      # on a cold cache; download it once here and copy it into the other two.
+      - name: Warm the VS Code web build cache
+        working-directory: editors/vscode
+        env:
+          SHA: ${{ steps.vscode-commit.outputs.sha }}
+        run: |
+          timeout 300 pnpm exec vscode-test-web --browser none --quality stable --commit "$SHA" --testRunnerDataDir .vscode-test-web/bare --extensionDevelopmentPath=. e2e/workspaces/bare > /tmp/warmup.log 2>&1 &
+          pid=$!
+          until grep -q 'Listening on' /tmp/warmup.log; do
+            sleep 2
+            kill -0 $pid || { cat /tmp/warmup.log; exit 1; }
+          done
+          kill $pid
+          for name in launch untitled; do
+            [ -d ".vscode-test-web/$name" ] || cp -r .vscode-test-web/bare ".vscode-test-web/$name"
+          done
+
+      - name: Run Playwright tests
+        working-directory: editors/vscode
+        run: pnpm run e2e
+
+      # A cache written from a pull request would be served to later runs on
+      # main, so only main saves.
+      - name: Save VS Code web build cache
+        if: github.ref == 'refs/heads/main'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: editors/vscode/.vscode-test-web
+          key: vscode-test-web-${{ steps.vscode-commit.outputs.sha }}
+
+      - name: Upload test report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ !cancelled() }}
+        with:
+          name: vscode-playwright-report
+          path: |
+            editors/vscode/playwright-report/
+            editors/vscode/test-results/
+          retention-days: 7
+          if-no-files-found: ignore
+
   storybook:
     name: "Storybook tests"
     runs-on: ubuntu-24.04
