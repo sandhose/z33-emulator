@@ -290,7 +290,9 @@ fn parse_chunks(input: &str, base_offset: usize) -> Result<Children, String> {
 
         if let Ok(condition) = p_if.parse(line).into_result() {
             let node_start = pos;
-            let block_start = pos + full_line_len + 1;
+            // The body starts after the newline; a file ending on the `#if`
+            // line has no newline to skip, and the block is then unterminated.
+            let block_start = (pos + full_line_len + 1).min(input.len());
             let (node, block_end) =
                 parse_conditional_block(input, block_start, base_offset, node_start, condition)?;
 
@@ -464,6 +466,14 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
+
+    #[test]
+    fn unterminated_if_on_the_last_line_is_an_error() {
+        for input in ["#if 1", "#if 1\n", "#if 1\nfoo", "#if 1\n#else"] {
+            let err = parse(input).expect_err(input);
+            assert!(err.contains("unterminated #if"), "{input:?}: {err}");
+        }
+    }
 
     #[test]
     fn parse_raw_test() {
