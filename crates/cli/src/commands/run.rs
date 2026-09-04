@@ -20,6 +20,16 @@ use crate::interactive::run_interactive;
 /// bookkeeping is negligible.
 const IO_BATCH: usize = 10_000;
 
+/// How a program stopped running.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Halt {
+    /// The program reset itself, which is how a program ends normally.
+    Reset,
+
+    /// The program hit an exception it could not recover from.
+    Fault,
+}
+
 /// A message from the background stdin reader thread.
 enum Input {
     /// A line of raw bytes read from stdin, including its trailing `\n`. Bytes
@@ -88,14 +98,17 @@ impl RunOpt {
         let debug_info = compile_result.debug_info;
 
         info!("Running program");
-        if self.interactive {
-            run_interactive(&mut computer, debug_info);
+        let halt = if self.interactive {
+            run_interactive(&mut computer, debug_info)
         } else {
-            run_with_io(&mut computer)?;
-        }
+            run_with_io(&mut computer)?
+        };
 
         info!(registers = %computer.registers, "End of program");
 
+        if halt == Halt::Fault {
+            anyhow::bail!("the program faulted");
+        }
         Ok(())
     }
 }
@@ -151,7 +164,10 @@ fn flush_serial_output(computer: &mut Computer) -> anyhow::Result<()> {
 /// bounded burst of instructions runs before draining serial output back to
 /// stdout. `in` never blocks; a program awaiting input simply busy-polls until
 /// a line arrives.
-fn run_with_io(computer: &mut Computer) -> anyhow::Result<()> {
+///
+/// A fault is returned as an error naming the address it happened at, so the
+/// [`Halt`] this returns describes a program that ended by resetting.
+fn run_with_io(computer: &mut Computer) -> anyhow::Result<Halt> {
     let rx = spawn_stdin_reader();
     // Once stdin hits EOF we latch it and never touch the channel again, so we
     // never busy-wait on input that will never come.
@@ -189,7 +205,7 @@ fn run_with_io(computer: &mut Computer) -> anyhow::Result<()> {
         flush_serial_output(computer)?;
 
         if reset {
-            return Ok(());
+            return Ok(Halt::Reset);
         }
     }
 }

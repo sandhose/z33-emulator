@@ -90,3 +90,40 @@ fn a_negative_memory_count_stops_at_the_bottom_of_memory() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("address=0"), "{stdout}");
 }
+
+#[test]
+fn a_faulting_program_makes_interactive_mode_exit_non_zero() {
+    let path = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("fault.s");
+    std::fs::write(&path, "main:\n    ld [99999], %a\n    reset\n").unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_z33-cli"))
+        .args(["run", "-i", path.to_str().unwrap(), "main"])
+        .env("RUST_LOG", "info")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("failed to spawn z33-cli");
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"continue\nexit\n")
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(!output.status.success(), "a fault must not exit 0");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Program faulted at address 1000"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("invalid address 99999"), "{stdout}");
+}
+
+#[test]
+fn a_reset_is_reported_as_a_normal_end() {
+    let output = run_interactive("fact.s", "continue\nexit\n");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Program ended (reset)"), "{stdout}");
+    assert!(!stdout.contains("Halted"), "{stdout}");
+}

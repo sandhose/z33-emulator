@@ -15,11 +15,12 @@ use rustyline::{Behavior, CompletionType, Config, EditMode, Editor};
 use tracing::{debug, info, warn};
 use z33_emulator::compiler::DebugInfo;
 use z33_emulator::constants as C;
-use z33_emulator::runtime::{Cell, Computer, Exception, Reg};
+use z33_emulator::runtime::{Cell, Computer, Exception, ProcessorError, Reg};
 
 mod helper;
 mod parse;
 use self::helper::RunHelper;
+use crate::commands::run::Halt;
 
 static HELP: &str = r#"
 Run "help [command]" for command-specific help.
@@ -277,8 +278,26 @@ fn flush_serial_output(computer: &mut Computer) {
     }
 }
 
+/// Log a fault and the address of the instruction that caused it.
+fn report_fault(pc: C::Address, error: &dyn std::error::Error) -> Halt {
+    warn!("Program faulted at address {pc}: {error}");
+    Halt::Fault
+}
+
+/// Log why the program stopped while running the instruction at `pc`.
+fn report_halt(pc: C::Address, error: &ProcessorError) -> Halt {
+    if matches!(error, ProcessorError::Reset) {
+        info!("Program ended (reset)");
+        Halt::Reset
+    } else {
+        report_fault(pc, error)
+    }
+}
+
+/// Runs the debugger loop. Returns how the program stopped, or [`Halt::Reset`]
+/// if the user left before it stopped.
 #[allow(clippy::too_many_lines)]
-pub(crate) fn run_interactive(computer: &mut Computer, debug_info: DebugInfo) {
+pub(crate) fn run_interactive(computer: &mut Computer, debug_info: DebugInfo) -> Halt {
     info!("Running in interactive mode. Type \"help\" to list available commands.");
     let config = Config::builder()
         .history_ignore_space(true)
@@ -296,6 +315,7 @@ pub(crate) fn run_interactive(computer: &mut Computer, debug_info: DebugInfo) {
 
     let mut last_command: Option<Command> = None;
     let mut halted = false;
+    let mut halt = Halt::Reset;
 
     'read: loop {
         // Flush any serial output produced by the previous command's execution
@@ -318,7 +338,7 @@ pub(crate) fn run_interactive(computer: &mut Computer, debug_info: DebugInfo) {
 
         let Ok(readline) = rl.readline(">> ") else {
             info!("EOF, exitting");
-            return;
+            return halt;
         };
 
         let command = if readline.is_empty() {
@@ -347,9 +367,10 @@ pub(crate) fn run_interactive(computer: &mut Computer, debug_info: DebugInfo) {
                 session.reset_list();
 
                 for _ in 0..number {
+                    let pc = computer.registers.pc;
                     if let Err(e) = computer.step() {
-                        warn!(error = &e as &dyn std::error::Error, "Halted");
                         halted = true;
+                        halt = report_halt(pc, &e);
                         continue 'read;
                     }
                 }
@@ -410,9 +431,10 @@ pub(crate) fn run_interactive(computer: &mut Computer, debug_info: DebugInfo) {
             },
 
             (Command::Interrupt, false) => {
+                let pc = computer.registers.pc;
                 if let Err(e) = computer.recover_from_exception(&Exception::HardwareInterrupt) {
-                    warn!(error = &e as &dyn std::error::Error, "Halted");
                     halted = true;
+                    halt = report_fault(pc, &e);
                     continue 'read;
                 }
 
@@ -440,9 +462,10 @@ pub(crate) fn run_interactive(computer: &mut Computer, debug_info: DebugInfo) {
             }
 
             (Command::Continue, false) => loop {
+                let pc = computer.registers.pc;
                 if let Err(e) = computer.step() {
-                    warn!(error = &e as &dyn std::error::Error, "Halted");
                     halted = true;
+                    halt = report_halt(pc, &e);
                     continue 'read;
                 }
 
@@ -487,4 +510,5 @@ pub(crate) fn run_interactive(computer: &mut Computer, debug_info: DebugInfo) {
             }
         }
     }
+    halt
 }
