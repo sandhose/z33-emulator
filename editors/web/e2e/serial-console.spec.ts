@@ -27,9 +27,12 @@ done:
 // Read the visible terminal buffer through the test hook the component exposes
 // (`window.__z33Terminal`). xterm renders to a canvas-less DOM grid, so there is
 // no accessible text node to assert on — we read the buffer directly instead.
-async function terminalText(page: import("@playwright/test").Page): Promise<string> {
+async function terminalText(
+  page: import("@playwright/test").Page,
+): Promise<string> {
   return page.evaluate(() => {
-    const terminal = (globalThis as { __z33Terminal?: unknown }).__z33Terminal as
+    const terminal = (globalThis as { __z33Terminal?: unknown })
+      .__z33Terminal as
       | {
           buffer: {
             active: {
@@ -84,9 +87,7 @@ test.describe("Serial console", () => {
     ).toBeVisible();
   });
 
-  test("normalizes newlines within a paste to line feeds", async ({
-    page,
-  }) => {
+  test("normalizes newlines within a paste to line feeds", async ({ page }) => {
     await loadWorkspace(page, { "echo.s": ECHO_PROGRAM }, "echo.s");
     await enterDebugMode(page);
 

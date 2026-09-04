@@ -10,7 +10,7 @@
     "build:wasm:dev": "wasm-pack build ../../crates/wasm --dev --target web --out-dir ../../editors/web/pkg --out-name z33_web",
     "build": "pnpm run build:wasm && vite build",
     "start": "pnpm run build:wasm:dev && vite",
-    "check": "oxlint app/ && oxfmt --check app/",
+    "check": "oxlint app/ e2e/ && oxfmt --check app/ e2e/",
     "lint": "oxlint app/",
     "lint:fix": "oxlint --fix app/",
     "fmt": "oxfmt app/",

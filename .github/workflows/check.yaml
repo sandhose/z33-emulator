@@ -118,6 +118,11 @@ jobs:
       - name: Check for unused exports
         run: pnpm -r --filter './editors/web' knip
 
+      # The Pages deploy is the only other place the production build runs,
+      # and it only runs on pushes to main.
+      - name: Production build of the web app
+        run: pnpm --filter z33-web exec vite build
+
   e2e:
     name: "Playwright E2E tests"
     runs-on: ubuntu-24.04
