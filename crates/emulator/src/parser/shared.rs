@@ -248,6 +248,64 @@ pub fn register<'a>() -> impl Parser<'a, &'a str, Reg, Extra<'a>> + Clone {
 }
 
 // ---------------------------------------------------------------------------
+// Expression nesting guard
+// ---------------------------------------------------------------------------
+
+/// Deepest parenthesis nesting an expression may contain.
+///
+/// Each level of parentheses costs one recursion through [`expression`]. A
+/// debug build overflows a 1 MiB thread, the dev wasm build's stack, at 14
+/// levels, and a 2 MiB thread (cargo test threads, tokio LSP workers) at 30.
+pub const MAX_EXPRESSION_DEPTH: usize = 8;
+
+/// Maximum parenthesis nesting in `input`, ignoring string literals and
+/// anything after a `//` comment.
+pub(crate) fn paren_depth(input: &str) -> usize {
+    let mut depth = 0usize;
+    let mut max = 0usize;
+    let mut in_string = false;
+    let mut chars = input.chars().peekable();
+    while let Some(c) = chars.next() {
+        if in_string {
+            match c {
+                '\\' => {
+                    chars.next();
+                }
+                '"' => in_string = false,
+                _ => {}
+            }
+            continue;
+        }
+        match c {
+            '"' => in_string = true,
+            '/' if chars.peek() == Some(&'/') => break,
+            '(' => {
+                depth += 1;
+                max = max.max(depth);
+            }
+            ')' => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+    }
+    max
+}
+
+/// Check `input` before handing it to [`expression`].
+///
+/// # Errors
+///
+/// Returns a diagnostic message when the parenthesis nesting exceeds
+/// [`MAX_EXPRESSION_DEPTH`].
+pub fn reject_deep_nesting(input: &str) -> Result<(), String> {
+    if paren_depth(input) > MAX_EXPRESSION_DEPTH {
+        return Err(format!(
+            "expression nesting is too deep (more than {MAX_EXPRESSION_DEPTH} levels)"
+        ));
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Expressions
 // ---------------------------------------------------------------------------
 
@@ -260,6 +318,11 @@ pub fn expression<'a>() -> impl Parser<'a, &'a str, ExpressionNode, Extra<'a>> +
     // outermost bitwise-or tier) rather than back into the atom tier. Without
     // this, `( ... )` could only wrap a bare atom and operator expressions like
     // `(1 << 8)` failed to parse.
+    //
+    // Every tier is `.boxed()`: each one embeds the tier below it twice, so
+    // without the type erasure a single recursion step carries the whole
+    // ladder inlined and costs a debug stack frame six times larger. See
+    // MAX_EXPRESSION_DEPTH.
     recursive(|expr| {
         let number = number_literal().map(|v| ExpressionNode::Literal(ExpressionValue::from(v)));
 
@@ -269,7 +332,7 @@ pub fn expression<'a>() -> impl Parser<'a, &'a str, ExpressionNode, Extra<'a>> +
         // any operator expression is valid between the parentheses.
         let paren = expr.delimited_by(just('(').then(hspace()), hspace().then(just(')')));
 
-        let atom = number.or(variable).or(paren);
+        let atom = number.or(variable).or(paren).boxed();
 
         // Unary operators
         let unary = choice((
@@ -286,82 +349,95 @@ pub fn expression<'a>() -> impl Parser<'a, &'a str, ExpressionNode, Extra<'a>> +
                     ExpressionNode::BinaryNot(Box::new(rhs).with_location(span_to_range(e.span())))
                 }),
             atom,
-        ));
+        ))
+        .boxed();
 
         // Multiplication / Division
         let op = just('*').to(true).or(just('/').to(false));
-        let product = unary.clone().foldl_with(
-            hspace()
-                .ignore_then(op)
-                .then_ignore(hspace())
-                .then(unary)
-                .repeated(),
-            |lhs, (is_mul, rhs), e| {
-                let span = e.span();
-                let lhs = Box::new(lhs).with_location(span.start..span.start);
-                let rhs = Box::new(rhs).with_location(span.end..span.end);
-                if is_mul {
-                    ExpressionNode::Multiply(lhs, rhs)
-                } else {
-                    ExpressionNode::Divide(lhs, rhs)
-                }
-            },
-        );
+        let product = unary
+            .clone()
+            .foldl_with(
+                hspace()
+                    .ignore_then(op)
+                    .then_ignore(hspace())
+                    .then(unary)
+                    .repeated(),
+                |lhs, (is_mul, rhs), e| {
+                    let span = e.span();
+                    let lhs = Box::new(lhs).with_location(span.start..span.start);
+                    let rhs = Box::new(rhs).with_location(span.end..span.end);
+                    if is_mul {
+                        ExpressionNode::Multiply(lhs, rhs)
+                    } else {
+                        ExpressionNode::Divide(lhs, rhs)
+                    }
+                },
+            )
+            .boxed();
 
         // Addition / Subtraction
         let op = just('+').to(true).or(just('-').to(false));
-        let sum = product.clone().foldl_with(
-            hspace()
-                .ignore_then(op)
-                .then_ignore(hspace())
-                .then(product)
-                .repeated(),
-            |lhs, (is_add, rhs), e| {
-                let span = e.span();
-                let lhs = Box::new(lhs).with_location(span.start..span.start);
-                let rhs = Box::new(rhs).with_location(span.end..span.end);
-                if is_add {
-                    ExpressionNode::Sum(lhs, rhs)
-                } else {
-                    ExpressionNode::Substract(lhs, rhs)
-                }
-            },
-        );
+        let sum = product
+            .clone()
+            .foldl_with(
+                hspace()
+                    .ignore_then(op)
+                    .then_ignore(hspace())
+                    .then(product)
+                    .repeated(),
+                |lhs, (is_add, rhs), e| {
+                    let span = e.span();
+                    let lhs = Box::new(lhs).with_location(span.start..span.start);
+                    let rhs = Box::new(rhs).with_location(span.end..span.end);
+                    if is_add {
+                        ExpressionNode::Sum(lhs, rhs)
+                    } else {
+                        ExpressionNode::Substract(lhs, rhs)
+                    }
+                },
+            )
+            .boxed();
 
         // Shifts
         let op = just("<<").to(true).or(just(">>").to(false));
-        let shift = sum.clone().foldl_with(
-            hspace()
-                .ignore_then(op)
-                .then_ignore(hspace())
-                .then(sum)
-                .repeated(),
-            |lhs, (is_left, rhs), e| {
-                let span = e.span();
-                let lhs = Box::new(lhs).with_location(span.start..span.start);
-                let rhs = Box::new(rhs).with_location(span.end..span.end);
-                if is_left {
-                    ExpressionNode::LeftShift(lhs, rhs)
-                } else {
-                    ExpressionNode::RightShift(lhs, rhs)
-                }
-            },
-        );
+        let shift = sum
+            .clone()
+            .foldl_with(
+                hspace()
+                    .ignore_then(op)
+                    .then_ignore(hspace())
+                    .then(sum)
+                    .repeated(),
+                |lhs, (is_left, rhs), e| {
+                    let span = e.span();
+                    let lhs = Box::new(lhs).with_location(span.start..span.start);
+                    let rhs = Box::new(rhs).with_location(span.end..span.end);
+                    if is_left {
+                        ExpressionNode::LeftShift(lhs, rhs)
+                    } else {
+                        ExpressionNode::RightShift(lhs, rhs)
+                    }
+                },
+            )
+            .boxed();
 
         // Bitwise AND (must not match &&)
-        let band = shift.clone().foldl_with(
-            hspace()
-                .ignore_then(just('&').then_ignore(just('&').not()))
-                .then_ignore(hspace())
-                .ignore_then(shift)
-                .repeated(),
-            |lhs, rhs, e| {
-                let span = e.span();
-                let lhs = Box::new(lhs).with_location(span.start..span.start);
-                let rhs = Box::new(rhs).with_location(span.end..span.end);
-                ExpressionNode::BinaryAnd(lhs, rhs)
-            },
-        );
+        let band = shift
+            .clone()
+            .foldl_with(
+                hspace()
+                    .ignore_then(just('&').then_ignore(just('&').not()))
+                    .then_ignore(hspace())
+                    .ignore_then(shift)
+                    .repeated(),
+                |lhs, rhs, e| {
+                    let span = e.span();
+                    let lhs = Box::new(lhs).with_location(span.start..span.start);
+                    let rhs = Box::new(rhs).with_location(span.end..span.end);
+                    ExpressionNode::BinaryAnd(lhs, rhs)
+                },
+            )
+            .boxed();
 
         // Bitwise OR (must not match ||)
         band.clone()
@@ -389,6 +465,7 @@ pub fn expression<'a>() -> impl Parser<'a, &'a str, ExpressionNode, Extra<'a>> +
 
 /// Parse a complete expression string, returning the AST node.
 pub fn parse_expression_str(input: &str) -> Result<ExpressionNode, String> {
+    reject_deep_nesting(input)?;
     let result = expression().then_ignore(end()).parse(input);
     result.into_result().map_err(|errs| {
         errs.into_iter()
@@ -403,7 +480,18 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::super::expression::{EmptyContext, Node};
-    use super::parse_expression_str;
+    use super::{MAX_EXPRESSION_DEPTH, paren_depth, parse_expression_str};
+
+    /// Run `f` on a thread with the smallest stack the parser is expected to
+    /// run on: what cargo gives a test thread and tokio an LSP worker.
+    fn on_a_small_stack(f: impl FnOnce() + Send + 'static) {
+        std::thread::Builder::new()
+            .stack_size(2 << 20)
+            .spawn(f)
+            .expect("spawn")
+            .join()
+            .expect("the parser must not overflow a 2 MiB stack");
+    }
 
     #[track_caller]
     fn eval(input: &str) -> i128 {
@@ -447,6 +535,33 @@ mod tests {
         assert_eq!(eval("1 | 2 & 3"), 3); // or binds looser than and
         assert_eq!(eval("7 - 2 - 1"), 4); // subtraction is left associative
         assert_eq!(eval("2 * 3 + 4 / 2"), 8);
+    }
+
+    #[test]
+    fn paren_depth_ignores_strings_and_comments() {
+        assert_eq!(paren_depth("ld ((1)), %a"), 2);
+        assert_eq!(paren_depth(r#".string "((((" // (((("#), 0);
+        assert_eq!(paren_depth("nop"), 0);
+    }
+
+    #[test]
+    fn nesting_at_the_limit_parses_and_one_more_is_rejected() {
+        on_a_small_stack(|| {
+            let at_limit = format!(
+                "{}1{}",
+                "(".repeat(MAX_EXPRESSION_DEPTH),
+                ")".repeat(MAX_EXPRESSION_DEPTH)
+            );
+            assert!(parse_expression_str(&at_limit).is_ok());
+
+            let over_limit = format!(
+                "{}1{}",
+                "(".repeat(MAX_EXPRESSION_DEPTH + 1),
+                ")".repeat(MAX_EXPRESSION_DEPTH + 1)
+            );
+            let err = parse_expression_str(&over_limit).expect_err("must be rejected");
+            assert!(err.contains("nesting"), "{err}");
+        });
     }
 
     #[test]

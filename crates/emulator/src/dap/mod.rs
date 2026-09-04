@@ -1449,11 +1449,12 @@ fn eval_address(program: &LoadedProgram, input: &str) -> Result<Address, String>
             let offset: i128 = node
                 .evaluate::<_, i128>(&program.labels)
                 .map_err(|e| e.to_string())?;
-            if is_plus {
-                base + offset
+            let indexed = if is_plus {
+                base.checked_add(offset)
             } else {
-                base - offset
-            }
+                base.checked_sub(offset)
+            };
+            indexed.ok_or_else(|| format!("offset out of range: {offset}"))?
         }
     };
     Address::try_from(value).map_err(|_| format!("address out of range: {value}"))
@@ -1484,7 +1485,9 @@ enum AddrArg {
 fn parse_addr_arg(input: &str) -> Result<AddrArg, String> {
     use chumsky::prelude::*;
 
-    use crate::parser::shared::{expression, register};
+    use crate::parser::shared::{expression, register, reject_deep_nesting};
+
+    reject_deep_nesting(input)?;
 
     let indexed = register()
         .then(choice((just('+').to(true), just('-').to(false))).then(expression()))

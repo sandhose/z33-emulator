@@ -388,6 +388,44 @@ fn evaluate_resolves_a_label() {
 }
 
 #[test]
+fn evaluate_rejects_input_the_expression_parser_cannot_descend() {
+    let mut h = Harness::new();
+    h.launch(true);
+
+    let deep = format!("{}1{}", "(".repeat(50_000), ")".repeat(50_000));
+    let resp = h.send("evaluate", json!({ "expression": deep }));
+    let resp = find_response(&resp, "evaluate").expect("evaluate response");
+    assert_eq!(resp["success"], json!(false));
+    assert!(
+        resp["message"]
+            .as_str()
+            .is_some_and(|m| m.contains("nesting")),
+        "{resp}"
+    );
+}
+
+#[test]
+fn evaluate_rejects_an_indexed_offset_that_overflows() {
+    let mut h = Harness::new();
+    h.launch(true);
+
+    // Literals cap at u64, so i128::MAX has to be computed to reach the
+    // add that combines the register with the offset.
+    let resp = h.send(
+        "evaluate",
+        json!({ "expression": "%sp+(1 << 126) - 1 + (1 << 126)" }),
+    );
+    let resp = find_response(&resp, "evaluate").expect("evaluate response");
+    assert_eq!(resp["success"], json!(false));
+    assert!(
+        resp["message"]
+            .as_str()
+            .is_some_and(|m| m.contains("out of range")),
+        "{resp}"
+    );
+}
+
+#[test]
 fn running_to_completion_terminates() {
     let mut h = Harness::new();
     // Do not stop on entry: the program runs to the `reset` immediately.
