@@ -107,14 +107,23 @@ program's output:
 - `help [command]`: Print the help message of a command
 - `memory <address> [n]`: Show a block of memory. The address can be either a register with or without offset (e.g. `%sp-5`) or a literal (e.g. `100`). The second argument is the number of cells to show (one by default).
 - `registers [register]`: Show the value of a register. If no register is specified, shows the value of all five of them.
-- `list`: Show the code that will be run next.
+- `list [n]`: Show the next `n` instructions that will be run (ten by default), continuing where the previous `list` stopped.
 - `step [n]`: Run `n` step of the program (one by default).
 - `break <address>`: Set a breakpoint at given address.
 - `unbreak <address>`: Remove a breakpoint at given address.
 - `info breakpoints`: Show the list of breakpoints
-- `continue`: Run the code until the next breakpoint
+- `info labels`: Show the program's labels and their addresses
+- `info cycles`: Show the number of cycles executed so far
+- `set <target> <value>`: Write a value into a register (`set %a 42`) or a memory cell (`set 100 42`)
+- `input <text>`: Queue a line of text on the serial console's input
+- `continue`: Run the code until the next breakpoint or reset
 - `interrupt`: Trigger a hardware interrupt
-- `exit`: Exit the emulator
+- `exit`, `quit`, `q`: Exit the emulator
+
+An empty line repeats the last command. A command can be shortened to any
+unambiguous prefix (`st` for `step`, `c` for `continue`); `s` is an alias of
+`step` because `set` and `step` share that prefix, while `i` stays ambiguous
+between `info`, `input` and `interrupt`.
 
 ## Releasing
 
