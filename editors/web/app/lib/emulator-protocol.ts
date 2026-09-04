@@ -43,6 +43,8 @@ export interface Snapshot {
 // ---------------------------------------------------------------------------
 
 export type WorkerRequest =
+  /** First message after spawn: the compiled binary the worker instantiates. */
+  | { type: "init"; module: WebAssembly.Module }
   | {
       id: number;
       type: "start";

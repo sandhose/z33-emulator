@@ -12,6 +12,26 @@ export interface WorkerErrorFrame {
   message: string;
 }
 
+/**
+ * The LSP client's init frame, carrying the compiled binary. It is namespaced
+ * because that channel also carries JSON-RPC traffic; the emulator worker owns
+ * its channel outright and takes a plain `init` request instead.
+ */
+export const WORKER_INIT = "z33/workerInit" as const;
+
+export interface WorkerInitFrame {
+  type: typeof WORKER_INIT;
+  module: WebAssembly.Module;
+}
+
+export function isWorkerInitFrame(data: unknown): data is WorkerInitFrame {
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    (data as { type?: unknown }).type === WORKER_INIT
+  );
+}
+
 /** Type guard for the worker-error sentinel frame. */
 export function isWorkerErrorFrame(data: unknown): data is WorkerErrorFrame {
   return (

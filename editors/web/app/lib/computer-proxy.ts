@@ -14,6 +14,7 @@ import type {
   ResolvedBreakpoint,
   SourcePosition,
 } from "./wasm";
+import { compiledWasmModule } from "./wasm-module";
 import type {
   ComputerInterface,
   ExecutionControls,
@@ -63,6 +64,18 @@ class EmulatorWorkerClient {
     this.#worker.addEventListener("error", (event: ErrorEvent) => {
       this.#fail(new Error(`Emulator worker error: ${event.message}`));
     });
+    compiledWasmModule().then(
+      (module) => {
+        this.send({ type: "init", module });
+      },
+      (error: unknown) => {
+        this.#fail(
+          new Error(
+            `Emulator worker error: ${error instanceof Error ? error.message : String(error)}`,
+          ),
+        );
+      },
+    );
   }
 
   #onMessage(message: WorkerResponse): void {

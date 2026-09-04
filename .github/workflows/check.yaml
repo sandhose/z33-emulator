@@ -280,6 +280,15 @@ jobs:
           runtime: node@24
           require-lockfile: true
 
+      - name: Setup Rust build cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      # The story graph reaches lib/wasm-module.ts, which imports the binary for
+      # its URL only, so vite has to resolve the file; no story instantiates it
+      # and the dev build is enough.
+      - name: Build the wasm bindings
+        run: pnpm run build:wasm:dev
+
       - name: Install Playwright browsers
         run: npx playwright install chromium --with-deps
 

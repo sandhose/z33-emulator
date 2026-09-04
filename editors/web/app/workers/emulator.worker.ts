@@ -24,7 +24,6 @@ import init, {
   InMemoryPreprocessor,
   type SourceIndex,
 } from "../../pkg/z33_web.js";
-import wasmUrl from "../../pkg/z33_web_bg.wasm?url";
 
 /** Instructions per batch; tuned so pause latency stays well under a frame. */
 const BATCH_SIZE = 50_000;
@@ -36,7 +35,19 @@ const SNAPSHOT_INTERVAL_MS = 40;
  */
 const MAX_CATCHUP_MS = 100;
 
-const ready = init({ module_or_path: wasmUrl });
+// Resolved by the `init` message, which carries the compiled module the main
+// thread already fetched.
+let startInit: (module: WebAssembly.Module) => void = () => {};
+const moduleReady = new Promise<WebAssembly.Module>((resolve) => {
+  startInit = resolve;
+});
+async function initialize(): Promise<void> {
+  await init({ module_or_path: await moduleReady });
+}
+// A top-level await would run before the message listener below exists and
+// the init message would be dropped.
+// oxlint-disable-next-line unicorn/prefer-top-level-await
+const ready = initialize();
 
 // If wasm init fails, `ready.then` in the message handler never runs, so every
 // request would hang. Surface it once as a fatal error frame; the proxy rejects
@@ -319,6 +330,10 @@ function start(
 
 self.addEventListener("message", (event: MessageEvent<WorkerRequest>) => {
   const message = event.data;
+  if (message.type === "init") {
+    startInit(message.module);
+    return;
+  }
   void ready.then(() => {
     switch (message.type) {
       case "check": {

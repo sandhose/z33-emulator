@@ -16,7 +16,8 @@ import type {
   PublishDiagnosticsParams,
   SemanticTokensLegend,
 } from "vscode-languageserver-protocol";
-import { isWorkerErrorFrame } from "../workers/worker-protocol";
+import { WORKER_INIT, isWorkerErrorFrame } from "../workers/worker-protocol";
+import { compiledWasmModule } from "./wasm-module";
 
 /** How long to wait for the `initialize`/`initialized` handshake to complete. */
 const HANDSHAKE_TIMEOUT_MS = 30_000;
@@ -90,6 +91,22 @@ class LspClientImpl implements LspClient {
       new URL("../workers/lsp.worker.ts", import.meta.url),
       { type: "module", name: "z33-lsp" },
     );
+    compiledWasmModule().then(
+      (module) => {
+        // oxlint-disable-next-line unicorn/require-post-message-target-origin -- Worker.postMessage takes no targetOrigin
+        this.#worker.postMessage({ type: WORKER_INIT, module });
+        // The budget covers the handshake, not the download that precedes it:
+        // the binary is 1.8 MB and the link may be slow.
+        this.#startHandshakeTimer();
+      },
+      (error: unknown) => {
+        this.#fail(
+          new Error(
+            `LSP worker failed to start: ${error instanceof Error ? error.message : String(error)}`,
+          ),
+        );
+      },
+    );
 
     // The worker posts a sentinel frame if its wasm init fails, and fires an
     // `error` event on a hard script failure. Either means the server will
@@ -126,12 +143,6 @@ class LspClientImpl implements LspClient {
       this.#fail(new Error("LSP worker connection closed"));
     });
 
-    this.#handshakeTimer = setTimeout(() => {
-      this.#fail(
-        new Error(`LSP handshake timed out after ${HANDSHAKE_TIMEOUT_MS}ms`),
-      );
-    }, HANDSHAKE_TIMEOUT_MS);
-
     this.connection.listen();
     this.#handshake().then(
       () => {
@@ -141,6 +152,15 @@ class LspClientImpl implements LspClient {
         this.#fail(error instanceof Error ? error : new Error(String(error)));
       },
     );
+  }
+
+  #startHandshakeTimer(): void {
+    if (this.#settled) return;
+    this.#handshakeTimer = setTimeout(() => {
+      this.#fail(
+        new Error(`LSP handshake timed out after ${HANDSHAKE_TIMEOUT_MS}ms`),
+      );
+    }, HANDSHAKE_TIMEOUT_MS);
   }
 
   #succeed(): void {
