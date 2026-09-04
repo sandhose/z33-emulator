@@ -367,7 +367,28 @@ jobs:
             call writefile(['FAIL: expected syntax z33, got: ' . get(b:, 'current_syntax', '<unset>')], '/tmp/z33-vim-smoke-result.txt')
             cquit 1
           endif
-          call writefile(['OK: filetype=' . &filetype . ' syntax=' . b:current_syntax], '/tmp/z33-vim-smoke-result.txt')
+          " The content heuristic has a second hand-written copy in
+          " ftdetect/z33.vim; run it over the same fixture corpus the Neovim
+          " smoke test uses, so the two cannot drift apart silently. No
+          " third-party .s/.S claimant is installed on the runner, so
+          " fixtures/z33 must come out as z33 and fixtures/asm as the
+          " builtin's asm.
+          let checked = {'z33': 0, 'asm': 0}
+          for want in ['z33', 'asm']
+            for fixture in glob('editors/vim/tests/fixtures/' . want . '/*', 0, 1)
+              execute 'edit' fnameescape(fixture)
+              if &filetype !=# want
+                call writefile(['FAIL: ' . fixture . ': filetype ' . &filetype . ', expected ' . want], '/tmp/z33-vim-smoke-result.txt')
+                cquit 1
+              endif
+              let checked[want] += 1
+            endfor
+          endfor
+          if checked.z33 + checked.asm < 10
+            call writefile(['FAIL: fixture corpus not found, checked ' . (checked.z33 + checked.asm) . ' files'], '/tmp/z33-vim-smoke-result.txt')
+            cquit 1
+          endif
+          call writefile(['OK: samples/fact.s got filetype and syntax z33; ' . checked.z33 . ' z33 and ' . checked.asm . ' asm fixtures matched'], '/tmp/z33-vim-smoke-result.txt')
           qall!
           VIMSCRIPT
           vim -es -N -u NONE -S /tmp/z33-vim-smoke.vim
