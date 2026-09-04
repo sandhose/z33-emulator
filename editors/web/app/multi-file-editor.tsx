@@ -129,8 +129,10 @@ export const MultiFileEditor: React.FC<Props> = ({
             requestedLineForClick(e.target.position.lineNumber, fileResolved),
           );
         });
-        // Re-apply glyphs after a model (file) switch.
-        editor.onDidChangeModel(() => {
+        // Glyphs for the model currently shown: needed once at mount, because
+        // the effect above ran before the refs existed, and again after every
+        // model (file) switch.
+        const applyGlyphs = () => {
           const decorations = decorationsRef.current;
           if (!decorations) return;
           const { breakpoints: bp, resolved: res } =
@@ -141,7 +143,9 @@ export const MultiFileEditor: React.FC<Props> = ({
               res[filePathRef.current],
             ),
           );
-        });
+        };
+        applyGlyphs();
+        editor.onDidChangeModel(applyGlyphs);
 
         onEditorMount?.(editor);
       }}

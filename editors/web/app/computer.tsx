@@ -80,6 +80,12 @@ export const Word: React.FC<{ word: number; labels: Labels }> = ({
   return <WordValue word={word} format={format} />;
 };
 
+/** A never-written cell reads as zero; muted to tell it from a stored 0. */
+const EmptyWord: React.FC = () => {
+  const format = useDisplayStore((s) => s.format);
+  return <WordValue word={0} format={format} muted />;
+};
+
 export const CellView: React.FC<{ cell: Cell; labels: Labels }> = ({
   cell,
   labels,
@@ -89,7 +95,7 @@ export const CellView: React.FC<{ cell: Cell; labels: Labels }> = ({
   ) : cell.type === "instruction" ? (
     cell.instruction
   ) : (
-    <WordValue word="00000000" muted />
+    <EmptyWord />
   );
 
 const normalize = (value: number): number =>

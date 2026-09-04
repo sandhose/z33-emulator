@@ -1,4 +1,10 @@
-import { enterDebugMode, expect, getCycleCount, test } from "./fixtures";
+import {
+  enterDebugMode,
+  exitDebugMode,
+  expect,
+  getCycleCount,
+  test,
+} from "./fixtures";
 
 test.describe("Debug details", () => {
   test("run increases cycle count", async ({ cleanPage: page }) => {
@@ -63,5 +69,25 @@ test.describe("Debug details", () => {
 
     // Switch back to decimal
     await registers.getByLabel("Decimal", { exact: true }).click();
+  });
+  test("panel layout survives leaving and re-entering debug mode", async ({
+    cleanPage: page,
+  }) => {
+    await enterDebugMode(page);
+    const separator = page.getByRole("separator").last();
+    const size = () => separator.getAttribute("aria-valuenow");
+    const before = await size();
+    await separator.focus();
+    for (let i = 0; i < 5; i++) await page.keyboard.press("ArrowUp");
+    await expect.poll(size).not.toBe(before);
+    const resized = await size();
+
+    await exitDebugMode(page);
+    await enterDebugMode(page);
+    await expect
+      .poll(() =>
+        page.getByRole("separator").last().getAttribute("aria-valuenow"),
+      )
+      .toBe(resized);
   });
 });

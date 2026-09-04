@@ -61,11 +61,13 @@ const App = () => {
   // the file store.
   useEffect(() => {
     setRunCommandHandler(({ path, label }) => {
-      const { mode, stopDebug } = useAppStore.getState();
-      if (mode.type === "debug") stopDebug();
+      const { mode: current, stopDebug } = useAppStore.getState();
+      if (current.type === "debug") stopDebug();
       runFile(path, label);
     });
-    return () => setRunCommandHandler(null);
+    return () => {
+      setRunCommandHandler(null);
+    };
   }, [runFile]);
 
   const handleEditorMount = useCallback(

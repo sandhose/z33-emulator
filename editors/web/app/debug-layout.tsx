@@ -15,7 +15,7 @@ import { ResizeHandle } from "./panel-resize-handle";
 import { SerialConsole } from "./serial-console";
 import { useAppStore } from "./stores/app-store";
 import { useFileStore } from "./stores/file-store";
-import { Group, Panel } from "react-resizable-panels";
+import { Group, Panel, useDefaultLayout } from "react-resizable-panels";
 
 type DebugLayoutProps = {
   onEditorMount: (editor: monaco.editor.IStandaloneCodeEditor) => void;
@@ -68,6 +68,17 @@ const DebugLayoutInner: React.FC<DebugLayoutInnerProps> = ({
   const activeFile = useFileStore((s) => s.activeFile);
   const setActiveFile = useFileStore((s) => s.setActiveFile);
 
+  const vertical = useDefaultLayout({
+    id: "z33:layout-vertical",
+    panelIds: ["z33-main", "z33-console"],
+    storage: localStorage,
+  });
+  const horizontal = useDefaultLayout({
+    id: "z33:layout-horizontal",
+    panelIds: ["z33-editor", "z33-right"],
+    storage: localStorage,
+  });
+
   const [editor, setEditor] =
     useState<monaco.editor.IStandaloneCodeEditor | null>(null);
 
@@ -104,9 +115,21 @@ const DebugLayoutInner: React.FC<DebugLayoutInnerProps> = ({
         onFileChange={setActiveFile}
         onStop={onStopDebug}
       />
-      <Group orientation="vertical" id="z33-v" className="flex-1 min-h-0">
+      <Group
+        orientation="vertical"
+        id="z33-v"
+        className="flex-1 min-h-0"
+        defaultLayout={vertical.defaultLayout}
+        onLayoutChanged={vertical.onLayoutChanged}
+      >
         <Panel defaultSize="75%" minSize="30%" id="z33-main">
-          <Group orientation="horizontal" id="z33-h" className="h-full">
+          <Group
+            orientation="horizontal"
+            id="z33-h"
+            className="h-full"
+            defaultLayout={horizontal.defaultLayout}
+            onLayoutChanged={horizontal.onLayoutChanged}
+          >
             <Panel defaultSize="65%" minSize="40%" id="z33-editor">
               <MultiFileEditor
                 filePath={activeFile}

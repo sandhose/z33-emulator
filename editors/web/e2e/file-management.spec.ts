@@ -14,6 +14,18 @@ test.describe("File management", () => {
     ).toBeVisible();
   });
 
+  test("creating a file with an existing name keeps its content", async ({
+    cleanPage: page,
+  }) => {
+    await page.getByRole("button", { name: "New file" }).click();
+    const input = page.getByRole("textbox", { name: "File name" });
+    await input.fill("fact.s");
+    await input.press("Enter");
+
+    await expect(page.getByRole("button", { name: "fact.s" })).toHaveCount(1);
+    await expect(page.locator(".monaco-editor")).toContainText("factorielle");
+  });
+
   test("delete a file", async ({ cleanPage: page }) => {
     // Create a file first
     await page.getByRole("button", { name: "New file" }).click();

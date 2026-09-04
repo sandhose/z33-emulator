@@ -44,6 +44,21 @@ test.describe("Breakpoints & fast run", () => {
     await expect(toolbar.getByRole("alert")).toHaveCount(0);
   });
 
+  test("persisted breakpoints are drawn after a reload", async ({
+    cleanPage: page,
+  }) => {
+    await toggleBreakpointOnLine(page, "[%sp+1],%a");
+    const glyphCount = () =>
+      page.evaluate(
+        () =>
+          document.querySelectorAll(".bp-glyph, .bp-glyph-unverified").length,
+      );
+    await expect.poll(glyphCount).toBe(1);
+
+    await page.reload();
+    await expect.poll(glyphCount).toBe(1);
+  });
+
   test("fast run completes a large loop quickly", async ({ page }) => {
     // ~200k iterations (~600k instructions).
     await loadWorkspace(

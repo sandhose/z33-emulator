@@ -229,7 +229,7 @@ export const FileSidebarView: React.FC<FileSidebarViewProps> = ({
                     variant="ghost"
                     size="icon-xs"
                     aria-label="Download"
-                    className="opacity-0 group-hover:opacity-100"
+                    className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
                     onClick={() => {
                       onDownload(name);
                     }}
@@ -247,7 +247,7 @@ export const FileSidebarView: React.FC<FileSidebarViewProps> = ({
                     variant="ghost"
                     size="icon-xs"
                     aria-label="Delete"
-                    className="opacity-0 group-hover:opacity-100 mr-1"
+                    className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 mr-1"
                     onClick={() => {
                       onDelete(name);
                     }}

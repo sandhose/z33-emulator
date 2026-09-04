@@ -83,7 +83,7 @@ const SerialTerminal: React.FC<SerialTerminalProps> = ({ computer, ref }) => {
   // Create the terminal once and wire up resize handling.
   useEffect(() => {
     const container = containerRef.current;
-    if (!container) return undefined;
+    if (!container) return () => {};
 
     const { effective } = useThemeStore.getState();
     const terminal = new Terminal({
@@ -99,8 +99,10 @@ const SerialTerminal: React.FC<SerialTerminalProps> = ({ computer, ref }) => {
     terminal.open(container);
     terminalRef.current = terminal;
 
-    // Expose the instance for e2e tests.
-    (globalThis as { __z33Terminal?: Terminal }).__z33Terminal = terminal;
+    // Expose the instance for e2e tests, like the editor's `__z33e2e` hook.
+    if (import.meta.env.DEV) {
+      (globalThis as { __z33Terminal?: Terminal }).__z33Terminal = terminal;
+    }
 
     // Fit to the container, guarding against the collapsed-panel pitfall:
     // fitting at zero size yields NaN/Infinity dimensions and can runaway.
@@ -144,7 +146,7 @@ const SerialTerminal: React.FC<SerialTerminalProps> = ({ computer, ref }) => {
   // Reset scrollback and (re)wire I/O whenever the debug session changes.
   useEffect(() => {
     const terminal = terminalRef.current;
-    if (!terminal) return undefined;
+    if (!terminal) return () => {};
 
     terminal.reset();
 

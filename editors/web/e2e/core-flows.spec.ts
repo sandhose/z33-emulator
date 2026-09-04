@@ -48,6 +48,42 @@ test.describe("Core flows", () => {
     await waitForCompileSuccess(page);
   });
 
+  test("a transient compile error keeps the Run controls in place", async ({
+    cleanPage: page,
+  }) => {
+    await waitForCompileSuccess(page);
+    const run = page.getByRole("button", { name: "Run", exact: true });
+    await expect(run).toBeEnabled();
+
+    await page.locator(".monaco-editor").click();
+    await page.keyboard.press("Control+End");
+    await page.keyboard.press("Enter");
+    await page.keyboard.type("sh");
+    await waitForCompileError(page);
+    await expect(run).toBeDisabled();
+    await expect(
+      page.getByRole("combobox", { name: "Entrypoint" }),
+    ).toBeVisible();
+  });
+
+  test("chosen entrypoint survives a change to the label set", async ({
+    cleanPage: page,
+  }) => {
+    await waitForCompileSuccess(page);
+    const entrypoint = page.getByRole("combobox", { name: "Entrypoint" });
+    await entrypoint.click();
+    await page.getByRole("option", { name: "casparticulier" }).click();
+    await expect(entrypoint).toContainText("casparticulier");
+
+    // Adding a label recompiles with a different label set.
+    await page.locator(".monaco-editor").click();
+    await page.keyboard.press("Control+End");
+    await page.keyboard.press("Enter");
+    await page.keyboard.type("newlabel:");
+    await waitForCompileSuccess(page);
+    await expect(entrypoint).toContainText("casparticulier");
+  });
+
   test("debug session lifecycle", async ({ cleanPage: page }) => {
     await enterDebugMode(page);
 
