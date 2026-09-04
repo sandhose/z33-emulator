@@ -99,8 +99,10 @@ const SerialTerminal: React.FC<SerialTerminalProps> = ({ computer, ref }) => {
     terminal.open(container);
     terminalRef.current = terminal;
 
-    // Expose the instance for e2e tests.
-    (globalThis as { __z33Terminal?: Terminal }).__z33Terminal = terminal;
+    // Expose the instance for e2e tests, like the editor's `__z33e2e` hook.
+    if (import.meta.env.DEV) {
+      (globalThis as { __z33Terminal?: Terminal }).__z33Terminal = terminal;
+    }
 
     // Fit to the container, guarding against the collapsed-panel pitfall:
     // fitting at zero size yields NaN/Infinity dimensions and can runaway.
