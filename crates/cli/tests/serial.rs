@@ -2,9 +2,8 @@
 //!
 //! These drive the compiled binary directly (via the `CARGO_BIN_EXE_*` env var
 //! cargo provides to integration tests), pipe bytes to its stdin, and assert on
-//! what the guest echoes back to stdout. The interactive (`-i`) path uses
-//! rustyline and reads the terminal device directly, so it cannot be driven
-//! from a pipe and is not covered here.
+//! what the guest echoes back to stdout. The interactive (`-i`) path is
+//! covered by `interactive.rs`.
 
 use std::io::Write;
 use std::path::PathBuf;

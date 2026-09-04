@@ -16,22 +16,24 @@ mod interactive;
 use crate::commands::Subcommand;
 
 #[derive(Parser)]
-#[clap(version, author, about, group = ArgGroup::new("format"))]
+#[clap(version, author, about, group = ArgGroup::new("colors"))]
 struct Opt {
     /// Increase the level of verbosity. Can be used multiple times.
     #[clap(short, long, action = ArgAction::Count, global(true))]
     verbose: u8,
 
-    /// Force colored output. Default is to check if the output is a tty
-    #[clap(short = 'c', long, action = ArgAction::SetTrue, global(true), group = "format")]
+    /// Force colored output of the logs. Default is to check if the output is
+    /// a tty
+    #[clap(short = 'c', long, action = ArgAction::SetTrue, global(true), group = "colors")]
     color: bool,
 
-    /// Force non-colored output. Default is to check if the output is a tty
-    #[clap(short = 'C', long, action = ArgAction::SetTrue, global(true), group = "format")]
+    /// Force non-colored output of the logs. Default is to check if the output
+    /// is a tty
+    #[clap(short = 'C', long, action = ArgAction::SetTrue, global(true), group = "colors")]
     no_color: bool,
 
     /// Use JSON output for log messages
-    #[clap(short, long, action = ArgAction::SetTrue, global(true), group = "format")]
+    #[clap(short, long, action = ArgAction::SetTrue, global(true))]
     json: bool,
 
     /// Append the logs to this file instead of printing them
@@ -53,13 +55,17 @@ impl Opt {
         }
     }
 
-    /// `--color` and `--no-color` win. Without them, colors are on when the
-    /// target stream is a terminal, and off for a file.
+    /// `--color` and `--no-color` win, then a non-empty `NO_COLOR` turns
+    /// colors off. Otherwise colors are on when the target stream is a
+    /// terminal, and off for a file.
     fn should_use_colors(&self, target: &LogTarget) -> bool {
         if self.color {
             return true;
         }
         if self.no_color {
+            return false;
+        }
+        if std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty()) {
             return false;
         }
         match target {
@@ -151,7 +157,9 @@ fn main() {
     // And run the command
     let res = opt.command.exec();
     if let Err(e) = res {
-        error!("{}", e);
+        // `{:#}` prints the whole anyhow chain on one line: the outermost
+        // context alone rarely says what went wrong.
+        error!("{e:#}");
         exit(1);
     }
 }

@@ -8,17 +8,19 @@
 //! to have it working but works nonetheless.
 
 use std::collections::{BTreeMap, HashSet};
+use std::ops::Range;
 
 use clap::Parser;
 use rustyline::{Behavior, CompletionType, Config, EditMode, Editor};
 use tracing::{debug, info, warn};
 use z33_emulator::compiler::DebugInfo;
 use z33_emulator::constants as C;
-use z33_emulator::runtime::{Cell, Computer, Exception, Reg};
+use z33_emulator::runtime::{Cell, Computer, Exception, ProcessorError, Reg};
 
 mod helper;
 mod parse;
 use self::helper::RunHelper;
+use crate::commands::run::{Halt, IO_BATCH, flush_serial_output};
 
 static HELP: &str = r#"
 Run "help [command]" for command-specific help.
@@ -31,7 +33,6 @@ An empty line re-runs the last valid command."#;
     disable_version_flag = true,
     infer_subcommands = true,
     no_binary_name = true,
-    allow_negative_numbers = true,
 )]
 /// Interactive mode commands
 enum Command {
@@ -44,6 +45,7 @@ enum Command {
     },
 
     /// Exit the emulator
+    #[command(alias = "quit", alias = "q")]
     Exit,
 
     /// Show the state of registers
@@ -60,18 +62,18 @@ enum Command {
         address: parse::Argument,
 
         /// Number of memory cells to show.
-        #[clap(value_parser, default_value = "1")]
+        #[clap(value_parser, default_value = "1", allow_negative_numbers = true)]
         number: i32,
     },
 
-    /// Set a value in memory
+    /// Set a value in a register or in memory
     Set {
         /// The address or register to set.
         #[clap(value_parser)]
         target: parse::AssignmentTarget,
 
         /// The value to set
-        #[clap(value_parser)]
+        #[clap(value_parser, allow_negative_numbers = true)]
         value: parse::Argument,
     },
 
@@ -182,11 +184,13 @@ impl Session {
         self.list_address = None;
     }
 
-    /// Offset the `list` command, returns the address to show
-    fn offset_list(&mut self, computer: &Computer, offset: C::Address) -> C::Address {
-        let addr = self.list_address.unwrap_or(computer.registers.pc);
-        self.list_address = Some(addr + offset);
-        addr
+    /// Advance the `list` cursor by `count` addresses and return the range to
+    /// show, which is empty once the cursor reached the end of memory.
+    fn offset_list(&mut self, computer: &Computer, count: C::Address) -> Range<C::Address> {
+        let start = self.list_address.unwrap_or(computer.registers.pc);
+        let end = start.saturating_add(count).min(C::MEMORY_SIZE);
+        self.list_address = Some(end);
+        start..end
     }
 
     /// Display the list of breakpoints
@@ -259,23 +263,26 @@ impl Session {
     }
 }
 
-/// Drain serial output produced by the guest and write it raw to stdout.
-///
-/// Program output bypasses `tracing` on purpose: it must not be mangled by log
-/// formatting. Write errors are ignored — a broken stdout is not recoverable
-/// here and should not abort the debugging session.
-fn flush_serial_output(computer: &mut Computer) {
-    let output = computer.io.serial.drain_output();
-    if !output.is_empty() {
-        use std::io::Write;
-        let stdout = std::io::stdout();
-        let mut handle = stdout.lock();
-        let _ = handle.write_all(&output).and_then(|()| handle.flush());
+/// Log a fault and the address of the instruction that caused it.
+fn report_fault(pc: C::Address, error: &dyn std::error::Error) -> Halt {
+    warn!("Program faulted at address {pc}: {error}");
+    Halt::Fault
+}
+
+/// Log why the program stopped while running the instruction at `pc`.
+fn report_halt(pc: C::Address, error: &ProcessorError) -> Halt {
+    if matches!(error, ProcessorError::Reset) {
+        info!("Program ended (reset)");
+        Halt::Reset
+    } else {
+        report_fault(pc, error)
     }
 }
 
+/// Runs the debugger loop. Returns how the program stopped, or [`Halt::Reset`]
+/// if the user left before it stopped.
 #[allow(clippy::too_many_lines)]
-pub(crate) fn run_interactive(computer: &mut Computer, debug_info: DebugInfo) {
+pub(crate) fn run_interactive(computer: &mut Computer, debug_info: DebugInfo) -> Halt {
     info!("Running in interactive mode. Type \"help\" to list available commands.");
     let config = Config::builder()
         .history_ignore_space(true)
@@ -293,12 +300,23 @@ pub(crate) fn run_interactive(computer: &mut Computer, debug_info: DebugInfo) {
 
     let mut last_command: Option<Command> = None;
     let mut halted = false;
+    let mut halt = Halt::Reset;
 
     'read: loop {
-        // Flush any serial output produced by the previous command's execution
-        // before the next prompt renders (covers step / continue / interrupt,
-        // including paths that `continue 'read`).
-        flush_serial_output(computer);
+        // Write the program's pending output before logging anything about it,
+        // so the two streams stay in order on a shared stdout. A failed write
+        // leaves nowhere to send the output, so the session ends there.
+        macro_rules! flush_or_break {
+            () => {
+                if let Err(e) = flush_serial_output(computer) {
+                    warn!(
+                        error = &e as &dyn std::error::Error,
+                        "Could not write the program's output"
+                    );
+                    break 'read;
+                }
+            };
+        }
 
         // A macro to unwrap an error, log it and continue the loop
         macro_rules! warn_and_continue {
@@ -315,7 +333,7 @@ pub(crate) fn run_interactive(computer: &mut Computer, debug_info: DebugInfo) {
 
         let Ok(readline) = rl.readline(">> ") else {
             info!("EOF, exitting");
-            return;
+            return halt;
         };
 
         let command = if readline.is_empty() {
@@ -344,12 +362,16 @@ pub(crate) fn run_interactive(computer: &mut Computer, debug_info: DebugInfo) {
                 session.reset_list();
 
                 for _ in 0..number {
+                    let pc = computer.registers.pc;
                     if let Err(e) = computer.step() {
-                        warn!(error = &e as &dyn std::error::Error, "Halted");
                         halted = true;
+                        flush_or_break!();
+                        halt = report_halt(pc, &e);
                         continue 'read;
                     }
                 }
+
+                flush_or_break!();
             }
 
             (Command::Registers { register }, _) => {
@@ -374,39 +396,47 @@ pub(crate) fn run_interactive(computer: &mut Computer, debug_info: DebugInfo) {
 
                 if number.is_positive() {
                     for i in 0..(number.unsigned_abs() as C::Address) {
-                        let address = address + i;
+                        let address = address.saturating_add(i);
                         let cell = warn_and_continue!(computer.memory.get(address));
                         info!(address, value = %cell);
                     }
                 } else {
                     for i in 0..(number.unsigned_abs() as C::Address) {
-                        let address = address - i;
+                        // Stop rather than wrap around at the bottom of memory.
+                        let Some(address) = address.checked_sub(i) else {
+                            break;
+                        };
                         let cell = warn_and_continue!(computer.memory.get(address));
                         info!(address, value = %cell);
                     }
                 }
             }
 
-            (Command::Set { target, value }, false) => match &target {
-                parse::AssignmentTarget::Address(node) => {
-                    let address = warn_and_continue!(node.evaluate(&session.labels));
-                    let value = warn_and_continue!(value.evaluate(computer, &session.labels));
-                    info!("Setting memory at address {address} to {value}");
-                    let cell = warn_and_continue!(computer.memory.get_mut(address));
-                    *cell = Cell::Word(value);
+            (Command::Set { target, value }, false) => {
+                match &target {
+                    parse::AssignmentTarget::Address(node) => {
+                        let address = warn_and_continue!(node.evaluate(&session.labels));
+                        let value = warn_and_continue!(value.evaluate(computer, &session.labels));
+                        let cell = warn_and_continue!(computer.memory.get_mut(address));
+                        *cell = Cell::Word(value);
+                        info!("Set memory at address {address} to {value}");
+                    }
+
+                    parse::AssignmentTarget::Register(reg) => {
+                        let value = warn_and_continue!(value.evaluate(computer, &session.labels));
+                        warn_and_continue!(computer.registers.set(*reg, Cell::Word(value)));
+                        info!("Set register {reg} to {value}");
+                    }
                 }
 
-                parse::AssignmentTarget::Register(reg) => {
-                    let value = warn_and_continue!(value.evaluate(computer, &session.labels));
-                    info!("Setting register {reg} to {value}");
-                    warn_and_continue!(computer.registers.set(*reg, Cell::Word(value)));
-                }
-            },
+                session.reset_list();
+            }
 
             (Command::Interrupt, false) => {
+                let pc = computer.registers.pc;
                 if let Err(e) = computer.recover_from_exception(&Exception::HardwareInterrupt) {
-                    warn!(error = &e as &dyn std::error::Error, "Halted");
                     halted = true;
+                    halt = report_fault(pc, &e);
                     continue 'read;
                 }
 
@@ -414,9 +444,11 @@ pub(crate) fn run_interactive(computer: &mut Computer, debug_info: DebugInfo) {
             }
 
             (Command::List { number }, _) => {
-                let addr = session.offset_list(computer, number);
-                for i in 0..number {
-                    let addr = addr + i;
+                let range = session.offset_list(computer, number);
+                if range.is_empty() {
+                    warn!(address = range.start, "Nothing to list");
+                }
+                for addr in range {
                     session.display_instruction(computer, addr);
                 }
             }
@@ -431,18 +463,29 @@ pub(crate) fn run_interactive(computer: &mut Computer, debug_info: DebugInfo) {
                 session.remove_breakpoint(address);
             }
 
-            (Command::Continue, false) => loop {
-                if let Err(e) = computer.step() {
-                    warn!(error = &e as &dyn std::error::Error, "Halted");
-                    halted = true;
-                    continue 'read;
-                }
+            (Command::Continue, false) => {
+                session.reset_list();
 
-                if session.has_breakpoint(computer.registers.pc) {
-                    info!(address = computer.registers.pc, "Stopped at a breakpoint");
-                    break;
+                for steps in 1.. {
+                    let pc = computer.registers.pc;
+                    if let Err(e) = computer.step() {
+                        halted = true;
+                        flush_or_break!();
+                        halt = report_halt(pc, &e);
+                        continue 'read;
+                    }
+
+                    if session.has_breakpoint(computer.registers.pc) {
+                        flush_or_break!();
+                        info!(address = computer.registers.pc, "Stopped at a breakpoint");
+                        break;
+                    }
+
+                    if steps % IO_BATCH == 0 {
+                        flush_or_break!();
+                    }
                 }
-            },
+            }
 
             (Command::Input { text }, _) => {
                 // Reconstruct the line from the parsed words and append Enter.
@@ -479,4 +522,5 @@ pub(crate) fn run_interactive(computer: &mut Computer, debug_info: DebugInfo) {
             }
         }
     }
+    halt
 }

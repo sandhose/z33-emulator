@@ -3,7 +3,7 @@ use clap::Parser;
 mod completion;
 mod dap;
 mod lsp;
-mod run;
+pub(crate) mod run;
 
 #[derive(Parser)]
 pub enum Subcommand {

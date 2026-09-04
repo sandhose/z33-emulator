@@ -1,4 +1,4 @@
-use std::io::{BufRead, BufReader, Write};
+use std::io::{self, BufRead, BufReader, Write};
 use std::process::exit;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::thread;
@@ -7,7 +7,7 @@ use camino::Utf8PathBuf;
 use clap::{ArgAction, Parser, ValueHint};
 use tracing::{debug, info};
 use z33_emulator::diagnostic::{
-    preprocessor_error_to_diagnostics, render_to_string, resolve_diagnostic_spans,
+    has_errors, preprocessor_error_to_diagnostics, render_to_string, resolve_diagnostic_spans,
 };
 use z33_emulator::preprocessor::{NativeFilesystem, SourceMap, Workspace};
 use z33_emulator::runtime::{Computer, ProcessorError};
@@ -18,7 +18,17 @@ use crate::interactive::run_interactive;
 /// The number of instructions to execute between servicing host I/O. Small
 /// enough that input latency stays imperceptible, large enough that the I/O
 /// bookkeeping is negligible.
-const IO_BATCH: usize = 10_000;
+pub(crate) const IO_BATCH: usize = 10_000;
+
+/// How a program stopped running.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Halt {
+    /// The program reset itself, which is how a program ends normally.
+    Reset,
+
+    /// The program hit an exception it could not recover from.
+    Fault,
+}
 
 /// A message from the background stdin reader thread.
 enum Input {
@@ -75,12 +85,12 @@ impl RunOpt {
         );
 
         // Show all diagnostics (parse + compilation), resolved to original
-        // files
-        if !compile_result.diagnostics.is_empty() {
-            for diag in &compile_result.diagnostics {
-                let resolved = resolve_diagnostic_spans(diag, &source_map);
-                eprint!("{}", render_to_string(&resolved, workspace.file_db()));
-            }
+        // files; only errors prevent the run.
+        for diag in &compile_result.diagnostics {
+            let resolved = resolve_diagnostic_spans(diag, &source_map);
+            eprint!("{}", render_to_string(&resolved, workspace.file_db()));
+        }
+        if has_errors(&compile_result.diagnostics) {
             exit(1);
         }
 
@@ -88,14 +98,17 @@ impl RunOpt {
         let debug_info = compile_result.debug_info;
 
         info!("Running program");
-        if self.interactive {
-            run_interactive(&mut computer, debug_info);
+        let halt = if self.interactive {
+            run_interactive(&mut computer, debug_info)
         } else {
-            run_with_io(&mut computer)?;
-        }
+            run_with_io(&mut computer)?
+        };
 
         info!(registers = %computer.registers, "End of program");
 
+        if halt == Halt::Fault {
+            anyhow::bail!("the program faulted");
+        }
         Ok(())
     }
 }
@@ -132,7 +145,7 @@ fn spawn_stdin_reader() -> Receiver<Input> {
 /// Drain whatever the program has written to the serial console and write it
 /// straight to stdout. Output bypasses `tracing` on purpose: it is raw program
 /// output and must not be mangled by log formatting.
-fn flush_serial_output(computer: &mut Computer) -> anyhow::Result<()> {
+pub(crate) fn flush_serial_output(computer: &mut Computer) -> io::Result<()> {
     let output = computer.io.serial.drain_output();
     if !output.is_empty() {
         let stdout = std::io::stdout();
@@ -151,7 +164,10 @@ fn flush_serial_output(computer: &mut Computer) -> anyhow::Result<()> {
 /// bounded burst of instructions runs before draining serial output back to
 /// stdout. `in` never blocks; a program awaiting input simply busy-polls until
 /// a line arrives.
-fn run_with_io(computer: &mut Computer) -> anyhow::Result<()> {
+///
+/// A fault is returned as an error naming the address it happened at, so the
+/// [`Halt`] this returns describes a program that ended by resetting.
+fn run_with_io(computer: &mut Computer) -> anyhow::Result<Halt> {
     let rx = spawn_stdin_reader();
     // Once stdin hits EOF we latch it and never touch the channel again, so we
     // never busy-wait on input that will never come.
@@ -170,6 +186,7 @@ fn run_with_io(computer: &mut Computer) -> anyhow::Result<()> {
         // Advance the program by a bounded burst so input latency stays low.
         let mut reset = false;
         for _ in 0..IO_BATCH {
+            let pc = computer.registers.pc;
             match computer.step() {
                 Ok(()) => {}
                 Err(ProcessorError::Reset) => {
@@ -179,7 +196,8 @@ fn run_with_io(computer: &mut Computer) -> anyhow::Result<()> {
                 Err(e) => {
                     // Flush any final output before surfacing the error.
                     flush_serial_output(computer)?;
-                    return Err(e.into());
+                    return Err(anyhow::Error::from(e)
+                        .context(format!("while executing the instruction at address {pc}")));
                 }
             }
         }
@@ -187,7 +205,7 @@ fn run_with_io(computer: &mut Computer) -> anyhow::Result<()> {
         flush_serial_output(computer)?;
 
         if reset {
-            return Ok(());
+            return Ok(Halt::Reset);
         }
     }
 }
