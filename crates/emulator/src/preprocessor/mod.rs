@@ -957,6 +957,30 @@ mod tests {
     }
 
     #[test]
+    fn deeply_nested_conditionals_expand_within_the_parser_bound() {
+        // process_chunks walks the same tree the parser builds, so the
+        // parser's nesting bound is what keeps this off the stack limit.
+        use crate::parser::preprocessor::MAX_CONDITIONAL_DEPTH;
+
+        std::thread::Builder::new()
+            .stack_size(2 << 20)
+            .spawn(|| {
+                let source = format!(
+                    "{}main:\n    reset\n{}",
+                    "#if 1 > 0\n".repeat(MAX_CONDITIONAL_DEPTH),
+                    "#endif\n".repeat(MAX_CONDITIONAL_DEPTH)
+                );
+                let fs = InMemoryFilesystem::new([("/a.S".into(), source)]);
+                let mut workspace = Workspace::new(&fs, "/a.S");
+                let result = workspace.preprocess().expect("must preprocess");
+                assert!(result.source.contains("reset"));
+            })
+            .expect("spawn")
+            .join()
+            .expect("the preprocessor must not overflow a 2 MiB stack");
+    }
+
+    #[test]
     fn unknown_include_error_test() {
         let fs = InMemoryFilesystem::new([("/include.S".into(), r#"#include "foo.S""#.into())]);
         let mut workspace = Workspace::new(&fs, "/include.S");
