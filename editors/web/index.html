@@ -22,11 +22,34 @@
           theme === "dark" ? "oklch(0.145 0 0)" : "oklch(1 0 0)";
       } catch (e) {}
     </script>
+    <style>
+      /* Skeleton shown until the app mounts; colours follow the theme class
+         set by the script above and approximate the tokens in app/globals.css.
+         The bar is the height of the edit toolbar (h-6 content plus py-1) and
+         the column the width of the sidebar, border included, so nothing shifts
+         when React takes over; both spell out box-sizing because Tailwind's
+         preflight is not loaded yet. */
+      .skeleton { position: fixed; inset: 0; display: flex; flex-direction: column; font-family: system-ui, sans-serif; color: #6b7280; }
+      .skeleton-bar { box-sizing: content-box; height: 2rem; border-bottom: 1px solid #e5e7eb; }
+      .skeleton-body { flex: 1; display: flex; min-height: 0; }
+      .skeleton-side { box-sizing: border-box; width: 12rem; border-right: 1px solid #e5e7eb; }
+      .skeleton-main { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 0.875rem; }
+      .dark .skeleton { color: #9ca3af; }
+      .dark .skeleton-bar, .dark .skeleton-side { border-color: #262626; }
+    </style>
     <script src="app/index.tsx" type="module"></script>
 </head>
 
 <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="skeleton" aria-busy="true">
+        <div class="skeleton-bar"></div>
+        <div class="skeleton-body">
+          <div class="skeleton-side"></div>
+          <div class="skeleton-main">Loading the editor…</div>
+        </div>
+      </div>
+    </div>
 </body>
 
 </html>
