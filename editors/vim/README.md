@@ -122,6 +122,7 @@ the same variables.
 | `z33_no_indent` | Disable the indent script (Vim / regex path). |
 | `z33_no_lsp` | Disable the vim-lsp registration (classic Vim only). |
 | `z33_no_treesitter_start` | Neovim: don't auto-start tree-sitter highlighting (stay on the regex fallback). |
+| `z33_no_codelens` | Neovim: don't show the LSP code lenses (label address / reference count, and the run lens). |
 | `z33_auto_download` | Neovim: `z33-cli` download consent — unset = prompt once, `true` = download silently, `false` = never download (PATH/cache only). |
 
 ### lazy.nvim `opts`
@@ -153,10 +154,11 @@ The server (`z33-cli lsp`) provides diagnostics, completion, hover,
 go-to-definition, references, rename, document symbols and code lens.
 
 - **Neovim 0.11+** — enabled automatically for `z33` buffers via the native
-  `vim.lsp.enable` mechanism (config in `lsp/z33.lua`). Nothing to wire. The
-  server offers an informational `▶ Run <label>` code lens; this plugin does not
-  advertise the `experimental.commands` capability, so use nvim-dap (below) to
-  actually run/debug.
+  `vim.lsp.enable` mechanism (config in `lsp/z33.lua`). Nothing to wire. Code
+  lenses show each label's address and reference count, plus a `▶ Run <label>`
+  lens on executable labels: `:lua vim.lsp.codelens.run()` on that line starts a
+  debug session stopped on the label with nvim-dap (below), or runs the program
+  in a terminal split when nvim-dap is not installed.
 - **Classic Vim** — zero-config [vim-lsp](https://github.com/prabirshrestha/vim-lsp)
   registration, active only when both vim-lsp and the `z33-cli` binary are
   present. Opt out with `g:z33_no_lsp = 1`.

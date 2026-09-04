@@ -153,6 +153,7 @@ function M.setup(opts)
   --    now; otherwise arm a lazy fetch-then-enable so we never hand the LSP
   --    core a `cmd` that has no binary (which crashes it and poisons retries).
   if vim.lsp and vim.lsp.enable then
+    vim.lsp.commands[require("z33.lens").RUN_COMMAND] = require("z33.lens").run
     if M.cli_path() then
       enable_lsp()
     else
