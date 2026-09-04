@@ -6,14 +6,20 @@ export const FILE_GLOB = "**/*.{s,S}";
 export const LANGUAGE_ID = "zorglub33-assembly";
 
 /**
- * URI schemes whose documents are workspace content: on-disk files, virtual
- * filesystems (vscode.dev, github.dev) and the `@vscode/test-web` mount the e2e
- * host serves from. Every other scheme a `.s` document can appear under mirrors
- * content that is not the workspace's — `git:` and diff views show committed
- * revisions, `vscode-local-history:` shows past ones — so they belong neither in
- * the file map nor in the LSP document selector.
+ * URI schemes whose documents are workspace content: on-disk files, remote
+ * windows (WSL, SSH, Codespaces), virtual filesystems (vscode.dev, github.dev)
+ * and the `@vscode/test-web` mount the e2e host serves from. Every other scheme
+ * a `.s` document can appear under mirrors content that is not the workspace's
+ * — `git:` and diff views show committed revisions, `vscode-local-history:`
+ * shows past ones — so they belong neither in the file map nor in the LSP
+ * document selector.
  */
-export const FILE_LIKE_SCHEMES: readonly string[] = ["file", "vscode-vfs", "vscode-test-web"];
+export const FILE_LIKE_SCHEMES: readonly string[] = [
+  "file",
+  "vscode-remote",
+  "vscode-vfs",
+  "vscode-test-web",
+];
 
 /**
  * Whether workspace-relative paths must include the folder name to stay unique.

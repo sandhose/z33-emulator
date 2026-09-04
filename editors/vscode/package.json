@@ -17,6 +17,12 @@
     "Debuggers"
   ],
   "browser": "./dist/extension.js",
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true
+    },
+    "virtualWorkspaces": true
+  },
   "activationEvents": [
     "onDebugResolve:zorglub33",
     "onDebugDynamicConfigurations:zorglub33"
