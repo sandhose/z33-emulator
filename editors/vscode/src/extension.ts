@@ -179,6 +179,43 @@ async function activateInner(context: vscode.ExtensionContext): Promise<void> {
     }),
   );
 
+  // While stopped, show the value of every register named on the visible
+  // lines up to the current instruction, next to the code. The adapter's
+  // `evaluate` already accepts `%a`-style expressions.
+  context.subscriptions.push(
+    vscode.languages.registerInlineValuesProvider(
+      { language: LANGUAGE_ID },
+      {
+        provideInlineValues(document, viewPort, inlineContext) {
+          const values: vscode.InlineValue[] = [];
+          const lastLine = Math.min(viewPort.end.line, inlineContext.stoppedLocation.end.line);
+          for (let line = viewPort.start.line; line <= lastLine; line += 1) {
+            const code = document.lineAt(line).text.split("//", 1)[0] ?? "";
+            const seen = new Set<string>();
+            // Register names are case-insensitive in the assembler, so `%A` is
+            // the same register as `%a` and gets one value between them.
+            for (const match of code.matchAll(/%(?:a|b|pc|sp|sr)\b/gi)) {
+              // A register name inside a string literal is text, not a
+              // register: an odd number of quotes before it means it is inside
+              // one (escaped quotes are not accounted for).
+              if ((code.slice(0, match.index).split('"').length - 1) % 2 === 1) continue;
+              const register = match[0].toLowerCase();
+              if (seen.has(register)) continue;
+              seen.add(register);
+              values.push(
+                new vscode.InlineValueEvaluatableExpression(
+                  new vscode.Range(line, match.index, line, match.index + match[0].length),
+                  match[0],
+                ),
+              );
+            }
+          }
+          return values;
+        },
+      },
+    ),
+  );
+
   // Seed the server's include-resolution base map and keep it in sync. Watcher
   // events can arrive in bursts (multi-file save, branch switch); debounce and
   // serialize so pushes can't interleave and land stale (latest wins).
