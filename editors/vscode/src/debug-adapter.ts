@@ -13,30 +13,63 @@ import * as vscode from "vscode";
 import type { WasmDapServer } from "../dist/pkg/z33_web.js";
 import { collectWorkspaceFiles } from "./workspace-paths.js";
 
-/** A launch request as sent by VS Code, before we inject the file map. */
+/** A launch configuration as sent by VS Code, before we inject the file map. */
+interface LaunchArguments {
+  program?: string;
+  entrypoint?: string;
+  stopOnEntry?: boolean;
+  files?: Record<string, string>;
+}
+
 interface LaunchRequest {
   seq: number;
   type: "request";
   command: "launch";
-  arguments?: {
-    program?: string;
-    entrypoint?: string;
-    stopOnEntry?: boolean;
-    files?: Record<string, string>;
-  };
+  arguments?: LaunchArguments;
 }
+
+/** A `restart` request. DAP nests the relaunch configuration — which VS Code
+ * re-resolves from the launch configuration — under `arguments.arguments`. */
+interface RestartRequest {
+  seq: number;
+  type: "request";
+  command: "restart";
+  arguments?: { arguments?: LaunchArguments };
+}
+
+/** The two requests that (re)load a program, and so need a fresh file map. */
+type RelaunchRequest = LaunchRequest | RestartRequest;
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function isLaunchRequest(message: unknown): message is LaunchRequest {
+/** The last segment of a URI's path, as VS Code labels the document's tab. */
+function fileName(uri: vscode.Uri): string {
+  const last = uri.path.split("/").pop();
+  return last === undefined || last.length === 0 ? uri.toString() : last;
+}
+
+function isRelaunchRequest(message: unknown): message is RelaunchRequest {
+  if (typeof message !== "object" || message === null) {
+    return false;
+  }
+  const request = message as { type?: unknown; command?: unknown };
   return (
-    typeof message === "object" &&
-    message !== null &&
-    (message as { type?: unknown }).type === "request" &&
-    (message as { command?: unknown }).command === "launch"
+    request.type === "request" && (request.command === "launch" || request.command === "restart")
   );
+}
+
+/** The launch configuration a relaunch request carries, if any. */
+function relaunchArguments(message: RelaunchRequest): LaunchArguments | undefined {
+  return message.command === "launch" ? message.arguments : message.arguments?.arguments;
+}
+
+/** The request with `args` back in the slot its command reads it from. */
+function withRelaunchArguments(message: RelaunchRequest, args: LaunchArguments): RelaunchRequest {
+  return message.command === "launch"
+    ? { ...message, arguments: args }
+    : { ...message, arguments: { ...message.arguments, arguments: args } };
 }
 
 /** A program-output `output` event (DAP `category: "stdout"`), which the serial
@@ -65,27 +98,34 @@ export class Z33DebugAdapter implements vscode.DebugAdapter {
 
   // Path translation between the server's workspace-relative keys (used by the
   // in-memory filesystem / `LineIndex`) and the paths VS Code speaks. Built in
-  // `handleLaunch` from the collected workspace URIs. Because that build awaits
-  // async file I/O — and the server emits `initialized` during `initialize`, so
-  // configuration-phase `setBreakpoints` can arrive before the launch dispatch
-  // finishes — we queue every non-launch message that comes in while the launch
-  // is in flight (see `launching`/`queued`) and flush it afterwards. That
-  // guarantees both these maps and the server's loaded program exist before any
-  // queued request reaches the server.
+  // `handleRelaunch` from the collected workspace URIs. Because that build
+  // awaits async file I/O — and the server emits `initialized` during
+  // `initialize`, so configuration-phase `setBreakpoints` can arrive before the
+  // launch dispatch finishes — we queue every other message that comes in while
+  // a launch or restart is in flight (see `launching`/`queued`) and flush it
+  // afterwards. That guarantees both these maps and the server's loaded program
+  // exist before any queued request reaches the server.
   //
   // `relToClient`: relative key → real client path (`uri.fsPath` for `file:`
   // URIs, otherwise `uri.toString()` — VS Code opens both). `clientToRel`:
   // client representation → relative key (`fsPath` and URI string for `file:`,
   // URI string only for virtual schemes — keying `fsPath` there would collide
-  // across authorities).
+  // across authorities). `relToName`: relative key → the name VS Code labels
+  // the document with.
   private readonly relToClient = new Map<string, string>();
+  private readonly relToName = new Map<string, string>();
   private readonly clientToRel = new Map<string, string>();
 
-  // While `handleLaunch` is in flight, incoming non-launch messages are queued
-  // here instead of dispatched, then flushed in order once the launch dispatch
-  // completes (success or failure).
+  // While `handleRelaunch` is in flight, incoming messages are queued here
+  // instead of dispatched, then flushed in order once the dispatch completes
+  // (success or failure).
   private launching = false;
   private readonly queued: vscode.DebugProtocolMessage[] = [];
+
+  // The last configuration a launch or restart supplied, used when a `restart`
+  // arrives without one (the DAP allows it) so the program, entrypoint and
+  // stop-on-entry flag of the running session are preserved.
+  private launchArguments: LaunchArguments | undefined;
 
   /**
    * Optional sink for program stdout: when set and it returns `true`, a serial
@@ -100,45 +140,46 @@ export class Z33DebugAdapter implements vscode.DebugAdapter {
   ) {}
 
   handleMessage(message: vscode.DebugProtocolMessage): void {
-    if (isLaunchRequest(message)) {
+    if (isRelaunchRequest(message) && !this.launching) {
       this.launching = true;
-      void this.handleLaunch(message);
+      void this.handleRelaunch(message);
       return;
     }
     if (this.launching) {
-      // Maps (and the loaded program) aren't ready yet; defer until the launch
-      // dispatch completes so message order is preserved.
+      // Maps (and the loaded program) aren't ready yet; defer until the
+      // in-flight dispatch completes so message order is preserved.
       this.queued.push(message);
       return;
     }
     this.dispatch(message);
   }
 
-  private async handleLaunch(message: LaunchRequest): Promise<void> {
+  /**
+   * Collect the workspace afresh and dispatch the request carrying the current
+   * file contents. A `restart` must re-collect: the server would otherwise
+   * recompile the map captured at launch, so an edit saved since then would not
+   * be what runs. The path maps are rebuilt from the same collection, so a file
+   * added or renamed since launch still maps to its breakpoints.
+   */
+  private async handleRelaunch(message: RelaunchRequest): Promise<void> {
     try {
-      const args = message.arguments ?? {};
+      const args = relaunchArguments(message) ?? this.launchArguments ?? {};
       const { files, program, uris } = await collectWorkspaceFiles(args.program);
+      this.launchArguments = args;
       this.buildPathMaps(uris);
-
-      const augmented: LaunchRequest = {
-        ...message,
-        arguments: { ...args, program, files },
-      };
-      this.dispatch(augmented);
+      this.dispatch(withRelaunchArguments(message, { ...args, program, files }));
     } catch (error) {
       // A failed launch (e.g. file read error) must fail the request visibly,
       // otherwise VS Code shows a spinner forever.
-      this.emitErrorResponse(message, "launch", errorMessage(error));
+      this.emitErrorResponse(message, message.command, errorMessage(error));
     } finally {
-      // Flush anything that arrived during the launch, in order. Clear the flag
-      // first so `dispatch` runs normally (and any message that somehow arrives
-      // mid-flush is handled directly rather than re-queued).
+      // Flush anything that arrived meanwhile, in order. Clear the flag first
+      // so the messages are handled rather than re-queued; a queued restart
+      // re-enters `handleRelaunch` and the rest of the batch queues behind it,
+      // since that call sets the flag again before the first `await` returns.
       this.launching = false;
-      while (this.queued.length > 0) {
-        const next = this.queued.shift();
-        if (next !== undefined) {
-          this.dispatch(next);
-        }
+      for (const next of this.queued.splice(0)) {
+        this.handleMessage(next);
       }
     }
   }
@@ -146,8 +187,10 @@ export class Z33DebugAdapter implements vscode.DebugAdapter {
   /** (Re)build the client↔relative-key path maps from the collected URIs. */
   private buildPathMaps(uris: Map<string, vscode.Uri>): void {
     this.relToClient.clear();
+    this.relToName.clear();
     this.clientToRel.clear();
     for (const [relative, uri] of uris) {
+      this.relToName.set(relative, fileName(uri));
       // Prefer a filesystem path for `file:` URIs; fall back to the URI string
       // for virtual schemes (e.g. `vscode-vfs://` on vscode.dev), which VS Code
       // also accepts in `Source.path`.
@@ -281,11 +324,14 @@ export class Z33DebugAdapter implements vscode.DebugAdapter {
   /**
    * Rewrite server-side relative `Source.path` values to real client paths so
    * VS Code opens the actual workspace file instead of a read-only `debug:`
-   * virtual document. Walks the whole message and rewrites any object under a
-   * `source` key carrying a string `path` — stack frames (`stackTrace`),
-   * `Breakpoint.source` (`setBreakpoints` responses / `breakpoint` events) and
-   * `output` events. Paths with no known key are left untouched so the DAP
-   * `source`-request fallback still applies (e.g. `#include`d files).
+   * virtual document, and replace `Source.name` — which the server sets to the
+   * relative key, an `untitled:` URI for an unsaved buffer — with the file name
+   * VS Code shows everywhere else. Walks the whole message and rewrites any
+   * object under a `source` key carrying a string `path` — stack frames
+   * (`stackTrace`), `Breakpoint.source` (`setBreakpoints` responses /
+   * `breakpoint` events) and `output` events. Paths with no known key are left
+   * untouched so the DAP `source`-request fallback still applies (e.g.
+   * `#include`d files).
    */
   private rewriteOutgoingSources(value: unknown): void {
     if (Array.isArray(value)) {
@@ -299,11 +345,15 @@ export class Z33DebugAdapter implements vscode.DebugAdapter {
     }
     for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
       if (key === "source" && typeof child === "object" && child !== null) {
-        const source = child as { path?: unknown };
+        const source = child as { path?: unknown; name?: unknown };
         if (typeof source.path === "string") {
+          const name = this.relToName.get(source.path);
           const mapped = this.relToClient.get(source.path);
           if (mapped !== undefined) {
             source.path = mapped;
+          }
+          if (name !== undefined) {
+            source.name = name;
           }
         }
       }

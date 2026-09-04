@@ -21,6 +21,8 @@ import { SerialTerminalManager } from "./serial-terminal.js";
 import {
   collectWorkspaceFiles,
   FILE_GLOB,
+  FILE_LIKE_SCHEMES,
+  LANGUAGE_ID,
   uriForWorkspaceRelativePath,
 } from "./workspace-paths.js";
 
@@ -31,6 +33,8 @@ const WORKSPACE_FILES_METHOD = "zorglub33/workspaceFiles";
  * only emits the lens when it sees the advertisement.
  */
 const RUN_COMMAND = "zorglub33.run";
+/** Palette and editor-title command: debug the active file from a chosen label. */
+const RUN_FILE_COMMAND = "zorglub33.runFile";
 /** Give the wasm worker a generous window to instantiate before giving up. */
 const HANDSHAKE_TIMEOUT_MS = 30_000;
 /** Debounce window for coalescing rapid file-watcher events. */
@@ -118,15 +122,11 @@ async function activateInner(context: vscode.ExtensionContext): Promise<void> {
   context.subscriptions.push({ dispose: () => worker.terminate() });
 
   const clientOptions: LanguageClientOptions = {
-    // Manage on-disk, virtual (vscode.dev / github.dev) and unsaved documents;
-    // deliberately exclude read-only virtual schemes (git/diff views).
+    // The same schemes the file map collects (see FILE_LIKE_SCHEMES), plus
+    // unsaved buffers.
     documentSelector: [
-      { language: "zorglub33-assembly", scheme: "file" },
-      { language: "zorglub33-assembly", scheme: "vscode-vfs" },
-      { language: "zorglub33-assembly", scheme: "untitled" },
-      // @vscode/test-web mounts the workspace under this scheme; without it
-      // the extension is untestable in a dev web host.
-      { language: "zorglub33-assembly", scheme: "vscode-test-web" },
+      ...FILE_LIKE_SCHEMES.map((scheme) => ({ language: LANGUAGE_ID, scheme })),
+      { language: LANGUAGE_ID, scheme: "untitled" },
     ],
   };
 
@@ -177,6 +177,76 @@ async function activateInner(context: vscode.ExtensionContext): Promise<void> {
         // IDE, whose debug mode always starts stopped): the student lands in
         // the debugger looking at their code, not at an already-finished run.
         stopOnEntry: true,
+      });
+    }),
+  );
+
+  // While stopped, show the value of every register named on the visible
+  // lines up to the current instruction, next to the code. The adapter's
+  // `evaluate` already accepts `%a`-style expressions.
+  context.subscriptions.push(
+    vscode.languages.registerInlineValuesProvider(
+      { language: LANGUAGE_ID },
+      {
+        provideInlineValues(document, viewPort, inlineContext) {
+          const values: vscode.InlineValue[] = [];
+          const lastLine = Math.min(viewPort.end.line, inlineContext.stoppedLocation.end.line);
+          for (let line = viewPort.start.line; line <= lastLine; line += 1) {
+            const code = document.lineAt(line).text.split("//", 1)[0] ?? "";
+            const seen = new Set<string>();
+            // Register names are case-insensitive in the assembler, so `%A` is
+            // the same register as `%a` and gets one value between them.
+            for (const match of code.matchAll(/%(?:a|b|pc|sp|sr)\b/gi)) {
+              // A register name inside a string literal is text, not a
+              // register: an odd number of quotes before it means it is inside
+              // one (escaped quotes are not accounted for).
+              if ((code.slice(0, match.index).split('"').length - 1) % 2 === 1) continue;
+              const register = match[0].toLowerCase();
+              if (seen.has(register)) continue;
+              seen.add(register);
+              values.push(
+                new vscode.InlineValueEvaluatableExpression(
+                  new vscode.Range(line, match.index, line, match.index + match[0].length),
+                  match[0],
+                ),
+              );
+            }
+          }
+          return values;
+        },
+      },
+    ),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand(RUN_FILE_COMMAND, async () => {
+      const document = activeZ33Document();
+      if (document === undefined) {
+        void vscode.window.showErrorMessage("Zorglub33: open a Zorglub33 assembly file to run it");
+        return;
+      }
+      // An unsaved buffer has no file to save to, so saving one opens a Save As
+      // dialog and disposes this document; `collectWorkspaceFiles` reads its
+      // text from the editor. A save that fails would leave the run reading
+      // stale bytes off disk.
+      if (document.isDirty && document.uri.scheme !== "untitled" && !(await document.save())) {
+        void vscode.window.showErrorMessage(
+          `Zorglub33: could not save ${documentName(document)}, so it was not run`,
+        );
+        return;
+      }
+      const entrypoint = await vscode.window.showInputBox({
+        title: "Zorglub33: entrypoint label",
+        value: "main",
+        validateInput: (value) =>
+          /^[A-Za-z_][A-Za-z0-9_]*$/u.test(value.trim())
+            ? undefined
+            : "A label name (letters, digits, underscores)",
+      });
+      if (entrypoint === undefined) return;
+      await vscode.debug.startDebugging(vscode.workspace.getWorkspaceFolder(document.uri), {
+        ...configurationFor(document),
+        entrypoint: entrypoint.trim(),
       });
     }),
   );
@@ -239,6 +309,87 @@ async function activateInner(context: vscode.ExtensionContext): Promise<void> {
     }),
   );
 
+  context.subscriptions.push(
+    // Dynamic only: the configurations this provider makes name the active
+    // editor by URI, and an initial provider's output is what VS Code writes
+    // into a generated launch.json, where a machine-specific URI would stick.
+    vscode.debug.registerDebugConfigurationProvider(
+      "zorglub33",
+      {
+        provideDebugConfigurations() {
+          const document = activeZ33Document();
+          return document === undefined ? [] : [configurationFor(document)];
+        },
+      },
+      vscode.DebugConfigurationProviderTriggerKind.Dynamic,
+    ),
+    vscode.debug.registerDebugConfigurationProvider("zorglub33", {
+      // F5 with no launch.json hands over an empty configuration, which carries
+      // neither a type nor a program: debug the active Z33 editor instead.
+      resolveDebugConfiguration(_folder, config) {
+        const program = typeof config.program === "string" ? config.program : "";
+        if (config.type !== undefined && program.length > 0) {
+          return config;
+        }
+        const document = activeZ33Document();
+        if (document === undefined) {
+          void vscode.window.showErrorMessage(
+            'Zorglub33: open a .s file to debug, or set "program" in launch.json',
+          );
+          return undefined;
+        }
+        return { ...configurationFor(document), ...config, program: document.uri.toString() };
+      },
+      // `program` is only final here: a launch.json may spell it with any
+      // variable (`${file}`, `${command:...}`, `${config:...}`), and VS Code
+      // substitutes those between this hook and the one above.
+      resolveDebugConfigurationWithSubstitutedVariables(_folder, config) {
+        const program = typeof config.program === "string" ? config.program : "";
+        if (isZ33Path(program)) {
+          return config;
+        }
+        const document = activeZ33Document();
+        if (document === undefined) {
+          void vscode.window.showErrorMessage(
+            `Zorglub33: "${program}" is not a .s file, and no .s file is open to debug instead`,
+          );
+          return undefined;
+        }
+        return { ...config, program: document.uri.toString() };
+      },
+    }),
+  );
+
+  // Debug hover: evaluate the enclosing memory operand (`[%sp+2]`) or the
+  // register under the cursor, rather than the bare word VS Code would pick.
+  context.subscriptions.push(
+    vscode.languages.registerEvaluatableExpressionProvider(
+      { language: LANGUAGE_ID },
+      {
+        provideEvaluatableExpression(document, position) {
+          const line = document.lineAt(position.line).text;
+          const operand = enclosingOperand(line, position.character);
+          if (operand) {
+            const range = new vscode.Range(
+              position.line,
+              operand.start,
+              position.line,
+              operand.end,
+            );
+            return new vscode.EvaluatableExpression(range, operand.text);
+          }
+          // Mirrors `wordPattern` in language-configuration.json: without the
+          // numeric alternatives a hover over `0x1f` evaluates `x1f`.
+          const word = document.getWordRangeAtPosition(
+            position,
+            /%[a-zA-Z]+|-?0[xX][0-9a-fA-F]+|-?0[bB][01]+|-?\d+|[A-Za-z_][A-Za-z0-9_]*/u,
+          );
+          return word ? new vscode.EvaluatableExpression(word) : undefined;
+        },
+      },
+    ),
+  );
+
   const factory: vscode.DebugAdapterDescriptorFactory = {
     createDebugAdapterDescriptor(session) {
       return new vscode.DebugAdapterInlineImplementation(
@@ -253,4 +404,51 @@ async function activateInner(context: vscode.ExtensionContext): Promise<void> {
 
 export function deactivate(): Promise<void> | undefined {
   return client?.stop();
+}
+
+function activeZ33Document(): vscode.TextDocument | undefined {
+  const active = vscode.window.activeTextEditor;
+  if (active !== undefined) {
+    return active.document.languageId === LANGUAGE_ID ? active.document : undefined;
+  }
+  // The focused editor may not be a text editor at all (a webview, the settings
+  // UI, a notebook), which leaves `activeTextEditor` undefined even though a .s
+  // editor is open in another group.
+  return vscode.window.visibleTextEditors.find(
+    (editor) => editor.document.languageId === LANGUAGE_ID,
+  )?.document;
+}
+
+function isZ33Path(program: string): boolean {
+  return /\.[sS]$/.test(program);
+}
+
+function documentName(document: vscode.TextDocument): string {
+  return document.uri.path.split("/").pop() ?? "program";
+}
+
+function configurationFor(document: vscode.TextDocument): vscode.DebugConfiguration {
+  return {
+    type: "zorglub33",
+    request: "launch",
+    name: `Run ${documentName(document)}`,
+    program: document.uri.toString(),
+    stopOnEntry: true,
+  };
+}
+
+/**
+ * The `[...]` operand containing `column` on `line`, if any. The adapter's
+ * address parser takes no whitespace between the register, the sign and the
+ * offset, so `[%sp + 2]` is evaluated as `[%sp+2]`.
+ */
+function enclosingOperand(
+  line: string,
+  column: number,
+): { start: number; end: number; text: string } | undefined {
+  const open = line.lastIndexOf("[", column);
+  if (open === -1) return undefined;
+  const close = line.indexOf("]", open);
+  if (close === -1 || column > close) return undefined;
+  return { start: open, end: close + 1, text: line.slice(open, close + 1).replace(/\s+/gu, "") };
 }

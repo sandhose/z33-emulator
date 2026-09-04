@@ -1,0 +1,44 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "zorglub33",
+      "request": "launch",
+      "name": "workspaceFolder spelling",
+      "program": "${workspaceFolder}/fact.s",
+      "entrypoint": "main",
+      "stopOnEntry": true
+    },
+    {
+      "type": "zorglub33",
+      "request": "launch",
+      "name": "relative spelling",
+      "program": "fact.s",
+      "entrypoint": "factorielle",
+      "stopOnEntry": true
+    },
+    {
+      "type": "zorglub33",
+      "request": "launch",
+      "name": "file spelling",
+      "program": "${file}",
+      "entrypoint": "double",
+      "stopOnEntry": true
+    },
+    {
+      "type": "zorglub33",
+      "request": "launch",
+      "name": "fileDirname spelling",
+      "program": "${fileDirname}/${fileBasename}",
+      "entrypoint": "main",
+      "stopOnEntry": true
+    },
+    {
+      "type": "zorglub33",
+      "request": "launch",
+      "name": "missing program",
+      "program": "${workspaceFolder}/nope.s",
+      "entrypoint": "main"
+    }
+  ]
+}

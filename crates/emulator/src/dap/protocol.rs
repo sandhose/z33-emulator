@@ -76,7 +76,8 @@ pub struct Source {
     pub path: Option<String>,
 }
 
-/// Arguments to the `launch` request.
+/// Arguments to the `launch` request, and to `restart`, which nests the same
+/// structure under its own `arguments` field.
 ///
 /// `program` is the entry file. When `files` is present the adapter reads from
 /// that in-memory map (used by the future WASM host); otherwise it falls back

@@ -23,13 +23,38 @@ no compiler or runtime to install.
 - **Document symbols** and **code lens** (resolved address and
   reference count on each label)
 - **Debugging**: set breakpoints, step/continue, inspect registers,
-  the stack and memory, and evaluate expressions like `[%sp+2]` — via a
-  built-in Debug Adapter, no external process
+  the stack and memory, and evaluate expressions like `[%sp+2]`, via a
+  built-in Debug Adapter with no external process and no configuration
+  needed
+- **Debug hover**: hovering a register or a memory operand like
+  `[%sp+2]` while stopped shows its current value
+- **Inline register values**: while stopped, every register named on a
+  visible line up to the stopped instruction is shown inline in the
+  editor
 
 ## Debugging quick start
 
-Open a folder containing your `.s` files and create
-`.vscode/launch.json`:
+Open a `.s` file and press F5 to start debugging immediately, stopped on
+entry. With no `entrypoint` configured, execution starts at the first
+label the program defines among `main`, `start`, `run` and `entry`. No
+`launch.json` is needed.
+
+Clicking the play button in the editor title bar, or running "Run
+Current File" from the command palette (category Zorglub33), asks for
+the entrypoint label first, defaulting to `main`.
+
+Debugging an unsaved (untitled) file works once `debug.saveBeforeStart`
+is set to `nonUntitledEditorsInActiveGroup` or `none`; otherwise VS Code
+asks to save it first. With the default setting, F5 also saves the
+current file before running it, so edits are always what runs.
+
+"Debug: Select and Start Debugging" lists a `Run fact.s` entry for the
+active file under "Zorglub33 Debug".
+
+### launch.json (optional)
+
+Add `.vscode/launch.json` if you want a fixed entrypoint, or several
+configurations:
 
 ```json
 {
@@ -39,14 +64,15 @@ Open a folder containing your `.s` files and create
       "type": "zorglub33",
       "request": "launch",
       "name": "Run fact.s",
-      "program": "${workspaceFolder}/fact.s",
+      "program": "fact.s",
       "entrypoint": "main"
     }
   ]
 }
 ```
 
-Then press F5. `entrypoint` is the label execution starts from.
+`entrypoint` is the label execution starts from. `program` also
+accepts `${workspaceFolder}/fact.s` and `${file}`.
 
 ## Related tools
 
