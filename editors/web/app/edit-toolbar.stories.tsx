@@ -54,6 +54,15 @@ export const Success = meta.story({
     compilationStatus: "success",
     labels: ["main", "loop", "end"],
   },
+  // SelectContent's exit transition keeps the popup in the DOM while axe runs,
+  // and on @base-ui/react 1.7.0 its `role="listbox"` element carries no
+  // accessible name, so `aria-input-field-name` fires. The focus guards have
+  // unmounted by this point; see select.stories.tsx, where they have not.
+  parameters: {
+    a11y: {
+      config: { rules: [{ id: "aria-input-field-name", enabled: false }] },
+    },
+  },
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement);
     // Open the entrypoint select (portal-rendered on document.body).

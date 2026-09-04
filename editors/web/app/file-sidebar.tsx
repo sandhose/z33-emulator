@@ -112,6 +112,7 @@ export const FileSidebarView: React.FC<FileSidebarViewProps> = ({
       ref={dropZoneRef}
       role="navigation"
       aria-label="Files"
+      tabIndex={-1}
       className="relative flex flex-col w-48 border-r border-border p-2"
       {...dropZoneProps}
     >
@@ -270,6 +271,7 @@ export const FileSidebarView: React.FC<FileSidebarViewProps> = ({
         ref={uploadInputRef}
         type="file"
         multiple
+        aria-label="Upload files"
         className="sr-only"
         onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
           if (e.target.files) onUpload(Array.from(e.target.files));

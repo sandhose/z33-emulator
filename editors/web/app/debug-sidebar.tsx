@@ -102,7 +102,12 @@ export const RegisterPanel: React.FC<{
   };
 
   return (
-    <div role="region" aria-label="Registers" className="font-mono text-xs">
+    <div
+      role="region"
+      aria-label="Registers"
+      tabIndex={-1}
+      className="font-mono text-xs"
+    >
       <SectionHeader className="font-sans flex items-center justify-between">
         Registers
         <FormatSwitcher />
