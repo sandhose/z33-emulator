@@ -48,12 +48,13 @@ jobs:
           persist-credentials: false
 
       # rustfmt.toml uses nightly-only options, so format checks run on nightly
-      # regardless of the pinned toolchain in rust-toolchain.toml.
+      # regardless of the pinned toolchain in rust-toolchain.toml. Bump the
+      # nightly date together with rust-toolchain.toml.
       - name: Install nightly rustfmt
-        run: rustup toolchain install nightly --component rustfmt
+        run: rustup toolchain install nightly-2026-09-01 --component rustfmt
 
       - name: Run cargo fmt
-        run: cargo +nightly fmt --all -- --check
+        run: cargo +nightly-2026-09-01 fmt --all -- --check
 
   clippy:
     name: Clippy lints
