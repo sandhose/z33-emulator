@@ -1,0 +1,5 @@
+{
+  // Debugging an unsaved buffer is what this workspace is for: with the
+  // default, VS Code opens a Save As dialog before the session starts.
+  "debug.saveBeforeStart": "none"
+}

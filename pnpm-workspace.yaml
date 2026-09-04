@@ -17,6 +17,7 @@ allowBuilds:
   tree-sitter-cli: true
   wasm-pack: true
   esbuild: false
+  "@playwright/browser-chromium": false
 
 strictDepBuilds: true
 

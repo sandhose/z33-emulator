@@ -3,3 +3,5 @@ node_modules/
 *.vsix
 .vscode-test-web/
 .vscode-test/
+playwright-report/
+test-results/

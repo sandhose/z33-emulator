@@ -156,16 +156,20 @@
     "build:bundle": "node build.mjs --production",
     "build": "pnpm run build:wasm && pnpm run build:bundle",
     "watch": "node build.mjs --watch",
-    "check": "node -e \"require('fs').existsSync('dist/pkg')||process.exit(1)\" || pnpm run build:wasm && tsc --noEmit && oxlint src/ && oxfmt --check src/",
-    "lint": "oxlint src/",
-    "fmt": "oxfmt src/",
-    "package": "vsce package --no-dependencies"
+    "check": "node -e \"require('fs').existsSync('dist/pkg')||process.exit(1)\" || pnpm run build:wasm && tsc --noEmit && pnpm run lint && oxfmt --check src/ e2e/ playwright.config.ts",
+    "lint": "oxlint src/ e2e/ playwright.config.ts",
+    "fmt": "oxfmt src/ e2e/ playwright.config.ts",
+    "package": "vsce package --no-dependencies",
+    "e2e": "playwright test",
+    "e2e:ui": "playwright test --ui"
   },
   "dependencies": {
     "vscode-languageclient": "^10.1.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@types/vscode": "~1.100.0",
+    "@vscode/test-web": "^0.0.81",
     "@vscode/vsce": "^3.9.2",
     "esbuild": "^0.28.2",
     "ovsx": "^1.1.1",

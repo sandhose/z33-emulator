@@ -13,3 +13,7 @@ build.mjs
 # extension and worker output.
 dist/pkg/**
 !dist/pkg/z33_web_bg.wasm
+e2e/**
+playwright.config.ts
+playwright-report/**
+test-results/**
