@@ -241,10 +241,25 @@ silently no-ops once a filetype has been set during detection, so depending on
 load order they can win over this plugin.
 
 To reclaim only genuine Z33 files without stealing real GNU-asm ones, the plugin
-scans each `.s`/`.S` buffer for Z33-specific markers (registers, the `.addr`
-directive, the preprocessor) that effectively never appear in GNU asm, acting
-only when no confident filetype is already set — so a GNU-asm `.s` keeps its
-filetype (the exact signal list and its rationale live in one place, the header
-comment of `ftdetect/z33.vim`). If you'd rather stop polyglot from claiming
-`.s`/`.S` at the source, set `let g:polyglot_disabled = ['r-lang']` before it
-loads.
+scans the first 64 lines of each `.s`/`.S` buffer, acting only when no confident
+filetype is already set — so a GNU-asm `.s` keeps its filetype. It claims the
+buffer on a Z33 marker: the `%pc`/`%sr`/`%a`/`%b` registers, `.addr`, a mnemonic
+that is rare in GNU asm such as `reset`/`rti`/`fas`, or a preprocessor directive
+spelled the way Z33's parser wants it — `#` in column 0, lower case — among
+`#undefine`, `#include "…"` and the keywords Z33 shares with C.
+
+A foreign marker anywhere in that window vetoes detection outright:
+
+- GNU cpp spellings Z33 has no equivalent for: `#ifdef`, `#ifndef`, `#undef`,
+  `#pragma`, `#include <…>`.
+- GNU `as` directives: `.globl`, `.global`, `.section`, `.type`, `.size`,
+  `.text`, `.data`, `.macro`, `.endm`.
+- Plan 9 / Go assembly: `TEXT`, `DATA`, `GLOBL`, `FUNCDATA` or `PCDATA` opening
+  a line, or `(SB)` anywhere.
+
+So preprocessed GNU `.S` files, m68k sources (which spell `reset`/`rti`/`swap`
+the way Z33 does) and Go's assembly are all left alone. The exact lists are in
+the two heuristic copies (`ftdetect/z33.vim` for Vim, `lua/z33/ftdetect.lua` for
+Neovim); CI runs both over the same corpus, `tests/fixtures/`. If you'd rather
+stop polyglot from claiming `.s`/`.S` at the source, set
+`let g:polyglot_disabled = ['r-lang']` before it loads.

@@ -1,6 +1,8 @@
--- Shared `.s` / `.S` filetype heuristic for the Z33 vs GNU-asm collision.
+-- The `.s` / `.S` filetype heuristic for the Z33 vs GNU-asm collision.
 --
--- This is the ONE copy of the content heuristic. It backs two mechanisms:
+-- The Neovim copy of the heuristic (classic Vim has its own in
+-- `ftdetect/z33.vim`; CI runs both over `tests/fixtures/`). It backs two
+-- mechanisms:
 --   1. `vim.filetype.add` (wired in `z33/init.lua`) — the idiomatic matcher,
 --      which also feeds `vim.filetype.match` consumers and works under
 --      `nvim --clean` where no third-party rule fights over `.s`/`.S`.
@@ -11,67 +13,139 @@
 --      shadow our matcher; a forced `setlocal`-equivalent wins regardless of
 --      ordering.
 --
--- Signals are deliberately narrowed to ones that effectively never appear in
--- GNU/other asm sharing the `.s`/`.S` extension, so a real GNU file is not
--- misdetected as Z33.
+-- A GNU or Plan 9 marker anywhere in the scanned window vetoes detection, so
+-- the positives below need only be things those assemblers do not routinely
+-- write.
 
 local M = {}
 
--- Preprocessor keywords whose presence strongly implies Z33 (note `#undefine`,
--- not the C-style `#undef`; `#` may be followed by spaces).
-local PREPROC = { "include", "define", "undefine", "if", "elif", "endif", "error" }
--- Z33-specific assembler directives. Only `.addr` — `.word`/`.space`/`.string`
--- are standard GNU `as` directives too, so they were dropped to avoid
--- misdetecting GNU sources (a bare `.word 5` file is not Z33).
-local DIRECTIVES = { "addr" }
--- Z33 registers — a strong discriminator: GNU asm uses `%eax`/`%rdi`/… and
--- never `%pc`/`%sr`. `%sp` is excluded because it is a real x86 AT&T register.
--- The greedy `%a+` capture below word-bounds these, so `%a`/`%b` cannot fire
--- inside `%ax`/`%bp`.
-local REGISTERS = { "a", "b", "pc", "sr" }
+-- Anti-signals. Indentation and case are tolerated on all of them: they
+-- describe foreign files, not what the Z33 parser accepts.
+--
+-- C-preprocessor directives GNU uses and Z33 does not: Z33 has `#if` and
+-- `#undefine`, no `#ifdef`/`#ifndef`/`#undef`/`#pragma`, and its `#include`
+-- takes a quoted string (parser/preprocessor.rs), never `<...>`.
+local ANTI_PREPROC = { ifdef = true, ifndef = true, undef = true, pragma = true }
+-- GNU `as` directives; Z33 only has `.addr`, `.space`, `.string` and `.word`.
+local ANTI_DIRECTIVES = {
+  globl = true,
+  global = true,
+  section = true,
+  type = true,
+  size = true,
+  text = true,
+  data = true,
+  macro = true,
+  endm = true,
+}
+-- Plan 9 / Go assembly openers, matched case-sensitively because that dialect
+-- spells them in upper case. Go's `.s` files are otherwise mistaken for Z33:
+-- `#include "textflag.h"` is a Z33 positive and `JEQ`/`JLT`/`JGT` are Plan 9
+-- mnemonics.
+local ANTI_PLAN9 = { TEXT = true, DATA = true, GLOBL = true, FUNCDATA = true, PCDATA = true }
 
---- Returns true when a single source line looks distinctively like Z33.
-function M.line_is_z33(line)
-  -- `#<spaces>keyword` preprocessor directive.
-  local kw = line:match("^%s*#%s*(%a+)")
+-- Preprocessor keywords Z33 shares with C, hence only trusted because any
+-- anti-signal vetoes the whole file. `#include` counts only with a quoted
+-- argument. Matched at column 0 and in lower case, the only spelling
+-- parser/preprocessor.rs accepts.
+local WEAK_PREPROC = { define = true, ["if"] = true, elif = true, endif = true, error = true }
+-- Z33-only spellings and directives.
+local STRONG_PREPROC = { undefine = true }
+local DIRECTIVES = { addr = true }
+-- Z33 registers: GNU asm uses `%eax`/`%rdi`/… and never `%pc`/`%sr`. `%sp` is
+-- excluded — it is a real x86 AT&T register. `%a0`…`%a7` (m68k) are not
+-- registers to the parser either, so the captures below take a whole
+-- identifier and look it up, rather than matching a prefix.
+local REGISTERS = { a = true, b = true, pc = true, sr = true }
+-- Z33 mnemonics rare enough in GNU asm to carry weight. m68k spells
+-- `reset`/`rti`/`swap`/`trap` the same way, but a real m68k file also carries
+-- a `.text`/`.globl`/`.section` veto.
+local MNEMONICS = {
+  fas = true,
+  rti = true,
+  rtn = true,
+  swap = true,
+  reset = true,
+  trap = true,
+  jeq = true,
+  jlt = true,
+  jgt = true,
+}
+
+--- Classifies one source line: "z33" for a Z33 signal, "gnu" for a marker that
+--- rules Z33 out, nil for neither. Every capture takes a whole `[0-9A-Za-z_]`
+--- word, so the Vimscript copy's `\>` word boundaries mean the same thing here.
+--- @param line string
+--- @return string|nil
+function M.line_signal(line)
+  -- Anti-signals first: one of them on a line outweighs anything else on it.
+  local anti_kw, anti_rest = line:match("^%s*#%s*([%w_]+)(.*)$")
+  if anti_kw then
+    anti_kw = anti_kw:lower()
+    if ANTI_PREPROC[anti_kw] then
+      return "gnu"
+    end
+    if anti_kw == "include" and anti_rest:match("^%s*<") then
+      return "gnu"
+    end
+  end
+  local anti_dir = line:match("^%s*%.([%w_]+)")
+  if anti_dir and ANTI_DIRECTIVES[anti_dir:lower()] then
+    return "gnu"
+  end
+  -- Plan 9: `TEXT ·name(SB)`, `GLOBL sym(SB)`, `PCDATA $0, $1`. `(SB)` is the
+  -- dialect's static-base pseudo-register and appears on every symbol
+  -- reference.
+  local plan9 = line:match("^(%u+)[ \t]") or line:match("^(%u+)·")
+  if (plan9 and ANTI_PLAN9[plan9]) or line:find("(SB)", 1, true) then
+    return "gnu"
+  end
+
+  -- Z33 preprocessor: `#` in column 0, lower-case keyword.
+  local kw, rest = line:match("^#%s*([%w_]+)(.*)$")
   if kw then
-    for _, k in ipairs(PREPROC) do
-      if kw == k then
-        return true
-      end
+    if kw == "include" then
+      return rest:match('^%s*"') and "z33" or nil
+    end
+    if STRONG_PREPROC[kw] or WEAK_PREPROC[kw] then
+      return "z33"
     end
   end
-  -- `.directive` at line start.
-  local dir = line:match("^%s*%.(%a+)")
-  if dir then
-    for _, d in ipairs(DIRECTIVES) do
-      if dir == d then
-        return true
-      end
+  -- `.directive` at line start. Directives, mnemonics and registers are all
+  -- case-insensitive to the parser.
+  local dir = line:match("^%s*%.([%w_]+)")
+  if dir and DIRECTIVES[dir:lower()] then
+    return "z33"
+  end
+  -- A mnemonic opening an instruction, with or without a leading `label:`.
+  local labelled = line:match("^%s*[%w_]+%s*:%s*([%w_]+)")
+  local bare = line:match("^%s*([%w_]+)")
+  if (labelled and MNEMONICS[labelled:lower()]) or (bare and MNEMONICS[bare:lower()]) then
+    return "z33"
+  end
+  -- A `%reg` register anywhere.
+  for reg in line:gmatch("%%([%w_]+)") do
+    if REGISTERS[reg:lower()] then
+      return "z33"
     end
   end
-  -- A `%reg` register anywhere (word-bounded so `%pc` matches but `%pcx`
-  -- does not). Matched case-insensitively.
-  for reg in line:gmatch("%%(%a+)") do
-    local lreg = reg:lower()
-    for _, r in ipairs(REGISTERS) do
-      if lreg == r then
-        return true
-      end
-    end
-  end
-  return false
+  return nil
 end
 
---- Scans the head of a buffer and returns true if it looks like Z33.
+--- Scans the head of a buffer and returns true if it looks like Z33. One
+--- anti-signal vetoes the whole buffer, whatever was found before it.
 function M.buf_is_z33(bufnr)
   local lines = vim.api.nvim_buf_get_lines(bufnr, 0, 64, false)
+  local found = false
   for _, line in ipairs(lines) do
-    if M.line_is_z33(line) then
-      return true
+    local signal = M.line_signal(line)
+    if signal == "gnu" then
+      return false
+    elseif signal == "z33" then
+      found = true
     end
   end
-  return false
+  return found
 end
 
 --- Decides the filetype for a `.s` / `.S` buffer. Returns "z33" or nil (fall
