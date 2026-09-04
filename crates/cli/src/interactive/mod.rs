@@ -32,7 +32,6 @@ An empty line re-runs the last valid command."#;
     disable_version_flag = true,
     infer_subcommands = true,
     no_binary_name = true,
-    allow_negative_numbers = true,
 )]
 /// Interactive mode commands
 enum Command {
@@ -62,7 +61,7 @@ enum Command {
         address: parse::Argument,
 
         /// Number of memory cells to show.
-        #[clap(value_parser, default_value = "1")]
+        #[clap(value_parser, default_value = "1", allow_negative_numbers = true)]
         number: i32,
     },
 
@@ -73,7 +72,7 @@ enum Command {
         target: parse::AssignmentTarget,
 
         /// The value to set
-        #[clap(value_parser)]
+        #[clap(value_parser, allow_negative_numbers = true)]
         value: parse::Argument,
     },
 
@@ -378,13 +377,16 @@ pub(crate) fn run_interactive(computer: &mut Computer, debug_info: DebugInfo) {
 
                 if number.is_positive() {
                     for i in 0..(number.unsigned_abs() as C::Address) {
-                        let address = address + i;
+                        let address = address.saturating_add(i);
                         let cell = warn_and_continue!(computer.memory.get(address));
                         info!(address, value = %cell);
                     }
                 } else {
                     for i in 0..(number.unsigned_abs() as C::Address) {
-                        let address = address - i;
+                        // Stop rather than wrap around at the bottom of memory.
+                        let Some(address) = address.checked_sub(i) else {
+                            break;
+                        };
                         let cell = warn_and_continue!(computer.memory.get(address));
                         info!(address, value = %cell);
                     }

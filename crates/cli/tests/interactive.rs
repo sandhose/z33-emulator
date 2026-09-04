@@ -66,3 +66,27 @@ fn quit_and_q_leave_the_debugger() {
         assert!(stdout.contains("End of program"), "{command:?}: {stdout}");
     }
 }
+
+#[test]
+fn negative_numbers_are_accepted_as_arguments() {
+    let output = run_interactive("fact.s", "set %a -1\nregisters a\nmemory 1000 -3\nexit\n");
+    assert!(output.status.success());
+    // Interactive log lines go to stdout, clap's parse errors included.
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("%a = -1"), "{stdout}");
+    assert!(!stdout.contains("unexpected argument"), "{stdout}");
+    assert!(!stdout.contains("Invalid input"), "{stdout}");
+    for address in ["address=1000", "address=999", "address=998"] {
+        assert!(stdout.contains(address), "{stdout}");
+    }
+}
+
+#[test]
+fn a_negative_memory_count_stops_at_the_bottom_of_memory() {
+    let output = run_interactive("fact.s", "memory 0 -3\nexit\n");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "stderr: {stderr}");
+    assert!(!stderr.contains("panicked"), "stderr: {stderr}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("address=0"), "{stdout}");
+}
