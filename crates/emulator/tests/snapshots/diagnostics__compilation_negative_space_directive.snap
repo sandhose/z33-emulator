@@ -1,0 +1,5 @@
+---
+source: crates/emulator/tests/diagnostics.rs
+expression: "check_full_pipeline_errors(\"main:\\n    reset\\nx: .space -1\")"
+---
+error: could not evaluate argument for directive '.space': could not downcast value

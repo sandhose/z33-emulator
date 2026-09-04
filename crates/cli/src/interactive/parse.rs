@@ -3,7 +3,7 @@ use std::str::FromStr;
 use chumsky::prelude::*;
 use thiserror::Error;
 use z33_emulator::parser::location::Locatable;
-use z33_emulator::parser::shared::{expression, register};
+use z33_emulator::parser::shared::{expression, register, reject_deep_nesting};
 use z33_emulator::parser::{ExpressionContext, ExpressionNode};
 use z33_emulator::runtime::{Computer, ExtractValue, Reg};
 
@@ -79,6 +79,7 @@ fn run_parser<'a, T, P>(parser: P, input: &'a str) -> Result<T, String>
 where
     P: Parser<'a, &'a str, T, Extra<'a>>,
 {
+    reject_deep_nesting(input)?;
     parser
         .then_ignore(end())
         .parse(input)
@@ -150,6 +151,13 @@ mod tests {
             "%a-2".parse::<Argument>(),
             Ok(Argument::Indexed(Reg::A, _))
         ));
+    }
+
+    #[test]
+    fn argument_rejects_nesting_the_parser_cannot_descend() {
+        let input = format!("{}1{}", "(".repeat(50_000), ")".repeat(50_000));
+        let err = input.parse::<Argument>().unwrap_err();
+        assert!(err.to_string().contains("nesting"), "{err}");
     }
 
     #[test]

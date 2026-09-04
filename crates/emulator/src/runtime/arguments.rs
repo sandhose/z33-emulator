@@ -257,8 +257,9 @@ mod traits {
             let cell = c.get(&self.0);
             // and try converting it to a word
             let addr = C::Word::try_from(&cell)?;
-            // add the offset
-            let addr = addr + self.1;
+            // Wraps so debug and release agree; an out-of-range result then
+            // fails the address downcast below in both profiles.
+            let addr = addr.wrapping_add(self.1);
             // and convert it to an address
             let addr = C::Address::try_from(&addr.into())?;
             Ok(addr)

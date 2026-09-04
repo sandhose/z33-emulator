@@ -250,9 +250,17 @@ fn push_newline(
 // Top-level parse function
 // ---------------------------------------------------------------------------
 
+/// Deepest nesting of `#if` blocks.
+///
+/// `parse_chunks` and `parse_conditional_block` recurse once per level, and
+/// [`crate::preprocessor`] walks the resulting tree with the same shape. A
+/// debug build overflows a 2 MiB thread — what cargo gives a test thread and
+/// tokio an LSP worker — past 240 levels.
+pub(crate) const MAX_CONDITIONAL_DEPTH: usize = 64;
+
 /// Parse preprocessor directives and raw assembly lines.
 pub(crate) fn parse(input: &str) -> Result<Children, String> {
-    let chunks = parse_chunks(input, 0)?;
+    let chunks = parse_chunks(input, 0, 0)?;
 
     let consumed: usize = chunks.last().map_or(0, |c| c.location.end);
     let remaining = input[consumed..].trim();
@@ -266,8 +274,8 @@ pub(crate) fn parse(input: &str) -> Result<Children, String> {
     Ok(chunks)
 }
 
-/// Recursive chunk parser.
-fn parse_chunks(input: &str, base_offset: usize) -> Result<Children, String> {
+/// Recursive chunk parser. `depth` counts the enclosing `#if` blocks.
+fn parse_chunks(input: &str, base_offset: usize, depth: usize) -> Result<Children, String> {
     let mut chunks = Vec::new();
     let mut pos = 0;
 
@@ -289,10 +297,25 @@ fn parse_chunks(input: &str, base_offset: usize) -> Result<Children, String> {
         let full_line_len = line_end;
 
         if let Ok(condition) = p_if.parse(line).into_result() {
+            if depth >= MAX_CONDITIONAL_DEPTH {
+                return Err(format!(
+                    "conditional blocks nested too deep (more than \
+                     {MAX_CONDITIONAL_DEPTH} levels): {line}"
+                ));
+            }
+
             let node_start = pos;
-            let block_start = pos + full_line_len + 1;
-            let (node, block_end) =
-                parse_conditional_block(input, block_start, base_offset, node_start, condition)?;
+            // The body starts after the newline; a file ending on the `#if`
+            // line has no newline to skip, and the block is then unterminated.
+            let block_start = (pos + full_line_len + 1).min(input.len());
+            let (node, block_end) = parse_conditional_block(
+                input,
+                block_start,
+                base_offset,
+                node_start,
+                condition,
+                depth + 1,
+            )?;
 
             chunks.push(node.with_location((pos + base_offset)..(block_end + base_offset)));
             pos = block_end;
@@ -344,6 +367,7 @@ fn parse_conditional_block(
     base_offset: usize,
     node_start: usize,
     first_condition: Located<String>,
+    depth: usize,
 ) -> Result<(Node, usize), String> {
     let mut branches = Vec::new();
     let mut fallback = None;
@@ -354,7 +378,7 @@ fn parse_conditional_block(
     let p_else = else_parser();
     let p_endif = endif_parser();
 
-    let (body_chunks, body_end) = parse_body_until_boundary(input, body_start)?;
+    let (body_chunks, body_end) = parse_body_until_boundary(input, body_start, depth)?;
     let body = body_chunks.with_location(
         (body_start - node_start + base_offset)..(body_end - node_start + base_offset),
     );
@@ -394,7 +418,7 @@ fn parse_conditional_block(
             }
 
             body_start = pos;
-            let (body_chunks, body_end) = parse_body_until_boundary(input, body_start)?;
+            let (body_chunks, body_end) = parse_body_until_boundary(input, body_start, depth)?;
             let body = body_chunks.with_location(
                 (body_start - node_start + base_offset)..(body_end - node_start + base_offset),
             );
@@ -407,7 +431,7 @@ fn parse_conditional_block(
             }
 
             body_start = pos;
-            let (body_chunks, body_end) = parse_body_until_boundary(input, body_start)?;
+            let (body_chunks, body_end) = parse_body_until_boundary(input, body_start, depth)?;
             let body = body_chunks.with_location(
                 (body_start - node_start + base_offset)..(body_end - node_start + base_offset),
             );
@@ -422,11 +446,15 @@ fn parse_conditional_block(
 }
 
 /// Parse chunks from `input[start..]` until hitting a boundary directive.
-fn parse_body_until_boundary(input: &str, start: usize) -> Result<(Children, usize), String> {
+fn parse_body_until_boundary(
+    input: &str,
+    start: usize,
+    depth: usize,
+) -> Result<(Children, usize), String> {
     let body_input = &input[start..];
     let boundary = find_body_boundary(body_input)?;
     let body_slice = &body_input[..boundary];
-    let chunks = parse_chunks(body_slice, 0)?;
+    let chunks = parse_chunks(body_slice, 0, depth)?;
     Ok((chunks, start + boundary))
 }
 
@@ -464,6 +492,38 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
+
+    #[test]
+    fn nesting_at_the_limit_parses_and_one_more_is_rejected() {
+        fn nested(depth: usize) -> String {
+            format!(
+                "{}nop\n{}",
+                "#if 1\n".repeat(depth),
+                "#endif\n".repeat(depth)
+            )
+        }
+
+        std::thread::Builder::new()
+            .stack_size(2 << 20)
+            .spawn(|| {
+                parse(&nested(MAX_CONDITIONAL_DEPTH)).expect("must parse at the limit");
+
+                let err = parse(&nested(MAX_CONDITIONAL_DEPTH + 1))
+                    .expect_err("one level deeper must be rejected");
+                assert!(err.contains("nested too deep"), "{err}");
+            })
+            .expect("spawn")
+            .join()
+            .expect("the parser must not overflow a 2 MiB stack");
+    }
+
+    #[test]
+    fn unterminated_if_on_the_last_line_is_an_error() {
+        for input in ["#if 1", "#if 1\n", "#if 1\nfoo", "#if 1\n#else"] {
+            let err = parse(input).expect_err(input);
+            assert!(err.contains("unterminated #if"), "{input:?}: {err}");
+        }
+    }
 
     #[test]
     fn parse_raw_test() {

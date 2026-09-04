@@ -6,6 +6,7 @@ use thiserror::Error;
 use tracing::{Level, debug, span, trace};
 
 use super::layout::{Labels, Layout, Placement};
+use crate::constants::Address;
 use crate::parser::expression::EvaluationError as ExpressionEvaluationError;
 use crate::parser::line::LineContent;
 use crate::parser::location::Located;
@@ -35,6 +36,14 @@ pub enum MemoryFillError {
         /// Spans of each argument (indexed same as the instruction arguments)
         argument_spans: SmallVec<[Range<usize>; 2]>,
         source: InstructionCompilationError,
+    },
+
+    /// `Layout::insert_placement` rejects addresses outside `MEMORY_SIZE`,
+    /// so this only fires if that invariant is broken upstream.
+    #[error("address {address} is out of bounds")]
+    AddressOutOfBounds {
+        address: Address,
+        location: Range<usize>,
     },
 }
 
@@ -411,14 +420,19 @@ pub(crate) fn fill_memory(layout: &Layout) -> (Memory, Vec<MemoryFillError>) {
     let mut memory = Memory::default();
     let mut errors = Vec::new();
 
-    for (index, (placement, _location)) in &layout.memory {
+    for (index, (placement, location)) in &layout.memory {
         let span = span!(Level::TRACE, "placement", index);
         let _guard = span.enter();
         match compile_placement(&layout.labels, placement) {
             Ok(cell) => {
                 trace!(address = index, content = %cell, "Filling cell");
-                let dest = memory.get_mut(*index).unwrap();
-                *dest = cell;
+                match memory.get_mut(*index) {
+                    Ok(dest) => *dest = cell,
+                    Err(_) => errors.push(MemoryFillError::AddressOutOfBounds {
+                        address: *index,
+                        location: location.clone(),
+                    }),
+                }
             }
             Err(e) => {
                 errors.push(e);

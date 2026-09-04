@@ -305,6 +305,60 @@ fn invalid_memory_access_exception() {
     ");
 }
 
+#[test]
+fn indexed_address_arithmetic_does_not_panic_on_overflow() {
+    // r[verify inst.ld]
+    // The intermediate add wraps, so the out-of-range address reaches the
+    // downcast and reports an exception in both profiles.
+    let state = run_program(
+        indoc! {"
+            main:
+                ld 9223372036854775807, %a
+                ld [%a+1], %b
+                reset
+        "},
+        "main",
+        Steps::RunToCompletion,
+    );
+    insta::assert_snapshot!(state, @r"
+    Registers:
+      %a  = 9223372036854775807
+      %b  = 0
+      %pc = 1002
+      %sp = 10000
+      %sr = SUPERVISOR
+    Cycles: 1
+    Halted: error: extract word: cell error: could not downcast word to address: -9223372036854775808
+    ");
+}
+
+#[test]
+fn push_at_sp_zero_does_not_panic_on_underflow() {
+    // r[verify inst.push]
+    // The %sp decrement wraps, so the write goes to an out-of-bounds address
+    // and reports a CPU exception in both profiles.
+    let state = run_program(
+        indoc! {"
+            main:
+                ld 0, %sp
+                push 1
+                reset
+        "},
+        "main",
+        Steps::RunToCompletion,
+    );
+    insta::assert_snapshot!(state, @r"
+    Registers:
+      %a  = 0
+      %b  = 0
+      %pc = 1002
+      %sp = 4294967295
+      %sr = SUPERVISOR
+    Cycles: 1
+    Halted: error: CPU exception: invalid memory access (invalid address 4294967295)
+    ");
+}
+
 // Note: Hardware interrupt (exception code 0) is difficult to test directly
 // because it requires an external interrupt signal. The interrupt mechanism
 // can be partially verified through the interrupt enable/disable behavior.

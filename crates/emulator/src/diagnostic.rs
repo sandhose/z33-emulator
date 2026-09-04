@@ -15,6 +15,7 @@ use codespan_reporting::files::SimpleFiles;
 use codespan_reporting::term;
 
 use crate::compiler::CompilationError;
+use crate::constants::MEMORY_SIZE;
 use crate::parser::shared::{DiagnosticSeverity, ParseDiagnostic};
 use crate::preprocessor::PreprocessorError;
 
@@ -228,6 +229,24 @@ fn layout_error_to_diagnostic(
                 Label::secondary(file_id, original_location.clone())
                     .with_message("already filled by this directive"),
             ]),
+
+        MLE::OutOfBounds { address, location } => Diagnostic::error()
+            .with_message(format!("address {address} is outside of memory"))
+            .with_labels(vec![
+                Label::primary(file_id, location.clone()).with_message("does not fit in memory"),
+            ]),
+
+        MLE::SpaceDoesNotFit {
+            address,
+            size,
+            location,
+        } => Diagnostic::error()
+            .with_message(format!(
+                "reserving {size} cells from address {address} does not fit in memory (0..{MEMORY_SIZE})"
+            ))
+            .with_labels(vec![
+                Label::primary(file_id, location.clone()).with_message("reservation is too large"),
+            ]),
     }
 }
 
@@ -348,6 +367,12 @@ fn memory_fill_error_to_diagnostic(
                     .with_labels(labels)
             }
         },
+
+        MFE::AddressOutOfBounds { address, location } => Diagnostic::error()
+            .with_message(format!("address {address} is out of bounds"))
+            .with_labels(vec![
+                Label::primary(file_id, location.clone()).with_message("does not fit in memory"),
+            ]),
     }
 }
 

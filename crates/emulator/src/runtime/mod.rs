@@ -236,7 +236,9 @@ impl Computer {
 
     #[tracing::instrument(skip(self))]
     fn push<T: Into<Cell> + Debug>(&mut self, value: T) -> std::result::Result<(), Exception> {
-        self.registers.sp -= 1;
+        // Wraps so debug and release agree; the invalid address then fails
+        // the memory access below with a CPU exception in both profiles.
+        self.registers.sp = self.registers.sp.wrapping_sub(1);
 
         // And write it on memeory
         let address = self.registers.sp;

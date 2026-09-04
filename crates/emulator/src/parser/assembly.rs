@@ -9,11 +9,14 @@ use smallvec::SmallVec;
 use super::line::{Line, LineContent, Program};
 use super::location::{Locatable, Located};
 use super::shared::{
-    Extra, ParseDiagnostic, expression, hspace, hspace1, register, span_to_range, string_literal,
+    DiagnosticSeverity, Extra, ParseDiagnostic, expression, hspace, hspace1, register,
+    span_to_range, string_literal,
 };
 use super::value::{DirectiveArgument, DirectiveKind, InstructionArgument, InstructionKind};
 use crate::parser::expression::Node as ExpressionNode;
-use crate::parser::shared::{is_identifier_char, is_start_identifier_char, rich_to_diagnostic};
+use crate::parser::shared::{
+    is_identifier_char, is_start_identifier_char, reject_deep_nesting, rich_to_diagnostic,
+};
 
 /// Result of parsing: always produces a program, plus accumulated diagnostics.
 pub struct ParseResult {
@@ -307,6 +310,26 @@ pub fn parse(input: &str) -> ParseResult {
         let line_len = raw_line.len();
         let raw_line = raw_line.strip_suffix('\r').unwrap_or(raw_line);
 
+        if let Err(message) = reject_deep_nesting(raw_line) {
+            let span = offset..offset + raw_line.len();
+            diagnostics.push(ParseDiagnostic {
+                span: span.clone(),
+                message,
+                severity: DiagnosticSeverity::Error,
+                labels: SmallVec::new(),
+            });
+            lines.push(
+                Line {
+                    symbols: SmallVec::new(),
+                    content: Some(LineContent::Error.with_location(span.clone())),
+                    comment: None,
+                }
+                .with_location(span),
+            );
+            offset += line_len + 1;
+            continue;
+        }
+
         let result = line_parser.parse(raw_line);
 
         let parsed_line = if let Some(mut l) = result.output().cloned() {
@@ -354,6 +377,33 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
+    use crate::parser::shared::MAX_EXPRESSION_DEPTH;
+
+    #[test]
+    fn nesting_at_the_limit_parses_and_one_more_is_reported() {
+        std::thread::Builder::new()
+            .stack_size(2 << 20)
+            .spawn(|| {
+                let at_limit = format!(
+                    "    ld {}1{}, %a",
+                    "(".repeat(MAX_EXPRESSION_DEPTH),
+                    ")".repeat(MAX_EXPRESSION_DEPTH)
+                );
+                assert!(parse(&at_limit).diagnostics.is_empty());
+
+                let over_limit = format!(
+                    "    ld {}1{}, %a",
+                    "(".repeat(MAX_EXPRESSION_DEPTH + 1),
+                    ")".repeat(MAX_EXPRESSION_DEPTH + 1)
+                );
+                let diagnostics = parse(&over_limit).diagnostics;
+                assert_eq!(diagnostics.len(), 1);
+                assert!(diagnostics[0].message.contains("nesting"));
+            })
+            .expect("spawn")
+            .join()
+            .expect("the parser must not overflow a 2 MiB stack");
+    }
     use crate::runtime::Reg;
 
     #[test]

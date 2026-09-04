@@ -80,6 +80,30 @@ fn ld_negative_immediate() {
 }
 
 #[test]
+fn ld_binary_not_immediate() {
+    // r[verify asm.expressions]
+    let state = run_program(
+        indoc! {"
+            main:
+                ld ~1, %a
+                reset
+        "},
+        "main",
+        Steps::RunToCompletion,
+    );
+    insta::assert_snapshot!(state, @r"
+    Registers:
+      %a  = -2
+      %b  = 0
+      %pc = 1001
+      %sp = 10000
+      %sr = SUPERVISOR
+    Cycles: 1
+    Halted: reset
+    ");
+}
+
+#[test]
 fn ld_zero() {
     // r[verify inst.ld]
     let state = run_program(

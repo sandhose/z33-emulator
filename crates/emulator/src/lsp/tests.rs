@@ -158,6 +158,27 @@ fn did_open_with_broken_program_publishes_diagnostics() {
 }
 
 #[test]
+fn deeply_nested_expression_is_a_diagnostic_not_a_crash() {
+    let mut h = Harness::new();
+    h.initialize();
+    let source = format!(
+        "main:\n    ld {}1{}, %a\n",
+        "(".repeat(200),
+        ")".repeat(200)
+    );
+    let out = h.open("main.s", &source);
+    let uri = format!("{ROOT_URI}/main.s");
+    let diags = find_diagnostics(&out, &uri).expect("diagnostics published");
+    let diags = diags["params"]["diagnostics"].as_array().unwrap();
+    assert!(
+        diags
+            .iter()
+            .any(|d| d["message"].as_str().is_some_and(|m| m.contains("nesting"))),
+        "{diags:?}"
+    );
+}
+
+#[test]
 fn workspace_files_seed_cross_file_goto_definition() {
     let mut h = Harness::new();
     h.initialize();

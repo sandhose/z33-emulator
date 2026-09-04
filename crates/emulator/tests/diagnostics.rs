@@ -176,3 +176,60 @@ fn compilation_undefined_label() {
 fn compilation_unknown_entrypoint() {
     insta::assert_snapshot!(check_full_pipeline_errors("start:\n    nop"));
 }
+#[test]
+fn compilation_binary_not_out_of_range() {
+    // `~` inverts all 128 bits of the evaluated value, so inverting a value
+    // that already needs 64 bits leaves a result no word can hold.
+    insta::assert_snapshot!(check_full_pipeline_errors(
+        "main:\n    reset\nx: .word ~0xffffffffffffffff"
+    ));
+}
+
+#[test]
+fn compilation_addr_directive_out_of_bounds() {
+    // .addr 9999 leaves only one valid cell (address 9999); the second `nop`
+    // lands on address 10000, outside the 10000-cell memory.
+    insta::assert_snapshot!(check_full_pipeline_errors(
+        ".addr 9999\nmain:\n    nop\n    nop"
+    ));
+}
+
+#[test]
+fn compilation_space_directive_out_of_bounds() {
+    // .space 20000 cannot fit starting at PROGRAM_START (1000) in a
+    // 10000-cell memory.
+    insta::assert_snapshot!(check_full_pipeline_errors(
+        "main:\n    reset\nx: .space 20000"
+    ));
+}
+
+#[test]
+fn compilation_huge_space_directive() {
+    // The bounds check runs before the loop; the unit test in
+    // compiler::layout pins that no cell is inserted for an argument this
+    // large.
+    insta::assert_snapshot!(check_full_pipeline_errors(
+        "main:\n    reset\nx: .space 50000000"
+    ));
+}
+
+#[test]
+fn compilation_space_directive_larger_than_an_address() {
+    insta::assert_snapshot!(check_full_pipeline_errors(
+        "main:\n    reset\nx: .space 3000000000"
+    ));
+}
+
+#[test]
+fn compilation_negative_space_directive() {
+    // The argument is evaluated as an address, so a negative one cannot be
+    // downcast.
+    insta::assert_snapshot!(check_full_pipeline_errors("main:\n    reset\nx: .space -1"));
+}
+
+#[test]
+fn compilation_addr_directive_at_the_last_address() {
+    // The layout cursor sits on the highest address an expression can name;
+    // the following instruction must not advance it past it.
+    insta::assert_snapshot!(check_full_pipeline_errors(".addr 4294967295\nnop"));
+}
