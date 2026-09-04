@@ -15,6 +15,22 @@ export default defineConfig({
   oxc: { target: browserTargets },
   build: {
     target: browserTargets,
+    rolldownOptions: {
+      output: {
+        // Monaco and React change far less often than the app, so they get
+        // chunks of their own that survive a deploy in the browser cache.
+        codeSplitting: {
+          groups: [
+            { name: "monaco", test: /node_modules[\\/]monaco-editor[\\/]/u },
+            // React itself, not every package whose name starts with "react-".
+            {
+              name: "react",
+              test: /node_modules[\\/](react|react-dom|scheduler)[\\/]/u,
+            },
+          ],
+        },
+      },
+    },
   },
   worker: {
     format: "es",
