@@ -10,7 +10,9 @@
 // the cycles owed since the last one, pacing against `performance.now()` using
 // the per-batch cycle cost reported by the emulator. Full speed
 // (`speed === null`) uses the trampoline.
+import "../lib/dispose-polyfill";
 import type {
+  CheckResult,
   RunStatus,
   Snapshot,
   WorkerRequest,
@@ -22,7 +24,6 @@ import init, {
   InMemoryPreprocessor,
   type SourceIndex,
 } from "../../pkg/z33_web.js";
-import wasmUrl from "../../pkg/z33_web_bg.wasm?url";
 
 /** Instructions per batch; tuned so pause latency stays well under a frame. */
 const BATCH_SIZE = 50_000;
@@ -34,7 +35,19 @@ const SNAPSHOT_INTERVAL_MS = 40;
  */
 const MAX_CATCHUP_MS = 100;
 
-const ready = init({ module_or_path: wasmUrl });
+// Resolved by the `init` message, which carries the compiled module the main
+// thread already fetched.
+let startInit: (module: WebAssembly.Module) => void = () => {};
+const moduleReady = new Promise<WebAssembly.Module>((resolve) => {
+  startInit = resolve;
+});
+async function initialize(): Promise<void> {
+  await init({ module_or_path: await moduleReady });
+}
+// A top-level await would run before the message listener below exists and
+// the init message would be dropped.
+// oxlint-disable-next-line unicorn/prefer-top-level-await
+const ready = initialize();
 
 // If wasm init fails, `ready.then` in the message handler never runs, so every
 // request would hang. Surface it once as a fatal error frame; the proxy rejects
@@ -260,7 +273,36 @@ function stopSession(): void {
   outputBuffer = [];
   computer?.free();
   computer = null;
+  // Every read of `computer.source_index` mints a wrapper around a copy of the
+  // line index, so the one this session took has to go back too.
+  sourceIndex?.free();
   sourceIndex = null;
+}
+
+function check(files: Record<string, string>, rootFile: string): CheckResult {
+  // These handles live in the same linear memory as a running session's
+  // `Computer`, and a check runs on every keystroke, so each one goes back at
+  // the end of this scope whatever the outcome.
+  using preprocessor = new InMemoryPreprocessor(
+    new Map(Object.entries(files)),
+    rootFile,
+  );
+  // A single compile() runs the whole preprocess+parse+layout+fill pipeline
+  // and already reports its diagnostics.
+  using result = preprocessor.compile();
+  // The getter hands out a fresh clone on every read.
+  using program = result.program;
+  if (!program) {
+    return {
+      type: "error",
+      message: "Failed to preprocess program",
+      labels: [],
+    };
+  }
+  const labels = program.labels;
+  return result.report === undefined
+    ? { type: "success", labels }
+    : { type: "error", message: "Compilation failed", labels };
 }
 
 function start(
@@ -269,12 +311,14 @@ function start(
   entrypoint: string,
 ): { labels: [string, number][]; touchedFiles: string[] } {
   stopSession();
-  const preprocessor = new InMemoryPreprocessor(
+  // The Computer and its source index carry their own copies, so these three
+  // are spent the moment it exists.
+  using preprocessor = new InMemoryPreprocessor(
     new Map(Object.entries(files)),
     rootFile,
   );
-  const result = preprocessor.compile();
-  const program = result.program;
+  using result = preprocessor.compile();
+  using program = result.program;
   if (!program) {
     throw new Error(result.report ?? "Failed to preprocess program");
   }
@@ -291,8 +335,31 @@ function start(
 
 self.addEventListener("message", (event: MessageEvent<WorkerRequest>) => {
   const message = event.data;
+  if (message.type === "init") {
+    startInit(message.module);
+    return;
+  }
   void ready.then(() => {
     switch (message.type) {
+      case "check": {
+        let result: CheckResult;
+        try {
+          result = check(message.files, message.rootFile);
+        } catch (error) {
+          if (error instanceof WebAssembly.RuntimeError) {
+            // A Rust panic traps and leaves the instance unusable, so every
+            // later call would throw the same way against source that is fine.
+            // Report the worker as dead rather than the program as broken.
+            post({ type: "workerError", message: String(error) });
+            return;
+          }
+          // Any other throw is about this program; without a frame the request
+          // never settles and the toolbar keeps spinning.
+          result = { type: "error", message: String(error), labels: [] };
+        }
+        post({ id: message.id, type: "checked", result });
+        break;
+      }
       case "start": {
         try {
           const { labels, touchedFiles } = start(
@@ -308,6 +375,12 @@ self.addEventListener("message", (event: MessageEvent<WorkerRequest>) => {
             snapshot: buildSnapshot("paused"),
           });
         } catch (error) {
+          if (error instanceof WebAssembly.RuntimeError) {
+            // A trap in the layout stage poisons the instance the same way a
+            // trap in `check` does, and `startError` only reaches the console.
+            post({ type: "workerError", message: String(error) });
+            return;
+          }
           post({ id: message.id, type: "startError", error: String(error) });
         }
         break;

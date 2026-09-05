@@ -14,12 +14,14 @@ import type {
   ResolvedBreakpoint,
   SourcePosition,
 } from "./wasm";
+import { compiledWasmModule } from "./wasm-module";
 import type {
   ComputerInterface,
   ExecutionControls,
   SerialPort,
 } from "../computer-types";
 import type {
+  CheckResult,
   RunStatus,
   Snapshot,
   WorkerRequest,
@@ -62,6 +64,18 @@ class EmulatorWorkerClient {
     this.#worker.addEventListener("error", (event: ErrorEvent) => {
       this.#fail(new Error(`Emulator worker error: ${event.message}`));
     });
+    compiledWasmModule().then(
+      (module) => {
+        this.send({ type: "init", module });
+      },
+      (error: unknown) => {
+        this.#fail(
+          new Error(
+            `Emulator worker error: ${error instanceof Error ? error.message : String(error)}`,
+          ),
+        );
+      },
+    );
   }
 
   #onMessage(message: WorkerResponse): void {
@@ -84,6 +98,11 @@ class EmulatorWorkerClient {
       }
       case "resolved": {
         this.#pending.get(message.id)?.resolve(message.resolved);
+        this.#pending.delete(message.id);
+        return;
+      }
+      case "checked": {
+        this.#pending.get(message.id)?.resolve(message.result);
         this.#pending.delete(message.id);
         return;
       }
@@ -148,6 +167,15 @@ class EmulatorWorkerClient {
     };
   }
 
+  check(files: Record<string, string>, rootFile: string): Promise<CheckResult> {
+    return this.#request<CheckResult>((id) => ({
+      id,
+      type: "check",
+      files,
+      rootFile,
+    }));
+  }
+
   resolveBreakpoint(
     file: string,
     line: number,
@@ -169,6 +197,14 @@ let client: EmulatorWorkerClient | null = null;
 function getClient(): EmulatorWorkerClient {
   client ??= new EmulatorWorkerClient();
   return client;
+}
+
+/** Assemble the program in the emulator worker without starting a session. */
+export function checkProgram(
+  files: Record<string, string>,
+  rootFile: string,
+): Promise<CheckResult> {
+  return getClient().check(files, rootFile);
 }
 
 /** Start a debug session in the emulator worker. */

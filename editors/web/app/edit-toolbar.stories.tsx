@@ -22,10 +22,6 @@ const meta = preview.meta({
   ],
 });
 
-export const Idle = meta.story({
-  args: { compilationStatus: "idle" },
-});
-
 export const Pending = meta.story({
   args: { compilationStatus: "pending" },
   play: async ({ canvasElement }) => {
@@ -33,6 +29,34 @@ export const Pending = meta.story({
     await expect(
       canvas.getByRole("status", { name: "Compiling" }),
     ).toBeInTheDocument();
+  },
+});
+
+export const PendingAfterSuccess = meta.story({
+  args: {
+    compilationStatus: "pending",
+    // Labels of the last successful check: the entrypoint stays selectable
+    // while the next check runs, but the program it would run is stale.
+    labels: ["main", "loop"],
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(
+      canvas.getByRole("status", { name: "Compiling" }),
+    ).toBeInTheDocument();
+    await expect(canvas.getByRole("button", { name: /Run/u })).toBeDisabled();
+  },
+});
+
+export const EmulatorUnavailable = meta.story({
+  args: { compilationStatus: "unavailable" },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    // The status takes its name from its own text, so the recovery
+    // instruction is what a screen reader reads out.
+    await expect(canvas.getByRole("status")).toHaveTextContent(
+      "The emulator failed to load. Reload the page.",
+    );
   },
 });
 

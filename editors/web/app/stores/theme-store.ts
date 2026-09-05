@@ -54,13 +54,26 @@ darkMediaQuery.addEventListener("change", () => {
   }
 });
 
-// Apply theme class to <html> on every change
-useThemeStore.subscribe((state) => {
+/**
+ * Apply the theme to <html>. The bootstrap script in index.html mirrors this
+ * module — the "z33:theme" storage key, the `state.theme` path inside it and the
+ * "light"/"dark" class names — and applies the same theme inline before this
+ * bundle loads; renaming any of them here means renaming them there too.
+ *
+ * Those inline styles outrank the stylesheet, so a switch has to move
+ * color-scheme with it (native scrollbars, select popups, form controls) and
+ * hand the background back to the stylesheet.
+ */
+function applyTheme(effective: EffectiveTheme): void {
   const root = document.documentElement;
   root.classList.remove("light", "dark");
-  root.classList.add(state.effective);
+  root.classList.add(effective);
+  root.style.colorScheme = effective;
+  root.style.backgroundColor = "";
+}
+
+useThemeStore.subscribe((state) => {
+  applyTheme(state.effective);
 });
 
-// Apply initial theme
-const { effective } = useThemeStore.getState();
-document.documentElement.classList.add(effective);
+applyTheme(useThemeStore.getState().effective);

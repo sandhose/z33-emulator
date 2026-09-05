@@ -8,14 +8,14 @@
 //   - messages the server emits (`on_message`) -> posted back as parsed objects
 //
 // Messages received before the wasm has finished initializing are queued.
+import "../lib/dispose-polyfill";
 import {
   BrowserMessageReader,
   BrowserMessageWriter,
   type Message,
 } from "vscode-jsonrpc/browser";
 import init, { WasmLspServer } from "../../pkg/z33_web.js";
-import wasmUrl from "../../pkg/z33_web_bg.wasm?url";
-import { WORKER_ERROR } from "./worker-protocol";
+import { WORKER_ERROR, isWorkerInitFrame } from "./worker-protocol";
 
 const reader = new BrowserMessageReader(self);
 const writer = new BrowserMessageWriter(self);
@@ -36,6 +36,10 @@ function forwardToServer(message: Message): void {
 }
 
 reader.listen((message) => {
+  if (isWorkerInitFrame(message)) {
+    start(message.module);
+    return;
+  }
   if (server) {
     forwardToServer(message);
   } else {
@@ -43,8 +47,8 @@ reader.listen((message) => {
   }
 });
 
-async function main(): Promise<void> {
-  await init({ module_or_path: wasmUrl });
+async function main(module: WebAssembly.Module): Promise<void> {
+  await init({ module_or_path: module });
 
   server = new WasmLspServer((json: string) => {
     try {
@@ -59,21 +63,22 @@ async function main(): Promise<void> {
   for (const message of inbox.splice(0)) forwardToServer(message);
 }
 
-// Deliberately NOT a top-level `await main()`: a rejected top-level await is an
-// unhandled rejection that never reaches the main thread, which is exactly the
-// silent-death this guard exists to prevent.
-// oxlint-disable-next-line unicorn/prefer-top-level-await
-main().catch((error) => {
-  // If wasm init fails there is no server, so the JSON-RPC handshake on the
-  // main thread would await forever. Surface it as a console error plus a
-  // dedicated error frame the client recognizes and turns into a rejection.
-  console.error("[lsp.worker] failed to initialize", error);
-  // In a dedicated worker `self.postMessage` takes no targetOrigin (that is the
-  // window signature); the rule misfires here.
-  // oxlint-disable unicorn/require-post-message-target-origin
-  self.postMessage({
-    type: WORKER_ERROR,
-    message: error instanceof Error ? error.message : String(error),
+// The compiled module arrives as a message, so init cannot be awaited at module
+// scope; and a rejected top-level await would never reach the main thread, which
+// is what the catch below exists to prevent. Same shape in emulator.worker.ts.
+function start(module: WebAssembly.Module): void {
+  main(module).catch((error) => {
+    // If wasm init fails there is no server, so the JSON-RPC handshake on the
+    // main thread would await forever. Surface it as a console error plus a
+    // dedicated error frame the client recognizes and turns into a rejection.
+    console.error("[lsp.worker] failed to initialize", error);
+    // In a dedicated worker `self.postMessage` takes no targetOrigin (that is the
+    // window signature); the rule misfires here.
+    // oxlint-disable unicorn/require-post-message-target-origin
+    self.postMessage({
+      type: WORKER_ERROR,
+      message: error instanceof Error ? error.message : String(error),
+    });
+    // oxlint-enable unicorn/require-post-message-target-origin
   });
-  // oxlint-enable unicorn/require-post-message-target-origin
-});
+}

@@ -1,19 +1,16 @@
-import { useMonaco } from "@monaco-editor/react";
 import type * as monaco from "monaco-editor";
 import { useCallback, useEffect, useRef } from "react";
 import { DebugLayout } from "./debug-layout";
 import { EditToolbar } from "./edit-toolbar";
 import { FileSidebar } from "./file-sidebar";
 import { useCompilation } from "./hooks/use-compilation";
-import { stripLeadingSlash } from "./lib/file-paths";
 import { setRunCommandHandler } from "./lib/lsp-monaco";
-import { getMonacoFiles } from "./lib/monaco-sync";
+import { flushMonacoSync } from "./lib/monaco-sync";
 import { MultiFileEditor } from "./multi-file-editor";
 import { useAppStore } from "./stores/app-store";
 import { useFileStore } from "./stores/file-store";
 
 const App = () => {
-  const monacoInstance = useMonaco();
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
 
   const activeFile = useFileStore((s) => s.activeFile);
@@ -22,29 +19,25 @@ const App = () => {
   const setEntrypoint = useFileStore((s) => s.setEntrypoint);
   const entrypoints = useFileStore((s) => s.entrypoints);
 
-  const { compilationResult, compilationStatus } = useCompilation(
-    activeFile,
-    monacoInstance,
-  );
+  const { compilationResult, compilationStatus, recheck } =
+    useCompilation(activeFile);
 
   const runFile = useCallback(
     (file: string, entrypoint: string) => {
       setEntrypoint(file, entrypoint);
-      // Use the freshest editor contents, keyed by file-store name (no leading
-      // slash) to match the emulator worker / LSP URI conventions.
-      const files = Object.fromEntries(
-        Object.entries(getMonacoFiles()).map(([path, content]) => [
-          stripLeadingSlash(path),
-          content,
-        ]),
+      // The store trails Monaco by the sync debounce, so it can be half a
+      // second behind the buffer: Run has to execute the bytes on screen.
+      flushMonacoSync();
+      void startDebug(useFileStore.getState().files, file, entrypoint).catch(
+        (e: unknown) => {
+          // The check said this program runs, so the status on screen is
+          // stale: ask again, which also surfaces a worker that died starting.
+          console.error("Failed to start debug session:", e);
+          recheck();
+        },
       );
-      void startDebug(files, file, entrypoint).catch((e: unknown) => {
-        // The compile check should have caught errors before Run; this is a
-        // safety net.
-        console.error("Failed to start debug session:", e);
-      });
     },
-    [setEntrypoint, startDebug],
+    [setEntrypoint, startDebug, recheck],
   );
 
   const handleRun = useCallback(
@@ -90,9 +83,7 @@ const App = () => {
               ? compilationResult.message
               : undefined
           }
-          labels={
-            compilationResult.type === "idle" ? [] : compilationResult.labels
-          }
+          labels={"labels" in compilationResult ? compilationResult.labels : []}
           defaultEntrypoint={entrypoints[activeFile]}
         />
       )}

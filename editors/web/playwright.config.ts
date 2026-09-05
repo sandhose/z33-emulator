@@ -23,6 +23,14 @@ export default defineConfig({
   },
   projects: [
     { name: "chromium", use: { ...devices["Desktop Chrome"] } },
+    // WebKit lags the other engines on new syntax, and the app it refuses to
+    // parse is the app nobody can use. The startup spec loads the shell, the
+    // editor chunk and the emulator worker, which is enough to catch that.
+    {
+      name: "webkit",
+      use: { ...devices["Desktop Safari"] },
+      testMatch: /startup\.spec\.ts/u,
+    },
   ],
   webServer: {
     command: `pnpm start --port ${port} --strictPort`,

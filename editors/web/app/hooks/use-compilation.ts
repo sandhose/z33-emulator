@@ -1,80 +1,78 @@
-import type { Monaco } from "@monaco-editor/react";
 import { useDebouncer } from "@tanstack/react-pacer";
-import type { editor as MonacoEditor } from "monaco-editor";
-import { useCallback, useEffect, useState } from "react";
-import { InMemoryPreprocessor } from "../lib/wasm";
-import { toMonacoPath } from "../lib/file-paths";
-import { getMonacoFiles, initMonacoSync } from "../lib/monaco-sync";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { checkProgram } from "../lib/computer-proxy";
+import type { CheckResult } from "../lib/emulator-protocol";
 import { useFileStore } from "../stores/file-store";
 
+/** `unavailable`: the worker never answered, so nothing was checked. */
 type CompilationResult =
   | { type: "idle" }
-  | { type: "success"; labels: string[] }
-  | { type: "error"; message: string; labels: string[] };
+  | { type: "unavailable" }
+  | CheckResult;
 
-type UICompilationStatus = "idle" | "pending" | "success" | "error";
+type UICompilationStatus = "pending" | "success" | "error" | "unavailable";
+
+/**
+ * The status the toolbar shows. The first result only lands once the worker has
+ * fetched and instantiated the wasm, seconds into the load on a slow link, so
+ * "no result yet" is pending rather than idle. A dead worker stays reported as
+ * such: every later check rejects the same way.
+ */
+function uiStatus(
+  result: CompilationResult,
+  busy: boolean,
+): UICompilationStatus {
+  if (result.type === "unavailable") return "unavailable";
+  if (busy || result.type === "idle") return "pending";
+  return result.type;
+}
 
 /**
  * Compiles the active file to drive the edit-mode toolbar: the entrypoint
  * selector (labels) and the Run button (success/error status).
  *
- * Diagnostics (squiggles, markers) are owned by the LSP, not this hook. The
- * actual runnable program is (re)built in the emulator worker on Run; here we
- * only surface whether it *can* be built and its labels.
+ * The program comes from the file store, which monaco-sync mirrors every editor
+ * edit into, so the first check goes out as the app mounts instead of waiting
+ * for the editor chunk. That puts the check a keystroke plus both debounces —
+ * monaco-sync's and the one below — behind the buffer, while the LSP's
+ * diagnostics follow Monaco's models directly, so squiggles can appear before
+ * the toolbar status catches up. Diagnostics (squiggles, markers) are owned by
+ * the LSP, not this hook. The actual runnable program is (re)built in the
+ * emulator worker on Run; here we only surface whether it *can* be built and
+ * its labels.
  */
-export function useCompilation(activeFile: string, monacoInstance: Monaco) {
+export function useCompilation(activeFile: string) {
   const [compilationResult, setCompilationResult] = useState<CompilationResult>(
     { type: "idle" },
   );
-
-  // Keep the Zustand file store and Monaco models in sync.
-  useEffect(() => {
-    if (!monacoInstance) return () => {};
-    return initMonacoSync(monacoInstance, {
-      onEdit: (name, content) => {
-        useFileStore.getState().onMonacoEdit(name, content);
-      },
-      getFiles: () => useFileStore.getState().files,
-      subscribe: (listener) =>
-        useFileStore.subscribe((state, prev) => {
-          listener(state.files, prev.files);
-        }),
-    });
-  }, [monacoInstance]);
+  const compileGeneration = useRef(0);
+  const workerFailed = useRef(false);
+  const [checkInFlight, setCheckInFlight] = useState(false);
 
   const performCompile = useCallback(() => {
-    if (!monacoInstance) return;
-    const files = new Map(Object.entries(getMonacoFiles()));
-    const preprocessor = new InMemoryPreprocessor(
-      files,
-      toMonacoPath(activeFile),
+    if (workerFailed.current) return;
+    const generation = ++compileGeneration.current;
+    setCheckInFlight(true);
+    void checkProgram(useFileStore.getState().files, activeFile).then(
+      (result) => {
+        // A newer compile superseded this one while it was in flight; it owns
+        // the in-flight flag from here on.
+        if (generation !== compileGeneration.current) return;
+        setCheckInFlight(false);
+        setCompilationResult(result);
+      },
+      (error: unknown) => {
+        if (generation !== compileGeneration.current) return;
+        setCheckInFlight(false);
+        // A rejection is the worker failing (wasm never loaded, worker died);
+        // a program the compiler refuses comes back as an `error` result. The
+        // worker never recovers, so this is the last check we run.
+        workerFailed.current = true;
+        console.error("[z33] the emulator worker is unavailable:", error);
+        setCompilationResult({ type: "unavailable" });
+      },
     );
-    // A single compile() runs the whole preprocess+parse+layout+fill pipeline
-    // and already reports its diagnostics; reuse that report instead of
-    // re-running the pipeline via program.check().
-    const result = preprocessor.compile();
-    const program = result.program;
-
-    if (!program) {
-      setCompilationResult({
-        type: "error",
-        message: "Failed to preprocess program",
-        labels: [],
-      });
-      return;
-    }
-
-    const labels = program.labels;
-    if (result.report === undefined) {
-      setCompilationResult({ type: "success", labels });
-    } else {
-      setCompilationResult({
-        type: "error",
-        message: "Compilation failed",
-        labels,
-      });
-    }
-  }, [monacoInstance, activeFile]);
+  }, [activeFile]);
 
   const compileDebouncer = useDebouncer(
     performCompile,
@@ -87,39 +85,23 @@ export function useCompilation(activeFile: string, monacoInstance: Monaco) {
   // maybeExecute() itself does, so the effects would re-trigger themselves.
   const { maybeExecute, flush } = compileDebouncer;
 
-  // Attach Monaco content-change listeners and trigger the initial compile.
+  // Check once on mount, then whenever the file map changes: editor keystrokes
+  // reach the store through monaco-sync, and file creation, deletion and upload
+  // write to it directly. A write that hands back the same map — resetting an
+  // untouched workspace — is not a change and checks nothing.
   useEffect(() => {
-    if (!monacoInstance) return () => {};
-
     maybeExecute();
+    return useFileStore.subscribe((state, prev) => {
+      if (state.files !== prev.files) maybeExecute();
+    });
+  }, [maybeExecute]);
 
-    type Disposable = { dispose(): void };
-    const disposables: Disposable[] = [];
-
-    for (const model of monacoInstance.editor.getModels()) {
-      disposables.push(
-        model.onDidChangeContent(() => {
-          maybeExecute();
-        }),
-      );
-    }
-
-    disposables.push(
-      monacoInstance.editor.onDidCreateModel(
-        (model: MonacoEditor.ITextModel) => {
-          disposables.push(
-            model.onDidChangeContent(() => {
-              maybeExecute();
-            }),
-          );
-        },
-      ),
-    );
-
-    return () => {
-      for (const d of disposables) d.dispose();
-    };
-  }, [monacoInstance, maybeExecute]);
+  // For callers that just learned the answer on screen is stale; skips the
+  // debounce because the caller already waited for a round trip.
+  const recheck = useCallback(() => {
+    maybeExecute();
+    flush();
+  }, [maybeExecute, flush]);
 
   // Re-trigger on activeFile change (new preprocessor entrypoint).
   useEffect(() => {
@@ -127,10 +109,10 @@ export function useCompilation(activeFile: string, monacoInstance: Monaco) {
     flush();
   }, [activeFile, maybeExecute, flush]);
 
-  const compilationStatus: UICompilationStatus = compileDebouncer.state
-    .isPending
-    ? "pending"
-    : compilationResult.type;
+  const compilationStatus = uiStatus(
+    compilationResult,
+    compileDebouncer.state.isPending || checkInFlight,
+  );
 
-  return { compilationResult, compilationStatus };
+  return { compilationResult, compilationStatus, recheck };
 }

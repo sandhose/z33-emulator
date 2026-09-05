@@ -8,6 +8,12 @@ import type { Locator, Page } from "@playwright/test";
  */
 const THEME_INDEX = { light: 0, system: 1, dark: 2 } as const;
 
+const inlineColorScheme = (page: Page): Promise<string> =>
+  page.evaluate(() => document.documentElement.style.colorScheme);
+
+const inlineBackground = (page: Page): Promise<string> =>
+  page.evaluate(() => document.documentElement.style.backgroundColor);
+
 function themeButton(page: Page, value: "light" | "system" | "dark"): Locator {
   return page
     .getByRole("toolbar", { name: "Edit" })
@@ -109,6 +115,45 @@ test.describe("Theme switching", () => {
       "aria-pressed",
       "true",
     );
+  });
+
+  test("applies the stored theme before the app script runs", async ({
+    page,
+  }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem(
+        "z33:theme",
+        JSON.stringify({ state: { theme: "dark" }, version: 0 }),
+      );
+    });
+    // With the app module blocked, only index.html's bootstrap script runs, so
+    // what the assertions see cannot have come from the store.
+    await page.route(/index\.tsx/u, (route) => route.abort());
+    await page.emulateMedia({ colorScheme: "light" });
+
+    await page.goto("/", { waitUntil: "commit" });
+
+    await expect(page.locator("html")).toHaveClass(/dark/);
+    await expect(page.getByRole("toolbar", { name: "Edit" })).toHaveCount(0);
+    await expect.poll(() => inlineColorScheme(page)).toBe("dark");
+    // The bootstrap paints the background itself, before the stylesheet lands.
+    await expect.poll(() => inlineBackground(page)).not.toBe("");
+  });
+
+  test("switching theme moves the inline color-scheme with it", async ({
+    cleanPage: page,
+  }) => {
+    await page.emulateMedia({ colorScheme: "light" });
+
+    await themeButton(page, "dark").click();
+    await expect(page.locator("html")).toHaveClass(/dark/);
+    await expect.poll(() => inlineColorScheme(page)).toBe("dark");
+
+    await themeButton(page, "light").click();
+    await expect(page.locator("html")).toHaveClass(/light/);
+    await expect.poll(() => inlineColorScheme(page)).toBe("light");
+    // Once the stylesheet is in charge, the bootstrap's background is gone.
+    await expect.poll(() => inlineBackground(page)).toBe("");
   });
 
   test("switching back to system respects current media query", async ({

@@ -124,6 +124,9 @@ jobs:
       - name: Production build of the web app
         run: pnpm --filter z33-web exec vite build
 
+      - name: Check Monaco stays off the entry chunk
+        run: pnpm --filter z33-web run check:chunks
+
   e2e:
     name: "Playwright E2E tests"
     runs-on: ubuntu-24.04
@@ -146,7 +149,7 @@ jobs:
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
       - name: Install Playwright browsers
-        run: npx playwright install chromium --with-deps
+        run: npx playwright install chromium webkit --with-deps
 
       - name: Run Playwright tests
         run: pnpm run e2e
@@ -279,6 +282,15 @@ jobs:
         with:
           runtime: node@24
           require-lockfile: true
+
+      - name: Setup Rust build cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      # The story graph reaches lib/wasm-module.ts, which imports the binary for
+      # its URL only, so vite has to resolve the file; no story instantiates it
+      # and the dev build is enough.
+      - name: Build the wasm bindings
+        run: pnpm run build:wasm:dev
 
       - name: Install Playwright browsers
         run: npx playwright install chromium --with-deps

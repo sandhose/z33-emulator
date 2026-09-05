@@ -1,3 +1,7 @@
+// Monaco's setup: the editor contributions the minimal entry point leaves out,
+// the z33 language and its tokenizer, and the LSP wiring. Importing this module
+// pulls in the whole Monaco chunk, so only the lazy editor component reaches
+// it.
 import { loader } from "@monaco-editor/react";
 import * as monaco from "monaco-editor/editor/editor.api.js";
 
@@ -165,6 +169,9 @@ monaco.languages.setMonarchTokensProvider("z33", {
 // The Monarch tokenizer above stays as the base highlighting layer; semantic
 // tokens overlay it (editor option `semanticHighlighting.enabled`).
 // The minimal `editor.api` module is a structural subset of the full
-// `monaco-editor` type; it exposes everything the LSP integration touches.
+// `monaco-editor` type; it exposes everything the LSP integration and the app
+// touch.
 // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-setupLsp(monaco as unknown as typeof import("monaco-editor"));
+export const monacoApi = monaco as unknown as typeof import("monaco-editor");
+
+setupLsp(monacoApi);
