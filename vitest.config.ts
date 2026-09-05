@@ -4,22 +4,21 @@ import { playwright } from "@vitest/browser-playwright";
 import { defaultServerConditions } from "vite";
 import { defineConfig } from "vitest/config";
 
-// Two projects: `unit` covers the app's pure logic in node, `storybook` runs
-// the stories in a real browser (Playwright/chromium).
-//
-// Only the storybook project extends the app's ./vite.config.ts: merging that
-// config into the node project duplicates its `oxc.target` entries, which the
-// transform rejects, so the node project carries its own copy of the `@`
-// alias. The storybookTest plugin auto-injects the preview's project
-// annotations (decorators/parameters), so no explicit setup file is needed.
+const web = fileURLToPath(new URL("./editors/web", import.meta.url));
+const shared = fileURLToPath(new URL("./editors/shared", import.meta.url));
+
+// Only `web-storybook` extends the app's vite config: merging that config into
+// a node project duplicates its `oxc.target` entries, which the transform
+// rejects, so `web-unit` carries its own copy of the `@` alias. The
+// storybookTest plugin auto-injects the preview's project annotations
+// (decorators/parameters), so no explicit setup file is needed.
 export default defineConfig({
   test: {
     projects: [
       {
+        root: web,
         resolve: {
-          alias: {
-            "@": fileURLToPath(new URL("./app", import.meta.url)),
-          },
+          alias: { "@": `${web}/app` },
         },
         // The modules under test are browser code, so their dependencies
         // resolve the way a browser would as well as the way node does:
@@ -28,7 +27,7 @@ export default defineConfig({
           resolve: { conditions: [...defaultServerConditions, "browser"] },
         },
         test: {
-          name: "unit",
+          name: "web-unit",
           environment: "node",
           include: ["app/**/*.test.{ts,tsx}"],
           // The persisted stores reach for `localStorage` on every write.
@@ -36,20 +35,29 @@ export default defineConfig({
         },
       },
       {
-        extends: "./vite.config.ts",
+        root: web,
+        extends: `${web}/vite.config.ts`,
         plugins: [
           await storybookTest({
-            configDir: fileURLToPath(new URL(".storybook", import.meta.url)),
+            configDir: `${web}/.storybook`,
           }),
         ],
         test: {
-          name: "storybook",
+          name: "web-storybook",
           browser: {
             enabled: true,
             provider: playwright(),
             headless: true,
             instances: [{ browser: "chromium" }],
           },
+        },
+      },
+      {
+        root: shared,
+        test: {
+          name: "shared-unit",
+          environment: "node",
+          include: ["src/**/*.test.ts"],
         },
       },
     ],

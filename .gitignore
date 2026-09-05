@@ -2,6 +2,8 @@ target
 .vim
 node_modules
 *.vsix
+playwright-report/
+test-results/
 editors/zed/extension.wasm
 # Zed's dev-extension grammar-fetch cache (a full clone of this repo)
 editors/zed/grammars/
