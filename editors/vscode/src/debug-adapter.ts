@@ -10,7 +10,7 @@
 // calls (pause / disconnect / etc.) can interleave with execution.
 
 import * as vscode from "vscode";
-import type { WasmDapServer } from "../dist/pkg/z33_web.js";
+import type { WasmDapServer } from "z33-editor-shared/wasm";
 import { collectWorkspaceFiles } from "./workspace-paths.js";
 
 /** A launch configuration as sent by VS Code, before we inject the file map. */

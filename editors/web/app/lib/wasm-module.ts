@@ -7,7 +7,7 @@
 // fetch and the editor chunk are in flight together: on a slow link the editor
 // arrives later than it would alone, and the program becomes runnable at about
 // the moment it becomes editable, instead of a wasm round trip after it.
-import wasmUrl from "../../pkg/z33_web_bg.wasm?url";
+import wasmUrl from "z33-editor-shared/wasm-binary?url";
 
 let compiled: Promise<WebAssembly.Module> | null = null;
 

@@ -183,9 +183,9 @@ jobs:
           runtime: node@24
           require-lockfile: true
 
-      # wasm-pack comes from the `z33-assembly` (vscode) package's devDependency
-      # — that is the one `pnpm --filter z33-assembly run build` resolves via its
-      # `build:wasm` script — so no separate install action is needed.
+      # `pnpm --filter z33-assembly run build` shells out to z33-editor-shared's
+      # `build:wasm`, which brings wasm-pack from that package's
+      # devDependencies, so no separate install action is needed.
       - name: Build the extension
         run: pnpm --filter z33-assembly run build
 
