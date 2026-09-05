@@ -17,6 +17,11 @@ export class FakeWorker {
   readonly sent: unknown[] = [];
   readonly scriptUrl: string;
 
+  // `vscode-jsonrpc`'s browser transport takes the `onmessage` property rather
+  // than a listener, so both routes have to deliver.
+  onmessage: Listener | null = null;
+  onerror: Listener | null = null;
+
   #listeners = new Map<string, Set<Listener>>();
 
   constructor(scriptUrl: string | URL) {
@@ -62,13 +67,12 @@ export class FakeWorker {
 
   #emit(type: string, event: unknown): void {
     for (const listener of this.#listeners.get(type) ?? []) listener(event);
+    if (type === "message") this.onmessage?.(event);
+    if (type === "error") this.onerror?.(event);
   }
 }
 
-/**
- * Point `globalThis.Worker` at `FakeWorker` and clear the instance list.
- * Vitest restores the global when the test file's stubs are reset.
- */
+/** Point `globalThis.Worker` at `FakeWorker` and clear the instance list. */
 export function installFakeWorker(): void {
   FakeWorker.reset();
   // FakeWorker covers the surface a worker client uses, not all of `Worker`.
