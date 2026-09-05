@@ -33,31 +33,31 @@ test.describe("LSP", () => {
       "main.s",
     );
 
-    // Drive Monaco through its API (dev-only `__z33e2e` hook) instead of
-    // hovering the rendered token spans: their DOM slicing differs across
-    // platforms/builds (an exact-text span locator matched locally but never
-    // matched in CI, even with the editor fully rendered).
-    await expect
-      .poll(() => page.evaluate(() => "__z33e2e" in window), {
-        timeout: 90_000,
-      })
-      .toBe(true);
+    // Monaco gives the mnemonic a span of its own, with the line's indentation
+    // folded into it as non-breaking spaces.
+    const mnemonic = page
+      .locator(".view-lines span")
+      .filter({ hasText: /^\s*ld$/u })
+      .first();
+    await expect(mnemonic).toBeVisible({ timeout: 90_000 });
 
     // The LSP runs in a web worker that compiles the wasm on first load, so the
     // hover round-trip can be slow to become ready on CI. Retry the hover until
     // the LSP responds with the instruction docs instead of assuming a delay.
+    // Each attempt leaves the token first, so re-entering it fires a fresh
+    // mousemove for Monaco to act on, and aims just inside the span's right
+    // edge: how much of the indentation the span carries varies with the
+    // build, but the mnemonic is always at its end. `x + width` is the
+    // exclusive edge and the box is fractional, so the pointer steps two
+    // pixels back to land on the last character rather than past it.
     const hover = page
       .locator(".monaco-hover")
-      .filter({ hasText: /Load a value/i });
+      .filter({ hasText: /Load a value/iu });
     await expect(async () => {
-      // Column 6 sits inside the `ld` mnemonic on line 2.
-      await page.evaluate(() => {
-        (
-          window as unknown as {
-            __z33e2e: { showHoverAt(line: number, column: number): void };
-          }
-        ).__z33e2e.showHoverAt(2, 6);
-      });
+      const box = await mnemonic.boundingBox();
+      if (!box) throw new Error("the mnemonic token has no box");
+      await page.mouse.move(0, 0);
+      await page.mouse.move(box.x + box.width - 2, box.y + box.height / 2);
       await expect(hover).toBeVisible({ timeout: 5_000 });
     }).toPass({ timeout: 60_000 });
   });
@@ -76,7 +76,7 @@ test.describe("LSP", () => {
     // `.first()` is the reference in `jmp target`, not the `target:` label.
     const target = page
       .locator(".view-lines span")
-      .filter({ hasText: /^target$/ })
+      .filter({ hasText: /^target$/u })
       .first();
     await expect(target).toBeVisible({ timeout: 90_000 });
     await target.scrollIntoViewIfNeeded();
