@@ -10,7 +10,7 @@
     "build:wasm:dev": "wasm-pack build ../../crates/wasm --dev --target web --out-dir ../../editors/web/pkg --out-name z33_web",
     "build": "pnpm run build:wasm && vite build",
     "start": "pnpm run build:wasm:dev && vite",
-    "check": "oxlint app/ e2e/ scripts/ && oxfmt --check app/ e2e/ scripts/",
+    "check": "tsc -b && oxlint app/ e2e/ scripts/ && oxfmt --check app/ e2e/ scripts/",
     "lint": "oxlint app/ e2e/ scripts/",
     "lint:fix": "oxlint --fix app/ e2e/ scripts/",
     "fmt": "oxfmt app/ e2e/ scripts/",
@@ -22,6 +22,8 @@
     "e2e:headed": "playwright test --headed",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
+    "test": "vitest run",
+    "test:unit": "vitest run --project=unit",
     "test-storybook": "vitest run --project=storybook",
     "test-storybook:watch": "vitest --project=storybook"
   },

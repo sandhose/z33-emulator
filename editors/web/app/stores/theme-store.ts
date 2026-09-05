@@ -1,13 +1,12 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { createJSONStorage, persist } from "zustand/middleware";
+import { THEME_STORAGE_KEY } from "./persist-keys";
+import { oneOf, persistedField } from "./persisted";
 
 type EffectiveTheme = "dark" | "light";
 type Theme = EffectiveTheme | "system";
 
 const THEMES: readonly Theme[] = ["dark", "light", "system"];
-
-const isTheme = (value: unknown): value is Theme =>
-  typeof value === "string" && (THEMES as readonly string[]).includes(value);
 
 const darkMediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
 
@@ -32,14 +31,12 @@ export const useThemeStore = create<ThemeState>()(
       },
     }),
     {
-      name: "z33:theme",
+      name: THEME_STORAGE_KEY,
+      storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({ theme: state.theme }),
       merge: (persisted, current) => {
-        const stored =
-          persisted && typeof persisted === "object" && "theme" in persisted
-            ? persisted.theme
-            : undefined;
-        const theme = isTheme(stored) ? stored : "system";
+        const theme =
+          oneOf(THEMES, persistedField(persisted, "theme")) ?? "system";
         return { ...current, theme, effective: resolveEffective(theme) };
       },
     },

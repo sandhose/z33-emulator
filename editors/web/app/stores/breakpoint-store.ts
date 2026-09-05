@@ -1,17 +1,14 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import type { ResolvedBreakpoint } from "../lib/wasm";
+import { BREAKPOINTS_STORAGE_KEY } from "./persist-keys";
+import { lineNumberRecord, persistedField } from "./persisted";
 
-const BREAKPOINTS_KEY = "z33:breakpoints";
+/** Resolution results for one file: requested line -> resolved info, or null. */
+export type ResolvedForFile = Record<number, ResolvedBreakpoint | null>;
 
-/** A breakpoint resolved against a compiled program (tsify-generated type). */
-export type { ResolvedBreakpoint };
-
-/** Resolution result per file: requested line -> resolved info (or null). */
-export type ResolvedMap = Record<
-  string,
-  Record<number, ResolvedBreakpoint | null>
->;
+/** Resolution results for every file, keyed by file store key. */
+export type ResolvedMap = Record<string, ResolvedForFile>;
 
 interface BreakpointState {
   /** Requested breakpoint lines (1-based) per file store key. Persisted. */
@@ -54,9 +51,15 @@ export const useBreakpointStore = create<BreakpointState & BreakpointActions>()(
       },
     }),
     {
-      name: BREAKPOINTS_KEY,
+      name: BREAKPOINTS_STORAGE_KEY,
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({ breakpoints: state.breakpoints }),
+      merge: (persisted, current) => ({
+        ...current,
+        breakpoints:
+          lineNumberRecord(persistedField(persisted, "breakpoints")) ??
+          current.breakpoints,
+      }),
     },
   ),
 );

@@ -1,5 +1,7 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { createJSONStorage, persist } from "zustand/middleware";
+import { SPEED_STORAGE_KEY } from "./persist-keys";
+import { persistedField } from "./persisted";
 
 /** Clock-speed presets offered by the debug toolbar. */
 export const SPEED_OPTIONS: { label: string; speed: number | null }[] = [
@@ -25,25 +27,16 @@ export const useSpeedStore = create<SpeedState>()(
       },
     }),
     {
-      name: "z33:speed",
-      // Normalize a persisted speed that is no longer a preset back to full
-      // speed, so the toolbar select always reflects the worker's pacing.
+      name: SPEED_STORAGE_KEY,
+      storage: createJSONStorage(() => localStorage),
+      // The toolbar select can only show one of the presets, so a persisted
+      // speed that is no longer among them goes back to the default. `null`
+      // is itself a preset (Max), so the match is against the option list
+      // rather than a typeof check.
       merge: (persisted, current) => {
-        let speed: number | null = null;
-        if (
-          persisted &&
-          typeof persisted === "object" &&
-          "speed" in persisted
-        ) {
-          const value = persisted.speed;
-          if (
-            typeof value === "number" &&
-            SPEED_OPTIONS.some((o) => o.speed === value)
-          ) {
-            speed = value;
-          }
-        }
-        return { ...current, speed };
+        const value = persistedField(persisted, "speed");
+        const match = SPEED_OPTIONS.find((option) => option.speed === value);
+        return { ...current, speed: match ? match.speed : current.speed };
       },
     },
   ),

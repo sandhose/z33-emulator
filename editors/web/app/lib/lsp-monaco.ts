@@ -38,6 +38,7 @@ import type {
 } from "vscode-languageserver-protocol";
 import { useFileStore } from "../stores/file-store";
 import { getLspClient } from "./lsp-client";
+import { fixSemanticTokenLengths } from "./semantic-tokens";
 
 type Monaco = typeof monaco;
 type Disposable = monaco.IDisposable;
@@ -358,43 +359,6 @@ function registerProviders(
   );
 }
 
-const encoder = new TextEncoder();
-const decoder = new TextDecoder();
-
-/**
- * The server emits semantic-token *lengths* in UTF-8 bytes but token *offsets*
- * in UTF-16 code units. On lines with multi-byte characters (e.g. comments with
- * accents) that makes a token overrun the line, and Monaco rejects the whole
- * set. Rewrite each length from bytes to UTF-16 code units using the model text.
- */
-function fixSemanticTokenLengths(
-  model: monaco.editor.ITextModel,
-  tokens: SemanticTokens,
-): SemanticTokens {
-  const data = Array.from(tokens.data);
-  let line = 0;
-  let char = 0;
-  for (let i = 0; i < data.length; i += 5) {
-    const deltaLine = data[i] ?? 0;
-    const deltaStart = data[i + 1] ?? 0;
-    line += deltaLine;
-    char = deltaLine === 0 ? char + deltaStart : deltaStart;
-
-    const byteLength = data[i + 2] ?? 0;
-    const lineText = model.getLineContent(line + 1);
-    const rest = lineText.slice(char);
-    const restBytes = encoder.encode(rest);
-    const utf16Length =
-      byteLength >= restBytes.length
-        ? rest.length
-        : decoder.decode(restBytes.slice(0, byteLength)).length;
-    data[i + 2] = utf16Length;
-  }
-  return tokens.resultId === undefined
-    ? { data }
-    : { resultId: tokens.resultId, data };
-}
-
 async function registerSemanticTokens(
   m: Monaco,
   flush: FlushFn,
@@ -420,7 +384,11 @@ async function registerSemanticTokens(
           { textDocument: { uri: uriOf(model) } },
         );
         if (cancelled(token) || !result) return null;
-        return toSemanticTokens(fixSemanticTokenLengths(model, result));
+        // The server answers against the text it last received, so a token can
+        // name a line an edit has since removed; Monaco throws on those.
+        const lineText = (line: number) =>
+          line <= model.getLineCount() ? model.getLineContent(line) : "";
+        return toSemanticTokens(fixSemanticTokenLengths(result, lineText));
       },
       releaseDocumentSemanticTokens() {},
     }),
