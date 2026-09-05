@@ -100,11 +100,6 @@ jobs:
           runtime: node@24
           require-lockfile: true
 
-      # Ahead of the Rust cache and the wasm build: these need neither, and a
-      # failure here should not wait on them.
-      - name: Run the shared package unit tests
-        run: pnpm --filter z33-editor-shared run test
-
       - name: Setup Rust build cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
@@ -261,9 +256,6 @@ jobs:
   vitest:
     name: "Vitest tests"
     runs-on: ubuntu-24.04
-    defaults:
-      run:
-        working-directory: editors/web
     steps:
       - name: Checkout sources
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -279,18 +271,17 @@ jobs:
       - name: Setup Rust build cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
-      # Only the storybook project needs this: its story graph reaches
+      # Only the web-storybook project needs this: its story graph reaches
       # lib/wasm-module.ts, whose `?url` import vite has to resolve to a real
-      # file. No story instantiates the binary, so the dev build is enough. The
-      # unit project mocks that module and runs without it.
+      # file. No story instantiates the binary, so the dev build is enough.
       - name: Build the wasm bindings
         run: pnpm --filter z33-editor-shared run build:wasm:dev
 
-      # Only the storybook project needs a browser; the unit project runs in node.
+      # Only the web-storybook project needs a browser; the others run in node.
       - name: Install Playwright browsers
-        run: npx playwright install chromium --with-deps
+        run: pnpm exec playwright install --with-deps chromium
 
-      - name: Run the unit and Storybook tests
+      - name: Run the Vitest projects
         run: pnpm run test
 
   tree-sitter:

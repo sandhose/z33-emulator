@@ -15,14 +15,13 @@
     "build:wasm:dev": "wasm-pack build ../../crates/wasm --dev --target web --out-dir ../../editors/shared/pkg --out-name z33_web",
     "check": "tsc --noEmit && pnpm run lint && oxfmt --check src/",
     "lint": "oxlint src/",
-    "fmt": "oxfmt src/",
-    "test": "vitest run"
+    "fmt": "oxfmt src/"
   },
   "devDependencies": {
     "oxfmt": "catalog:",
     "oxlint": "catalog:",
     "typescript": "catalog:",
-    "vitest": "^4.1.11",
+    "vitest": "catalog:",
     "wasm-pack": "catalog:"
   }
 }
