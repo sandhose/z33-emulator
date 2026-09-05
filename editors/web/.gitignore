@@ -2,6 +2,4 @@
 # The wasm build writes to editors/shared/pkg; a working copy may still hold one here.
 /pkg/
 /node_modules/
-/test-results/
-/playwright-report/
 /storybook-static/
