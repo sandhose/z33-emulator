@@ -2,6 +2,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { type ITheme, Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { useEffect, useImperativeHandle, useRef } from "react";
+import { translateSerialInput } from "z33-editor-shared/serial-input";
 import type { SerialPort } from "./computer-types";
 import { useThemeStore } from "./stores/theme-store";
 
@@ -43,26 +44,6 @@ const FONT_FAMILY =
   'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace';
 
 /**
- * Translate an xterm `onData` string into serial receive bytes, following the
- * serial-port policy: Enter -> LF, Backspace -> BS, arrow/function-key CSI
- * escapes dropped (no cursor semantics on a serial line), other control chars
- * forwarded as-is, everything else UTF-8 encoded. Returns `null` when nothing
- * should be sent.
- *
- * Newlines are normalized to LF before encoding: a typed Enter arrives as a
- * lone `\r`, but xterm also normalizes any newlines *inside* a pasted string
- * to `\r` (never `\r\n`, but handle both defensively) — without this, a
- * multi-line paste would send raw CR bytes that the LF-oriented emulator
- * never recognizes as a line terminator.
- */
-function translateInput(data: string): Uint8Array | null {
-  if (data === "\u007F") return Uint8Array.of(0x08);
-  // Escape sequences (arrows, function keys, ...) carry no serial meaning.
-  if (data.startsWith("\u001B")) return null;
-  return encoder.encode(data.replaceAll(/\r\n?/gu, "\n"));
-}
-
-/**
  * The xterm.js-backed serial terminal. Lazy-loaded so xterm stays out of the
  * initial bundle. Program output is written straight through (`convertEol`
  * handles the emulator's LF-only newlines); keystrokes and pastes are
@@ -99,7 +80,8 @@ const SerialTerminal: React.FC<SerialTerminalProps> = ({ computer, ref }) => {
     terminal.open(container);
     terminalRef.current = terminal;
 
-    // Expose the instance for e2e tests, like the editor's `__z33e2e` hook.
+    // The e2e tests read the scrollback through this instance: xterm's DOM
+    // grid holds no text nodes they can assert on.
     if (import.meta.env.DEV) {
       (globalThis as { __z33Terminal?: Terminal }).__z33Terminal = terminal;
     }
@@ -151,8 +133,8 @@ const SerialTerminal: React.FC<SerialTerminalProps> = ({ computer, ref }) => {
     terminal.reset();
 
     const onData = terminal.onData((data) => {
-      const bytes = translateInput(data);
-      if (bytes && bytes.length > 0) computer.sendInput([...bytes]);
+      const translated = translateSerialInput(data);
+      if (translated) computer.sendInput([...encoder.encode(translated)]);
     });
 
     const unsubscribe = computer.onOutput((bytes) => {

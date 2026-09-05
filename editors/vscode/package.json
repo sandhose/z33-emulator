@@ -152,11 +152,10 @@
   },
   "scripts": {
     "vscode:prepublish": "pnpm run build",
-    "build:wasm": "wasm-pack build ../../crates/wasm --target web --out-dir ../../editors/vscode/dist/pkg --out-name z33_web",
     "build:bundle": "node build.mjs --production",
-    "build": "pnpm run build:wasm && pnpm run build:bundle",
+    "build": "pnpm --filter z33-editor-shared run build:wasm && pnpm run build:bundle",
     "watch": "node build.mjs --watch",
-    "check": "node -e \"require('fs').existsSync('dist/pkg')||process.exit(1)\" || pnpm run build:wasm && tsc --noEmit && pnpm run lint && oxfmt --check src/ e2e/ playwright.config.ts",
+    "check": "node -e \"try{require.resolve('z33-editor-shared/wasm')}catch{process.exit(1)}\" || pnpm --filter z33-editor-shared run build:wasm && tsc --noEmit && pnpm run lint && oxfmt --check src/ e2e/ playwright.config.ts",
     "lint": "oxlint src/ e2e/ playwright.config.ts",
     "fmt": "oxfmt src/ e2e/ playwright.config.ts",
     "package": "vsce package --no-dependencies",
@@ -176,6 +175,6 @@
     "oxfmt": "catalog:",
     "oxlint": "catalog:",
     "typescript": "catalog:",
-    "wasm-pack": "catalog:"
+    "z33-editor-shared": "workspace:*"
   }
 }

@@ -6,10 +6,8 @@
     "#*": ["./*", "./*.ts", "./*.tsx"]
   },
   "scripts": {
-    "build:wasm": "wasm-pack build ../../crates/wasm --target web --out-dir ../../editors/web/pkg --out-name z33_web",
-    "build:wasm:dev": "wasm-pack build ../../crates/wasm --dev --target web --out-dir ../../editors/web/pkg --out-name z33_web",
-    "build": "pnpm run build:wasm && vite build",
-    "start": "pnpm run build:wasm:dev && vite",
+    "build": "pnpm --filter z33-editor-shared run build:wasm && vite build",
+    "start": "pnpm --filter z33-editor-shared run build:wasm:dev && vite",
     "check": "tsc -b && oxlint app/ e2e/ scripts/ && oxfmt --check app/ e2e/ scripts/",
     "lint": "oxlint app/ e2e/ scripts/",
     "lint:fix": "oxlint --fix app/ e2e/ scripts/",
@@ -53,8 +51,7 @@
     "tailwindcss": "^4.3.3",
     "typescript": "catalog:",
     "vite": "^8.2.2",
-    "vitest": "^4.1.11",
-    "wasm-pack": "catalog:"
+    "vitest": "^4.1.11"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
@@ -76,6 +73,7 @@
     "tw-animate-css": "^1.4.0",
     "vscode-jsonrpc": "^9.0.2",
     "vscode-languageserver-protocol": "^3.18.3",
+    "z33-editor-shared": "workspace:*",
     "zustand": "^5.0.15"
   }
 }

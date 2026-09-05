@@ -23,7 +23,7 @@ import init, {
   Computer,
   InMemoryPreprocessor,
   type SourceIndex,
-} from "../../pkg/z33_web.js";
+} from "z33-editor-shared/wasm";
 
 /** Instructions per batch; tuned so pause latency stays well under a frame. */
 const BATCH_SIZE = 50_000;

@@ -1,18 +1,15 @@
 .vscode/**
 src/**
 node_modules/**
-# Stale pre-WASM build output; never ship it even if a working copy has one
+# Stale build output; never ship it even if a working copy has one
 out/**
+dist/pkg/**
 tsconfig.json
 tsconfig.tsbuildinfo
 build.mjs
 .gitignore
 **/*.map
 **/*.ts
-# Only the wasm binary is needed at runtime; the glue is bundled into the
-# extension and worker output.
-dist/pkg/**
-!dist/pkg/z33_web_bg.wasm
 e2e/**
 playwright.config.ts
 playwright-report/**

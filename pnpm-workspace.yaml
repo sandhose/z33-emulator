@@ -1,6 +1,7 @@
 # $schema: https://www.schemastore.org/pnpm-workspace.json
 
 packages:
+  - editors/shared
   - editors/web
   - editors/vscode
   - tree-sitter-z33

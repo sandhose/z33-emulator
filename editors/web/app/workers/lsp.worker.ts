@@ -14,7 +14,7 @@ import {
   BrowserMessageWriter,
   type Message,
 } from "vscode-jsonrpc/browser";
-import init, { WasmLspServer } from "../../pkg/z33_web.js";
+import init, { WasmLspServer } from "z33-editor-shared/wasm";
 import { WORKER_ERROR, isWorkerInitFrame } from "./worker-protocol";
 
 const reader = new BrowserMessageReader(self);

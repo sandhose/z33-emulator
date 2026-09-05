@@ -102,8 +102,8 @@ test.describe("Serial console", () => {
 
     // Drive xterm's own `paste()` API instead of `keyboard.type`: real browser
     // paste events go through the same internal normalization (embedded
-    // newlines become a bare `\r`), so this exercises the exact input our
-    // `translateInput` regression fix targets, without needing a real
+    // newlines become a bare `\r`), so this exercises the exact input
+    // `translateSerialInput` normalizes, without needing a real
     // clipboard/paste simulation.
     await page.evaluate(() => {
       const terminal = (

@@ -15,7 +15,7 @@
 // `WasmLspServer` speaks *unframed JSON strings*, whereas the browser transport
 // exchanges JSON-RPC *objects*, so we JSON.stringify/parse at the boundary.
 
-import initWasm, { WasmLspServer } from "../dist/pkg/z33_web.js";
+import initWasm, { WasmLspServer } from "z33-editor-shared/wasm";
 
 interface InitMessage {
   type: "init";

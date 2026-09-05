@@ -15,7 +15,7 @@
 import * as vscode from "vscode";
 import { LanguageClient, type LanguageClientOptions } from "vscode-languageclient/browser";
 
-import initDapWasm, { WasmDapServer } from "../dist/pkg/z33_web.js";
+import initDapWasm, { WasmDapServer } from "z33-editor-shared/wasm";
 import { Z33DebugAdapter } from "./debug-adapter.js";
 import { SerialTerminalManager } from "./serial-terminal.js";
 import {
@@ -44,7 +44,7 @@ let client: LanguageClient | undefined;
 
 /** Read the wasm binary shipped in the extension as raw bytes. */
 async function readWasmBytes(context: vscode.ExtensionContext): Promise<Uint8Array> {
-  const uri = vscode.Uri.joinPath(context.extensionUri, "dist/pkg/z33_web_bg.wasm");
+  const uri = vscode.Uri.joinPath(context.extensionUri, "dist/z33_web_bg.wasm");
   return vscode.workspace.fs.readFile(uri);
 }
 

@@ -13,6 +13,7 @@
 // two are connected through the session-id-keyed `SerialTerminalManager`.
 
 import * as vscode from "vscode";
+import { translateSerialInput } from "z33-editor-shared/serial-input";
 
 const TERMINAL_NAME = "Zorglub33 Serial";
 const SERIAL_INPUT_REQUEST = "zorglub33/serialInput";
@@ -101,17 +102,10 @@ class SerialPty implements vscode.Pseudoterminal {
     if (!this.accepting) {
       return;
     }
-    // Translate terminal conventions to the host's serial convention:
-    //   * Enter arrives as CR (\r), possibly followed by LF (\r\n on a
-    //     Windows-style paste or other CRLF-delivering path) → send a single
-    //     LF (\n), the host line convention. Matching `\r\n?` (not just `\r`)
-    //     avoids turning one CRLF into two host newlines.
-    //   * Backspace arrives as DEL (\x7f) → send BS (\x08), matching the web
-    //     console.
-    // Everything else (including control chars like Ctrl-D = EOT \x04) passes
-    // through untouched — that is the whole point: the program decides what to
-    // do with them (echo.s exits on EOT).
-    const translated = data.replace(/\r\n?/g, "\n").replace(/\x7f/g, "\x08");
+    const translated = translateSerialInput(data);
+    if (!translated) {
+      return;
+    }
     // Forward the whole chunk as ONE request so a paste is a single IRQ edge,
     // matching the emulator's one-edge-per-`push_input` contract.
     this.session
