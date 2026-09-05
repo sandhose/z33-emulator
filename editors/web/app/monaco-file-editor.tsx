@@ -4,13 +4,14 @@
 import { Editor } from "@monaco-editor/react";
 import type * as monaco from "monaco-editor";
 import { useEffect, useRef } from "react";
+import {
+  breakpointDecorations,
+  requestedLineForClick,
+} from "./lib/breakpoint-gutter";
 import { toMonacoPath } from "./lib/file-paths";
 import { initMonacoSync } from "./lib/monaco-sync";
 import { monacoApi } from "./monaco";
-import {
-  type ResolvedBreakpoint,
-  useBreakpointStore,
-} from "./stores/breakpoint-store";
+import { useBreakpointStore } from "./stores/breakpoint-store";
 import { useFileStore } from "./stores/file-store";
 import { useThemeStore } from "./stores/theme-store";
 
@@ -19,53 +20,6 @@ export type EditorProps = {
   readOnly?: boolean;
   onEditorMount?: (editor: monaco.editor.IStandaloneCodeEditor) => void;
 };
-
-/**
- * Build the gutter glyph decorations for a file's breakpoints. During a debug
- * session breakpoints snap to their resolved line; unresolvable ones render
- * greyed out. Outside a session (no resolution info) all render as-is.
- */
-function breakpointDecorations(
-  lines: number[] | undefined,
-  resolvedForFile: Record<number, ResolvedBreakpoint | null> | undefined,
-): monaco.editor.IModelDeltaDecoration[] {
-  return (lines ?? []).map((line) => {
-    const entry = resolvedForFile?.[line];
-    const targetLine = entry ? entry.line : line;
-    const verified = resolvedForFile === undefined || Boolean(entry);
-    return {
-      range: {
-        startLineNumber: targetLine,
-        startColumn: 1,
-        endLineNumber: targetLine,
-        endColumn: 1,
-      },
-      options: {
-        glyphMarginClassName: verified ? "bp-glyph" : "bp-glyph-unverified",
-        stickiness: 1, // NeverGrowsWhenTypingAtEdges
-      },
-    };
-  });
-}
-
-/**
- * Map a clicked gutter line back to the *requested* breakpoint line that owns
- * it. During a session a breakpoint requested on line N renders its glyph at the
- * resolved line M, so a click on M must toggle the N entry (removing it) rather
- * than adding a fresh, never-resolving breakpoint at M. Falls back to the
- * clicked line when it isn't a resolved target (i.e. a brand-new breakpoint).
- */
-function requestedLineForClick(
-  clickedLine: number,
-  resolvedForFile: Record<number, ResolvedBreakpoint | null> | undefined,
-): number {
-  if (resolvedForFile) {
-    for (const [requested, entry] of Object.entries(resolvedForFile)) {
-      if (entry && entry.line === clickedLine) return Number(requested);
-    }
-  }
-  return clickedLine;
-}
 
 const MonacoFileEditor: React.FC<EditorProps> = ({
   filePath,

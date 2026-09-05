@@ -4,14 +4,11 @@ import type { ResolvedBreakpoint } from "../lib/wasm";
 
 const BREAKPOINTS_KEY = "z33:breakpoints";
 
-/** A breakpoint resolved against a compiled program (tsify-generated type). */
-export type { ResolvedBreakpoint };
+/** Resolution results for one file: requested line -> resolved info, or null. */
+export type ResolvedForFile = Record<number, ResolvedBreakpoint | null>;
 
-/** Resolution result per file: requested line -> resolved info (or null). */
-export type ResolvedMap = Record<
-  string,
-  Record<number, ResolvedBreakpoint | null>
->;
+/** Resolution results for every file, keyed by file store key. */
+export type ResolvedMap = Record<string, ResolvedForFile>;
 
 interface BreakpointState {
   /** Requested breakpoint lines (1-based) per file store key. Persisted. */
