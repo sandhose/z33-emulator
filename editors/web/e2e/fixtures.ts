@@ -1,6 +1,7 @@
 import { test as base, expect } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import {
+  BREAKPOINTS_STORAGE_KEY,
   WORKSPACE_PERSIST_VERSION,
   WORKSPACE_STORAGE_KEY,
 } from "../app/stores/persist-keys";
@@ -39,10 +40,16 @@ export async function getCycleCount(page: Page): Promise<number> {
 export const test = base.extend<{ cleanPage: Page }>({
   cleanPage: async ({ page }, use) => {
     await page.goto("/");
-    await page.evaluate((storageKey) => {
-      localStorage.removeItem(storageKey);
-      localStorage.removeItem("z33:breakpoints");
-    }, WORKSPACE_STORAGE_KEY);
+    await page.evaluate(
+      ({ workspaceKey, breakpointsKey }) => {
+        localStorage.removeItem(workspaceKey);
+        localStorage.removeItem(breakpointsKey);
+      },
+      {
+        workspaceKey: WORKSPACE_STORAGE_KEY,
+        breakpointsKey: BREAKPOINTS_STORAGE_KEY,
+      },
+    );
     await page.reload();
     await page.waitForSelector(".monaco-editor", { timeout: 30_000 });
     await use(page);
@@ -57,7 +64,7 @@ export async function loadWorkspace(
 ): Promise<void> {
   await page.goto("/");
   await page.evaluate(
-    ({ files, activeFile, storageKey, version }) => {
+    ({ files, activeFile, storageKey, breakpointsKey, version }) => {
       localStorage.setItem(
         storageKey,
         JSON.stringify({
@@ -65,12 +72,13 @@ export async function loadWorkspace(
           version,
         }),
       );
-      localStorage.removeItem("z33:breakpoints");
+      localStorage.removeItem(breakpointsKey);
     },
     {
       files,
       activeFile,
       storageKey: WORKSPACE_STORAGE_KEY,
+      breakpointsKey: BREAKPOINTS_STORAGE_KEY,
       version: WORKSPACE_PERSIST_VERSION,
     },
   );

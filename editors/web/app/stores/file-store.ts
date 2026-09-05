@@ -4,6 +4,7 @@ import {
   WORKSPACE_PERSIST_VERSION,
   WORKSPACE_STORAGE_KEY,
 } from "./persist-keys";
+import { persistedField, stringRecord } from "./persisted";
 
 const sampleFiles = Object.fromEntries(
   Object.entries(
@@ -16,6 +17,21 @@ const sampleFiles = Object.fromEntries(
 );
 
 const initial = { files: sampleFiles, activeFile: "fact.s" };
+
+/**
+ * The file the editor opens on. It has to be one of the files beside it, or
+ * the editor opens on a name nothing answers to; only an empty workspace has
+ * no active file. Candidates are tried in order of preference.
+ */
+function reconcileActiveFile(
+  files: Record<string, string>,
+  ...candidates: unknown[]
+): string {
+  for (const name of candidates) {
+    if (typeof name === "string" && Object.hasOwn(files, name)) return name;
+  }
+  return Object.keys(files)[0] ?? "";
+}
 
 interface FileState {
   files: Record<string, string>; // filename (no leading slash) → content
@@ -98,6 +114,22 @@ export const useFileStore = create<FileState & FileActions>()(
         activeFile: state.activeFile,
         entrypoints: state.entrypoints,
       }),
+      merge: (persisted, current) => {
+        const files =
+          stringRecord(persistedField(persisted, "files")) ?? current.files;
+        return {
+          ...current,
+          files,
+          activeFile: reconcileActiveFile(
+            files,
+            persistedField(persisted, "activeFile"),
+            current.activeFile,
+          ),
+          entrypoints:
+            stringRecord(persistedField(persisted, "entrypoints")) ??
+            current.entrypoints,
+        };
+      },
     },
   ),
 );

@@ -1,8 +1,8 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import type { ResolvedBreakpoint } from "../lib/wasm";
-
-const BREAKPOINTS_KEY = "z33:breakpoints";
+import { BREAKPOINTS_STORAGE_KEY } from "./persist-keys";
+import { lineNumberRecord, persistedField } from "./persisted";
 
 /** Resolution results for one file: requested line -> resolved info, or null. */
 export type ResolvedForFile = Record<number, ResolvedBreakpoint | null>;
@@ -51,9 +51,15 @@ export const useBreakpointStore = create<BreakpointState & BreakpointActions>()(
       },
     }),
     {
-      name: BREAKPOINTS_KEY,
+      name: BREAKPOINTS_STORAGE_KEY,
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({ breakpoints: state.breakpoints }),
+      merge: (persisted, current) => ({
+        ...current,
+        breakpoints:
+          lineNumberRecord(persistedField(persisted, "breakpoints")) ??
+          current.breakpoints,
+      }),
     },
   ),
 );
