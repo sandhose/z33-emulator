@@ -19,8 +19,12 @@ export default defineConfig({
       output: {
         // Monaco and React change far less often than the app, so they get
         // chunks of their own that survive a deploy in the browser cache.
+        // Vite's dynamic-import preload helper needs a group too: grouped with
+        // Monaco it makes the entry chunk import Monaco statically, and the
+        // browser downloads all 3 MB of it before the first paint.
         codeSplitting: {
           groups: [
+            { name: "vite-helpers", test: /preload-helper/u },
             { name: "monaco", test: /node_modules[\\/]monaco-editor[\\/]/u },
             // React itself, not every package whose name starts with "react-".
             {

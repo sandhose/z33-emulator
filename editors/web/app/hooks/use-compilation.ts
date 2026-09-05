@@ -38,7 +38,11 @@ function uiStatus(
  * actual runnable program is (re)built in the emulator worker on Run; here we
  * only surface whether it *can* be built and its labels.
  */
-export function useCompilation(activeFile: string, monacoInstance: Monaco) {
+export function useCompilation(
+  activeFile: string,
+  // oxlint-disable-next-line typescript/no-redundant-type-constituents -- Monaco is not `any`, false positive
+  monacoInstance: Monaco | null,
+) {
   const [compilationResult, setCompilationResult] = useState<CompilationResult>(
     { type: "idle" },
   );

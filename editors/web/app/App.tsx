@@ -1,10 +1,10 @@
-import { useMonaco } from "@monaco-editor/react";
 import type * as monaco from "monaco-editor";
 import { useCallback, useEffect, useRef } from "react";
 import { DebugLayout } from "./debug-layout";
 import { EditToolbar } from "./edit-toolbar";
 import { FileSidebar } from "./file-sidebar";
 import { useCompilation } from "./hooks/use-compilation";
+import { useMonacoInstance } from "./hooks/use-monaco";
 import { setRunCommandHandler } from "./lib/lsp-monaco";
 import { getWorkerFiles } from "./lib/monaco-sync";
 import { MultiFileEditor } from "./multi-file-editor";
@@ -12,7 +12,7 @@ import { useAppStore } from "./stores/app-store";
 import { useFileStore } from "./stores/file-store";
 
 const App = () => {
-  const monacoInstance = useMonaco();
+  const monacoInstance = useMonacoInstance();
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
 
   const activeFile = useFileStore((s) => s.activeFile);
