@@ -1,3 +1,4 @@
+import { WORKSPACE_STORAGE_KEY } from "../app/stores/persist-keys";
 import {
   enterDebugMode,
   exitDebugMode,
@@ -80,8 +81,54 @@ test.describe("Core flows", () => {
     await page.keyboard.press("Control+End");
     await page.keyboard.press("Enter");
     await page.keyboard.type("newlabel:");
+
+    // The check trails the keystroke by the sync and compile debounces, so the
+    // status on screen is still the one from before the edit. The new label
+    // reaching the list is the recompile itself.
+    await entrypoint.click();
+    await expect(page.getByRole("option", { name: "newlabel" })).toBeVisible();
+    await page.keyboard.press("Escape");
+
     await waitForCompileSuccess(page);
     await expect(entrypoint).toContainText("casparticulier");
+  });
+
+  test("Run executes the buffer, not the bytes the last check saw", async ({
+    cleanPage: page,
+  }) => {
+    await waitForCompileSuccess(page);
+    await page.locator(".monaco-editor").click();
+    await page.keyboard.press("Control+End");
+    await page.keyboard.press("Enter");
+    await page.keyboard.type("garbage !!!");
+
+    // No wait: the toolbar still reports the program from before the edit, so
+    // Run is enabled on a program that no longer compiles.
+    await page.getByRole("button", { name: "Run", exact: true }).click();
+
+    await waitForCompileError(page);
+    await expect(page.getByRole("toolbar", { name: "Debug" })).toBeHidden();
+  });
+
+  test("an edit one click before Run survives the switch into debug mode", async ({
+    cleanPage: page,
+  }) => {
+    await waitForCompileSuccess(page);
+    await page.locator(".monaco-editor").click();
+    await page.keyboard.press("Control+End");
+    await page.keyboard.press("Enter");
+    await page.keyboard.type("marker:");
+    await page.getByRole("button", { name: "Run", exact: true }).click();
+    await expect(page.getByRole("toolbar", { name: "Debug" })).toBeVisible();
+    await exitDebugMode(page);
+
+    // What a reload restores from: the edit has to have reached the store
+    // before the editor unmounted, not just Monaco's model.
+    const stored = await page.evaluate(
+      (key) => localStorage.getItem(key),
+      WORKSPACE_STORAGE_KEY,
+    );
+    expect(stored).toContain("marker:");
   });
 
   test("debug session lifecycle", async ({ cleanPage: page }) => {

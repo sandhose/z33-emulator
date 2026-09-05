@@ -1,7 +1,7 @@
 // Monaco's setup: the editor contributions the minimal entry point leaves out,
 // the z33 language and its tokenizer, and the LSP wiring. Importing this module
-// pulls in the whole Monaco chunk, so only the lazy editor component and
-// `hooks/use-monaco` reach it.
+// pulls in the whole Monaco chunk, so only the lazy editor component reaches
+// it.
 import { loader } from "@monaco-editor/react";
 import * as monaco from "monaco-editor/editor/editor.api.js";
 

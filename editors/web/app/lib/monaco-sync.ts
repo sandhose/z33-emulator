@@ -2,9 +2,6 @@ import type { Monaco } from "@monaco-editor/react";
 import type { editor as MonacoEditor } from "monaco-editor";
 import { stripLeadingSlash } from "./file-paths";
 
-// oxlint-disable-next-line typescript/no-redundant-type-constituents -- Monaco is not `any`, false positive
-let monacoRef: Monaco | null = null;
-
 type MonacoSyncCallbacks = {
   /** Called when Monaco model content changes (debounced). */
   onEdit: (name: string, content: string) => void;
@@ -19,23 +16,50 @@ type MonacoSyncCallbacks = {
   ) => () => void;
 };
 
+/** The debounced edits still owed to the store, one entry per model. */
+const pendingEdits = new Set<() => void>();
+
+/**
+ * Write every debounced Monaco edit to the store now. The store trails Monaco
+ * by the debounce below, so anything that reads it as the program to run calls
+ * this first. It is a no-op until the editor chunk has attached its models,
+ * and this module only type-imports Monaco, so a caller on the main thread
+ * does not pull the editor in.
+ */
+export function flushMonacoSync(): void {
+  // Taken and emptied first: each flush writes to the store, which syncs back
+  // into Monaco and can add to this set again.
+  const owed = [...pendingEdits];
+  pendingEdits.clear();
+  for (const flush of owed) flush();
+}
+
 function attachContentListener(
   name: string,
   model: MonacoEditor.ITextModel,
   onEdit: (name: string, content: string) => void,
 ): { dispose(): void } {
   let timer: ReturnType<typeof setTimeout> | null = null;
+  const flush = () => {
+    if (timer === null) return;
+    clearTimeout(timer);
+    timer = null;
+    pendingEdits.delete(flush);
+    // A model disposed with an edit still owed belongs to a file that was
+    // deleted; writing it back would resurrect the file.
+    if (model.isDisposed()) return;
+    onEdit(name, model.getValue());
+  };
   const listener = model.onDidChangeContent(() => {
-    if (timer) clearTimeout(timer);
-    timer = setTimeout(() => {
-      timer = null;
-      onEdit(name, model.getValue());
-    }, 500);
+    if (timer !== null) clearTimeout(timer);
+    pendingEdits.add(flush);
+    timer = setTimeout(flush, 500);
   });
   return {
     dispose() {
-      if (timer) clearTimeout(timer);
-      timer = null;
+      // The editor unmounts on every switch into debug mode, which is one
+      // click after a keystroke: an edit still owed here is lost otherwise.
+      flush();
       listener.dispose();
     },
   };
@@ -45,8 +69,6 @@ export function initMonacoSync(
   monaco: Monaco,
   callbacks: MonacoSyncCallbacks,
 ): () => void {
-  monacoRef = monaco;
-
   const disposables: { dispose(): void }[] = [];
 
   // Create models for all files if none exist yet
@@ -102,29 +124,5 @@ export function initMonacoSync(
 
   return () => {
     for (const d of disposables) d.dispose();
-    if (monacoRef === monaco) monacoRef = null;
   };
-}
-
-/**
- * The current model contents keyed the way the emulator worker and the language
- * server want them: a flat file name with no leading slash.
- */
-export function getWorkerFiles(): Record<string, string> {
-  return Object.fromEntries(
-    Object.entries(getMonacoFiles()).map(([path, content]) => [
-      stripLeadingSlash(path),
-      content,
-    ]),
-  );
-}
-
-/** All current Monaco model contents, keyed by URI path (with leading slash). */
-function getMonacoFiles(): Record<string, string> {
-  if (!monacoRef) return {};
-  const files: Record<string, string> = {};
-  for (const model of monacoRef.editor.getModels()) {
-    files[model.uri.path] = model.getValue();
-  }
-  return files;
 }

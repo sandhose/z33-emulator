@@ -4,15 +4,13 @@ import { DebugLayout } from "./debug-layout";
 import { EditToolbar } from "./edit-toolbar";
 import { FileSidebar } from "./file-sidebar";
 import { useCompilation } from "./hooks/use-compilation";
-import { useMonacoInstance } from "./hooks/use-monaco";
 import { setRunCommandHandler } from "./lib/lsp-monaco";
-import { getWorkerFiles } from "./lib/monaco-sync";
+import { flushMonacoSync } from "./lib/monaco-sync";
 import { MultiFileEditor } from "./multi-file-editor";
 import { useAppStore } from "./stores/app-store";
 import { useFileStore } from "./stores/file-store";
 
 const App = () => {
-  const monacoInstance = useMonacoInstance();
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
 
   const activeFile = useFileStore((s) => s.activeFile);
@@ -21,16 +19,16 @@ const App = () => {
   const setEntrypoint = useFileStore((s) => s.setEntrypoint);
   const entrypoints = useFileStore((s) => s.entrypoints);
 
-  const { compilationResult, compilationStatus, recheck } = useCompilation(
-    activeFile,
-    monacoInstance,
-  );
+  const { compilationResult, compilationStatus, recheck } =
+    useCompilation(activeFile);
 
   const runFile = useCallback(
     (file: string, entrypoint: string) => {
       setEntrypoint(file, entrypoint);
-      // The freshest contents are Monaco's, not the store's.
-      void startDebug(getWorkerFiles(), file, entrypoint).catch(
+      // The store trails Monaco by the sync debounce, so it can be half a
+      // second behind the buffer: Run has to execute the bytes on screen.
+      flushMonacoSync();
+      void startDebug(useFileStore.getState().files, file, entrypoint).catch(
         (e: unknown) => {
           // The check said this program runs, so the status on screen is
           // stale: ask again, which also surfaces a worker that died starting.

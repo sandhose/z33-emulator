@@ -1,10 +1,7 @@
-import type { Monaco } from "@monaco-editor/react";
 import { useDebouncer } from "@tanstack/react-pacer";
-import type { editor as MonacoEditor } from "monaco-editor";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { checkProgram } from "../lib/computer-proxy";
 import type { CheckResult } from "../lib/emulator-protocol";
-import { getWorkerFiles, initMonacoSync } from "../lib/monaco-sync";
 import { useFileStore } from "../stores/file-store";
 
 /** `unavailable`: the worker never answered, so nothing was checked. */
@@ -34,15 +31,17 @@ function uiStatus(
  * Compiles the active file to drive the edit-mode toolbar: the entrypoint
  * selector (labels) and the Run button (success/error status).
  *
- * Diagnostics (squiggles, markers) are owned by the LSP, not this hook. The
- * actual runnable program is (re)built in the emulator worker on Run; here we
- * only surface whether it *can* be built and its labels.
+ * The program comes from the file store, which monaco-sync mirrors every editor
+ * edit into, so the first check goes out as the app mounts instead of waiting
+ * for the editor chunk. That puts the check a keystroke plus both debounces —
+ * monaco-sync's and the one below — behind the buffer, while the LSP's
+ * diagnostics follow Monaco's models directly, so squiggles can appear before
+ * the toolbar status catches up. Diagnostics (squiggles, markers) are owned by
+ * the LSP, not this hook. The actual runnable program is (re)built in the
+ * emulator worker on Run; here we only surface whether it *can* be built and
+ * its labels.
  */
-export function useCompilation(
-  activeFile: string,
-  // oxlint-disable-next-line typescript/no-redundant-type-constituents -- Monaco is not `any`, false positive
-  monacoInstance: Monaco | null,
-) {
+export function useCompilation(activeFile: string) {
   const [compilationResult, setCompilationResult] = useState<CompilationResult>(
     { type: "idle" },
   );
@@ -50,26 +49,11 @@ export function useCompilation(
   const workerFailed = useRef(false);
   const [checkInFlight, setCheckInFlight] = useState(false);
 
-  // Keep the Zustand file store and Monaco models in sync.
-  useEffect(() => {
-    if (!monacoInstance) return () => {};
-    return initMonacoSync(monacoInstance, {
-      onEdit: (name, content) => {
-        useFileStore.getState().onMonacoEdit(name, content);
-      },
-      getFiles: () => useFileStore.getState().files,
-      subscribe: (listener) =>
-        useFileStore.subscribe((state, prev) => {
-          listener(state.files, prev.files);
-        }),
-    });
-  }, [monacoInstance]);
-
   const performCompile = useCallback(() => {
-    if (!monacoInstance || workerFailed.current) return;
+    if (workerFailed.current) return;
     const generation = ++compileGeneration.current;
     setCheckInFlight(true);
-    void checkProgram(getWorkerFiles(), activeFile).then(
+    void checkProgram(useFileStore.getState().files, activeFile).then(
       (result) => {
         // A newer compile superseded this one while it was in flight; it owns
         // the in-flight flag from here on.
@@ -88,7 +72,7 @@ export function useCompilation(
         setCompilationResult({ type: "unavailable" });
       },
     );
-  }, [monacoInstance, activeFile]);
+  }, [activeFile]);
 
   const compileDebouncer = useDebouncer(
     performCompile,
@@ -101,39 +85,16 @@ export function useCompilation(
   // maybeExecute() itself does, so the effects would re-trigger themselves.
   const { maybeExecute, flush } = compileDebouncer;
 
-  // Attach Monaco content-change listeners and trigger the initial compile.
+  // Check once on mount, then whenever the file map changes: editor keystrokes
+  // reach the store through monaco-sync, and file creation, deletion and upload
+  // write to it directly. A write that hands back the same map — resetting an
+  // untouched workspace — is not a change and checks nothing.
   useEffect(() => {
-    if (!monacoInstance) return () => {};
-
     maybeExecute();
-
-    type Disposable = { dispose(): void };
-    const disposables: Disposable[] = [];
-
-    for (const model of monacoInstance.editor.getModels()) {
-      disposables.push(
-        model.onDidChangeContent(() => {
-          maybeExecute();
-        }),
-      );
-    }
-
-    disposables.push(
-      monacoInstance.editor.onDidCreateModel(
-        (model: MonacoEditor.ITextModel) => {
-          disposables.push(
-            model.onDidChangeContent(() => {
-              maybeExecute();
-            }),
-          );
-        },
-      ),
-    );
-
-    return () => {
-      for (const d of disposables) d.dispose();
-    };
-  }, [monacoInstance, maybeExecute]);
+    return useFileStore.subscribe((state, prev) => {
+      if (state.files !== prev.files) maybeExecute();
+    });
+  }, [maybeExecute]);
 
   // For callers that just learned the answer on screen is stale; skips the
   // debounce because the caller already waited for a round trip.

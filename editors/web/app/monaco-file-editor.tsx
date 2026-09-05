@@ -5,11 +5,13 @@ import { Editor } from "@monaco-editor/react";
 import type * as monaco from "monaco-editor";
 import { useEffect, useRef } from "react";
 import { toMonacoPath } from "./lib/file-paths";
-import "./monaco";
+import { initMonacoSync } from "./lib/monaco-sync";
+import { monacoApi } from "./monaco";
 import {
   type ResolvedBreakpoint,
   useBreakpointStore,
 } from "./stores/breakpoint-store";
+import { useFileStore } from "./stores/file-store";
 import { useThemeStore } from "./stores/theme-store";
 
 export type EditorProps = {
@@ -84,6 +86,25 @@ const MonacoFileEditor: React.FC<EditorProps> = ({
   useEffect(() => {
     filePathRef.current = filePath;
   }, [filePath]);
+
+  // Mirror the file store into Monaco's models and every edit back out. This
+  // lives with the editor because the models are what it needs: the compile
+  // check reads the store, and the language server takes its workspace map
+  // from the store and each document's content from Monaco's didChange.
+  useEffect(
+    () =>
+      initMonacoSync(monacoApi, {
+        onEdit: (name, content) => {
+          useFileStore.getState().onMonacoEdit(name, content);
+        },
+        getFiles: () => useFileStore.getState().files,
+        subscribe: (listener) =>
+          useFileStore.subscribe((state, prev) => {
+            listener(state.files, prev.files);
+          }),
+      }),
+    [],
+  );
 
   const lines = breakpoints[filePath];
   const resolvedForFile = resolved[filePath];

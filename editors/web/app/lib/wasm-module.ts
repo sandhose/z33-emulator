@@ -3,9 +3,10 @@
 // so it crosses `postMessage`), instead of each downloading and compiling the
 // binary on its own.
 //
-// Nothing calls this while the page is loading: the first caller is whichever
-// worker client is constructed once Monaco is up, so the 1.8 MB binary and the
-// 3.2 MB editor chunk never share a slow link.
+// The first caller is the compile check the app runs as it mounts, so this
+// fetch and the editor chunk are in flight together: on a slow link the editor
+// arrives later than it would alone, and the program becomes runnable at about
+// the moment it becomes editable, instead of a wasm round trip after it.
 import wasmUrl from "../../pkg/z33_web_bg.wasm?url";
 
 let compiled: Promise<WebAssembly.Module> | null = null;

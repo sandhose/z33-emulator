@@ -1,19 +1,22 @@
 import { expect, test } from "./fixtures";
 
 test.describe("Startup", () => {
-  test("shows the toolbar and a pending check before Monaco arrives", async ({
+  test("checks the program while the editor chunk is held back", async ({
     page,
   }) => {
-    // Hold back the two modules that carry Monaco, so the assertions below see
-    // the shell without the editor instead of racing the (fast, local) load.
-    // The delay only starts once the app asks for Monaco, which is after React
-    // has committed the toolbar, so the whole two seconds are assertion budget.
+    // The two modules that carry Monaco wait on a gate this test opens, so the
+    // assertions below are about ordering rather than about winning a race
+    // against a local server.
+    let releaseMonaco = (): void => {
+      throw new Error("the Monaco gate was released before it was created");
+    };
+    const monacoGate = new Promise<void>((resolve) => {
+      releaseMonaco = resolve;
+    });
     await page.route(
       (url) => /\/app\/monaco(-file-editor)?\.tsx?/u.test(url.pathname),
       async (route) => {
-        await new Promise((resolve) => {
-          setTimeout(resolve, 2000);
-        });
+        await monacoGate;
         await route.continue();
       },
     );
@@ -22,15 +25,18 @@ test.describe("Startup", () => {
 
     await expect(page.getByRole("toolbar", { name: "Edit" })).toBeVisible();
     await expect(page.locator(".monaco-editor")).toHaveCount(0);
-    await expect(page.getByRole("status", { name: "Compiling" })).toBeVisible();
     await expect(page.getByText("Loading the editor…")).toBeVisible();
 
-    await expect(page.locator(".monaco-editor")).toBeVisible({
-      timeout: 30_000,
-    });
+    // The check reads the file store, so it answers with the editor chunk
+    // still on the wire.
     await expect(
       page.getByRole("status", { name: "Compilation succeeded" }),
     ).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByRole("status", { name: "Compiling" })).toBeHidden();
+    await expect(page.locator(".monaco-editor")).toHaveCount(0);
+
+    releaseMonaco();
+    await expect(page.locator(".monaco-editor")).toBeVisible({
+      timeout: 30_000,
+    });
   });
 });
