@@ -6,6 +6,9 @@ settings:
 
 catalogs:
   default:
+    '@playwright/test':
+      specifier: ^1.62.1
+      version: 1.62.1
     '@storybook/addon-vitest':
       specifier: ^10.6.0
       version: 10.6.0
@@ -38,6 +41,9 @@ importers:
 
   .:
     devDependencies:
+      '@playwright/test':
+        specifier: 'catalog:'
+        version: 1.62.1
       '@storybook/addon-vitest':
         specifier: 'catalog:'
         version: 10.6.0(@vitest/browser-playwright@4.1.11)(@vitest/browser@4.1.11(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))(vitest@4.1.11))(@vitest/runner@4.1.11)(react@19.2.8)(storybook@10.6.0(@types/react@19.2.18)(react@19.2.8))(vitest@4.1.11)
@@ -97,7 +103,7 @@ importers:
         version: 10.1.1
     devDependencies:
       '@playwright/test':
-        specifier: ^1.62.1
+        specifier: 'catalog:'
         version: 1.62.1
       '@types/vscode':
         specifier: ~1.100.0
@@ -194,7 +200,7 @@ importers:
         version: 5.0.15(@types/react@19.2.18)(react@19.2.8)(use-sync-external-store@1.6.0(react@19.2.8))
     devDependencies:
       '@playwright/test':
-        specifier: ^1.62.1
+        specifier: 'catalog:'
         version: 1.62.1
       '@storybook/addon-a11y':
         specifier: ^10.6.0
@@ -247,9 +253,6 @@ importers:
       oxlint-tsgolint:
         specifier: ^7.0.2001
         version: 7.0.2001
-      playwright:
-        specifier: ^1.62.1
-        version: 1.62.1
       shadcn:
         specifier: ^4.20.0
         version: 4.20.0(supports-color@7.2.0)(typescript@7.0.2)

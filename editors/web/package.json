@@ -15,14 +15,11 @@
     "fmt:check": "oxfmt --check app/ e2e/ scripts/",
     "knip": "knip",
     "check:chunks": "node scripts/check-chunks.mjs",
-    "e2e": "playwright test",
-    "e2e:ui": "playwright test --ui",
-    "e2e:headed": "playwright test --headed",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build"
   },
   "devDependencies": {
-    "@playwright/test": "^1.62.1",
+    "@playwright/test": "catalog:",
     "@storybook/addon-a11y": "^10.6.0",
     "@storybook/addon-themes": "^10.6.0",
     "@storybook/addon-vitest": "catalog:",
@@ -40,7 +37,6 @@
     "oxfmt": "catalog:",
     "oxlint": "catalog:",
     "oxlint-tsgolint": "^7.0.2001",
-    "playwright": "^1.62.1",
     "shadcn": "^4.20.0",
     "storybook": "catalog:",
     "tailwindcss": "^4.3.3",
