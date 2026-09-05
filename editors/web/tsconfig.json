@@ -9,7 +9,7 @@
       "@/*": ["./app/*"]
     }
   },
-  "include": ["app", "e2e"],
+  "include": ["app", "e2e", ".storybook/preview.tsx"],
   "references": [
     {
       "path": "./tsconfig.node.json"

@@ -83,6 +83,8 @@ jobs:
       - name: Run cargo deny
         uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
 
+  # `pnpm -r run check` also type-checks: the web and vscode packages both run
+  # tsc from it. The job name is a required status check, so it stays as is.
   lint:
     name: "oxlint + oxfmt check"
     runs-on: ubuntu-24.04
@@ -265,8 +267,8 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
-  storybook:
-    name: "Storybook tests"
+  vitest:
+    name: "Vitest tests"
     runs-on: ubuntu-24.04
     defaults:
       run:
@@ -286,17 +288,19 @@ jobs:
       - name: Setup Rust build cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
-      # The story graph reaches lib/wasm-module.ts, which imports the binary for
-      # its URL only, so vite has to resolve the file; no story instantiates it
-      # and the dev build is enough.
+      # Only the storybook project needs this: its story graph reaches
+      # lib/wasm-module.ts, whose `?url` import vite has to resolve to a real
+      # file. No story instantiates the binary, so the dev build is enough. The
+      # unit project mocks that module and runs without it.
       - name: Build the wasm bindings
         run: pnpm run build:wasm:dev
 
+      # Only the storybook project needs a browser; the unit project runs in node.
       - name: Install Playwright browsers
         run: npx playwright install chromium --with-deps
 
-      - name: Run Storybook tests
-        run: pnpm run test-storybook
+      - name: Run the unit and Storybook tests
+        run: pnpm run test
 
   tree-sitter:
     name: Tree-sitter grammar
