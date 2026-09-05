@@ -122,6 +122,7 @@ the same variables.
 | `z33_no_indent` | Disable the indent script (Vim / regex path). |
 | `z33_no_lsp` | Disable the vim-lsp registration (classic Vim only). |
 | `z33_no_treesitter_start` | Neovim: don't auto-start tree-sitter highlighting (stay on the regex fallback). |
+| `z33_no_codelens` | Neovim: don't show the LSP code lenses (label address / reference count, and the run lens). |
 | `z33_auto_download` | Neovim: `z33-cli` download consent — unset = prompt once, `true` = download silently, `false` = never download (PATH/cache only). |
 
 ### lazy.nvim `opts`
@@ -153,10 +154,11 @@ The server (`z33-cli lsp`) provides diagnostics, completion, hover,
 go-to-definition, references, rename, document symbols and code lens.
 
 - **Neovim 0.11+** — enabled automatically for `z33` buffers via the native
-  `vim.lsp.enable` mechanism (config in `lsp/z33.lua`). Nothing to wire. The
-  server offers an informational `▶ Run <label>` code lens; this plugin does not
-  advertise the `experimental.commands` capability, so use nvim-dap (below) to
-  actually run/debug.
+  `vim.lsp.enable` mechanism (config in `lsp/z33.lua`). Nothing to wire. Code
+  lenses show each label's address and reference count, plus a `▶ Run <label>`
+  lens on executable labels: `:lua vim.lsp.codelens.run()` on that line starts a
+  debug session stopped on the label with nvim-dap (below), or runs the program
+  in a terminal split when nvim-dap is not installed.
 - **Classic Vim** — zero-config [vim-lsp](https://github.com/prabirshrestha/vim-lsp)
   registration, active only when both vim-lsp and the `z33-cli` binary are
   present. Opt out with `g:z33_no_lsp = 1`.
@@ -222,10 +224,11 @@ Standard nvim-dap keymaps work as usual.
 ## Health check (Neovim)
 
 Run **`:checkhealth z33`** to verify your setup: Neovim version, whether
-`z33-cli` is on `PATH`/cached, platform download support, nvim-treesitter (+ the
-`z33` parser) and nvim-dap availability, and which highlighting mode
-(tree-sitter vs. regex fallback) is in effect. If highlighting looks basic when
-you wanted tree-sitter, run `:TSInstall z33`.
+`z33-cli` is on `PATH`/cached and what it prints when actually run
+(`z33-cli --version`), platform download support, nvim-treesitter (+ the `z33`
+parser) and nvim-dap availability, and which highlighting mode (tree-sitter vs.
+regex fallback) is in effect. If highlighting looks basic when you wanted
+tree-sitter, run `:TSInstall z33`.
 
 ## Troubleshooting
 
@@ -238,10 +241,25 @@ silently no-ops once a filetype has been set during detection, so depending on
 load order they can win over this plugin.
 
 To reclaim only genuine Z33 files without stealing real GNU-asm ones, the plugin
-scans each `.s`/`.S` buffer for Z33-specific markers (registers, the `.addr`
-directive, the preprocessor) that effectively never appear in GNU asm, acting
-only when no confident filetype is already set — so a GNU-asm `.s` keeps its
-filetype (the exact signal list and its rationale live in one place, the header
-comment of `ftdetect/z33.vim`). If you'd rather stop polyglot from claiming
-`.s`/`.S` at the source, set `let g:polyglot_disabled = ['r-lang']` before it
-loads.
+scans the first 64 lines of each `.s`/`.S` buffer, acting only when no confident
+filetype is already set — so a GNU-asm `.s` keeps its filetype. It claims the
+buffer on a Z33 marker: the `%pc`/`%sr`/`%a`/`%b` registers, `.addr`, a mnemonic
+that is rare in GNU asm such as `reset`/`rti`/`fas`, or a preprocessor directive
+spelled the way Z33's parser wants it — `#` in column 0, lower case — among
+`#undefine`, `#include "…"` and the keywords Z33 shares with C.
+
+A foreign marker anywhere in that window vetoes detection outright:
+
+- GNU cpp spellings Z33 has no equivalent for: `#ifdef`, `#ifndef`, `#undef`,
+  `#pragma`, `#include <…>`.
+- GNU `as` directives: `.globl`, `.global`, `.section`, `.type`, `.size`,
+  `.text`, `.data`, `.macro`, `.endm`.
+- Plan 9 / Go assembly: `TEXT`, `DATA`, `GLOBL`, `FUNCDATA` or `PCDATA` opening
+  a line, or `(SB)` anywhere.
+
+So preprocessed GNU `.S` files, m68k sources (which spell `reset`/`rti`/`swap`
+the way Z33 does) and Go's assembly are all left alone. The exact lists are in
+the two heuristic copies (`ftdetect/z33.vim` for Vim, `lua/z33/ftdetect.lua` for
+Neovim); CI runs both over the same corpus, `tests/fixtures/`. If you'd rather
+stop polyglot from claiming `.s`/`.S` at the source, set
+`let g:polyglot_disabled = ['r-lang']` before it loads.

@@ -33,5 +33,9 @@ func! Z33Indent() abort
   if getline(v:lnum) =~# '^\s*\h\w*\s*:'
     return 0
   endif
+  " The body of a label is indented one level below it.
+  if getline(l:prev) =~# '^\s*\h\w*\s*:\s*\(//.*\)\=$'
+    return shiftwidth()
+  endif
   return indent(l:prev)
 endfunc

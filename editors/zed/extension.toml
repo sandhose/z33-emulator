@@ -15,8 +15,8 @@ languages = ["Zorglub33 Assembly"]
 
 # The tree-sitter grammar lives in this same repository under `tree-sitter-z33/`.
 # Zed fetches the grammar from the repository at `rev` and compiles the
-# `parser.c` found at `path`. `rev` is refreshed by scripts/set-version.sh on
-# each release.
+# `parser.c` found at `path`. The release workflow points `rev` at the commit
+# that bumps the version, through scripts/set-grammar-rev.sh.
 [grammars.z33]
 repository = "https://github.com/sandhose/z33-emulator"
 rev = "53c8d1ccd133c0bdb80d150504a7cec8227670cf"

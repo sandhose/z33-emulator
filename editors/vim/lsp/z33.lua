@@ -22,6 +22,10 @@ return {
     return vim.lsp.rpc.start({ path, "lsp" }, dispatchers)
   end,
   filetypes = { "z33" },
+  capabilities = require("z33.lens").capabilities(),
+  on_attach = function(_client, bufnr)
+    require("z33.lens").attach(bufnr)
+  end,
   -- Prefer a `.git` root; with no marker, nvim core attaches to the buffer's
   -- own directory (single-file mode), so a lone scratch file still works.
   root_markers = { ".git" },

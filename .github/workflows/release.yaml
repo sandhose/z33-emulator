@@ -4,15 +4,17 @@ name: Release
 # required, signed commits, required status checks):
 #
 #  1. `cut` (manual): bumps every manifest via scripts/set-version.sh, pushes
-#     a `release/vX.Y.Z` branch with a GitHub-signed commit (created through
-#     the GraphQL API, so it satisfies the signature requirement), opens a
-#     pull request, and dispatches the CI workflows on the branch — PRs
+#     a `release/vX.Y.Z` branch with two GitHub-signed commits (created
+#     through the GraphQL API, so they satisfy the signature requirement) —
+#     the bumps, then the Zed grammar rev pinned to that bump commit — opens
+#     a pull request, and dispatches the CI workflows on the branch: PRs
 #     opened by GITHUB_TOKEN don't trigger `pull_request` events, so the
 #     required checks have to be started explicitly.
 #
-#  2. `tag` (automatic): when the release PR merges, tags the merge commit
-#     and dispatches the Compile workflow on the tag, which builds all the
-#     artifacts and publishes the GitHub release.
+#  2. `tag` (automatic): when the release PR merges, checks the pinned Zed
+#     grammar rev, tags the merge commit and dispatches the Compile workflow
+#     on the tag, which builds all the artifacts and publishes the GitHub
+#     release.
 
 on:
   # Always dispatch `cut` on main: the release branch is created from the ref
@@ -81,49 +83,64 @@ jobs:
               -f sha="$GITHUB_SHA" -F force=true
           fi
 
-      - name: Commit the bumps on the release branch
+      - name: Commit the bumps and the grammar rev on the release branch
         # createCommitOnBranch produces a commit signed by GitHub, which the
         # required-signatures rule on main accepts once the PR merges.
         # File contents go through temp files (--rawfile / --slurpfile), not
         # command-line arguments: the base64 of the generated parser alone is
         # close to the kernel's 128 KiB per-argument limit.
+        #
+        # The grammar rev is pinned in a second commit; see
+        # scripts/set-grammar-rev.sh.
         run: |
-          ADDITIONS="$(mktemp)"
-          CONTENTS="$(mktemp)"
-          PAYLOAD="$(mktemp)"
-          echo '[]' >"$ADDITIONS"
-          for file in \
+          commit_on_branch() {
+            local expected_oid="$1" headline="$2"
+            shift 2
+            local additions contents payload file
+            additions="$(mktemp)"
+            contents="$(mktemp)"
+            payload="$(mktemp)"
+            echo '[]' >"$additions"
+            for file in "$@"; do
+              base64 -w0 "$file" >"$contents"
+              jq \
+                --arg path "$file" \
+                --rawfile contents "$contents" \
+                '. + [{path: $path, contents: $contents}]' \
+                "$additions" >"$additions.next"
+              mv "$additions.next" "$additions"
+            done
+            jq -n \
+              --arg repo "$GITHUB_REPOSITORY" \
+              --arg branch "release/v$VERSION" \
+              --arg headline "$headline" \
+              --arg oid "$expected_oid" \
+              --slurpfile additions "$additions" \
+              '{
+                query: "mutation ($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { commit { oid } } }",
+                variables: {input: {
+                  branch: {repositoryNameWithOwner: $repo, branchName: $branch},
+                  message: {headline: $headline},
+                  expectedHeadOid: $oid,
+                  fileChanges: {additions: $additions[0]}
+                }}
+              }' >"$payload"
+            gh api graphql --input "$payload" \
+              --jq .data.createCommitOnBranch.commit.oid
+          }
+
+          BUMP_OID="$(commit_on_branch "$GITHUB_SHA" "Release v$VERSION" \
             Cargo.toml \
             Cargo.lock \
             editors/vscode/package.json \
             editors/zed/extension.toml \
             tree-sitter-z33/package.json \
             tree-sitter-z33/tree-sitter.json \
-            tree-sitter-z33/src/parser.c; do
-            base64 -w0 "$file" >"$CONTENTS"
-            jq \
-              --arg path "$file" \
-              --rawfile contents "$CONTENTS" \
-              '. + [{path: $path, contents: $contents}]' \
-              "$ADDITIONS" >"$ADDITIONS.next"
-            mv "$ADDITIONS.next" "$ADDITIONS"
-          done
-          jq -n \
-            --arg repo "$GITHUB_REPOSITORY" \
-            --arg branch "release/v$VERSION" \
-            --arg headline "Release v$VERSION" \
-            --arg oid "$GITHUB_SHA" \
-            --slurpfile additions "$ADDITIONS" \
-            '{
-              query: "mutation ($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { commit { oid } } }",
-              variables: {input: {
-                branch: {repositoryNameWithOwner: $repo, branchName: $branch},
-                message: {headline: $headline},
-                expectedHeadOid: $oid,
-                fileChanges: {additions: $additions[0]}
-              }}
-            }' >"$PAYLOAD"
-          gh api graphql --input "$PAYLOAD"
+            tree-sitter-z33/src/parser.c)"
+
+          scripts/set-grammar-rev.sh "$BUMP_OID"
+          commit_on_branch "$BUMP_OID" "Pin the Zed grammar to the release commit" \
+            editors/zed/extension.toml
 
       - name: Open the release pull request
         run: |
@@ -160,6 +177,40 @@ jobs:
       MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
 
     steps:
+      - name: Check the pinned Zed grammar rev
+        # The published Zed extension compiles the grammar from that commit, so
+        # a merged release must not pin a rev whose tree-sitter-z33/ differs
+        # from the one it ships.
+        run: |
+          set -o pipefail
+          grammar_tree() {
+            gh api "repos/$GH_REPO/git/trees/$1" \
+              --jq '.tree[] | select(.path == "tree-sitter-z33") | .sha'
+          }
+          REV="$(gh api "repos/$GH_REPO/contents/editors/zed/extension.toml?ref=$MERGE_SHA" \
+            -H "Accept: application/vnd.github.raw" |
+            sed -n 's/^rev = "\(.*\)"$/\1/p')"
+          if [ -z "$REV" ]; then
+            echo "::error::no grammar rev found in editors/zed/extension.toml"
+            exit 1
+          fi
+          # A command substitution inside `[ ... ]` does not abort under
+          # `set -e`, so each tree is read and checked before the comparison.
+          PINNED_TREE="$(grammar_tree "$REV" || true)"
+          MERGED_TREE="$(grammar_tree "$MERGE_SHA" || true)"
+          if [ -z "$PINNED_TREE" ]; then
+            echo "::error::could not read tree-sitter-z33/ at the pinned grammar rev $REV"
+            exit 1
+          fi
+          if [ -z "$MERGED_TREE" ]; then
+            echo "::error::could not read tree-sitter-z33/ at the merge commit $MERGE_SHA"
+            exit 1
+          fi
+          if [ "$PINNED_TREE" != "$MERGED_TREE" ]; then
+            echo "::error::the pinned Zed grammar rev $REV does not carry the grammar being released ($MERGE_SHA); the release pull request is already merged, so recover by cutting a new release"
+            exit 1
+          fi
+
       - name: Create the tag
         # Tolerates a tag left behind by a previously failed run (as long as
         # it points at the same commit), so the job can simply be re-run.

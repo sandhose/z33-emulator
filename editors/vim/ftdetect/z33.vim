@@ -25,19 +25,53 @@ if get(g:, 'z33_no_ftdetect', 0)
   finish
 endif
 
-" We use `setlocal filetype=z33` rather than `:setf z33` on purpose: our
-" autocommand runs *after* the builtin `.s`/`.S` detection has already set
-" `asm`, and `:setf` is defined to do nothing once a filetype has been set in
-" the current autocommand sequence — it could never override `asm`. A plain
-" `setlocal filetype=` forces it. (A trailing `// vim: ft=…` modeline still
-" wins, since modelines are applied after ftdetect.)
+" Content heuristic, kept in lockstep with the Lua copy in
+" lua/z33/ftdetect.lua (same window, same signal lists). Two of the four
+" patterns are matched case-sensitively (=~#) below.
+"
+" Anti-signals: GNU spellings Z33 does not have. Z33 has `#if` and `#undefine`
+" but no `#ifdef`/`#ifndef`/`#undef`/`#pragma`, its `#include` takes a quoted
+" string only, and its four directives are `.addr`/`.space`/`.string`/`.word`.
+let s:anti =
+      \   '^\s*#\s*\%(ifdef\|ifndef\|undef\|pragma\)\>'
+      \ . '\|^\s*#\s*include\s*<'
+      \ . '\|^\s*\.\%(globl\|global\|section\|type\|size\|text\|data\|macro\|endm\)\>'
+
+" Plan 9 / Go assembly, which spells these in upper case. Go's `.s` files are
+" otherwise mistaken for Z33: `#include "textflag.h"` is a positive below and
+" JEQ/JLT/JGT are Plan 9 mnemonics too. `(SB)` is the dialect's static-base
+" pseudo-register, on every symbol reference.
+let s:plan9 = '^\%(TEXT\|DATA\|GLOBL\|FUNCDATA\|PCDATA\)\%([ \t]\|·\)\|(SB)'
+
+" Positives, part one: the preprocessor. `#` in column 0 and a lower-case
+" keyword is the only spelling parser/preprocessor.rs accepts. These keywords
+" are shared with C, hence only trusted because an anti-signal anywhere in the
+" window vetoes the file.
+let s:preproc =
+      \   '^#\s*\%(undefine\|define\|if\|elif\|endif\|error\)\>'
+      \ . '\|^#\s*include\s*"'
+
+" Positives, part two: directives, registers and mnemonics, all
+" case-insensitive to the parser. The %pc/%sr/%a/%b registers (GNU asm uses
+" %eax, %rdi, … never %pc; %sp is excluded, it is a real x86 AT&T register,
+" and the word boundary keeps %a off m68k's %a0-%a7), the .addr directive, and
+" mnemonics rare in GNU asm — push/pop/call/jmp/add/… are excluded, and of the
+" conditional jumps only the jeq/jlt/jgt spellings (x86 has jle/jge/jne).
+" m68k does spell reset/rti/swap/trap this way, but a real m68k file also
+" carries a .text/.globl/.section veto.
+let s:positive =
+      \   '^\s*\.addr\>'
+      \ . '\|%\%(pc\|sr\|a\|b\)\>'
+      \ . '\|^\s*\%(\w\+\s*:\s*\)\=\%(fas\|rti\|rtn\|swap\|reset\|trap\|jeq\|jlt\|jgt\)\>'
+
+" `setlocal filetype=z33` rather than `:setf z33`: this autocommand runs after
+" the builtin `.s`/`.S` detection has set `asm`, and `:setf` does nothing once
+" a filetype has been set in the current autocommand sequence. (A trailing
+" `// vim: ft=…` modeline still wins — modelines are applied after ftdetect.)
 func! s:DetectZ33() abort
   " Never clobber a filetype another (more confident) detector already set;
   " only act on a fresh buffer, one the builtin fell back to `asm`, or one
-  " vim-polyglot's r-lang detector claimed as `r` (see header comment above
-  " — that's the S-PLUS `.s` collision, not a hypothetical). The content
-  " heuristic below only fires on unmistakably-Z33 markers, so it's safe to
-  " override an `r` guess the same way we override `asm`.
+  " vim-polyglot's r-lang detector claimed as `r` (see header comment).
   if &filetype !=# '' && &filetype !=# 'asm' && &filetype !=# 'r'
     return
   endif
@@ -48,27 +82,19 @@ func! s:DetectZ33() abort
     return
   endif
 
-  " Content heuristic. Scan the head of the buffer for signals that are
-  " specific to Z33 and effectively never appear in GNU/other asm:
-  "   - the %pc/%sr/%a/%b registers (GNU asm uses %eax, %rdi, … never %pc;
-  "     %sp was dropped — it's a real x86 AT&T register, so it caused false
-  "     positives on GNU asm. Bare %a/%b are safe: GNU asm has no such
-  "     registers, and the `\>` word-boundary keeps them from matching inside
-  "     %ax/%bp/etc.);
-  "   - the Z33 .addr directive (.word/.space/.string were dropped — they're
-  "     standard GNU `as` directives too, not Z33-specific);
-  "   - the Z33 preprocessor (#include/#define/#undefine/#if/#elif/#endif/#error
-  "     — note `#undefine`, not the C-style `#undef`, and `#` may be spaced).
-  " A bare `//` comment is deliberately NOT a signal (GNU asm allows it too).
-  let l:lines = getline(1, 64)
-  for l:line in l:lines
-    if l:line =~? '^\s*#\s*\%(include\|define\|undefine\|if\|elif\|endif\|error\)\>'
-          \ || l:line =~? '^\s*\.addr\>'
-          \ || l:line =~? '%\%(pc\|sr\|a\|b\)\>'
-      setlocal filetype=z33
+  let l:found = 0
+  for l:line in getline(1, 64)
+    if l:line =~? s:anti || l:line =~# s:plan9
       return
     endif
+    if l:line =~# s:preproc || l:line =~? s:positive
+      let l:found = 1
+    endif
   endfor
+
+  if l:found
+    setlocal filetype=z33
+  endif
 endfunc
 
 augroup z33_ftdetect

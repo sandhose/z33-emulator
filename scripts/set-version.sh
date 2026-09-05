@@ -2,8 +2,9 @@
 # Sets the project version across every shipped manifest:
 #   - Cargo.toml [workspace.package] (inherited by all crates) + Cargo.lock
 #   - editors/vscode/package.json (the VS Code extension)
-#   - editors/zed/extension.toml (the Zed extension), whose pinned tree-sitter
-#     grammar `rev` is also refreshed to the current HEAD
+#   - editors/zed/extension.toml (the Zed extension); its pinned tree-sitter
+#     grammar `rev` is set separately by scripts/set-grammar-rev.sh, which the
+#     release workflow runs once the commit holding the released grammar exists
 #   - tree-sitter-z33/package.json and tree-sitter.json (the grammar),
 #     plus the committed generated parser, which embeds that version
 #
@@ -23,16 +24,13 @@ fi
 
 cd "$(dirname "$0")/.."
 
-GRAMMAR_REV="$(git rev-parse HEAD)"
-export VERSION GRAMMAR_REV
+export VERSION
 
 # The first `version = "…"` line is the [workspace.package] one.
 perl -0777 -pi -e 's/^version = "[^"]+"/version = "$ENV{VERSION}"/m' Cargo.toml
 
-perl -0777 -pi -e '
-  s/^version = "[^"]+"/version = "$ENV{VERSION}"/m;
-  s/^rev = "[0-9a-f]+"/rev = "$ENV{GRAMMAR_REV}"/m;
-' editors/zed/extension.toml
+perl -0777 -pi -e 's/^version = "[^"]+"/version = "$ENV{VERSION}"/m' \
+  editors/zed/extension.toml
 
 (cd editors/vscode && npm pkg set version="$VERSION")
 (cd tree-sitter-z33 && npm pkg set version="$VERSION")
@@ -48,4 +46,4 @@ pnpm --filter tree-sitter-z33 run generate
 
 cargo update --workspace --quiet
 
-echo "Set version $VERSION (grammar rev $GRAMMAR_REV)"
+echo "Set version $VERSION"

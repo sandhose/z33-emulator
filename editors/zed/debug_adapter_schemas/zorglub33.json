@@ -10,6 +10,16 @@
         "Debug main.s"
       ]
     },
+    "adapter": {
+      "type": "string",
+      "const": "zorglub33",
+      "description": "Debug adapter this configuration runs with."
+    },
+    "request": {
+      "type": "string",
+      "const": "launch",
+      "description": "The adapter launches a program; it cannot attach to a running one."
+    },
     "program": {
       "type": "string",
       "description": "Path to the Zorglub33 assembly file to debug",
@@ -34,6 +44,5 @@
   },
   "required": [
     "program"
-  ],
-  "additionalProperties": false
+  ]
 }
