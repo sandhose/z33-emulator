@@ -273,6 +273,9 @@ function stopSession(): void {
   outputBuffer = [];
   computer?.free();
   computer = null;
+  // Every read of `computer.source_index` mints a wrapper around a copy of the
+  // line index, so the one this session took has to go back too.
+  sourceIndex?.free();
   sourceIndex = null;
 }
 
@@ -308,12 +311,14 @@ function start(
   entrypoint: string,
 ): { labels: [string, number][]; touchedFiles: string[] } {
   stopSession();
-  const preprocessor = new InMemoryPreprocessor(
+  // The Computer and its source index carry their own copies, so these three
+  // are spent the moment it exists.
+  using preprocessor = new InMemoryPreprocessor(
     new Map(Object.entries(files)),
     rootFile,
   );
-  const result = preprocessor.compile();
-  const program = result.program;
+  using result = preprocessor.compile();
+  using program = result.program;
   if (!program) {
     throw new Error(result.report ?? "Failed to preprocess program");
   }
