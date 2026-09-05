@@ -100,6 +100,11 @@ jobs:
           runtime: node@24
           require-lockfile: true
 
+      # Ahead of the Rust cache and the wasm build: these need neither, and a
+      # failure here should not wait on them.
+      - name: Run the shared package unit tests
+        run: pnpm --filter z33-editor-shared run test
+
       - name: Setup Rust build cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 

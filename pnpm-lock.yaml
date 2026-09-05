@@ -26,6 +26,24 @@ importers:
 
   .: {}
 
+  editors/shared:
+    devDependencies:
+      oxfmt:
+        specifier: 'catalog:'
+        version: 0.66.0
+      oxlint:
+        specifier: 'catalog:'
+        version: 1.81.0(oxlint-tsgolint@7.0.2001)
+      typescript:
+        specifier: 'catalog:'
+        version: 7.0.2
+      vitest:
+        specifier: ^4.1.11
+        version: 4.1.11(@types/node@26.4.1)(@vitest/browser-playwright@4.1.11)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))
+      wasm-pack:
+        specifier: 'catalog:'
+        version: 0.15.0
+
   editors/vscode:
     dependencies:
       vscode-languageclient:

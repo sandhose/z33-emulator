@@ -1,0 +1,28 @@
+{
+  "name": "z33-editor-shared",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./serial-input": "./src/serial-input.ts",
+    "./wasm": {
+      "types": "./pkg/z33_web.d.ts",
+      "default": "./pkg/z33_web.js"
+    },
+    "./wasm-binary": "./pkg/z33_web_bg.wasm"
+  },
+  "scripts": {
+    "build:wasm": "wasm-pack build ../../crates/wasm --target web --out-dir ../../editors/shared/pkg --out-name z33_web",
+    "build:wasm:dev": "wasm-pack build ../../crates/wasm --dev --target web --out-dir ../../editors/shared/pkg --out-name z33_web",
+    "check": "tsc --noEmit && pnpm run lint && oxfmt --check src/",
+    "lint": "oxlint src/",
+    "fmt": "oxfmt src/",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "oxfmt": "catalog:",
+    "oxlint": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "^4.1.11",
+    "wasm-pack": "catalog:"
+  }
+}
