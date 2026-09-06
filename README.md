@@ -125,6 +125,37 @@ unambiguous prefix (`st` for `step`, `c` for `continue`); `s` is an alias of
 `step` because `set` and `step` share that prefix, while `i` stays ambiguous
 between `info`, `input` and `interrupt`.
 
+## Development
+
+The JavaScript side of the repository is one pnpm workspace. `pnpm install`
+once at the root, then:
+
+| Command | What it does |
+| --- | --- |
+| `pnpm run check` | Type-check, lint and format-check every package and the root configs |
+| `pnpm test` | Every Vitest project |
+| `pnpm run e2e` | Every Playwright project |
+
+In a fresh checkout, build the wasm bindings once first: `check` type-checks
+against them and the Storybook project loads them, so run
+`pnpm --filter z33-editor-shared run build:wasm:dev` before either command.
+
+Both test commands take `--project=` to narrow to one:
+
+- Vitest: `web-unit` (the web app's pure logic, in node), `web-storybook` (its
+  stories, in chromium), `shared-unit` (`editors/shared`, in node).
+- Playwright: `web-chromium`, `web-webkit` (the startup spec only),
+  `vscode-bare`, `vscode-launch`, `vscode-untitled`.
+
+`pnpm run e2e` starts the web dev server and the three VS Code hosts whichever
+project is selected. Set `PW_PORT` to move the dev server off 5173 and
+`PW_VSCODE_PORT` to move the VS Code hosts off 3111, 3112 and 3113. The first
+run downloads the pinned VS Code web build, about 55 MB.
+
+The Vitest and Playwright projects live in `vitest.config.ts` and
+`playwright.config.ts` at the root; the packages under `editors/` keep the
+commands that build and serve them.
+
 ## Releasing
 
 Releases are cut from the GitHub Actions UI:

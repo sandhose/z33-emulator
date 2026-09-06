@@ -83,8 +83,9 @@ jobs:
       - name: Run cargo deny
         uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
 
-  # `pnpm -r run check` also type-checks: the web and vscode packages both run
-  # tsc from it. The job name is a required status check, so it stays as is.
+  # `pnpm run check` also type-checks: the web and vscode packages both run tsc
+  # from it, and the root configs get a pass of their own. The job name is a
+  # required status check, so it stays as is.
   lint:
     name: "oxlint + oxfmt check"
     runs-on: ubuntu-24.04
@@ -100,11 +101,6 @@ jobs:
           runtime: node@24
           require-lockfile: true
 
-      # Ahead of the Rust cache and the wasm build: these need neither, and a
-      # failure here should not wait on them.
-      - name: Run the shared package unit tests
-        run: pnpm --filter z33-editor-shared run test
-
       - name: Setup Rust build cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
@@ -112,7 +108,7 @@ jobs:
         run: pnpm --filter z33-editor-shared run build:wasm
 
       - name: Run lint and format check
-        run: pnpm -r run check
+        run: pnpm run check
 
       - name: Check for unused exports
         run: pnpm -r --filter './editors/web' knip
@@ -128,9 +124,6 @@ jobs:
   e2e:
     name: "Playwright E2E tests"
     runs-on: ubuntu-24.04
-    defaults:
-      run:
-        working-directory: editors/web
     steps:
       - name: Checkout sources
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -146,42 +139,10 @@ jobs:
       - name: Setup Rust build cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
-      - name: Install Playwright browsers
-        run: npx playwright install chromium webkit --with-deps
-
-      - name: Run Playwright tests
-        run: pnpm run e2e
-
-      - name: Upload test report
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: ${{ !cancelled() }}
-        with:
-          name: playwright-report
-          path: |
-            editors/web/playwright-report/
-            editors/web/test-results/
-          retention-days: 7
-
-  vscode-e2e:
-    name: "VS Code extension E2E tests"
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Set up Node and pnpm
-        uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2.1.0
-        with:
-          runtime: node@24
-          require-lockfile: true
-
-      - name: Setup Rust build cache
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-
-      # Jobs share no filesystem, so the wasm build of the lint job is
-      # repeated here.
+      # The extension bundle snapshots this binary, so it needs the release
+      # profile: a cold VS Code test instantiates it twice, for the language
+      # server worker and the debug adapter, inside a 90 s timeout on a
+      # two-core runner, and the dev build is eight times the size.
       - name: Build the wasm bindings
         run: pnpm --filter z33-editor-shared run build:wasm
 
@@ -189,8 +150,7 @@ jobs:
         run: pnpm --filter z33-assembly run build:bundle
 
       - name: Install Playwright browsers
-        working-directory: editors/vscode
-        run: npx playwright install chromium --with-deps
+        run: pnpm exec playwright install --with-deps chromium webkit
 
       # The VS Code web build is resolved at run time from --quality stable,
       # so playwright.config.ts pins it to a fixed commit instead; read that
@@ -198,9 +158,9 @@ jobs:
       - name: Read the pinned VS Code build commit
         id: vscode-commit
         run: |
-          sha=$(grep -o 'VSCODE_WEB_COMMIT = "[0-9a-f]*"' editors/vscode/playwright.config.ts | grep -o '[0-9a-f]\{40\}')
+          sha=$(grep -o 'VSCODE_WEB_COMMIT = "[0-9a-f]*"' playwright.config.ts | grep -o '[0-9a-f]\{40\}')
           if [ -z "$sha" ]; then
-            echo "::error::VSCODE_WEB_COMMIT not found in editors/vscode/playwright.config.ts" >&2
+            echo "::error::VSCODE_WEB_COMMIT not found in playwright.config.ts" >&2
             exit 1
           fi
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
@@ -215,7 +175,7 @@ jobs:
           key: vscode-test-web-${{ steps.vscode-commit.outputs.sha }}
           restore-keys: vscode-test-web-
 
-      # The three Playwright webServers in playwright.config.ts each have their
+      # The three VS Code webServers in playwright.config.ts each have their
       # own data directory and would all try to download the VS Code web build
       # on a cold cache; download it once here and copy it into the other two.
       - name: Warm the VS Code web build cache
@@ -235,7 +195,6 @@ jobs:
           done
 
       - name: Run Playwright tests
-        working-directory: editors/vscode
         run: pnpm run e2e
 
       # A cache written from a pull request would be served to later runs on
@@ -251,19 +210,16 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: ${{ !cancelled() }}
         with:
-          name: vscode-playwright-report
+          name: playwright-report
           path: |
-            editors/vscode/playwright-report/
-            editors/vscode/test-results/
+            playwright-report/
+            test-results/
           retention-days: 7
           if-no-files-found: ignore
 
   vitest:
     name: "Vitest tests"
     runs-on: ubuntu-24.04
-    defaults:
-      run:
-        working-directory: editors/web
     steps:
       - name: Checkout sources
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -279,18 +235,17 @@ jobs:
       - name: Setup Rust build cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
-      # Only the storybook project needs this: its story graph reaches
+      # Only the web-storybook project needs this: its story graph reaches
       # lib/wasm-module.ts, whose `?url` import vite has to resolve to a real
-      # file. No story instantiates the binary, so the dev build is enough. The
-      # unit project mocks that module and runs without it.
+      # file. No story instantiates the binary, so the dev build is enough.
       - name: Build the wasm bindings
         run: pnpm --filter z33-editor-shared run build:wasm:dev
 
-      # Only the storybook project needs a browser; the unit project runs in node.
+      # Only the web-storybook project needs a browser; the others run in node.
       - name: Install Playwright browsers
-        run: npx playwright install chromium --with-deps
+        run: pnpm exec playwright install --with-deps chromium
 
-      - name: Run the unit and Storybook tests
+      - name: Run the Vitest projects
         run: pnpm run test
 
   tree-sitter:

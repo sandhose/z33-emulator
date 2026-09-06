@@ -155,18 +155,16 @@
     "build:bundle": "node build.mjs --production",
     "build": "pnpm --filter z33-editor-shared run build:wasm && pnpm run build:bundle",
     "watch": "node build.mjs --watch",
-    "check": "node -e \"try{require.resolve('z33-editor-shared/wasm')}catch{process.exit(1)}\" || pnpm --filter z33-editor-shared run build:wasm && tsc --noEmit && pnpm run lint && oxfmt --check src/ e2e/ playwright.config.ts",
-    "lint": "oxlint src/ e2e/ playwright.config.ts",
-    "fmt": "oxfmt src/ e2e/ playwright.config.ts",
-    "package": "vsce package --no-dependencies",
-    "e2e": "playwright test",
-    "e2e:ui": "playwright test --ui"
+    "check": "node -e \"try{require.resolve('z33-editor-shared/wasm')}catch{process.exit(1)}\" || pnpm --filter z33-editor-shared run build:wasm && tsc --noEmit && pnpm run lint && oxfmt --check src/ e2e/",
+    "lint": "oxlint src/ e2e/",
+    "fmt": "oxfmt src/ e2e/",
+    "package": "vsce package --no-dependencies"
   },
   "dependencies": {
     "vscode-languageclient": "^10.1.1"
   },
   "devDependencies": {
-    "@playwright/test": "^1.62.1",
+    "@playwright/test": "catalog:",
     "@types/vscode": "~1.100.0",
     "@vscode/test-web": "^0.0.81",
     "@vscode/vsce": "^3.9.2",
