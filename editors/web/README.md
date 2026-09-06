@@ -12,7 +12,7 @@ Run from this directory, or from the repository root with
 | --- | --- |
 | `pnpm run start` | Build the wasm bindings (dev profile) and serve the app |
 | `pnpm run build` | Build the wasm bindings (release) and the production bundle |
-| `pnpm run build:wasm:dev` | Build the wasm bindings into `pkg/` on their own |
+| `pnpm --filter z33-editor-shared run build:wasm:dev` | Build the wasm bindings into `editors/shared/pkg/` on their own |
 | `pnpm run check` | `tsc -b`, then oxlint and oxfmt |
 | `pnpm run test` | Vitest: both projects |
 | `pnpm run test:unit` | The `unit` project alone, in node |
@@ -21,5 +21,6 @@ Run from this directory, or from the repository root with
 | `pnpm run knip` | Unused files, dependencies and exports |
 | `pnpm run storybook` | The Storybook dev server |
 
-`check` type-checks against the generated bindings, so `pkg/` has to exist:
-run `pnpm run build:wasm:dev` first in a fresh checkout.
+`check` type-checks against the generated bindings, so `editors/shared/pkg/`
+has to exist: run `pnpm --filter z33-editor-shared run build:wasm:dev` first in
+a fresh checkout.

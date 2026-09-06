@@ -100,20 +100,16 @@ jobs:
           runtime: node@24
           require-lockfile: true
 
+      # Ahead of the Rust cache and the wasm build: these need neither, and a
+      # failure here should not wait on them.
+      - name: Run the shared package unit tests
+        run: pnpm --filter z33-editor-shared run test
+
       - name: Setup Rust build cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
-      # Build the wasm once and reuse it for the vscode check: the web and
-      # vscode `build:wasm` scripts differ only in `--out-dir`, so the output is
-      # byte-identical. The copy also satisfies the vscode check's dist/pkg
-      # exists-guard, avoiding a second wasm-pack build.
       - name: Build the wasm bindings
-        run: pnpm --filter z33-web run build:wasm
-
-      - name: Reuse the wasm bindings for the vscode extension
-        run: |
-          mkdir -p editors/vscode/dist
-          cp -r editors/web/pkg editors/vscode/dist/pkg
+        run: pnpm --filter z33-editor-shared run build:wasm
 
       - name: Run lint and format check
         run: pnpm -r run check
@@ -187,12 +183,7 @@ jobs:
       # Jobs share no filesystem, so the wasm build of the lint job is
       # repeated here.
       - name: Build the wasm bindings
-        run: pnpm --filter z33-web run build:wasm
-
-      - name: Reuse the wasm bindings for the vscode extension
-        run: |
-          mkdir -p editors/vscode/dist
-          cp -r editors/web/pkg editors/vscode/dist/pkg
+        run: pnpm --filter z33-editor-shared run build:wasm
 
       - name: Build the extension bundle
         run: pnpm --filter z33-assembly run build:bundle
@@ -293,7 +284,7 @@ jobs:
       # file. No story instantiates the binary, so the dev build is enough. The
       # unit project mocks that module and runs without it.
       - name: Build the wasm bindings
-        run: pnpm run build:wasm:dev
+        run: pnpm --filter z33-editor-shared run build:wasm:dev
 
       # Only the storybook project needs a browser; the unit project runs in node.
       - name: Install Playwright browsers

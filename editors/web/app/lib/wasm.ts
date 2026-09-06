@@ -4,4 +4,4 @@
 // (`workers/emulator.worker.ts`, `workers/lsp.worker.ts`); the main thread only
 // needs the types, so importing this module must never pull the wasm glue or
 // the binary into the main bundle.
-export type * from "../../pkg/z33_web.js";
+export type * from "z33-editor-shared/wasm";
