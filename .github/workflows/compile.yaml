@@ -178,7 +178,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up Node and pnpm
-        uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2.1.0
+        uses: pnpm/setup@fbda4c85fc2e1e08721cd8763afea8f48d60f024 # v3.0.0
         with:
           runtime: node@24
           require-lockfile: true
@@ -220,7 +220,7 @@ jobs:
       # editors/vscode/'s devDependencies; the extension itself is taken
       # prebuilt from the vsix job's artifact.
       - name: Set up Node and pnpm
-        uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2.1.0
+        uses: pnpm/setup@fbda4c85fc2e1e08721cd8763afea8f48d60f024 # v3.0.0
         with:
           runtime: node@24
           require-lockfile: true
@@ -296,7 +296,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up Node and pnpm
-        uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2.1.0
+        uses: pnpm/setup@fbda4c85fc2e1e08721cd8763afea8f48d60f024 # v3.0.0
         with:
           runtime: node@24
           require-lockfile: true
