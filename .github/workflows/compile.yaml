@@ -63,7 +63,7 @@ jobs:
         run: tar -czvf z33-cli-${{ matrix.arch }}-macos.tar.gz --owner=0 --group=0 -C target/${{ matrix.arch }}-apple-darwin/release/ z33-cli
 
       - name: Upload the binary as artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ matrix.arch }}-macos
           path: z33-cli-${{ matrix.arch }}-macos.tar.gz
@@ -106,7 +106,7 @@ jobs:
         run: tar -czvf z33-cli-${{ matrix.arch }}-linux.tar.gz --owner=0 --group=0 -C target/${{ matrix.arch }}-unknown-linux-musl/release/ z33-cli
 
       - name: Upload the binary as artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ matrix.arch }}-linux
           path: z33-cli-${{ matrix.arch }}-linux.tar.gz
@@ -163,7 +163,7 @@ jobs:
         run: mv target/${{ matrix.arch }}-pc-windows-msvc/release/z33-cli.exe ./z33-cli-${{ matrix.arch }}-windows.exe
 
       - name: Upload the binary as artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ matrix.arch }}-windows
           path: z33-cli-${{ matrix.arch }}-windows.exe
@@ -194,7 +194,7 @@ jobs:
         working-directory: editors/vscode
 
       - name: Upload the .vsix as artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: vscode-extension
           path: editors/vscode/z33-assembly.vsix
@@ -273,7 +273,7 @@ jobs:
         run: cp target/wasm32-wasip1/release/z33_zed.wasm z33-zed.wasm
 
       - name: Upload the extension wasm as artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: zed-extension
           path: z33-zed.wasm
